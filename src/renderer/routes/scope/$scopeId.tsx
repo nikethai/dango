@@ -3,12 +3,15 @@ import { zodValidator } from '@tanstack/zod-adapter'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
+import { ScopeFilesTab, shouldShowFilesTab } from '@/components/scope/ScopeFilesTab'
 import { ScopePageView } from '@/components/scope/ScopePage'
 import { NO_AGENT_VALUE, ScopeSettingsTab } from '@/components/scope/ScopeSettingsTab'
 import { useScopeKnowledgeCount } from '@/components/scope/useScopeKnowledgeCount'
 import { groupSessionsByScope } from '@/components/session/session-list-helpers'
 import { useMyCopilots, useRemoteCopilots } from '@/hooks/useCopilots'
+import { useProjectWorkspace } from '@/hooks/useProjectWorkspace'
 import { useScopes } from '@/hooks/useScopes'
+import { platformCapabilities } from '@/platform'
 import { startNewChat } from '@/lib/startNewChat'
 import { deleteScopeWithUndo } from '@/projects/scope-delete'
 import { useSessionList } from '@/stores/chatStore'
@@ -31,6 +34,8 @@ function ScopeRoute() {
   const { sessionMetaList } = useSessionList()
   const scope = getScope(scopeId)
   const knowledgeCount = useScopeKnowledgeCount(scopeId)
+  const { descriptor, setDescriptor } = useProjectWorkspace({ projectId: scopeId })
+  const filesVisible = shouldShowFilesTab(descriptor, platformCapabilities.supportsProjectWorkspace)
   const chats = useMemo(() => {
     const { groups } = groupSessionsByScope(scopes, sessionMetaList ?? [])
     return groups.find((group) => group.scope.id === scopeId)?.sessions ?? []
@@ -53,7 +58,7 @@ function ScopeRoute() {
       chats={chats}
       knowledgeCount={knowledgeCount}
       tab={tab}
-      folderBound={false}
+      folderBound={filesVisible}
       settings={
         scope ? (
           <ScopeSettingsTab
@@ -68,7 +73,11 @@ function ScopeRoute() {
           />
         ) : null
       }
-      files={null}
+      files={
+        filesVisible && descriptor ? (
+          <ScopeFilesTab scopeId={scopeId} descriptor={descriptor} onDescriptorChange={setDescriptor} />
+        ) : null
+      }
       onTabChange={(next) => void navigate({ to: '/scope/$scopeId', params: { scopeId }, search: { tab: next } })}
       onNewChat={() => startNewChat({ scopeId })}
       onOpenChat={(id) => void navigate({ to: '/session/$sessionId', params: { sessionId: id } })}

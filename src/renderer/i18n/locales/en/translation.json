@@ -1348,5 +1348,6 @@
   "Facts": "Facts",
   "Things that are true in every scope.": "Things that are true in every scope.",
   "Files connected to Everywhere.": "Files connected to Everywhere.",
-  "When this scope and Everywhere disagree, this scope wins here.": "When this scope and Everywhere disagree, this scope wins here."
+  "When this scope and Everywhere disagree, this scope wins here.": "When this scope and Everywhere disagree, this scope wins here.",
+  "Dango can't open this folder.": "Dango can't open this folder."
 }
