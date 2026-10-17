@@ -37,6 +37,7 @@ import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import { useMessageInput } from '@/hooks/useMessageInput'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { useScopes } from '@/hooks/useScopes'
 import { cn } from '@/lib/utils'
 import { navigateToSettings } from '@/modals/Settings'
 import type { GatewayCommandInfo } from '@/openclaw/gateway'
@@ -169,6 +170,7 @@ import {
 } from './preprocessState'
 import QueuedMessageList from './QueuedMessageList'
 import QuoteChip from './QuoteChip'
+import { ScopePill } from './ScopePill'
 import SkillPicker, { filterSkills } from './SkillPicker'
 import TeamModeSelect from './TeamModeSelect'
 import { voiceAuthFromSettings } from './VoiceHoldButton'
@@ -222,8 +224,11 @@ export type InputBoxProps = {
   onDraftRoomModeChange?(mode: 'discuss' | 'work' | 'swarm'): void
   draftSettings?: Session['settings']
   onDraftSettingsChange?(next: Pick<SessionSettings, 'providerOptions'>): void
+  /** The chat's scope (shown in the scope pill). */
+  scopeId?: string
+  /** Change the chat's scope; the scope pill renders only when this is given. */
+  onScopeChange?(scopeId: string | undefined): void
 }
-
 
 function lastAssistantText(
   session:
@@ -297,11 +302,14 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       onDraftRoomModeChange,
       draftSettings,
       onDraftSettingsChange,
+      scopeId,
+      onScopeChange,
     },
     ref
   ) => {
     const { t } = useTranslation()
     const navigate = useNavigate()
+    const { scopes } = useScopes()
     const isSmallScreen = useIsSmallScreen()
     const toolbarIconSize = isSmallScreen ? 22 : 18
     const toolbarButtonClass = cn(
@@ -3195,6 +3203,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                     />
                   )}
                 />
+                {onScopeChange ? <ScopePill scopes={scopes} value={scopeId} onChange={onScopeChange} /> : null}
               </Flex>
 
               {/* Right Group: Team mode (multi-agent) + Model + Send */}

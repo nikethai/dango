@@ -1354,5 +1354,8 @@
   "Never send email": "Never send email",
   "Built in": "Built in",
   "Facts you apply to all scopes will appear here.": "Facts you apply to all scopes will appear here.",
-  "Documents connected to Everywhere will appear here. Client scopes read them only when you turn that on.": "Documents connected to Everywhere will appear here. Client scopes read them only when you turn that on."
+  "Documents connected to Everywhere will appear here. Client scopes read them only when you turn that on.": "Documents connected to Everywhere will appear here. Client scopes read them only when you turn that on.",
+  "No scope": "No scope",
+  "Scope: {{name}}": "Scope: {{name}}",
+  "Scope: None": "Scope: None"
 }

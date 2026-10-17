@@ -1,7 +1,7 @@
 import { toSessionAgentFieldsFromSelection } from '@shared/new-chat-agents'
 import type { Session } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { isNewPrefill, NewChatSearchSchema, seedNewChatSession } from './newChatSearch'
+import { applyDraftScope, isNewPrefill, NewChatSearchSchema, seedNewChatSession } from './newChatSearch'
 
 const base = { id: 'new', name: 'Untitled', type: 'chat', messages: [] } as unknown as Session
 
@@ -25,6 +25,30 @@ describe('seedNewChatSession', () => {
   it('never clears what the user already picked', () => {
     const s = { ...base, copilotId: 'c9', projectId: 'p9' } as Session
     expect(seedNewChatSession(s, {})).toEqual(s)
+  })
+})
+
+describe('applyDraftScope', () => {
+  const scope = { id: 'd', defaultAgentId: 'agent-d' }
+
+  it('puts the draft in the scope and preselects its default agent when no agent was chosen', () => {
+    const s = applyDraftScope(base, scope, { agentInSearch: false })
+    expect(s.projectId).toBe('d')
+    expect(s).toMatchObject(toSessionAgentFieldsFromSelection(['agent-d']))
+  })
+
+  it('keeps an agent already on the draft or named in the link', () => {
+    const picked = { ...base, ...toSessionAgentFieldsFromSelection(['mine']) } as Session
+    expect(applyDraftScope(picked, scope, { agentInSearch: false })).toMatchObject({
+      projectId: 'd',
+      copilotId: 'mine',
+    })
+    expect(applyDraftScope(base, scope, { agentInSearch: true }).copilotId).toBeUndefined()
+  })
+
+  it('clears the scope when there is none', () => {
+    const scoped = { ...base, projectId: 'd' } as Session
+    expect(applyDraftScope(scoped, undefined, { agentInSearch: false }).projectId).toBeUndefined()
   })
 })
 

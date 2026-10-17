@@ -3870,6 +3870,14 @@
     background: transparent;
   }
 
+  .composer-scope-pill {
+    max-width: 160px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .composer-send {
     width: 36px !important;
     height: 32px !important;

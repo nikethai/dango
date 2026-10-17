@@ -693,6 +693,21 @@ describe('theme mapping onto Dango', () => {
     expect(source).toContain("borderColor: 'var(--dango-control-border)'")
   })
 
+  test('the scope pill sits after the tools menu and before team mode in the composer', () => {
+    const source = readSource('src/renderer/components/InputBox/InputBox.tsx')
+    const pill = source.indexOf('<ScopePill')
+    expect(pill).toBeGreaterThan(source.indexOf('<ComposerToolsMenu'))
+    expect(pill).toBeLessThan(source.indexOf('<TeamModeSelect'))
+  })
+
+  test('the composer scope pill truncates at 160px', () => {
+    const rules = rootRules('.composer-scope-pill')
+    expect(rules.length).toBe(1)
+    const decls = declsOf(rules[0])
+    expect(decls.get('max-width')).toBe('160px')
+    expect(decls.get('text-overflow')).toBe('ellipsis')
+  })
+
   test('the global focus ring is 2px solid --dango-focus with a 2px offset', () => {
     const rules = rootRules(':focus-visible')
     expect(rules.length).toBe(1)
