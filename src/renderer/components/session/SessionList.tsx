@@ -18,26 +18,24 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, Button, Select, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core'
+import { ActionIcon, Text, Tooltip, UnstyledButton } from '@mantine/core'
 import type { Folder, SessionMeta } from '@shared/types'
 import { IconArchive, IconChevronDown, IconFolderPlus, IconTrash, IconX } from '@tabler/icons-react'
-import { useRouterState } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import clsx from 'clsx'
 import type { MutableRefObject, ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Virtuoso } from 'react-virtuoso'
-import { useMyCopilots, useRemoteCopilots } from '@/hooks/useCopilots'
 import { useFolders } from '@/hooks/useFolders'
 import { useScopes } from '@/hooks/useScopes'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { trackingEvent } from '@/packages/event'
+import { startNewChat } from '@/lib/startNewChat'
 import { getEffectiveProjectId } from '@/projects/project-context'
 import { moveSessionToScope, unassignScopeSessions } from '@/projects/scope-sessions'
 import { updateSessionList, useSessionList } from '@/stores/chatStore'
-import { createEmpty } from '@/stores/sessionActions'
 import { useUIStore } from '@/stores/uiStore'
-import { AdaptiveModal } from '../common/AdaptiveModal'
+import { EverywhereRow } from '../scope/EverywhereRow'
 import FolderItem from './FolderItem'
 import SessionItem from './SessionItem'
 import {
@@ -80,6 +78,10 @@ type RowItem =
       animPhase?: CollapsiblePhase
       folder: FolderGroup
       type: 'folder'
+    }
+  | {
+      animPhase?: CollapsiblePhase
+      type: 'everywhere'
     }
   | {
       animPhase?: CollapsiblePhase
@@ -212,11 +214,10 @@ export default function SessionList({
   const isSmallScreen = useIsSmallScreen()
   const isMobileDensity = density === 'mobile' || isSmallScreen
   const { sessionMetaList: sortedSessions, refetch } = useSessionList()
-  const { folders, removeFolder, updateFolder } = useFolders()
+  const { folders, removeFolder } = useFolders()
   const { scopes } = useScopes()
-  const { copilots: myCopilots } = useMyCopilots()
-  const { copilots: remoteCopilots } = useRemoteCopilots()
   const routerState = useRouterState()
+  const navigate = useNavigate()
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({})
   /** Per-folder enter/exit animation phase (only while toggling). */
   const [folderPhase, setFolderPhase] = useState<Record<string, CollapsiblePhase>>({})
@@ -224,20 +225,6 @@ export default function SessionList({
   // Mobile: Projects collapsed by default so Recents own the first screen.
   const projectsSection = useCollapsibleSection(!isMobileDensity)
   const recentsSection = useCollapsibleSection(true)
-  const [editingFolder, setEditingFolder] = useState<Folder | null>(null)
-  const [folderName, setFolderName] = useState('')
-  const [folderDefaultCopilotId, setFolderDefaultCopilotId] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!editingFolder) {
-      setFolderName('')
-      setFolderDefaultCopilotId(null)
-      return
-    }
-
-    setFolderName(editingFolder.name)
-    setFolderDefaultCopilotId(editingFolder.defaultCopilotId || null)
-  }, [editingFolder])
 
   const sensors = useSensors(
     useSensor(TouchSensor, {
@@ -307,12 +294,12 @@ export default function SessionList({
     rows.push({
       type: 'section',
       key: 'projects',
-      label: t('Projects'),
+      label: t('Scopes'),
       open: projectsSection.open,
       onToggle: projectsSection.toggle,
       // Single New Project control lives here (not in a top tools strip)
       trailing: onCreateProject ? (
-        <Tooltip label={t('New Project')} openDelay={400} withArrow>
+        <Tooltip label={t('New scope')} openDelay={400} withArrow>
           <ActionIcon
             variant="subtle"
             color="chatbox-tertiary"
@@ -323,7 +310,7 @@ export default function SessionList({
               e.stopPropagation()
               onCreateProject()
             }}
-            aria-label={t('New Project')}
+            aria-label={t('New scope')}
           >
             <IconFolderPlus size={15} stroke={1.5} />
           </ActionIcon>
@@ -332,13 +319,14 @@ export default function SessionList({
     })
 
     if (projectsSection.contentVisible) {
+      rows.push({ type: 'everywhere', animPhase: projectsPhase })
       if (projectGroups.length === 0) {
         // Desktop keeps the empty coaching card; mobile only shows the section header +
         if (!isMobileDensity) {
           rows.push({
             type: 'empty',
             key: 'projects-empty',
-            message: t('No projects yet'),
+            message: t('No scopes yet'),
             animPhase: projectsPhase,
           })
         }
@@ -430,7 +418,7 @@ export default function SessionList({
         rows.push({
           type: 'coaching',
           key: 'recents-coaching',
-          message: t('{{count}} chats not in a project — drag into a project to organize', {
+          message: t('{{count}} chats are not in a scope. Drag one onto a scope to file it.', {
             count: historySessions.length,
           }),
           animPhase: recentsPhase,
@@ -514,19 +502,6 @@ export default function SessionList({
       .map((row) => [row.session.id, row.folderKey] as const)
     return new Map(entries)
   }, [rowItems])
-
-  const copilotOptions = useMemo(
-    () => [
-      { value: '', label: t('None') },
-      ...[...myCopilots, ...remoteCopilots]
-        .filter((copilot, index, list) => list.findIndex((item) => item.id === copilot.id) === index)
-        .map((copilot) => ({
-          value: copilot.id,
-          label: copilot.name,
-        })),
-    ],
-    [myCopilots, remoteCopilots, t]
-  )
 
   const onDragEnd = async (event: DragEndEvent) => {
     if (!event.over || !sortedSessions) {
@@ -646,34 +621,25 @@ export default function SessionList({
     []
   )
 
+  // TODO(slice 03 Task 7): replace this confirm with DeleteScopeSheet + undo.
   const handleDeleteFolder = async (folder: Folder) => {
+    if (!window.confirm(t('Delete scope'))) {
+      return
+    }
     await unassignScopeSessions(folder.id, sortedSessions || [])
     removeFolder(folder.id)
   }
 
-  const handleSaveFolder = () => {
-    if (!editingFolder || !folderName.trim()) {
-      return
-    }
-
-    updateFolder(editingFolder.id, {
-      name: folderName.trim(),
-      defaultCopilotId: folderDefaultCopilotId || undefined,
-    })
-    setEditingFolder(null)
-  }
-
-  const handleCreateChatInFolder = async (folder: Folder) => {
+  const handleCreateChatInFolder = (folder: Folder) => {
     setExpandedFolders((prev) => ({ ...prev, [folder.id]: true }))
     setFolderPhaseTimed(folder.id, 'idle')
     projectsSection.ensureOpen()
-    await createEmpty('chat', {
-      folderId: folder.id,
-      projectId: folder.id,
-      copilotId: folder.defaultCopilotId ?? folder.defaultAgentId,
-    })
-    trackingEvent('create_new_conversation', { event_category: 'user', source: 'project' })
-    refetch()
+    startNewChat({ scopeId: folder.id })
+  }
+
+  // TODO(slice 03 Task 6): the /scope/$scopeId route does not exist yet, so `to` is cast until it lands.
+  const openScope = (scopeId: string, search?: { tab: string }) => {
+    void navigate({ to: `/scope/${scopeId}` as string, search } as never)
   }
 
   return (
@@ -715,11 +681,11 @@ export default function SessionList({
                       {isProjectsEmpty ? (
                         <>
                           <p className="rail-empty-card-desc">
-                            {t('Group related chats into a project for cleaner recents.')}
+                            {t('A scope keeps the chats, knowledge and sources of one project or client together.')}
                           </p>
                           {onCreateProject ? (
                             <button type="button" className="rail-empty-card-action" onClick={onCreateProject}>
-                              {t('New Project')}
+                              {t('New scope')}
                             </button>
                           ) : null}
                         </>
@@ -762,6 +728,14 @@ export default function SessionList({
                 )
               }
 
+              if (row.type === 'everywhere') {
+                return (
+                  <AnimRow phase={row.animPhase}>
+                    <EverywhereRow active={routerState.location.pathname === '/scope/everywhere'} />
+                  </AnimRow>
+                )
+              }
+
               if (row.type === 'folder') {
                 const folder = folders.find((item) => item.id === row.folder.key)
                 return (
@@ -772,6 +746,10 @@ export default function SessionList({
                         emoji={row.folder.emoji}
                         expanded={expandedFolders[row.folder.key] ?? true}
                         implicit={row.folder.implicit}
+                        kind={scopes.find((scope) => scope.id === row.folder.key)?.kind ?? 'project'}
+                        active={routerState.location.pathname === `/scope/${row.folder.key}`}
+                        onOpen={() => openScope(row.folder.key)}
+                        onOpenSettings={() => openScope(row.folder.key, { tab: 'settings' })}
                         name={row.folder.name}
                         projectId={row.folder.implicit ? undefined : row.folder.key}
                         onCreateChat={
@@ -786,20 +764,6 @@ export default function SessionList({
                             ? undefined
                             : () => {
                                 void handleDeleteFolder(folder)
-                              }
-                        }
-                        onRename={
-                          row.folder.implicit || !folder
-                            ? undefined
-                            : () => {
-                                setEditingFolder(folder)
-                              }
-                        }
-                        onSetDefaultCopilot={
-                          row.folder.implicit || !folder
-                            ? undefined
-                            : () => {
-                                setEditingFolder(folder)
                               }
                         }
                         onToggle={() => toggleFolder(row.folder.key)}
@@ -824,27 +788,6 @@ export default function SessionList({
           />
         </SortableContext>
       </DndContext>
-
-      <AdaptiveModal opened={!!editingFolder} onClose={() => setEditingFolder(null)} title={t('Edit Project')} centered>
-        <TextInput
-          label={t('Project Name')}
-          value={folderName}
-          onChange={(event) => setFolderName(event.currentTarget.value)}
-        />
-        <Select
-          mt="sm"
-          label={t('Default Copilot')}
-          comboboxProps={{ withinPortal: true }}
-          data={copilotOptions}
-          value={folderDefaultCopilotId ?? ''}
-          onChange={(value) => setFolderDefaultCopilotId(value || null)}
-        />
-
-        <AdaptiveModal.Actions>
-          <AdaptiveModal.CloseButton onClick={() => setEditingFolder(null)} />
-          <Button onClick={handleSaveFolder}>{t('Save')}</Button>
-        </AdaptiveModal.Actions>
-      </AdaptiveModal>
     </>
   )
 }

@@ -1301,5 +1301,22 @@
   "Replying": "Replying",
   "Needs you": "Needs you",
   "Asleep": "Asleep",
-  "Stuck": "Stuck"
+  "Stuck": "Stuck",
+  "Scopes": "Scopes",
+  "New scope": "New scope",
+  "Everywhere": "Everywhere",
+  "client": "client",
+  "Client": "Client",
+  "Scope options": "Scope options",
+  "Scope settings": "Scope settings",
+  "Delete scope": "Delete scope",
+  "New chat": "New chat",
+  "Toggle chats": "Toggle chats",
+  "No scopes yet": "No scopes yet",
+  "A scope keeps the chats, knowledge and sources of one project or client together.": "A scope keeps the chats, knowledge and sources of one project or client together.",
+  "{{count}} chats are not in a scope. Drag one onto a scope to file it.": "{{count}} chats are not in a scope. Drag one onto a scope to file it.",
+  "Everywhere is built in. Pick another name.": "Everywhere is built in. Pick another name.",
+  "Acme Co, Dango app…": "Acme Co, Dango app…",
+  "Is this a project or a client?": "Is this a project or a client?",
+  "Client scopes don't read your Everywhere documents unless you turn that on.": "Client scopes don't read your Everywhere documents unless you turn that on."
 }

@@ -685,8 +685,8 @@ describe('theme mapping onto Dango', () => {
     }
   })
 
-  test('the Sidebar folder dialog input uses the raised fill and the control border', () => {
-    const source = readSource('src/renderer/Sidebar.tsx')
+  test('the new scope sheet input uses the raised fill and the control border', () => {
+    const source = readSource('src/renderer/components/scope/NewScopeSheet.tsx')
     expect(source).not.toContain("background: 'var(--chatbox-background-primary)'")
     expect(source).not.toContain("borderColor: 'var(--chatbox-border-secondary)'")
     expect(source).toContain("background: 'var(--dango-raised)'")

@@ -1,16 +1,4 @@
-import {
-  ActionIcon,
-  Box,
-  Button,
-  Flex,
-  Image,
-  Menu,
-  Stack,
-  Text,
-  TextInput,
-  Tooltip,
-  UnstyledButton,
-} from '@mantine/core'
+import { ActionIcon, Box, Flex, Image, Menu, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
 import SwipeableDrawer from '@mui/material/SwipeableDrawer'
 import {
   IconChevronUp,
@@ -29,19 +17,19 @@ import clsx from 'clsx'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import DangoWordmark from './components/brand/DangoWordmark'
-import { AdaptiveModal } from './components/common/AdaptiveModal'
 import { UserAvatar } from './components/common/Avatar'
 import ThemeSwitchButton from './components/dev/ThemeSwitchButton'
 import TitleBarRow from './components/layout/TitleBarRow'
+import { NewScopeSheet } from './components/scope'
 import SessionList from './components/session/SessionList'
 import { FORCE_ENABLE_DEV_PAGES } from './dev/devToolsConfig'
-import { useFolders } from './hooks/useFolders'
 import {
   SIDEBAR_ICON_RAIL_WIDTH,
   useIsSmallScreen,
   useSidebarEffectiveWidth,
   useSidebarWidth,
 } from './hooks/useScreenChange'
+import { useScopes } from './hooks/useScopes'
 import useVersion from './hooks/useVersion'
 import { startNewChat } from './lib/startNewChat'
 import { navigateToSettings } from './modals/Settings'
@@ -56,7 +44,7 @@ export default function Sidebar() {
   const versionHook = useVersion()
   const language = useLanguage()
   const navigate = useNavigate()
-  const { addFolder } = useFolders()
+  const { addScope } = useScopes()
   const userAvatarKey = useSettingsStore((s) => s.userAvatarKey)
   const showSidebar = useUIStore((s) => s.showSidebar)
   const setShowSidebar = useUIStore((s) => s.setShowSidebar)
@@ -75,7 +63,6 @@ export default function Sidebar() {
   const [isResizing, setIsResizing] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [folderModalOpened, setFolderModalOpened] = useState(false)
-  const [folderName, setFolderName] = useState('')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [accountMenuWidth, setAccountMenuWidth] = useState<number | undefined>(undefined)
   const accountTriggerRef = useRef<HTMLButtonElement>(null)
@@ -154,18 +141,6 @@ export default function Sidebar() {
       document.removeEventListener('mouseup', handleMouseUp)
     }
   }, [isResizing, language, setSidebarWidth])
-
-  const handleCreateFolder = () => {
-    if (!folderName.trim()) {
-      return
-    }
-
-    addFolder({
-      name: folderName.trim(),
-    })
-    setFolderName('')
-    setFolderModalOpened(false)
-  }
 
   // Desktop never fully hides — collapse to icon-only rail.
   const handleCollapseSidebar = useCallback(() => {
@@ -536,85 +511,16 @@ export default function Sidebar() {
         </Stack>
       </SwipeableDrawer>
 
-      <AdaptiveModal
+      <NewScopeSheet
         opened={folderModalOpened}
-        onClose={() => {
+        onClose={() => setFolderModalOpened(false)}
+        onCreate={(input) => {
+          const scope = addScope(input)
           setFolderModalOpened(false)
-          setFolderName('')
+          // TODO(slice 03 Task 6): the /scope/$scopeId route does not exist yet, so `to` is cast until it lands.
+          void navigate({ to: `/scope/${scope.id}` as string } as never)
         }}
-        title={t('New Project')}
-        centered
-        size={360}
-        className="app-dialog"
-        classNames={{ content: 'app-dialog-content', header: 'app-dialog-header', body: 'app-dialog-body' }}
-      >
-        <Stack gap={14}>
-          <TextInput
-            label={t('Name')}
-            placeholder={t('Work, Research, Archive…')}
-            value={folderName}
-            data-autofocus
-            autoFocus
-            onChange={(event) => setFolderName(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                handleCreateFolder()
-              }
-            }}
-            styles={{
-              label: { fontSize: 12, fontWeight: 600, color: 'var(--chatbox-tint-secondary)', marginBottom: 6 },
-              input: {
-                height: 36,
-                fontSize: 14,
-                background: 'var(--dango-raised)',
-                borderColor: 'var(--dango-control-border)',
-              },
-            }}
-          />
-        </Stack>
-
-        <AdaptiveModal.Actions>
-          <AdaptiveModal.CloseButton
-            onClick={() => {
-              setFolderModalOpened(false)
-              setFolderName('')
-            }}
-          >
-            {t('Cancel')}
-          </AdaptiveModal.CloseButton>
-          <Button
-            size="sm"
-            onClick={handleCreateFolder}
-            disabled={!folderName.trim()}
-            fw={600}
-            styles={{
-              root: {
-                height: 32,
-                minWidth: 88,
-                backgroundColor: 'var(--chatbox-background-brand-primary)',
-                /* filled brand — on-brand label (palette has no auto-contrast shades) */
-                color: 'var(--chatbox-tint-on-brand)',
-                '&:hover': {
-                  backgroundColor: 'var(--chatbox-background-brand-primary-hover)',
-                  color: 'var(--chatbox-tint-on-brand)',
-                },
-                '&:disabled': {
-                  backgroundColor: 'var(--chatbox-background-tertiary)',
-                  color: 'var(--chatbox-tint-tertiary)',
-                  opacity: 1,
-                  border: '1px solid var(--chatbox-border-primary)',
-                },
-              },
-              label: {
-                color: 'inherit',
-              },
-            }}
-          >
-            {t('Create')}
-          </Button>
-        </AdaptiveModal.Actions>
-      </AdaptiveModal>
+      />
     </>
   )
 }
