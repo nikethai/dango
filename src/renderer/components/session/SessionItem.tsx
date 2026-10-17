@@ -51,13 +51,13 @@ function SessionItem(props: Props) {
     }
   }
 
+  const currentScopeId = getEffectiveProjectId(session)
   const [menuOpened, setMenuOpened] = useState(false)
   const [folderModalOpened, setFolderModalOpened] = useState(false)
   const [renameModalOpened, setRenameModalOpened] = useState(false)
   const [renameValue, setRenameValue] = useState(session.name)
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(getEffectiveProjectId(session) ?? null)
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(currentScopeId ?? null)
 
-  const currentScopeId = getEffectiveProjectId(session)
   const timeLabel = useMemo(() => formatRailRelativeTime(session.updatedAt), [session.updatedAt])
 
   useEffect(() => {

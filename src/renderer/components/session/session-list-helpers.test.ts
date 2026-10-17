@@ -1,14 +1,14 @@
 import type { SessionMeta } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import {
+  folderDropId,
   formatRailRelativeTime,
-  groupSessionsByScope,
   getDayBucket,
   groupSessionsByDay,
+  groupSessionsByScope,
   parseDropTargetId,
-  reorderSessionsInSubset,
   RECENTS_DROP_ID,
-  folderDropId,
+  reorderSessionsInSubset,
 } from './session-list-helpers'
 
 function meta(id: string, updatedAt?: number): SessionMeta {
