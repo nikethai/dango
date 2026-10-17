@@ -279,6 +279,7 @@ export type FileMeta = {
 
 export * from './types/image-generation'
 export * from './types/session'
+export * from './types/scope'
 export * from './types/settings'
 export * from './types/skills'
 export * from './types/commands'
