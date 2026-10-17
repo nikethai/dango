@@ -2,6 +2,7 @@ import type { SessionMeta } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import {
   formatRailRelativeTime,
+  groupSessionsByScope,
   getDayBucket,
   groupSessionsByDay,
   parseDropTargetId,
@@ -74,5 +75,28 @@ describe('session-list-helpers', () => {
       expect(groups.map((g) => g.bucket)).toEqual(['today', 'yesterday', 'older'])
       expect(groups[0].sessions.map((s) => s.id)).toEqual(['today'])
     })
+  })
+})
+
+describe('groupSessionsByScope', () => {
+  const scopes = [
+    { id: 'a', name: 'A', order: 0, kind: 'project' as const },
+    { id: 'b', name: 'B', order: 1, kind: 'project' as const },
+  ]
+  const s = (id: string, extra: Record<string, unknown> = {}) => ({ id, name: id, ...extra }) as never
+
+  it('groups by effective project id, keeps scope order, sends unknown and everywhere to unscoped', () => {
+    const { groups, unscoped } = groupSessionsByScope(scopes, [
+      s('1', { projectId: 'a', folderId: 'b' }),
+      s('2', { folderId: 'b' }),
+      s('3', { projectId: 'gone' }),
+      s('4', { projectId: 'everywhere' }),
+      s('5'),
+    ])
+    expect(groups.map((g) => [g.scope.id, g.sessions.map((x) => x.id)])).toEqual([
+      ['a', ['1']],
+      ['b', ['2']],
+    ])
+    expect(unscoped.map((x) => x.id)).toEqual(['3', '4', '5'])
   })
 })

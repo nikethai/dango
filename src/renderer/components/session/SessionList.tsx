@@ -27,11 +27,14 @@ import type { MutableRefObject, ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Virtuoso } from 'react-virtuoso'
+import { getEffectiveProjectId } from '@/projects/project-context'
 import { useMyCopilots, useRemoteCopilots } from '@/hooks/useCopilots'
 import { useFolders } from '@/hooks/useFolders'
+import { useScopes } from '@/hooks/useScopes'
+import { moveSessionToScope, unassignScopeSessions } from '@/projects/scope-sessions'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { trackingEvent } from '@/packages/event'
-import { getSession, updateSession, updateSessionList, useSessionList } from '@/stores/chatStore'
+import { updateSessionList, useSessionList } from '@/stores/chatStore'
 import { createEmpty } from '@/stores/sessionActions'
 import { useUIStore } from '@/stores/uiStore'
 import { AdaptiveModal } from '../common/AdaptiveModal'
@@ -42,6 +45,7 @@ import {
   type DayBucket,
   folderDropId,
   groupSessionsByDay,
+  groupSessionsByScope,
   parseDropTargetId,
   RECENTS_COACHING_THRESHOLD,
   RECENTS_DROP_ID,
@@ -209,6 +213,7 @@ export default function SessionList({
   const isMobileDensity = density === 'mobile' || isSmallScreen
   const { sessionMetaList: sortedSessions, refetch } = useSessionList()
   const { folders, removeFolder, updateFolder } = useFolders()
+  const { scopes } = useScopes()
   const { copilots: myCopilots } = useMyCopilots()
   const { copilots: remoteCopilots } = useRemoteCopilots()
   const routerState = useRouterState()
@@ -257,35 +262,17 @@ export default function SessionList({
   )
 
   const { projectGroups, historySessions } = useMemo(() => {
-    const groupMap = new Map<string, FolderGroup>()
-
-    for (const folder of folders) {
-      groupMap.set(folder.id, {
-        key: folder.id,
-        name: folder.name,
-        emoji: folder.emoji,
-        count: 0,
-        sessions: [],
-      })
-    }
-
-    const unfiled: SessionMeta[] = []
-
-    for (const session of visibleSessions) {
-      const group = session.folderId ? groupMap.get(session.folderId) : undefined
-      if (group) {
-        group.sessions.push(session)
-        group.count += 1
-      } else {
-        unfiled.push(session)
-      }
-    }
+    const { groups: scoped, unscoped } = groupSessionsByScope(scopes, visibleSessions)
+    const byScope = new Map(scoped.map((group) => [group.scope.id, group.sessions]))
 
     return {
-      projectGroups: Array.from(groupMap.values()),
-      historySessions: unfiled,
+      projectGroups: folders.map<FolderGroup>((folder) => {
+        const sessions = byScope.get(folder.id) ?? []
+        return { key: folder.id, name: folder.name, emoji: folder.emoji, count: sessions.length, sessions }
+      }),
+      historySessions: unscoped,
     }
-  }, [folders, visibleSessions])
+  }, [folders, scopes, visibleSessions])
 
   // DnD subsets keyed by folder (or ALL for recents)
   const groups = useMemo<FolderGroup[]>(() => {
@@ -562,22 +549,22 @@ export default function SessionList({
       }
 
       if (dropTarget.type === 'folder') {
-        if (activeMeta.folderId === dropTarget.folderId) {
+        if (getEffectiveProjectId(activeMeta) === dropTarget.folderId) {
           return
         }
         setExpandedFolders((prev) => ({ ...prev, [dropTarget.folderId]: true }))
         projectsSection.ensureOpen()
-        await updateSession(activeId, { folderId: dropTarget.folderId })
+        await moveSessionToScope(activeId, dropTarget.folderId)
         refetch()
         return
       }
 
       // Recents
-      if (!activeMeta.folderId) {
+      if (!getEffectiveProjectId(activeMeta)) {
         return
       }
       recentsSection.ensureOpen()
-      await updateSession(activeId, { folderId: undefined })
+      await moveSessionToScope(activeId, undefined)
       refetch()
       return
     }
@@ -594,7 +581,7 @@ export default function SessionList({
       } else {
         recentsSection.ensureOpen()
       }
-      await updateSession(activeId, { folderId: targetFolderId })
+      await moveSessionToScope(activeId, targetFolderId)
       refetch()
       return
     }
@@ -660,18 +647,7 @@ export default function SessionList({
   )
 
   const handleDeleteFolder = async (folder: Folder) => {
-    const matchingSessionIds = (sortedSessions || [])
-      .filter((session) => session.folderId === folder.id)
-      .map((session) => session.id)
-    await Promise.all(
-      matchingSessionIds.map(async (sessionId) => {
-        const session = await getSession(sessionId)
-        if (!session) {
-          return
-        }
-        await updateSession(sessionId, { folderId: undefined })
-      })
-    )
+    await unassignScopeSessions(folder.id, sortedSessions || [])
     removeFolder(folder.id)
   }
 

@@ -1,4 +1,5 @@
-import type { SessionMeta } from '@shared/types'
+import { EVERYWHERE_SCOPE_ID, type Scope, type SessionMeta } from '@shared/types'
+import { getEffectiveProjectId } from '@/projects/project-context'
 
 export const ALL_FOLDER_KEY = '__all__'
 export const RECENTS_DROP_ID = 'drop:recents'
@@ -113,4 +114,24 @@ export function groupSessionsByDay(
   return order
     .map((bucket) => ({ bucket, sessions: map.get(bucket) || [] }))
     .filter((group) => group.sessions.length > 0)
+}
+
+/** Group sessions by effective scope id. Unknown ids and Everywhere go to `unscoped`; groups keep scope order. */
+export function groupSessionsByScope(
+  scopes: Scope[],
+  sessions: SessionMeta[]
+): { groups: Array<{ scope: Scope; sessions: SessionMeta[] }>; unscoped: SessionMeta[] } {
+  const groups = scopes.map((scope) => ({ scope, sessions: [] as SessionMeta[] }))
+  const byId = new Map(groups.map((group) => [group.scope.id, group]))
+  const unscoped: SessionMeta[] = []
+  for (const session of sessions) {
+    const id = getEffectiveProjectId(session)
+    const group = id && id !== EVERYWHERE_SCOPE_ID ? byId.get(id) : undefined
+    if (group) {
+      group.sessions.push(session)
+    } else {
+      unscoped.push(session)
+    }
+  }
+  return { groups, unscoped }
 }
