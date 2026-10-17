@@ -95,6 +95,13 @@ describe('ScopePageView', () => {
     ).toBeTruthy()
   })
 
+  it('files tab without a bound folder falls back to overview', () => {
+    view({ tab: 'files', files: <div>Files body</div> })
+    expect(screen.queryByText('Files body')).toBeNull()
+    expect(screen.getByText('Nothing known about Acme Co yet')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected')).toBe('true')
+  })
+
   it('client chip', () => {
     view()
     const chip = screen.getByText('client')

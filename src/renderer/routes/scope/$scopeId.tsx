@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import { useMemo } from 'react'
 import { z } from 'zod'
-import { ScopePageView, type ScopeTab } from '@/components/scope/ScopePage'
+import { ScopePageView } from '@/components/scope/ScopePage'
 import { useScopeKnowledgeCount } from '@/components/scope/useScopeKnowledgeCount'
 import { groupSessionsByScope } from '@/components/session/session-list-helpers'
 import { useScopes } from '@/hooks/useScopes'
@@ -34,7 +34,7 @@ function ScopeRoute() {
       scope={scope}
       chats={chats}
       knowledgeCount={knowledgeCount}
-      tab={tab as ScopeTab}
+      tab={tab}
       folderBound={false}
       settings={null}
       files={null}

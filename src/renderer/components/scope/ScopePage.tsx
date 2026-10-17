@@ -25,7 +25,7 @@ export type ScopePageViewProps = {
 
 export function ScopePageView(props: ScopePageViewProps) {
   const { t } = useTranslation()
-  const { scope, tab } = props
+  const { scope } = props
   if (!scope) {
     return (
       <Page title="">
@@ -46,6 +46,7 @@ export function ScopePageView(props: ScopePageViewProps) {
     { id: 'chats', label: t('Chats') },
     { id: 'settings', label: t('Settings') },
   ]
+  const tab: ScopeTab = props.tab === 'files' && !props.folderBound ? 'overview' : props.tab
   return (
     <Page title={scope.name}>
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-4">
