@@ -1,62 +1,56 @@
-import type { Folder, Project } from '@shared/types'
-import { useAtom } from 'jotai'
+import type { Folder, Project, Scope } from '@shared/types'
 import { atomWithStorage } from 'jotai/utils'
-import { v4 as uuidv4 } from 'uuid'
+import { useMemo } from 'react'
 import { folderToProject, projectToFolder } from '@/projects/project-migration'
+import { applyFolderUpdate, createScope } from '@/projects/scope-store'
 import storage, { StorageKey } from '@/storage'
+import { useScopes } from './useScopes'
 
 export const myFoldersAtom = atomWithStorage<Folder[]>(StorageKey.MyFolders, [], storage)
-export const myProjectsAtom = atomWithStorage<Project[]>(StorageKey.MyProjects, [], storage)
+/** Canonical scope list (stored under `myProjects`). Read with `parseScopes`. */
+export const myProjectsAtom = atomWithStorage<Scope[]>(StorageKey.MyProjects, [], storage)
 
-function sortFolders(folders: Folder[]) {
-  return [...folders].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
-}
-
+/** Compatibility adapter: Folder-shaped view over scopes. */
 export function useFolders() {
-  const [folders, setFolders] = useAtom(myFoldersAtom)
-  const [, setProjects] = useAtom(myProjectsAtom)
-
-  const commit = async (next: Folder[]) => {
-    const sorted = sortFolders(next)
-    setFolders(sorted)
-    setProjects(sorted.map(folderToProject))
-    return sorted
-  }
+  const { scopes, addScope, updateScope, removeScope, putScope } = useScopes()
+  const folders = useMemo(() => scopes.map(projectToFolder), [scopes])
 
   const addFolder = (folder: Omit<Folder, 'id' | 'order'> & Partial<Pick<Folder, 'id' | 'order'>>) => {
-    const nextFolder: Folder = {
-      id: folder.id || uuidv4(),
+    const hasExtras =
+      folder.id !== undefined ||
+      folder.order !== undefined ||
+      folder.emoji !== undefined ||
+      folder.defaultCopilotId !== undefined ||
+      folder.defaultAgentId !== undefined
+    if (!hasExtras) {
+      return projectToFolder(addScope({ name: folder.name, kind: 'project' }))
+    }
+    const base = createScope(scopes, {
       name: folder.name,
+      kind: 'project',
+      id: folder.id,
+      defaultAgentId: folder.defaultAgentId ?? folder.defaultCopilotId,
+    })
+    const scope: Scope = {
+      ...base,
       emoji: folder.emoji,
       defaultCopilotId: folder.defaultCopilotId,
-      defaultAgentId: folder.defaultAgentId ?? folder.defaultCopilotId,
-      order: folder.order ?? folders.reduce((maxOrder, item) => Math.max(maxOrder, item.order), -1) + 1,
+      order: folder.order ?? base.order,
     }
-    void commit([...folders, nextFolder])
-    return nextFolder
+    putScope(scope)
+    return projectToFolder(scope)
   }
 
   const updateFolder = (folderId: string, updater: Partial<Folder> | ((folder: Folder) => Folder)) => {
-    void commit(
-      folders.map((folder) => {
-        if (folder.id !== folderId) {
-          return folder
-        }
-        return typeof updater === 'function' ? updater(folder) : { ...folder, ...updater }
-      })
-    )
+    const scope = scopes.find((item) => item.id === folderId)
+    if (!scope) return
+    const { id: _id, ...patch } = applyFolderUpdate(scope, updater)
+    updateScope(folderId, patch)
   }
 
-  const removeFolder = (folderId: string) => {
-    void commit(folders.filter((folder) => folder.id !== folderId))
-  }
+  const removeFolder = (folderId: string) => removeScope(folderId)
 
-  return {
-    folders: sortFolders(folders),
-    addFolder,
-    updateFolder,
-    removeFolder,
-  }
+  return { folders, addFolder, updateFolder, removeFolder }
 }
 
 export function toPortableProject(folder: Folder): Project {
