@@ -13,11 +13,7 @@ import { getDefaultStore } from 'jotai'
 import { difference, intersection, keyBy, uniq, uniqBy } from 'lodash'
 import oldStore from 'store'
 import { v4 as uuidv4 } from 'uuid'
-import {
-  defaultSessionsForCN,
-  defaultSessionsForEN,
-  retiredChineseDemoSessionIds,
-} from '@/packages/initial_data'
+import { defaultSessionsForCN, defaultSessionsForEN, retiredChineseDemoSessionIds } from '@/packages/initial_data'
 import platform from '@/platform'
 import type { Storage } from '@/platform/interfaces'
 import { getOldVersionStorages } from '@/platform/storages'
@@ -54,7 +50,7 @@ type MigrateStore = {
   removeData?: (key: StorageKey | string) => Promise<void>
 }
 
-export const CurrentVersion = 17
+export const CurrentVersion = 18
 
 async function doMigrateStorage(oldStorage: Storage) {
   // (legacy comment removed)
@@ -215,6 +211,7 @@ export async function migrateOnData(dataStore: MigrateStore, canRelaunch = true)
     migrate_14_to_15,
     migrate_15_to_16,
     migrate_16_to_17,
+    migrate_17_to_18,
   ]
 
   for (; configVersion < CurrentVersion; configVersion++) {
@@ -878,5 +875,16 @@ async function migrate_16_to_17(dataStore: MigrateStore) {
     setData: dataStore.setData,
   })
   log.info('migrate_16_to_17, portable Project metadata dual-write complete')
+  return false
+}
+
+/** Write `kind` on stored projects (scopes); re-id a project that collides with the reserved Everywhere id. */
+async function migrate_17_to_18(dataStore: MigrateStore) {
+  const { runScopeMigration } = await import('@/projects/scope-migration')
+  await runScopeMigration({
+    getData: dataStore.getData,
+    setData: dataStore.setData,
+  })
+  log.info('migrate_17_to_18, scopes written')
   return false
 }
