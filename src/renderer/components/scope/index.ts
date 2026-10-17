@@ -1,2 +1,6 @@
 export { EverywhereRow } from './EverywhereRow'
 export { NewScopeSheet } from './NewScopeSheet'
+export { ScopeKnowledgeTab } from './ScopeKnowledgeTab'
+export { ScopePageView, type ScopeTab } from './ScopePage'
+export { ScopeSourcesTab } from './ScopeSourcesTab'
+export { useScopeKnowledgeCount } from './useScopeKnowledgeCount'

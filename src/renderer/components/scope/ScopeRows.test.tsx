@@ -12,8 +12,19 @@ import { EverywhereRow } from './EverywhereRow'
 import { NewScopeSheet } from './NewScopeSheet'
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ to, children, ...rest }: { to: string; children?: ReactNode }) => (
-    <a href={to} {...rest}>
+  Link: ({
+    to,
+    params,
+    search: _search,
+    children,
+    ...rest
+  }: {
+    to: string
+    params?: Record<string, string>
+    search?: unknown
+    children?: ReactNode
+  }) => (
+    <a href={to.replace(/\$(\w+)/g, (_m, key: string) => params?.[key] ?? '')} {...rest}>
       {children}
     </a>
   ),

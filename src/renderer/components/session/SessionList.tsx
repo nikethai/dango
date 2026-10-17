@@ -637,9 +637,8 @@ export default function SessionList({
     startNewChat({ scopeId: folder.id })
   }
 
-  // TODO(slice 03 Task 6): the /scope/$scopeId route does not exist yet, so `to` is cast until it lands.
-  const openScope = (scopeId: string, search?: { tab: string }) => {
-    void navigate({ to: `/scope/${scopeId}` as string, search } as never)
+  const openScope = (scopeId: string, search?: { tab: 'settings' }) => {
+    void navigate({ to: '/scope/$scopeId', params: { scopeId }, search: search ?? { tab: 'overview' } })
   }
 
   return (

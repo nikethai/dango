@@ -44,6 +44,7 @@ import { Route as SettingsChatImport } from './routes/settings/chat'
 import { Route as SettingsBrowserAgentImport } from './routes/settings/browser-agent'
 import { Route as SettingsAgentsImport } from './routes/settings/agents'
 import { Route as SessionSessionIdImport } from './routes/session/$sessionId'
+import { Route as ScopeScopeIdImport } from './routes/scope/$scopeId'
 import { Route as DevStorageImport } from './routes/dev/storage'
 import { Route as DevModelSelectorImport } from './routes/dev/model-selector'
 import { Route as DevDesignSystemImport } from './routes/dev/design-system'
@@ -253,6 +254,12 @@ const SessionSessionIdRoute = SessionSessionIdImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const ScopeScopeIdRoute = ScopeScopeIdImport.update({
+  id: '/scope/$scopeId',
+  path: '/scope/$scopeId',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const DevStorageRoute = DevStorageImport.update({
   id: '/storage',
   path: '/storage',
@@ -397,6 +404,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/dev/storage'
       preLoaderRoute: typeof DevStorageImport
       parentRoute: typeof DevRouteImport
+    }
+    '/scope/$scopeId': {
+      id: '/scope/$scopeId'
+      path: '/scope/$scopeId'
+      fullPath: '/scope/$scopeId'
+      preLoaderRoute: typeof ScopeScopeIdImport
+      parentRoute: typeof rootRoute
     }
     '/session/$sessionId': {
       id: '/session/$sessionId'
@@ -708,6 +722,7 @@ export interface FileRoutesByFullPath {
   '/dev/design-system': typeof DevDesignSystemRoute
   '/dev/model-selector': typeof DevModelSelectorRoute
   '/dev/storage': typeof DevStorageRoute
+  '/scope/$scopeId': typeof ScopeScopeIdRoute
   '/session/$sessionId': typeof SessionSessionIdRoute
   '/settings/agents': typeof SettingsAgentsRoute
   '/settings/browser-agent': typeof SettingsBrowserAgentRoute
@@ -749,6 +764,7 @@ export interface FileRoutesByTo {
   '/dev/design-system': typeof DevDesignSystemRoute
   '/dev/model-selector': typeof DevModelSelectorRoute
   '/dev/storage': typeof DevStorageRoute
+  '/scope/$scopeId': typeof ScopeScopeIdRoute
   '/session/$sessionId': typeof SessionSessionIdRoute
   '/settings/agents': typeof SettingsAgentsRoute
   '/settings/browser-agent': typeof SettingsBrowserAgentRoute
@@ -794,6 +810,7 @@ export interface FileRoutesById {
   '/dev/design-system': typeof DevDesignSystemRoute
   '/dev/model-selector': typeof DevModelSelectorRoute
   '/dev/storage': typeof DevStorageRoute
+  '/scope/$scopeId': typeof ScopeScopeIdRoute
   '/session/$sessionId': typeof SessionSessionIdRoute
   '/settings/agents': typeof SettingsAgentsRoute
   '/settings/browser-agent': typeof SettingsBrowserAgentRoute
@@ -840,6 +857,7 @@ export interface FileRouteTypes {
     | '/dev/design-system'
     | '/dev/model-selector'
     | '/dev/storage'
+    | '/scope/$scopeId'
     | '/session/$sessionId'
     | '/settings/agents'
     | '/settings/browser-agent'
@@ -880,6 +898,7 @@ export interface FileRouteTypes {
     | '/dev/design-system'
     | '/dev/model-selector'
     | '/dev/storage'
+    | '/scope/$scopeId'
     | '/session/$sessionId'
     | '/settings/agents'
     | '/settings/browser-agent'
@@ -923,6 +942,7 @@ export interface FileRouteTypes {
     | '/dev/design-system'
     | '/dev/model-selector'
     | '/dev/storage'
+    | '/scope/$scopeId'
     | '/session/$sessionId'
     | '/settings/agents'
     | '/settings/browser-agent'
@@ -962,6 +982,7 @@ export interface RootRouteChildren {
   CopilotsRoute: typeof CopilotsRoute
   NewRoute: typeof NewRoute
   QuickRoute: typeof QuickRoute
+  ScopeScopeIdRoute: typeof ScopeScopeIdRoute
   SessionSessionIdRoute: typeof SessionSessionIdRoute
   ImageCreatorIndexRoute: typeof ImageCreatorIndexRoute
 }
@@ -974,6 +995,7 @@ const rootRouteChildren: RootRouteChildren = {
   CopilotsRoute: CopilotsRoute,
   NewRoute: NewRoute,
   QuickRoute: QuickRoute,
+  ScopeScopeIdRoute: ScopeScopeIdRoute,
   SessionSessionIdRoute: SessionSessionIdRoute,
   ImageCreatorIndexRoute: ImageCreatorIndexRoute,
 }
@@ -995,6 +1017,7 @@ export const routeTree = rootRoute
         "/copilots",
         "/new",
         "/quick",
+        "/scope/$scopeId",
         "/session/$sessionId",
         "/image-creator/"
       ]
@@ -1081,6 +1104,9 @@ export const routeTree = rootRoute
     "/dev/storage": {
       "filePath": "dev/storage.tsx",
       "parent": "/dev"
+    },
+    "/scope/$scopeId": {
+      "filePath": "scope/$scopeId.tsx"
     },
     "/session/$sessionId": {
       "filePath": "session/$sessionId.tsx"

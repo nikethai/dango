@@ -9,8 +9,9 @@ export function EverywhereRow({ active }: { active: boolean }) {
   const { t } = useTranslation()
   return (
     <Link
-      // TODO(slice 03 Task 6): the /scope route does not exist yet, so the typed `to` cannot check.
-      to={`/scope/${EVERYWHERE_SCOPE_ID}` as string}
+      to="/scope/$scopeId"
+      params={{ scopeId: EVERYWHERE_SCOPE_ID }}
+      search={{ tab: 'overview' }}
       className={clsx(
         'project-folder-row flex items-center gap-2 mx-1.5 px-2 py-[7px]',
         active && 'studio-rail-row-active'
