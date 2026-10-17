@@ -1,6 +1,6 @@
 import { Select, TextInput } from '@mantine/core'
 import { readsEverywhereFor, type Scope, type ScopeKind } from '@shared/types'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import SegmentedControl from '@/components/common/SegmentedControl'
 import { validateScopeName } from '@/projects/scope-store'
@@ -15,11 +15,18 @@ export type ScopeSettingsTabProps = {
   onDelete(): void
 }
 
-function SwitchRow(props: { label: string; caption: string; checked: boolean; disabled?: boolean; onToggle?(): void }) {
+function SwitchRow(props: {
+  id: string
+  label: string
+  caption: string
+  checked: boolean
+  disabled?: boolean
+  onToggle?(): void
+}) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <span id={`reads-${props.label}`}>{props.label}</span>
+        <span id={props.id}>{props.label}</span>
         <span style={{ fontSize: 12, color: 'var(--dango-muted)' }}>{props.caption}</span>
       </div>
       <button
@@ -27,7 +34,7 @@ function SwitchRow(props: { label: string; caption: string; checked: boolean; di
         role="switch"
         className="dg-switch"
         aria-checked={props.checked}
-        aria-labelledby={`reads-${props.label}`}
+        aria-labelledby={props.id}
         disabled={props.disabled}
         onClick={props.onToggle}
       />
@@ -38,6 +45,8 @@ function SwitchRow(props: { label: string; caption: string; checked: boolean; di
 export function ScopeSettingsTab({ scope, agentOptions, onChange, onDelete }: ScopeSettingsTabProps) {
   const { t } = useTranslation()
   const [name, setName] = useState(scope.name)
+  const kindLabelId = useId()
+  const switchId = useId()
   const [confirming, setConfirming] = useState(false)
   const reads = readsEverywhereFor(scope)
 
@@ -49,9 +58,13 @@ export function ScopeSettingsTab({ scope, agentOptions, onChange, onDelete }: Sc
   const error = problem === 'reserved' ? t('Everywhere is built in. Pick another name.') : undefined
 
   const commitName = () => {
-    if (problem) return
     const next = name.trim()
-    if (next && next !== scope.name) onChange({ name: next })
+    if (!next) {
+      setName(scope.name)
+      return
+    }
+    if (problem) return
+    if (next !== scope.name) onChange({ name: next })
   }
 
   return (
@@ -70,17 +83,22 @@ export function ScopeSettingsTab({ scope, agentOptions, onChange, onDelete }: Sc
           }
         }}
       />
-      <SegmentedControl
-        aria-label={t('Is this a project or a client?')}
-        value={scope.kind}
-        onChange={(value) => {
-          if (value !== scope.kind) onChange({ kind: value as ScopeKind })
-        }}
-        data={[
-          { label: t('Project'), value: 'project' },
-          { label: t('Client'), value: 'client' },
-        ]}
-      />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span id={kindLabelId} style={{ fontSize: 14, fontWeight: 500 }}>
+          {t('Is this a project or a client?')}
+        </span>
+        <SegmentedControl
+          aria-labelledby={kindLabelId}
+          value={scope.kind}
+          onChange={(value) => {
+            if (value !== scope.kind) onChange({ kind: value as ScopeKind })
+          }}
+          data={[
+            { label: t('Project'), value: 'project' },
+            { label: t('Client'), value: 'client' },
+          ]}
+        />
+      </div>
       <Select
         label={t('Default agent')}
         data={agentOptions}
@@ -90,14 +108,22 @@ export function ScopeSettingsTab({ scope, agentOptions, onChange, onDelete }: Sc
       />
       <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{t('What this scope reads from Everywhere')}</h3>
-        <SwitchRow label={t('Preferences')} caption={t('How you like answers. Always on.')} checked disabled />
         <SwitchRow
+          id={`${switchId}-prefs`}
+          label={t('Preferences')}
+          caption={t('How you like answers. Always on.')}
+          checked
+          disabled
+        />
+        <SwitchRow
+          id={`${switchId}-facts`}
           label={t('Facts')}
           caption={t('Things that are true in every scope.')}
           checked={reads.facts}
           onToggle={() => onChange({ readsEverywhere: { facts: !reads.facts, documents: reads.documents } })}
         />
         <SwitchRow
+          id={`${switchId}-docs`}
           label={t('Documents')}
           caption={t('Files connected to Everywhere.')}
           checked={reads.documents}

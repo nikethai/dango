@@ -175,6 +175,11 @@ describe('NewScopeSheet', () => {
     expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('shows the kind question as visible text', () => {
+    render(wrap(<NewScopeSheet opened onClose={vi.fn()} onCreate={vi.fn()} />))
+    expect(screen.getByText('Is this a project or a client?')).toBeTruthy()
+  })
+
   it('creates a client scope', () => {
     const onCreate = vi.fn()
     render(wrap(<NewScopeSheet opened onClose={vi.fn()} onCreate={onCreate} />))

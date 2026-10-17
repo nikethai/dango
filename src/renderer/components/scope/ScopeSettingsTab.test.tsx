@@ -45,7 +45,13 @@ afterEach(() => {
 })
 
 const client = { id: 's1', name: 'Acme Co', kind: 'client', order: 0 } as Scope
-const project = { id: 's2', name: 'Dango app', kind: 'project', order: 1 } as Scope
+const project = {
+  id: 's2',
+  name: 'Dango app',
+  kind: 'project',
+  order: 1,
+  readsEverywhere: { facts: true, documents: true },
+} as Scope
 
 function setup(scope: Scope, extra: { onChange?: (patch: object) => void; onDelete?: () => void } = {}) {
   const props = {
@@ -93,10 +99,26 @@ describe('ScopeSettingsTab', () => {
   it('kind change', () => {
     const onChange = vi.fn()
     const { rerenderScope } = setup(project, { onChange })
+    expect(sw('Documents').getAttribute('aria-checked')).toBe('true')
     fireEvent.click(screen.getByText('Client'))
     expect(onChange).toHaveBeenCalledWith({ kind: 'client' })
     rerenderScope(patchScope([project], 's2', { kind: 'client' })[0])
     expect(sw('Documents').getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('labels the kind control with visible text', () => {
+    setup(client)
+    expect(screen.getByText('Is this a project or a client?')).toBeTruthy()
+  })
+
+  it('empty name reverts on blur', () => {
+    const onChange = vi.fn()
+    setup(client, { onChange })
+    const input = screen.getByLabelText('Name') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '  ' } })
+    fireEvent.blur(input)
+    expect(input.value).toBe('Acme Co')
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('precedence note', () => {

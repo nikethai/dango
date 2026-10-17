@@ -38,6 +38,8 @@ describe('deleteScopeWithUndo', () => {
     expect(updateSession).toHaveBeenCalledWith('s1', { projectId: undefined, folderId: undefined })
     expect(updateSession).toHaveBeenCalledWith('s2', { projectId: undefined, folderId: undefined })
     expect(removeScope).toHaveBeenCalledWith('a')
+    const lastMove = Math.max(...updateSession.mock.invocationCallOrder)
+    expect(removeScope.mock.invocationCallOrder[0]).toBeGreaterThan(lastMove)
     expect(pushUndo).toHaveBeenCalledTimes(1)
     expect(pushUndo.mock.calls[0][0].message).toBe('Deleted Acme Co')
     expect(putScope).not.toHaveBeenCalled()

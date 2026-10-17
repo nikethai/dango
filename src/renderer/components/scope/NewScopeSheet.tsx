@@ -1,6 +1,6 @@
 import { TextInput } from '@mantine/core'
 import type { ScopeKind } from '@shared/types'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import SegmentedControl from '@/components/common/SegmentedControl'
 import { Sheet } from '@/components/ui/Sheet'
@@ -15,6 +15,7 @@ export type NewScopeSheetProps = {
 export function NewScopeSheet({ opened, onClose, onCreate }: NewScopeSheetProps) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
+  const kindLabelId = useId()
   const [kind, setKind] = useState<ScopeKind>('project')
 
   useEffect(() => {
@@ -67,8 +68,11 @@ export function NewScopeSheet({ opened, onClose, onCreate }: NewScopeSheetProps)
           }}
         />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span id={kindLabelId} style={{ fontSize: 14, fontWeight: 500 }}>
+            {t('Is this a project or a client?')}
+          </span>
           <SegmentedControl
-            aria-label={t('Is this a project or a client?')}
+            aria-labelledby={kindLabelId}
             value={kind}
             onChange={(value) => setKind(value as ScopeKind)}
             data={[
