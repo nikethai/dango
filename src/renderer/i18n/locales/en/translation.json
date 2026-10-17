@@ -1349,5 +1349,10 @@
   "Things that are true in every scope.": "Things that are true in every scope.",
   "Files connected to Everywhere.": "Files connected to Everywhere.",
   "When this scope and Everywhere disagree, this scope wins here.": "When this scope and Everywhere disagree, this scope wins here.",
-  "Dango can't open this folder.": "Dango can't open this folder."
+  "Dango can't open this folder.": "Dango can't open this folder.",
+  "Read by every scope. A scope's own knowledge wins inside that scope.": "Read by every scope. A scope's own knowledge wins inside that scope.",
+  "Never send email": "Never send email",
+  "Built in": "Built in",
+  "Facts you apply to all scopes will appear here.": "Facts you apply to all scopes will appear here.",
+  "Documents connected to Everywhere will appear here. Client scopes read them only when you turn that on.": "Documents connected to Everywhere will appear here. Client scopes read them only when you turn that on."
 }

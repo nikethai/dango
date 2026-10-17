@@ -1,8 +1,10 @@
+import { EVERYWHERE_SCOPE_ID } from '@shared/types'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
+import { EverywherePage } from '@/components/scope/EverywherePage'
 import { ScopeFilesTab, shouldShowFilesTab } from '@/components/scope/ScopeFilesTab'
 import { ScopePageView } from '@/components/scope/ScopePage'
 import { NO_AGENT_VALUE, ScopeSettingsTab } from '@/components/scope/ScopeSettingsTab'
@@ -11,8 +13,8 @@ import { groupSessionsByScope } from '@/components/session/session-list-helpers'
 import { useMyCopilots, useRemoteCopilots } from '@/hooks/useCopilots'
 import { useProjectWorkspace } from '@/hooks/useProjectWorkspace'
 import { useScopes } from '@/hooks/useScopes'
-import { platformCapabilities } from '@/platform'
 import { startNewChat } from '@/lib/startNewChat'
+import { platformCapabilities } from '@/platform'
 import { deleteScopeWithUndo } from '@/projects/scope-delete'
 import { useSessionList } from '@/stores/chatStore'
 
@@ -25,6 +27,12 @@ export const Route = createFileRoute('/scope/$scopeId')({
 
 function ScopeRoute() {
   const { scopeId } = Route.useParams()
+  if (scopeId === EVERYWHERE_SCOPE_ID) return <EverywherePage />
+  // key: remount per scope so one scope's workspace descriptor never shows under another.
+  return <ScopeContent key={scopeId} scopeId={scopeId} />
+}
+
+function ScopeContent({ scopeId }: { scopeId: string }) {
   const { tab } = Route.useSearch()
   const navigate = useNavigate()
   const { t } = useTranslation()

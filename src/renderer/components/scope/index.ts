@@ -1,3 +1,4 @@
+export { EverywherePage } from './EverywherePage'
 export { EverywhereRow } from './EverywhereRow'
 export { NewScopeSheet } from './NewScopeSheet'
 export { ScopeKnowledgeTab } from './ScopeKnowledgeTab'
