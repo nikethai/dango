@@ -19,7 +19,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Text, Tooltip, UnstyledButton } from '@mantine/core'
-import type { Folder, SessionMeta } from '@shared/types'
+import type { Folder, Scope, SessionMeta } from '@shared/types'
 import { IconArchive, IconChevronDown, IconFolderPlus, IconTrash, IconX } from '@tabler/icons-react'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 import clsx from 'clsx'
@@ -32,9 +32,11 @@ import { useScopes } from '@/hooks/useScopes'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { startNewChat } from '@/lib/startNewChat'
 import { getEffectiveProjectId } from '@/projects/project-context'
-import { moveSessionToScope, unassignScopeSessions } from '@/projects/scope-sessions'
+import { deleteScopeWithUndo } from '@/projects/scope-delete'
+import { moveSessionToScope } from '@/projects/scope-sessions'
 import { updateSessionList, useSessionList } from '@/stores/chatStore'
 import { useUIStore } from '@/stores/uiStore'
+import { DeleteScopeSheet } from '../scope/DeleteScopeSheet'
 import { EverywhereRow } from '../scope/EverywhereRow'
 import FolderItem from './FolderItem'
 import SessionItem from './SessionItem'
@@ -214,8 +216,10 @@ export default function SessionList({
   const isSmallScreen = useIsSmallScreen()
   const isMobileDensity = density === 'mobile' || isSmallScreen
   const { sessionMetaList: sortedSessions, refetch } = useSessionList()
-  const { folders, removeFolder } = useFolders()
-  const { scopes } = useScopes()
+  const { folders } = useFolders()
+  const { scopes, removeScope, putScope } = useScopes()
+  const [deletingScopeId, setDeletingScopeId] = useState<string>()
+  const deletingScope = scopes.find((scope) => scope.id === deletingScopeId)
   const routerState = useRouterState()
   const navigate = useNavigate()
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({})
@@ -621,13 +625,10 @@ export default function SessionList({
     []
   )
 
-  // TODO(slice 03 Task 7): replace this confirm with DeleteScopeSheet + undo.
-  const handleDeleteFolder = async (folder: Folder) => {
-    if (!window.confirm(t('Delete scope'))) {
-      return
-    }
-    await unassignScopeSessions(folder.id, sortedSessions || [])
-    removeFolder(folder.id)
+  const handleConfirmDeleteScope = (scope: Scope) => {
+    void deleteScopeWithUndo(scope, sortedSessions || [], { removeScope, putScope }).then(() => {
+      if (routerState.location.pathname === `/scope/${scope.id}`) startNewChat({})
+    })
   }
 
   const handleCreateChatInFolder = (folder: Folder) => {
@@ -758,13 +759,7 @@ export default function SessionList({
                                 void handleCreateChatInFolder(folder)
                               }
                         }
-                        onDelete={
-                          row.folder.implicit || !folder
-                            ? undefined
-                            : () => {
-                                void handleDeleteFolder(folder)
-                              }
-                        }
+                        onDelete={row.folder.implicit || !folder ? undefined : () => setDeletingScopeId(folder.id)}
                         onToggle={() => toggleFolder(row.folder.key)}
                       />
                     </FolderDroppable>
@@ -787,6 +782,14 @@ export default function SessionList({
           />
         </SortableContext>
       </DndContext>
+      {deletingScope ? (
+        <DeleteScopeSheet
+          scope={deletingScope}
+          opened
+          onClose={() => setDeletingScopeId(undefined)}
+          onConfirm={() => handleConfirmDeleteScope(deletingScope)}
+        />
+      ) : null}
     </>
   )
 }

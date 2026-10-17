@@ -1337,5 +1337,16 @@
   "Folders, Gmail, Asana and documents connected to {{name}} will appear here. Dango reads only the sources you connect.": "Folders, Gmail, Asana and documents connected to {{name}} will appear here. Dango reads only the sources you connect.",
   "No chats in {{name}} yet.": "No chats in {{name}} yet.",
   "This scope no longer exists.": "This scope no longer exists.",
-  "Start a new chat": "Start a new chat"
+  "Start a new chat": "Start a new chat",
+  "Deleted {{name}}": "Deleted {{name}}",
+  "Delete {{name}}?": "Delete {{name}}?",
+  "Its chats move to Recents. You can undo for 5 seconds.": "Its chats move to Recents. You can undo for 5 seconds.",
+  "Default agent": "Default agent",
+  "What this scope reads from Everywhere": "What this scope reads from Everywhere",
+  "Preferences": "Preferences",
+  "How you like answers. Always on.": "How you like answers. Always on.",
+  "Facts": "Facts",
+  "Things that are true in every scope.": "Things that are true in every scope.",
+  "Files connected to Everywhere.": "Files connected to Everywhere.",
+  "When this scope and Everywhere disagree, this scope wins here.": "When this scope and Everywhere disagree, this scope wins here."
 }

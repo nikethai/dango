@@ -72,12 +72,16 @@ function FolderItem({
             },
             { divider: true },
             ...(projectId ? projectFolderActions({ projectId, t }) : []),
-            {
-              text: t('Delete scope'),
-              icon: IconTrash,
-              color: 'chatbox-error' as const,
-              onClick: () => onDelete?.(),
-            },
+            ...(onDelete
+              ? [
+                  {
+                    text: t('Delete scope'),
+                    icon: IconTrash,
+                    color: 'chatbox-error' as const,
+                    onClick: () => onDelete(),
+                  },
+                ]
+              : []),
           ],
     [implicit, onCreateChat, onDelete, onOpenSettings, projectId, t]
   )
