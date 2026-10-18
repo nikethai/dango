@@ -14,9 +14,27 @@ export type ReviewKeysOptions = {
 
 const warn = (error: unknown) => console.warn('[review] open failed', error)
 
-/** The row's first enabled button whose visible text is `label`; renderers translate, so `label` is translated too. */
+/** The row's buttons whose visible text is `label`; renderers translate, so `label` is translated too. */
+function labelled(row: HTMLElement, label: string): HTMLButtonElement[] {
+  return Array.from(row.querySelectorAll('button')).filter((b) => b.textContent?.trim() === label)
+}
+
 function findButton(row: HTMLElement, label: string): HTMLButtonElement | undefined {
-  return Array.from(row.querySelectorAll('button')).find((b) => !b.disabled && b.textContent?.trim() === label)
+  return labelled(row, label).find((b) => !b.disabled)
+}
+
+/**
+ * Presses the row's own `label` button. 'pressed' or 'disabled' when the row has one (a disabled one means the
+ * row is busy, so nothing else happens); 'none' when it has none.
+ */
+function press(row: HTMLElement, label: string): 'pressed' | 'disabled' | 'none' {
+  const buttons = labelled(row, label)
+  const enabled = buttons.find((b) => !b.disabled)
+  if (enabled) {
+    enabled.click()
+    return 'pressed'
+  }
+  return buttons.length > 0 ? 'disabled' : 'none'
 }
 
 function findPrimary(row: HTMLElement): HTMLButtonElement | undefined {
@@ -49,6 +67,8 @@ export function useReviewKeys(o: ReviewKeysOptions): { onKeyDown: KeyboardEventH
 
     if (id !== o.focusedId) o.setFocusedId(id)
 
+    // Fallbacks act only on rows the feed renders itself; a registered renderer owns its row's actions.
+    const isDefault = row.hasAttribute('data-feed-default')
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
     const entry = () => reviewStore.getState().entries.find((e) => e.id === id)
     const click = (button: HTMLButtonElement | undefined) => {
@@ -73,13 +93,13 @@ export function useReviewKeys(o: ReviewKeysOptions): { onKeyDown: KeyboardEventH
         move(id, -1)
         break
       case 'a':
-        click(findButton(row, t('Approve')) ?? findPrimary(row))
+        if (press(row, t('Approve')) === 'none') click(findPrimary(row))
         break
       case 'e':
-        if (!click(findButton(row, t('Edit')))) open()
+        if (press(row, t('Edit')) === 'none' && isDefault) open()
         break
       case 'x':
-        if (!click(findButton(row, t('Dismiss')))) o.dismissFallback(id)
+        if (press(row, t('Dismiss')) === 'none' && isDefault) o.dismissFallback(id)
         break
       case 'Enter': {
         // A focused button inside the row handles its own Enter natively.

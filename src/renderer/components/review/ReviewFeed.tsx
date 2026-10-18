@@ -1,5 +1,17 @@
 import type { ReviewEntry } from '@shared/types/review'
-import { Fragment, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  type FocusEvent,
+  Fragment,
+  type KeyboardEventHandler,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { reviewStore, useReviewEntries, useReviewRenderer, waitingCount } from '@/packages/review'
 import { DefaultReviewRenderer } from './DefaultReviewRenderer'
@@ -14,10 +26,36 @@ const CONTROLS = 'button, a[href], input, textarea, select'
 const SAVED = 'data-feed-tabindex'
 const KEYS = 'ArrowUp ArrowDown J K A E X Enter'
 
-function FeedRowBody({ entry, focused }: { entry: ReviewEntry; focused: boolean }) {
+type FeedRowProps = {
+  entry: ReviewEntry
+  focused: boolean
+  rowsRef: RefObject<Map<string, HTMLElement>>
+  onFocus(id: string): void
+  onKeyDown: KeyboardEventHandler<HTMLElement>
+}
+
+function FeedRow({ entry, focused, rowsRef, onFocus, onKeyDown }: FeedRowProps) {
   // A resolved row renders as Done, so a done knowledge row never gets slice 4's live Approve.
-  const Renderer = useReviewRenderer({ kind: displayKind(entry), ref: entry.ref }) ?? DefaultReviewRenderer
-  return <Renderer entry={entry} focused={focused} />
+  const Registered = useReviewRenderer({ kind: displayKind(entry), ref: entry.ref })
+  const Renderer = Registered ?? DefaultReviewRenderer
+  return (
+    <li
+      tabIndex={0}
+      data-entry-id={entry.id}
+      data-feed-default={Registered ? undefined : ''}
+      aria-label={entry.text}
+      aria-keyshortcuts={KEYS}
+      className="dango-review-feed__row"
+      ref={(el) => {
+        if (el) rowsRef.current?.set(entry.id, el)
+        else rowsRef.current?.delete(entry.id)
+      }}
+      onFocus={() => onFocus(entry.id)}
+      onKeyDown={onKeyDown}
+    >
+      <Renderer entry={entry} focused={focused} />
+    </li>
+  )
 }
 
 /** Leave one tab stop per row: controls in rows without focus get tabindex -1; the focused row gets its own back. */
@@ -52,6 +90,16 @@ export function ReviewFeed({ scopeId, caughtUp }: ReviewFeedProps) {
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const focusedRef = useRef(focusedId)
   focusedRef.current = focusedId
+  // The last row that held focus, kept after focus leaves the feed (which clears the ring) for the removal logic.
+  const lastFocusedRef = useRef<string | null>(null)
+  const onRowFocus = useCallback((id: string) => {
+    lastFocusedRef.current = id
+    setFocusedId(id)
+  }, [])
+  const onBlur = (event: FocusEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget as Node | null
+    if (!next || !rootRef.current?.contains(next)) setFocusedId(null)
+  }
 
   const dismissFallback = useCallback(
     (id: string) => {
@@ -81,11 +129,13 @@ export function ReviewFeed({ scopeId, caughtUp }: ReviewFeedProps) {
       return
     }
 
-    const focused = focusedRef.current
-    if (!focused || ids.includes(focused)) return
-    const next = nextFocusAfterRemoval(prev, ids, focused)
-    setFocusedId(next)
+    const last = lastFocusedRef.current
+    if (!last || ids.includes(last)) return
+    // No surviving neighbour but rows remain (they were all replaced): the first row.
+    const next = nextFocusAfterRemoval(prev, ids, last) ?? ids[0] ?? null
+    lastFocusedRef.current = next
     if (!focusIsOurs) return
+    setFocusedId(next)
     if (next) rowsRef.current.get(next)?.focus()
     else emptyRef.current?.focus()
   }, [ids])
@@ -104,7 +154,7 @@ export function ReviewFeed({ scopeId, caughtUp }: ReviewFeedProps) {
   }, [])
 
   return (
-    <div ref={rootRef} className="dango-review-feed">
+    <div ref={rootRef} className="dango-review-feed" onBlur={onBlur}>
       {nothingWaiting ? (
         <div ref={emptyRef} tabIndex={-1} data-testid="review-empty" className="dango-review-feed__empty">
           {caughtUp}
@@ -115,21 +165,14 @@ export function ReviewFeed({ scopeId, caughtUp }: ReviewFeedProps) {
           <h2 className="dango-review-feed__day dg-type-caption">{t(group.label)}</h2>
           <ol className="dango-review-feed__list">
             {group.entries.map((entry) => (
-              <li
+              <FeedRow
                 key={entry.id}
-                tabIndex={0}
-                data-entry-id={entry.id}
-                aria-keyshortcuts={KEYS}
-                className="dango-review-feed__row"
-                ref={(el) => {
-                  if (el) rowsRef.current.set(entry.id, el)
-                  else rowsRef.current.delete(entry.id)
-                }}
-                onFocus={() => setFocusedId(entry.id)}
+                entry={entry}
+                focused={entry.id === focusedId}
+                rowsRef={rowsRef}
+                onFocus={onRowFocus}
                 onKeyDown={onKeyDown}
-              >
-                <FeedRowBody entry={entry} focused={entry.id === focusedId} />
-              </li>
+              />
             ))}
           </ol>
         </Fragment>

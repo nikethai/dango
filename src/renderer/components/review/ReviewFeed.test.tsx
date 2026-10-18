@@ -31,9 +31,9 @@ const row = (id: string, over: Partial<ReviewEntry> = {}): ReviewEntry => ({
 })
 
 /** Like slice 4's proposal row: it knows nothing about the feed. */
-function FakeProposal({ entry }: ReviewRendererProps) {
+function FakeProposal({ entry, focused }: ReviewRendererProps) {
   return (
-    <article data-testid={`fake-${entry.id}`}>
+    <article data-testid={`fake-${entry.id}`} data-focused={String(focused)}>
       <input aria-label={`Note ${entry.id}`} />
       <button type="button" className="dg-btn dg-btn--primary">
         Approve
@@ -236,5 +236,80 @@ describe('ReviewFeed', () => {
     await act(() => rowEl('c').focus())
     await press(rowEl('c'), 'Enter')
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep this: "first"' }))
+  })
+
+  it('names each row by its text and marks default-rendered rows', async () => {
+    const now = Date.now()
+    await mountFeed([row('a', { createdAt: now }), row('d', { ref: { type: 'job', id: 'j' }, createdAt: now - 1 })])
+    expect(screen.getByRole('listitem', { name: 'Row a' })).toBe(rowEl('a'))
+    expect(rowEl('a').hasAttribute('data-feed-default')).toBe(false)
+    expect(rowEl('d').hasAttribute('data-feed-default')).toBe(true)
+  })
+
+  it('clears the focus ring when focus leaves the feed', async () => {
+    seed([row('a')])
+    render(
+      <>
+        <input aria-label="Outside" />
+        <ReviewFeed />
+      </>
+    )
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    await act(() => rowEl('a').focus())
+    expect(screen.getByTestId('fake-a').dataset.focused).toBe('true')
+    await act(() => screen.getByLabelText('Outside').focus())
+    expect(screen.getByTestId('fake-a').dataset.focused).toBe('false')
+  })
+
+  it('focuses the first row when the focused row goes and no neighbour survives but rows remain', async () => {
+    await mountFeed([row('a')])
+    await act(() => rowEl('a').focus())
+    const fresh = row('z')
+    act(() => {
+      const entries = [{ ...row('a'), state: 'dismissed' as const }, fresh]
+      data['review-entries'] = { entries }
+      reviewStore.setState({ entries })
+    })
+    expect(rowEl('a')).toBeNull()
+    expect(document.activeElement).toBe(rowEl('z'))
+  })
+
+  it('rows that load while focus is outside the feed leave focus there', async () => {
+    seed([])
+    render(
+      <>
+        <input aria-label="Outside" />
+        <ReviewFeed />
+      </>
+    )
+    const input = screen.getByLabelText('Outside')
+    await act(() => input.focus())
+    act(() => {
+      const entries = [row('a')]
+      data['review-entries'] = { entries }
+      reviewStore.setState({ entries })
+    })
+    expect(rowEl('a')).toBeTruthy()
+    expect(document.activeElement).toBe(input)
+  })
+
+  it('removing the last focused row through the store while focus is outside leaves focus there', async () => {
+    const now = Date.now()
+    seed([row('a', { createdAt: now }), row('b', { createdAt: now - 1000 })])
+    render(
+      <>
+        <input aria-label="Outside" />
+        <ReviewFeed />
+      </>
+    )
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    await act(() => rowEl('b').focus())
+    const input = screen.getByLabelText('Outside')
+    await act(() => input.focus())
+    await act(async () => {
+      await setReviewEntryState({ id: 'b' }, 'dismissed')
+    })
+    expect(rowEl('b')).toBeNull()
+    expect(document.activeElement).toBe(input)
   })
 })

@@ -73,7 +73,8 @@ function WithSheet({ entry }: ReviewRendererProps) {
   )
 }
 
-type HarnessRow = { entry: ReviewEntry; render: (focused: boolean) => ReactNode }
+/** `isDefault` marks a row the feed renders with the default renderer (no registered renderer). */
+type HarnessRow = { entry: ReviewEntry; render: (focused: boolean) => ReactNode; isDefault?: boolean }
 
 function Harness({ rows, dismissFallback }: { rows: HarnessRow[]; dismissFallback: (id: string) => void }) {
   const rowsRef = useRef(new Map<string, HTMLElement>())
@@ -88,6 +89,7 @@ function Harness({ rows, dismissFallback }: { rows: HarnessRow[]; dismissFallbac
           tabIndex={0}
           data-entry-id={r.entry.id}
           data-testid={`row-${r.entry.id}`}
+          data-feed-default={r.isDefault ? '' : undefined}
           ref={(el) => {
             if (el) rowsRef.current.set(r.entry.id, el)
             else rowsRef.current.delete(r.entry.id)
@@ -110,6 +112,7 @@ const seed = (entries: ReviewEntry[]) => {
 const fake = (e: ReviewEntry): HarnessRow => ({ entry: e, render: (f) => <FakeProposal entry={e} focused={f} /> })
 const byDefault = (e: ReviewEntry): HarnessRow => ({
   entry: e,
+  isDefault: true,
   render: (f) => <DefaultReviewRenderer entry={e} focused={f} />,
 })
 const mount = (rows: HarnessRow[], dismissFallback = vi.fn()) => {
@@ -182,7 +185,7 @@ describe('useReviewKeys', () => {
 
   it('X on a row without Dismiss calls dismissFallback', async () => {
     const e = row('a', { kind: 'change', ref: { type: 'change', id: 'c1' } })
-    const fallback = mount([{ entry: e, render: () => <Bare /> }])
+    const fallback = mount([{ entry: e, render: () => <Bare />, isDefault: true }])
     await focusRow('a')
     await press(rowEl('a'), 'x')
     expect(fallback).toHaveBeenCalledExactlyOnceWith('a')
@@ -323,5 +326,60 @@ describe('useReviewKeys', () => {
     await press(save, 'a')
     expect(clicks.dismiss).not.toHaveBeenCalled()
     expect(fallback).not.toHaveBeenCalled()
+  })
+
+  it('X on a row whose Dismiss is disabled does nothing', async () => {
+    const e = row('a')
+    const fallback = mount([
+      {
+        entry: e,
+        isDefault: true,
+        render: () => (
+          <article>
+            <button type="button" className="dg-btn dg-btn--ghost" disabled onClick={() => clicks.dismiss('a')}>
+              Dismiss
+            </button>
+            <button type="button" className="dg-btn" disabled onClick={() => clicks.edit('a')}>
+              Edit
+            </button>
+          </article>
+        ),
+      },
+    ])
+    const open = vi.fn()
+    registerReviewOpener('proposal', open)
+    await focusRow('a')
+    await press(rowEl('a'), 'x')
+    await press(rowEl('a'), 'e')
+    expect(clicks.dismiss).not.toHaveBeenCalled()
+    expect(fallback).not.toHaveBeenCalled()
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('X and E on a registered row without Dismiss or Edit (edit mode) do nothing', async () => {
+    const open = vi.fn()
+    registerReviewOpener('proposal', open)
+    const e = row('a')
+    const fallback = mount([
+      {
+        entry: e,
+        render: () => (
+          <article>
+            <button type="button" className="dg-btn dg-btn--primary" onClick={() => clicks.approve('a')}>
+              Approve
+            </button>
+            <button type="button" className="dg-btn">
+              Cancel
+            </button>
+          </article>
+        ),
+      },
+    ])
+    await focusRow('a')
+    await press(rowEl('a'), 'x')
+    await press(rowEl('a'), 'e')
+    expect(fallback).not.toHaveBeenCalled()
+    expect(open).not.toHaveBeenCalled()
+    expect(clicks.approve).not.toHaveBeenCalled()
   })
 })
