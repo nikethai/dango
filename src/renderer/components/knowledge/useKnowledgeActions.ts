@@ -1,8 +1,11 @@
 import { t } from 'i18next'
 import { useCallback } from 'react'
+import { getLogger } from '@/lib/utils'
 import { KnowledgeConflictError } from '@/packages/knowledge/approve'
 import { toastFailure, useGuarded } from '@/packages/knowledge/review/useGuarded'
 import { quote } from '@/packages/knowledge/text'
+
+const log = getLogger('knowledge')
 
 /**
  * Runs one knowledge action at a time (the shared in-flight guard). A contradiction toasts
@@ -21,6 +24,7 @@ export function useKnowledgeAction() {
       toastActions.add(t('Already saved'))
       return true
     }
+    log.error('Knowledge action failed:', error)
     await toastFailure()
     return true
   }, [])

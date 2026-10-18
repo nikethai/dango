@@ -1,6 +1,6 @@
 import type { KnowledgeItem } from '@shared/types/knowledge'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useScopes } from '@/hooks/useScopes'
 import { useKnowledgeItem } from '@/packages/knowledge/hooks'
@@ -10,7 +10,7 @@ import { quote } from '@/packages/knowledge/text'
 import { KnowledgeItemDetail } from './KnowledgeItemDetail'
 import { useKnowledgeAction } from './useKnowledgeActions'
 
-function KnowledgeRow({ item }: { item: KnowledgeItem }) {
+function KnowledgeRow({ item, onNoneLeft }: { item: KnowledgeItem; onNoneLeft?: () => void }) {
   const { t } = useTranslation()
   const { scopes } = useScopes()
   const { busy, run } = useKnowledgeAction()
@@ -18,11 +18,13 @@ function KnowledgeRow({ item }: { item: KnowledgeItem }) {
   const [editing, setEditing] = useState(false)
   const [moving, setMoving] = useState(false)
   const [draft, setDraft] = useState(item.text)
+  const row = useRef<HTMLLIElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
   const replacement = useKnowledgeItem(item.supersededBy)
 
   const builtIn = item.id === NEVER_SEND_EMAIL.id
   const superseded = item.status === 'superseded'
-  const hasActions = !builtIn && !superseded
+  const hasActions = !builtIn && item.status === 'approved'
   // Preferences live in Everywhere (ADR 0013), so they never move.
   const canMove = hasActions && item.kind !== 'preference'
   const targets = [
@@ -30,8 +32,39 @@ function KnowledgeRow({ item }: { item: KnowledgeItem }) {
     ...scopes.filter((s) => s.id !== item.scopeId).map((s) => ({ id: s.id, name: s.name })),
   ]
 
+  // The Move menu takes focus, and closes on Escape or a press outside it.
+  useEffect(() => {
+    if (!moving) return
+    menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    const onDown = (e: MouseEvent) => {
+      if (!menu.current?.contains(e.target as Node)) setMoving(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [moving])
+
+  const remove = () => {
+    const sibling = row.current?.nextElementSibling ?? row.current?.previousElementSibling
+    const next = sibling?.querySelector<HTMLElement>('button')
+    void run(async () => {
+      await removeKnowledge(item.id)
+      if (next?.isConnected) next.focus()
+      else onNoneLeft?.()
+    })
+  }
+
+  const openEditor = () => {
+    setDraft(item.text)
+    setEditing(true)
+  }
+  const save = () =>
+    void run(async () => {
+      if (draft.trim() !== item.text) await editKnowledge(item.id, draft)
+      setEditing(false)
+    })
+
   return (
-    <li className="dg-item" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto' }}>
+    <li ref={row} className="dg-item" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto' }}>
       <div className="dg-item__text">
         {editing ? (
           <textarea
@@ -71,17 +104,7 @@ function KnowledgeRow({ item }: { item: KnowledgeItem }) {
         {builtIn ? <span className="dg-chip">{t('Built in')}</span> : null}
         {hasActions && editing ? (
           <>
-            <button
-              type="button"
-              className="dg-btn dg-btn--primary"
-              disabled={busy || !draft.trim()}
-              onClick={() =>
-                void run(async () => {
-                  await editKnowledge(item.id, draft)
-                  setEditing(false)
-                })
-              }
-            >
+            <button type="button" className="dg-btn dg-btn--primary" disabled={busy || !draft.trim()} onClick={save}>
               {t('Save')}
             </button>
             <button
@@ -99,7 +122,7 @@ function KnowledgeRow({ item }: { item: KnowledgeItem }) {
         ) : null}
         {hasActions && !editing ? (
           <>
-            <button type="button" className="dg-btn dg-btn--ghost" disabled={busy} onClick={() => setEditing(true)}>
+            <button type="button" className="dg-btn dg-btn--ghost" disabled={busy} onClick={openEditor}>
               {t('Edit')}
             </button>
             {canMove ? (
@@ -116,7 +139,11 @@ function KnowledgeRow({ item }: { item: KnowledgeItem }) {
                 </button>
                 {moving ? (
                   <div
+                    ref={menu}
                     role="menu"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') setMoving(false)
+                    }}
                     className="dg-menu"
                     style={{ position: 'absolute', right: 0, zIndex: 10, marginTop: 'var(--dango-space-1)' }}
                   >
@@ -137,12 +164,7 @@ function KnowledgeRow({ item }: { item: KnowledgeItem }) {
                 ) : null}
               </span>
             ) : null}
-            <button
-              type="button"
-              className="dg-btn dg-btn--ghost"
-              disabled={busy}
-              onClick={() => void run(() => removeKnowledge(item.id))}
-            >
+            <button type="button" className="dg-btn dg-btn--ghost" disabled={busy} onClick={remove}>
               {t('Remove')}
             </button>
           </>
@@ -153,11 +175,11 @@ function KnowledgeRow({ item }: { item: KnowledgeItem }) {
 }
 
 /** Rows for a list of items: select for detail, Edit, Move to…, Remove. Superseded and built-in rows have no actions. */
-export function KnowledgeRows({ items }: { items: KnowledgeItem[] }) {
+export function KnowledgeRows({ items, onNoneLeft }: { items: KnowledgeItem[]; onNoneLeft?: () => void }) {
   return (
     <ul className="flex flex-col gap-2" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
       {items.map((item) => (
-        <KnowledgeRow key={item.id} item={item} />
+        <KnowledgeRow key={item.id} item={item} onNoneLeft={onNoneLeft} />
       ))}
     </ul>
   )

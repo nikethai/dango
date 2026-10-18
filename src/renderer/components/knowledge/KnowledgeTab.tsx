@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useKnowledgeList } from '@/packages/knowledge/hooks'
 import { AddKnowledgeForm } from './AddKnowledgeForm'
@@ -13,8 +13,9 @@ export function KnowledgeTab({ scopeId }: { scopeId: string }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [adding, setAdding] = useState(false)
+  const search = useRef<HTMLInputElement>(null)
   const items = useKnowledgeList(scopeId, {
-    status: filter === 'superseded' ? ['superseded'] : ['approved'],
+    status: filter === 'superseded' ? ['superseded', 'removed'] : ['approved'],
     ...(filter === 'fact' || filter === 'decision' ? { kind: [filter] } : {}),
     query,
   })
@@ -29,6 +30,7 @@ export function KnowledgeTab({ scopeId }: { scopeId: string }) {
     <div className="dg flex flex-col gap-3 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <input
+          ref={search}
           type="search"
           aria-label={t('Search knowledge')}
           placeholder={t('Search knowledge')}
@@ -68,7 +70,7 @@ export function KnowledgeTab({ scopeId }: { scopeId: string }) {
           {query.trim() ? t('Nothing matches that search.') : t('No knowledge yet')}
         </p>
       ) : (
-        <KnowledgeRows items={items} />
+        <KnowledgeRows items={items} onNoneLeft={() => search.current?.focus()} />
       )}
     </div>
   )

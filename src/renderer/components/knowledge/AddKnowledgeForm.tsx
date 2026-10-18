@@ -1,5 +1,5 @@
 import type { KnowledgeKind } from '@shared/types/knowledge'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { addKnowledge } from '@/packages/knowledge/approve'
 import { useKnowledgeAction } from './useKnowledgeActions'
@@ -20,6 +20,8 @@ export function AddKnowledgeForm({
   const [kind, setKind] = useState<KnowledgeKind>(defaultKind)
   const [text, setText] = useState('')
   const { busy, run } = useKnowledgeAction()
+  const field = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => field.current?.focus(), [])
   const label: Record<KnowledgeKind, string> = { fact: t('Fact'), decision: t('Decision'), preference: t('Preference') }
 
   return (
@@ -48,12 +50,14 @@ export function AddKnowledgeForm({
         ))}
       </div>
       <textarea
+        ref={field}
         aria-label={t('Knowledge')}
         value={text}
         rows={3}
         onChange={(e) => setText(e.target.value)}
         className="dg-type-body"
         style={{
+          width: '100%',
           padding: 'var(--dango-space-2)',
           border: '1px solid var(--dango-line)',
           borderRadius: 'var(--dango-radius-sm)',

@@ -15,6 +15,15 @@ export function KnowledgeItemDetail({ item }: { item: KnowledgeItem }) {
     chat: t('Chat'),
     migration: t('Migration'),
   }
+  const action: Record<KnowledgeEvent['action'], string> = {
+    proposed: t('proposed'),
+    approved: t('approved'),
+    edited: t('edited'),
+    superseded: t('superseded'),
+    removed: t('removed'),
+    moved: t('moved'),
+    'kept-both': t('kept both'),
+  }
   const everywhere = item.scopeId === EVERYWHERE_SCOPE_ID
   const applies = everywhere
     ? [t('All scopes'), ...(item.kind === 'preference' ? [] : [t('Client scopes read it unless turned off')])]
@@ -51,7 +60,7 @@ export function KnowledgeItemDetail({ item }: { item: KnowledgeItem }) {
           {item.history.map((e, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: events are append-only and have no id
             <li key={i}>
-              {[new Date(e.at).toLocaleDateString(), by[e.by], e.action].join(' · ')}
+              {[new Date(e.at).toLocaleDateString(), by[e.by], action[e.action]].join(' · ')}
               {e.note ? <span className="dg-item__meta"> {e.note}</span> : null}
             </li>
           ))}

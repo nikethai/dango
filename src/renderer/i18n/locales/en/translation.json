@@ -1336,7 +1336,6 @@
   "Dango learns from the chats you have here and the sources you connect. Knowledge you approve shows up on this page.": "Dango learns from the chats you have here and the sources you connect. Knowledge you approve shows up on this page.",
   "Start a chat": "Start a chat",
   "Add a source": "Add a source",
-  "Facts, decisions and preferences you approve for {{name}} will appear here, each with its sources and history.": "Facts, decisions and preferences you approve for {{name}} will appear here, each with its sources and history.",
   "Folders, Gmail, Asana and documents connected to {{name}} will appear here. Dango reads only the sources you connect.": "Folders, Gmail, Asana and documents connected to {{name}} will appear here. Dango reads only the sources you connect.",
   "No chats in {{name}} yet.": "No chats in {{name}} yet.",
   "This scope no longer exists.": "This scope no longer exists.",
@@ -1420,5 +1419,12 @@
   "Client scopes read it unless turned off": "Client scopes read it unless turned off",
   "When {{condition}}": "When {{condition}}",
   "Background review": "Background review",
-  "Migration": "Migration"
+  "Migration": "Migration",
+  "proposed": "proposed",
+  "approved": "approved",
+  "edited": "edited",
+  "superseded": "superseded",
+  "removed": "removed",
+  "moved": "moved",
+  "kept both": "kept both"
 }

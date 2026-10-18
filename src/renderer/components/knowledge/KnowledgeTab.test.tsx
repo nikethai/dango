@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import type { KnowledgeItem } from '@shared/types/knowledge'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addKnowledge, KnowledgeConflictError } from '@/packages/knowledge/approve'
@@ -86,9 +86,9 @@ describe('KnowledgeTab', () => {
     expect(screen.queryByText('Launch is 6 Nov')).toBeNull()
   })
 
-  it('Superseded shows a replaced item and hides approved ones', async () => {
+  it('Superseded shows a removed item and hides approved ones', async () => {
     await seed(
-      { id: 'k1', scopeId: 'acme', text: 'Launch is 6 Nov', status: 'superseded', supersededBy: 'k2' },
+      { id: 'k1', scopeId: 'acme', text: 'Launch is 6 Nov', status: 'removed' },
       { id: 'k2', scopeId: 'acme', text: 'Launch is 4 Nov' }
     )
     render(<KnowledgeTab scopeId="acme" />)
@@ -96,9 +96,111 @@ describe('KnowledgeTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Superseded' }))
     expect(screen.getByText('Launch is 6 Nov')).toBeTruthy()
     expect(screen.queryByText('Launch is 4 Nov')).toBeNull()
+    const row = screen.getByText('Launch is 6 Nov').closest('li') as HTMLElement
+    expect(within(row).queryAllByRole('button', { name: /Edit|Remove|Move to/ })).toHaveLength(0)
+  })
+
+  it('a superseded item shows what replaced it, with no actions', async () => {
+    await seed(
+      { id: 'k1', scopeId: 'acme', text: 'Launch is 6 Nov', status: 'superseded', supersededBy: 'k2' },
+      { id: 'k2', scopeId: 'acme', text: 'Launch is 4 Nov' }
+    )
+    render(<KnowledgeTab scopeId="acme" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Superseded' }))
     expect(screen.getByText('Replaced by "Launch is 4 Nov"')).toBeTruthy()
     const row = screen.getByText('Launch is 6 Nov').closest('li') as HTMLElement
     expect(within(row).queryAllByRole('button', { name: /Edit|Remove|Move to/ })).toHaveLength(0)
+  })
+
+  it('Save with unchanged text skips editKnowledge, and reopening resets the draft', async () => {
+    await seed({ id: 'k1', scopeId: 'acme', text: 'Launch is 6 Nov' })
+    render(<KnowledgeTab scopeId="acme" />)
+    await screen.findByText('Launch is 6 Nov')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Edit' }), { target: { value: 'scratch' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect((screen.getByRole('textbox', { name: 'Edit' }) as HTMLTextAreaElement).value).toBe('Launch is 6 Nov')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Edit' })).toBeNull())
+    expect(editKnowledge).not.toHaveBeenCalled()
+  })
+
+  it('a duplicate toasts Already saved; any other failure toasts and logs', async () => {
+    render(<KnowledgeTab scopeId="acme" />)
+    const submit = async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Add knowledge' }))
+      fireEvent.change(screen.getByRole('textbox', { name: 'Knowledge' }), { target: { value: 'Launch is 4 Nov' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    }
+    vi.mocked(addKnowledge).mockRejectedValueOnce(new Error('duplicate'))
+    await submit()
+    await waitFor(() => expect(toastActions.add).toHaveBeenCalledWith('Already saved'))
+    cleanup()
+    render(<KnowledgeTab scopeId="acme" />)
+    vi.mocked(addKnowledge).mockRejectedValueOnce(new Error('boom'))
+    await submit()
+    await waitFor(() => expect(toastActions.add).toHaveBeenCalledWith("Couldn't save that. Try again."))
+  })
+
+  it('ignores a second click while an action is pending', async () => {
+    await seed({ id: 'k1', scopeId: 'acme', text: 'Launch is 6 Nov' })
+    let release: () => void = () => undefined
+    vi.mocked(removeKnowledge).mockImplementationOnce(
+      () =>
+        new Promise<void>((r) => {
+          release = r
+        })
+    )
+    render(<KnowledgeTab scopeId="acme" />)
+    await screen.findByText('Launch is 6 Nov')
+    const button = screen.getByRole('button', { name: 'Remove' })
+    fireEvent.click(button)
+    fireEvent.click(button)
+    expect(removeKnowledge).toHaveBeenCalledTimes(1)
+    await act(async () => release())
+  })
+
+  it('after Remove, focus moves to the next row, or the search field when none is left', async () => {
+    await seed(
+      { id: 'k1', scopeId: 'acme', text: 'First', updatedAt: 3 },
+      { id: 'k2', scopeId: 'acme', text: 'Second', updatedAt: 2 }
+    )
+    vi.mocked(removeKnowledge).mockImplementation(async (id) => {
+      await commitKnowledge((d) => {
+        const i = d.items.find((x) => x.id === id)
+        if (i) i.status = 'removed'
+      })
+    })
+    render(<KnowledgeTab scopeId="acme" />)
+    await screen.findByText('First')
+    const first = screen.getByText('First').closest('li') as HTMLElement
+    fireEvent.click(within(first).getByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(screen.queryByText('First')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByText('Second')))
+    const second = screen.getByText('Second').closest('li') as HTMLElement
+    fireEvent.click(within(second).getByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText('Search knowledge')))
+  })
+
+  it('the Move menu focuses its first item and closes on Escape', async () => {
+    await seed({ id: 'k1', scopeId: 'acme', text: 'Launch is 6 Nov' })
+    render(<KnowledgeTab scopeId="acme" />)
+    await screen.findByText('Launch is 6 Nov')
+    fireEvent.click(screen.getByRole('button', { name: 'Move to…' }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Everywhere' })))
+    fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Move to…' }))
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('the add form focuses its textarea', async () => {
+    render(<KnowledgeTab scopeId="acme" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Add knowledge' }))
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Knowledge' }))
   })
 
   it('Edit then Save calls editKnowledge', async () => {
