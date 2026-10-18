@@ -4,7 +4,7 @@ title: 'Total redesign: structure, then look'
 status: Now
 assignee: []
 created_date: '2026-10-16 14:22'
-updated_date: '2026-10-18 05:33'
+updated_date: '2026-10-18 07:17'
 labels:
   - design
 dependencies: []
@@ -32,4 +32,6 @@ Maintainer asked on 2026-10-16 to redesign before building the shared core: does
 2026-10-18: slice 03 (scopes) built on feat/redesign-03-scopes: Scope type and store (myProjects canonical, immediate writes), migration 17→18, one writer for a chat's scope, Scopes sidebar with Everywhere and client chips, scope page (Overview/Knowledge/Sources/Files/Chats/Settings, EM1), Everywhere page, scope pill in the composer, readScopes() for reads outside React. Suite green, tsc 37, lint 9 errors (= main). Next: slice 04 after merge.
 
 2026-10-18: slice 04 (knowledge) built on feat/redesign-04-knowledge: knowledge store with locked revertible commits, proposals with contradiction check (session model, 15 s timeout), approve/add/edit/remove/move with one undo each, conflicts (Keep this / Keep both), Review renderers, approved knowledge as the only chat context (1,500-token budget, framing sentence), chat proposer replacing memory auto-save, Knowledge tab + Everywhere lists, one-time move of old memory. Slice 2 note (C1): slice 2 must fill useDontSuggestEntries and add the Open Everywhere row on Memory and privacy itself, and hide the now-dead autoSaveFallbackPin / showMemoryUpdatedToast toggles. Slice 10 note: re-check entries use ref = use.ref and can merge with open draft entries.
+
+2026-10-18: slice 02 (settings) built on feat/redesign-02-settings: five sections plus Advanced (nav model settingsNavModel.ts), section tabs, Sources and Memory and privacy pages (real Don't-suggest list from slice 4, Open Everywhere, dead memory toggles removed), Trust sheet (useTrustSheet; Auto never approves knowledge), Agents replaces Copilots (redirects kept), Image studio under Advanced, cost heads-up and thinking display controls; new settings fields trustLevel/costWarningUsd/showThinking/backgroundPaused with readX() normalisers. Next: slice 05 and 06a after merge.
 <!-- SECTION:NOTES:END -->
