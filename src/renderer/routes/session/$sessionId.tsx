@@ -26,7 +26,6 @@ import { updateSessionWithMessages as updateSessionStore, useSession } from '@/s
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as scrollActions from '@/stores/scrollActions'
 import { isSessionGenerationActive } from '@/stores/session/generation-cancel'
-import { continueActiveSessionTasks } from '@/stores/session/messages'
 import { isSessionGenerationLive, subscribeSessionGenerationLive } from '@/stores/session/session-live-generation'
 import { modifyMessage, removeCurrentThread, startNewThread, submitNewUserMessage } from '@/stores/sessionActions'
 import { getAllMessageList } from '@/stores/sessionHelpers'
@@ -204,11 +203,6 @@ function RouteComponent() {
     [currentSession, descriptor]
   )
 
-  const onContinueTasks = useCallback(() => {
-    if (!currentSession) return
-    void continueActiveSessionTasks(currentSession.id)
-  }, [currentSession])
-
   const onClickSessionSettings = useCallback(() => {
     if (!currentSession) {
       return false
@@ -343,7 +337,6 @@ function RouteComponent() {
               <ChatDockStack
                 key={currentSession.id}
                 sessionId={currentSession.id}
-                onContinueTasks={onContinueTasks}
                 generating={isGenerating}
                 liveMessage={lastGeneratingMessage}
               >

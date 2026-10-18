@@ -105,6 +105,7 @@ import {
   isContainRenderableCode,
 } from '../Artifact'
 import { ScalableIcon } from '../common/ScalableIcon'
+import { planCardState } from '../plan/planSteps'
 import { ThinkingLine } from './ThinkingLine'
 
 // Tool/thinking renderers are agent-only — lazy-load them and skip on Android.
@@ -120,9 +121,7 @@ const ToolCallPartUI = isAgentEnabled
 const TodoAppCard = isAgentEnabled
   ? lazy(() => import('../message-parts/TodoAppCard').then((m) => ({ default: m.TodoAppCard })))
   : null
-const PlanApproval = isAgentEnabled
-  ? lazy(() => import('../PlanApproval/PlanApproval').then((m) => ({ default: m.default })))
-  : null
+const PlanCard = isAgentEnabled ? lazy(() => import('../plan/PlanCard')) : null
 
 import FollowUpSuggestions from '../search/FollowUpSuggestions'
 import { SourceCardList } from '../search/SourceCardList'
@@ -150,6 +149,10 @@ interface Props {
   showFollowUpSuggestions?: boolean
   /** Whether finished thinking text starts open (settings + scope kind, resolved by MessageList). */
   thinkingDefaultOpen?: boolean
+  /** The chat's plans edit files (agent mode with a project or workspace), resolved by MessageList. */
+  planTouchesFiles?: boolean
+  /** This message holds the chat's latest plan; only that plan's card reads the session's tasks. Default true. */
+  latestPlan?: boolean
 }
 
 const _Message: FC<Props> = (props) => {
@@ -165,6 +168,8 @@ const _Message: FC<Props> = (props) => {
     discussionGroupStart,
     showFollowUpSuggestions = false,
     thinkingDefaultOpen = true,
+    planTouchesFiles = false,
+    latestPlan = true,
   } = props
 
   const { t } = useTranslation()
@@ -530,6 +535,11 @@ const _Message: FC<Props> = (props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- partsRevision captures in-place stream mutations
   }, [contentParts, partsRevision, msg.generating, msg.role, keepEmptyThinking])
 
+  // While this message runs a plan, the plan card shows the mascot; the live line hides its own (one mascot on screen).
+  const planRunning = contentParts.some(
+    (part) => part.type === 'plan' && planCardState(part, Boolean(msg.generating)) === 'running'
+  )
+
   const messageTaskSnapshot = useMemo(
     () => (contentPartsHaveTaskTools(contentParts) ? snapshotTasksFromContentParts(contentParts) : []),
     [contentParts, contentParts.length, msg.generating]
@@ -726,6 +736,7 @@ const _Message: FC<Props> = (props) => {
                                 startedAt={msg.timestamp}
                                 text=""
                                 defaultOpen={thinkingDefaultOpen}
+                                showMascot={!planRunning}
                                 onStop={onStopGeneration}
                               />
                             ) : null
@@ -737,7 +748,7 @@ const _Message: FC<Props> = (props) => {
                             monologueTexts={group.monologueTexts}
                             isLastGroup={group.workActive}
                             defaultOpen={thinkingDefaultOpen}
-                            showMascot
+                            showMascot={!planRunning}
                             onStop={onStopGeneration}
                           />
                         </Suspense>
@@ -751,6 +762,7 @@ const _Message: FC<Props> = (props) => {
                         durationMs={group.part.duration}
                         text={group.part.text}
                         defaultOpen={thinkingDefaultOpen}
+                        showMascot={!planRunning}
                         onStop={onStopGeneration}
                       />
                     </div>
@@ -844,13 +856,18 @@ const _Message: FC<Props> = (props) => {
                       </div>
                     )
                   ) : group.part.type === 'plan' ? (
-                    PlanApproval ? (
-                      <Suspense fallback={null} key={`plan-approval-${msg.id}-${group.index}`}>
-                        <PlanApproval
-                          planPart={group.part}
-                          onApprove={onApprovePlan}
+                    PlanCard ? (
+                      <Suspense fallback={null} key={`plan-card-${msg.id}-${group.index}`}>
+                        <PlanCard
+                          plan={group.part}
+                          sessionId={sessionId}
+                          generating={Boolean(msg.generating)}
+                          touchesFiles={planTouchesFiles}
+                          latestPlan={latestPlan}
+                          onRun={onApprovePlan}
                           onRequestChanges={onRequestPlanChanges}
                           onReject={onRejectPlan}
+                          onStop={onStopGeneration}
                         />
                       </Suspense>
                     ) : null
@@ -919,6 +936,7 @@ const _Message: FC<Props> = (props) => {
                 startedAt={msg.timestamp}
                 text=""
                 defaultOpen={thinkingDefaultOpen}
+                showMascot={!planRunning}
                 onStop={onStopGeneration}
               />
             </div>

@@ -61,3 +61,41 @@ button.dg-tool {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Plan card (Task 5). dg-plan has no failed step, error line, feedback field or folded step list. */
+.dg-plan:focus-visible {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: 2px;
+}
+.dg-plan li.is-failed .dg-plan__n,
+.dg-plan-fold li.is-failed .dg-plan__n {
+  color: var(--dango-danger);
+}
+.dg-plan__step {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dg-plan__actions .dg-plan__note {
+  margin-left: auto;
+}
+.dg-plan__feedback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-2);
+}
+.dg-plan__error {
+  margin: 0;
+  color: var(--dango-danger);
+}
+/* Folded plan (finished, rejected, revised): the step rows of dg-plan inside a dg-think disclosure. */
+.dg-plan-fold ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.dg-plan-fold li {
+  display: flex;
+  gap: var(--dango-space-2);
+  align-items: center;
+  padding: var(--dango-space-1) 0;
+}

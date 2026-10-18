@@ -3,12 +3,12 @@
  */
 import type { Message, MessagePlanPart, Session } from '@shared/types'
 import { t } from 'i18next'
+import { parsePlanSteps } from '@/components/plan/planSteps'
 import { scopeIdForSession } from '@/packages/chat-review'
 import { getStagedChangeSetId } from '@/packages/model-calls/toolsets/file'
 import { addReviewEntry } from '@/packages/review'
 
 const TITLE_MAX = 80
-const STEP_LINE = /^\s*(?:\d+[.)]|[-*])\s+(.+)$/
 const EDIT_TOOLS = new Set(['create_file', 'edit_file', 'delete_file'])
 /** `${messageId}:${finishedAt}` of plans already filed, so a retried finish cannot file twice. */
 const recordedPlans = new Set<string>()
@@ -30,9 +30,11 @@ export function nextPlanVersion(messages: Message[], beforeMessageId: string): n
 
 /** A short title: the first numbered or bulleted step, else the first non-empty line, at most 80 characters. */
 export function planTitle(planText: string): string {
-  const lines = planText.split('\n')
-  const step = lines.map((line) => STEP_LINE.exec(line)?.[1]?.trim()).find(Boolean)
-  const title = step ?? lines.map((line) => line.trim()).find(Boolean) ?? ''
+  const firstLine = planText
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean)
+  const title = parsePlanSteps(planText)[0] ?? firstLine ?? ''
   return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1).trimEnd()}…` : title
 }
 

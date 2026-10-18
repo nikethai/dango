@@ -148,6 +148,20 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     return null
   }, [currentMessageList])
 
+  // Only the latest plan's card reads the session's tasks (older plan cards keep their own steps).
+  const latestPlanMessageId = useMemo(() => {
+    for (let i = currentMessageList.length - 1; i >= 0; i--) {
+      if (currentMessageList[i].contentParts?.some((part) => part.type === 'plan')) {
+        return currentMessageList[i].id
+      }
+    }
+    return null
+  }, [currentMessageList])
+  // A plan edits files only in agent mode with a project or workspace: its card says so.
+  const planTouchesFiles = Boolean(
+    currentSession.agentMode && (currentSession.projectId || currentSession.workspaceRoot)
+  )
+
   const virtuoso = useRef<VirtuosoHandle>(null)
   const messageListRef = useRef<HTMLDivElement>(null)
   const [atBottom, setAtBottom] = useState(true)
@@ -303,6 +317,8 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                           discussionGroupStart={discussionGroupStart}
                           showFollowUpSuggestions={msg.id === latestAssistantMessageId}
                           thinkingDefaultOpen={thinkingDefaultOpen}
+                          planTouchesFiles={planTouchesFiles}
+                          latestPlan={msg.id === latestPlanMessageId}
                         />
                       )}
                     </ErrorBoundary>
