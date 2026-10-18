@@ -46,16 +46,24 @@ export function displayKind(e: ReviewEntry): ReviewKind {
   return e.state === 'done' ? 'done' : e.kind
 }
 
-/**
- * Pure and English-only: callers that translate pass the result through `t()` or add the keys themselves.
- * `Last checked ${hm}` today, `Last checked yesterday at ${hm}` yesterday, `Last checked ${dayMonth}` before.
- */
-export function formatLastChecked(at: number, now: number): string {
+export type LastCheckedParts = {
+  key: 'Last checked {{time}}' | 'Last checked yesterday at {{time}}'
+  time: string
+}
+
+/** Translation key plus the formatted time; callers use `t(parts.key, { time: parts.time })`. */
+export function lastCheckedParts(at: number, now: number): LastCheckedParts {
   const hm = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(at)
-  if (at >= startOfDay(now)) return `Last checked ${hm}`
-  if (at >= startOfYesterday(now)) return `Last checked yesterday at ${hm}`
+  if (at >= startOfDay(now)) return { key: 'Last checked {{time}}', time: hm }
+  if (at >= startOfYesterday(now)) return { key: 'Last checked yesterday at {{time}}', time: hm }
   const dayMonth = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' }).format(at)
-  return `Last checked ${dayMonth}`
+  return { key: 'Last checked {{time}}', time: dayMonth }
+}
+
+/** English wrapper over `lastCheckedParts`, pure, for tests and untranslated callers. */
+export function formatLastChecked(at: number, now: number): string {
+  const { key, time } = lastCheckedParts(at, now)
+  return key.replace('{{time}}', time)
 }
 
 /** `sourceCount > 0` when known (slice 7); until then any entry or a last-checked time counts as a source. */
@@ -66,6 +74,7 @@ export function hasSources(o: { sourceCount?: number; entries: ReviewEntry[]; la
 
 /** After the focused row leaves: the nearest surviving row below, else above, else null (the RV5 block). */
 export function nextFocusAfterRemoval(prevIds: string[], nextIds: string[], focusedId: string): string | null {
+  if (nextIds.includes(focusedId)) return focusedId
   const index = prevIds.indexOf(focusedId)
   if (index === -1) return null
   const alive = new Set(nextIds)
@@ -76,6 +85,7 @@ export function nextFocusAfterRemoval(prevIds: string[], nextIds: string[], focu
 
 /** Quoted text for toasts: 60 characters, then `…` when cut. */
 export function clip(text: string, max = 60): string {
+  if (max <= 0) return ''
   const chars = Array.from(text)
-  return chars.length <= max ? text : `${chars.slice(0, max).join('')}…`
+  return chars.length <= max ? text : `${chars.slice(0, max).join('').trimEnd()}…`
 }

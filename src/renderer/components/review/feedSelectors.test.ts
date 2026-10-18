@@ -6,6 +6,7 @@ import {
   formatLastChecked,
   groupByDay,
   hasSources,
+  lastCheckedParts,
   nextFocusAfterRemoval,
   visibleEntries,
 } from './feedSelectors'
@@ -97,5 +98,40 @@ describe('clip', () => {
   it('cuts at 60 characters plus an ellipsis', () => {
     expect(clip('x'.repeat(70))).toBe(`${'x'.repeat(60)}…`)
     expect(clip('x'.repeat(60))).toBe('x'.repeat(60))
+  })
+})
+
+describe('edge cases', () => {
+  it('puts a future timestamp in Today', () => {
+    const f = entry({ createdAt: now + 3 * 24 * 3600 * 1000 })
+    expect(groupByDay([f], now)).toEqual([{ label: 'Today', entries: [f] }])
+  })
+
+  it('keeps input order for equal createdAt', () => {
+    const rows = ['a', 'b', 'c'].map((id) => entry({ id, createdAt: 5 }))
+    expect(visibleEntries(rows).map((e) => e.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('handles several rows removed at once and a still-present focus', () => {
+    expect(nextFocusAfterRemoval(['a', 'b', 'c', 'd'], ['a', 'd'], 'b')).toBe('d')
+    expect(nextFocusAfterRemoval(['a', 'b', 'c', 'd'], ['a'], 'c')).toBe('a')
+    expect(nextFocusAfterRemoval(['a', 'b'], ['a', 'b'], 'a')).toBe('a')
+    expect(nextFocusAfterRemoval(['a', 'b'], ['a'], 'zzz')).toBeNull()
+  })
+
+  it('clips astral characters whole, trims trailing space, guards max <= 0', () => {
+    expect(clip('😀'.repeat(61))).toBe(`${'😀'.repeat(60)}…`)
+    expect(clip(`${'x'.repeat(58)}   yy`)).toBe(`${'x'.repeat(58)}…`)
+    expect(clip('abc', 0)).toBe('')
+    expect(clip('abc', -1)).toBe('')
+  })
+
+  it('lastCheckedParts returns translation keys and the time', () => {
+    const t = new Date(2026, 9, 17, 7, 5).getTime()
+    const y = new Date(2026, 9, 16, 18, 30).getTime()
+    const o = new Date(2026, 9, 3, 18, 30).getTime()
+    expect(lastCheckedParts(t, now)).toEqual({ key: 'Last checked {{time}}', time: hm(t) })
+    expect(lastCheckedParts(y, now)).toEqual({ key: 'Last checked yesterday at {{time}}', time: hm(y) })
+    expect(lastCheckedParts(o, now)).toEqual({ key: 'Last checked {{time}}', time: dayMonth(o) })
   })
 })

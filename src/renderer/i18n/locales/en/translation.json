@@ -496,6 +496,8 @@
   "Language": "Language",
   "Large file detected. Chunks will be loaded in batches of {{count}} to optimize performance.": "Large file detected. Chunks will be loaded in batches of {{count}} to optimize performance.",
   "Last Session": "Last Session",
+  "Last checked {{time}}": "Last checked {{time}}",
+  "Last checked yesterday at {{time}}": "Last checked yesterday at {{time}}",
   "LaTeX Rendering (Requires Markdown)": "LaTeX rendering (requires Markdown)",
   "Launch at system startup": "Launch at system startup",
   "Leave": "Leave",
