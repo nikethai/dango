@@ -23,13 +23,13 @@ import TitleBarRow from './components/layout/TitleBarRow'
 import { NewScopeSheet } from './components/scope'
 import SessionList from './components/session/SessionList'
 import { FORCE_ENABLE_DEV_PAGES } from './dev/devToolsConfig'
+import { useScopes } from './hooks/useScopes'
 import {
   SIDEBAR_ICON_RAIL_WIDTH,
   useIsSmallScreen,
   useSidebarEffectiveWidth,
   useSidebarWidth,
 } from './hooks/useScreenChange'
-import { useScopes } from './hooks/useScopes'
 import useVersion from './hooks/useVersion'
 import { startNewChat } from './lib/startNewChat'
 import { navigateToSettings } from './modals/Settings'
