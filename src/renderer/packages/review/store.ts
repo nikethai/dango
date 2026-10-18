@@ -70,8 +70,15 @@ export function loadReviewEntries(): Promise<void> {
   })
 }
 
-export function addReviewEntry(input: ReviewEntryInput): Promise<ReviewEntry> {
-  return mutate((doc) => {
+export const NEVER_AUTO_REFS: readonly ReviewRef['type'][] = ['proposal', 'conflict', 'knowledge']
+
+/** Cheap, dependency-free check for whether a new row could arrive done; applier and Trust are checked later. */
+export function isArrivalCandidate(e: Pick<ReviewEntry, 'kind' | 'risk' | 'ref'>): boolean {
+  return e.kind === 'proposal' && e.risk === 'safe' && !NEVER_AUTO_REFS.includes(e.ref.type)
+}
+
+export async function addReviewEntry(input: ReviewEntryInput): Promise<ReviewEntry> {
+  const { entry, created } = await mutate((doc) => {
     const open = doc.entries.find(
       (e) => e.state === 'open' && e.ref.type === input.ref.type && e.ref.id === input.ref.id
     )
@@ -83,17 +90,28 @@ export function addReviewEntry(input: ReviewEntryInput): Promise<ReviewEntry> {
         state: input.state ?? 'open',
       }
       doc.entries = doc.entries.map((e) => (e === open ? merged : e))
-      return merged
+      return { entry: merged, created: false }
     }
-    const created: ReviewEntry = {
+    const made: ReviewEntry = {
       ...input,
       id: input.id ?? uuidv4(),
       state: input.state ?? 'open',
       createdAt: input.createdAt ?? Date.now(),
     }
-    doc.entries = [...doc.entries, created]
-    return created
+    doc.entries = [...doc.entries, made]
+    return { entry: made, created: true }
   })
+  // Phase two runs outside the lock: only a row this call created may arrive done, never a merge (flow 13).
+  if (!created) return entry
+  if (!isArrivalCandidate(entry)) return entry
+  const trust = await import('./trust')
+  if (!trust.getReviewApplier(entry.ref.type)) return entry
+  try {
+    return await trust.arrive(entry, await trust.getTrustLevel(), Date.now())
+  } catch (error) {
+    console.warn('[review] Trust arrival failed; the row stays open', error)
+    return entry
+  }
 }
 
 export function updateReviewEntry(
@@ -106,6 +124,24 @@ export function updateReviewEntry(
     const next: ReviewEntry = { ...found, ...patch, id }
     doc.entries = doc.entries.map((e) => (e === found ? next : e))
     return next
+  })
+}
+
+/**
+ * Patches the row inside the store lock only when `predicate` holds for its stored state. `prev` is the stored row as
+ * the lock found it (before any patch), or undefined when the row is gone. Internal to Trust and dismissal.
+ */
+export function updateReviewEntryIf(
+  id: string,
+  predicate: (e: ReviewEntry) => boolean,
+  patch: Partial<Omit<ReviewEntry, 'id'>>
+): Promise<{ ok: boolean; prev?: ReviewEntry }> {
+  return mutate((doc) => {
+    const found = doc.entries.find((e) => e.id === id)
+    if (!found || !predicate(found)) return { ok: false, prev: found }
+    const next: ReviewEntry = { ...found, ...patch, id }
+    doc.entries = doc.entries.map((e) => (e === found ? next : e))
+    return { ok: true, prev: found }
   })
 }
 

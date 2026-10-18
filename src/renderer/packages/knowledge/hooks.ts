@@ -1,4 +1,4 @@
-import type { KnowledgeItem, KnowledgeProposal, KnowledgeUse } from '@shared/types/knowledge'
+import type { DontSuggestEntry, KnowledgeItem, KnowledgeProposal, KnowledgeUse } from '@shared/types/knowledge'
 import { useEffect, useMemo } from 'react'
 import { useStore } from 'zustand'
 import { getLogger } from '@/lib/utils'
@@ -64,4 +64,10 @@ export function useProposalConflictText(proposalId: string): string | undefined 
 export function useKnowledgeItem(id: string | undefined): KnowledgeItem | undefined {
   const state = useKnowledgeState()
   return useMemo(() => (id === undefined ? undefined : state.items.find((i) => i.id === id)), [state, id])
+}
+
+/** `listDontSuggest()`, kept current: newest first. */
+export function useDontSuggestList(): DontSuggestEntry[] {
+  const state = useKnowledgeState()
+  return useMemo(() => [...state.dontSuggest].sort((a, b) => b.addedAt - a.addedAt), [state])
 }

@@ -592,6 +592,28 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
   /** First-run toast for close-to-tray has been shown */
   trayIntroSeen: z.boolean().default(false).catch(false),
 
+  /**
+   * Trust: 'auto' applies safe actions that are not knowledge (e.g. a Gmail label, an unsent draft) and shows
+   * them as Done with Undo; knowledge proposals always wait (ADR 0001). 'ask' asks first.
+   * Readers use readTrustLevel().
+   */
+  trustLevel: z.enum(['auto', 'ask']).default('auto').catch('auto'),
+  /**
+   * Cost: warn before a run is expected to cost more than this many USD; 0 turns the warning off.
+   * Readers use readCostWarningUsd().
+   */
+  costWarningUsd: z.number().min(0).default(0.5).catch(0.5),
+  /**
+   * Thinking: 'auto' = open in project scopes and chats with no scope, closed in client scopes;
+   * 'open' always shows thinking, 'closed' keeps it collapsed. Readers use readShowThinking().
+   */
+  showThinking: z.enum(['auto', 'open', 'closed']).default('auto').catch('auto'),
+  /**
+   * Background: true pauses background work (suggestions, memory upkeep). Slice 7's background runner honours it;
+   * slice 8's menu bar toggles it. Readers use readBackgroundPaused().
+   */
+  backgroundPaused: z.boolean().default(false).catch(false),
+
   shortcuts: ShortcutSettingSchema,
 
   /**
@@ -672,6 +694,14 @@ export type ProviderInfo = (ProviderBaseInfo | CustomProviderBaseInfo) & Provide
 
 export type SessionSettings = z.infer<typeof SessionSettingsSchema>
 export type Settings = z.infer<typeof SettingsSchema>
+export type TrustLevel = Settings['trustLevel']
+export type ShowThinking = Settings['showThinking']
+
+/** Normalisers: coerce a raw stored value to a valid one (bad values fall back to the default). */
+export const readTrustLevel = (raw: unknown): TrustLevel => SettingsSchema.shape.trustLevel.parse(raw)
+export const readCostWarningUsd = (raw: unknown): number => SettingsSchema.shape.costWarningUsd.parse(raw)
+export const readShowThinking = (raw: unknown): ShowThinking => SettingsSchema.shape.showThinking.parse(raw)
+export const readBackgroundPaused = (raw: unknown): boolean => SettingsSchema.shape.backgroundPaused.parse(raw)
 export type ProviderModelInfo = z.infer<typeof ProviderModelInfoSchema>
 export type ProviderBaseInfo = z.infer<typeof ProviderBaseInfoSchema>
 export type ProviderSettings = z.infer<typeof ProviderSettingsSchema>

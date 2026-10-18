@@ -1,6 +1,6 @@
 import type { Scope } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { resolveDraftScopeId, scopeIdFromPath } from './scope-navigation'
+import { newChatScopeId, resolveDraftScopeId, scopeIdFromPath } from './scope-navigation'
 
 const scopes: Scope[] = [
   { id: 'a', name: 'Acme Co', kind: 'client', order: 0 },
@@ -16,6 +16,20 @@ describe('scopeIdFromPath', () => {
     expect(scopeIdFromPath('/scope/everywhere')).toBeUndefined()
     expect(scopeIdFromPath('/session/x')).toBeUndefined()
     expect(scopeIdFromPath('/new')).toBeUndefined()
+  })
+})
+
+describe('newChatScopeId (⌘N)', () => {
+  it('on Review, follows the scope filter in the search (M6)', () => {
+    expect(newChatScopeId('/', { scope: 'abc' })).toBe('abc')
+    expect(newChatScopeId('/', { scope: 'everywhere' })).toBeUndefined()
+    expect(newChatScopeId('/', {})).toBeUndefined()
+    expect(newChatScopeId('/', { scope: 5 })).toBeUndefined()
+  })
+
+  it('elsewhere, reads the path as before', () => {
+    expect(newChatScopeId('/scope/abc', { scope: 'other' })).toBe('abc')
+    expect(newChatScopeId('/session/x', { scope: 'abc' })).toBeUndefined()
   })
 })
 

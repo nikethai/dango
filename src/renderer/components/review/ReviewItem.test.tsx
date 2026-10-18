@@ -28,6 +28,18 @@ const declarationsOf = (selector: string) => {
 }
 
 describe('ReviewItem', () => {
+  it('renders a disabled action as a disabled button', () => {
+    render(
+      <ReviewItem
+        kind="proposal"
+        scope="Acme Co"
+        text="Item"
+        actions={[{ label: 'Approve', onClick: () => {}, disabled: true }]}
+      />
+    )
+    expect((screen.getByRole('button', { name: 'Approve' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('renders the kind label, scope and text, and marks needs-you items', () => {
     const { container } = render(
       <ReviewItem kind="needs-you" scope="Acme Co" text="Which quote is current?" actions={[]} />

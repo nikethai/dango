@@ -388,12 +388,6 @@ export function MemoryAdvancedPanel({
           onChange={(v) => onSettingsChange({ consolidateEveryNRetains: Number(v) || 5 })}
         />
         <Switch
-          label={t('Fallback-pin last message if extract empty')}
-          description={t('Off by default — avoids filling memory with chat noise')}
-          checked={Boolean(settings.autoSaveFallbackPin)}
-          onChange={(e) => onSettingsChange({ autoSaveFallbackPin: e.currentTarget.checked })}
-        />
-        <Switch
           label={t('Soft-archive on overflow')}
           description={t('When over max entries, disable old unused facts instead of hard-delete (pins kept)')}
           checked={settings.softArchiveOnPrune !== false}
@@ -404,11 +398,6 @@ export function MemoryAdvancedPanel({
           description={t('Hybrid lexical + token-vector scoring for recall (no external embed API)')}
           checked={settings.semanticSearchEnabled !== false}
           onChange={(e) => onSettingsChange({ semanticSearchEnabled: e.currentTarget.checked })}
-        />
-        <Switch
-          label={t('Show memory updated toast')}
-          checked={settings.showMemoryUpdatedToast}
-          onChange={(e) => onSettingsChange({ showMemoryUpdatedToast: e.currentTarget.checked })}
         />
       </Stack>
 

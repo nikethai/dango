@@ -95,7 +95,7 @@ function NewChatAgentBar({ agents, selectedIds, onChange, className }: NewChatAg
             className="uppercase tracking-wider shrink-0"
             style={{ fontFamily: 'var(--chatbox-font-mono)', fontSize: '0.7rem', letterSpacing: '0.08em' }}
           >
-            {t('My Agents')}
+            {t('Your agents')}
           </Text>
           <Text size="xs" c="chatbox-tertiary" className="shrink-0 tabular-nums">
             {t('Select up to {{n}} for a team', { n: MAX_ROOM_AGENTS })}

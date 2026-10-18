@@ -27,7 +27,8 @@ export type ReviewItemProps = {
 
 const MAX_ACTIONS = 3
 
-const KIND_LABEL: Record<ReviewKind, string> = {
+/** Untranslated kind names; callers outside this component pass them through `t`. */
+export const KIND_LABEL: Record<ReviewKind, string> = {
   proposal: 'Proposal',
   done: 'Done',
   'needs-you': 'Needs you',

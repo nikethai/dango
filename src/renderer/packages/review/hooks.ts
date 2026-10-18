@@ -1,9 +1,10 @@
-import type { ReviewEntry } from '@shared/types/review'
+import type { ReviewEntry, ReviewRefType } from '@shared/types/review'
 import type { ComponentType } from 'react'
-import { useEffect } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { useStore } from 'zustand'
 import { lookupReviewRenderer, type ReviewRendererProps, reviewRegistryStore } from './registry'
 import { loadReviewEntries, reviewStore, waitingCount } from './store'
+import { getReviewApplier, type ReviewApplier, subscribeReviewAppliers } from './trust'
 
 /** Load review entries on mount, and again whenever this window regains focus or becomes visible. */
 export function useReviewAutoload(): void {
@@ -41,4 +42,15 @@ export function useReviewRenderer(
   entry: Pick<ReviewEntry, 'kind' | 'ref'>
 ): ComponentType<ReviewRendererProps> | undefined {
   return useStore(reviewRegistryStore, (s) => lookupReviewRenderer(s.renderers, entry))
+}
+
+/** Whether an opener is registered for `refType`; re-renders when one registers later (the default 'question' opener, slice 10). */
+export function useHasReviewOpener(refType: ReviewRefType): boolean {
+  return useStore(reviewRegistryStore, (s) => Boolean(s.openers[refType]))
+}
+
+/** The applier registered for `refType`, re-rendering when slice 10 registers or removes one. */
+export function useReviewApplier(refType: ReviewRefType): ReviewApplier | undefined {
+  const get = useCallback(() => getReviewApplier(refType), [refType])
+  return useSyncExternalStore(subscribeReviewAppliers, get, get)
 }

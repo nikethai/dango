@@ -3,7 +3,13 @@
  */
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useKnowledgeList, useKnowledgeUses, useProposalConflictText, useProposalsForMessage } from './hooks'
+import {
+  useDontSuggestList,
+  useKnowledgeList,
+  useKnowledgeUses,
+  useProposalConflictText,
+  useProposalsForMessage,
+} from './hooks'
 import { _resetKnowledgeForTests, commitKnowledge } from './store'
 import { makeItem, resetTestStorage } from './test-storage'
 
@@ -75,5 +81,19 @@ describe('knowledge hooks', () => {
       })
     })
     await waitFor(() => expect(hook.result.current).toBeUndefined())
+  })
+
+  it('useDontSuggestList is newest first and follows commits', async () => {
+    const { result } = renderHook(() => useDontSuggestList())
+    expect(result.current).toEqual([])
+    await act(async () => {
+      await commitKnowledge((d) => {
+        d.dontSuggest.push(
+          { id: 'a', scopeId: 'acme', text: 'A', textKey: 'a', addedAt: 1 },
+          { id: 'b', scopeId: 'acme', text: 'B', textKey: 'b', addedAt: 2 }
+        )
+      })
+    })
+    await waitFor(() => expect(result.current.map((e) => e.id)).toEqual(['b', 'a']))
   })
 })

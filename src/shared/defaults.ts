@@ -113,6 +113,10 @@ export function settings(): Settings {
     keepInTray: true,
     quickWindowAlwaysOnTop: true,
     trayIntroSeen: false,
+    trustLevel: 'auto',
+    costWarningUsd: 0.5,
+    showThinking: 'auto',
+    backgroundPaused: false,
 
     shortcuts: {
       quickToggle: 'Alt+`', // Toggle quick window visibility
