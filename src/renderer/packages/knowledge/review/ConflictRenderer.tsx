@@ -1,17 +1,27 @@
 import dayjs from 'dayjs'
 import { t } from 'i18next'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from 'zustand'
+import { getLogger } from '@/lib/utils'
 import type { ReviewRendererProps } from '@/packages/review'
 import { resolveConflict } from '../conflicts'
 import { dismissProposal } from '../proposals'
 import { scopeName } from '../scopes'
-import { knowledgeStore } from '../store'
+import { ensureKnowledgeLoaded, knowledgeStore } from '../store'
 import { quote } from '../text'
 import { KeepBothSheet } from './KeepBothSheet'
 import { useGuarded } from './useGuarded'
 
 type Statement = { id: string; text: string; source?: string; at: number }
+
+const log = getLogger('knowledge')
+
+/** Entries whose missing conflict this window already re-read storage for (once per entry). */
+const freshReads = new Set<string>()
+
+export function _resetConflictReadsForTests(): void {
+  freshReads.clear()
+}
 
 /** RV4: the proposed and the saved statement side by side, with the three ways out (RV6, RV7). */
 export function ConflictRenderer({ entry, focused }: ReviewRendererProps) {
@@ -20,6 +30,14 @@ export function ConflictRenderer({ entry, focused }: ReviewRendererProps) {
   const { busy, run } = useGuarded()
   const conflict = state.conflicts.find((c) => c.id === entry.ref.id)
   const proposal = conflict ? state.proposals.find((p) => p.id === conflict.proposalId) : undefined
+  const missing = !conflict || !proposal
+
+  // Another window may have filed this conflict after our last read: read storage once for this entry.
+  useEffect(() => {
+    if (!missing || freshReads.has(entry.id)) return
+    freshReads.add(entry.id)
+    ensureKnowledgeLoaded({ fresh: true }).catch((error) => log.error('Knowledge refresh failed:', error))
+  }, [missing, entry.id])
 
   const statements: Statement[] = []
   if (conflict && proposal) {

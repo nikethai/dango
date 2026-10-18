@@ -13,9 +13,9 @@ import { resolveConflict } from '../conflicts'
 import { reapproveKnowledge } from '../lifecycle'
 import { dismissProposal } from '../proposals'
 import { _setScopeReaderForTests, refreshScopes } from '../scopes'
-import { knowledgeStore } from '../store'
+import { ensureKnowledgeLoaded, knowledgeStore } from '../store'
 import { makeItem } from '../test-storage'
-import { ConflictRenderer } from './ConflictRenderer'
+import { _resetConflictReadsForTests, ConflictRenderer } from './ConflictRenderer'
 import { KeepBothSheet } from './KeepBothSheet'
 import { ProposalRenderer } from './ProposalRenderer'
 import { RecheckRenderer } from './RecheckRenderer'
@@ -28,6 +28,10 @@ vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 vi.mock('../approve', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../approve')>()),
   approveProposal: vi.fn(async () => undefined),
+}))
+vi.mock('../store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../store')>()),
+  ensureKnowledgeLoaded: vi.fn(async () => undefined),
 }))
 vi.mock('../conflicts', () => ({ resolveConflict: vi.fn(async () => undefined) }))
 vi.mock('../lifecycle', () => ({ reapproveKnowledge: vi.fn(async () => undefined) }))
@@ -211,6 +215,24 @@ describe('ConflictRenderer', () => {
     fireEvent.change(field, { target: { value: 'for the EU launch' } })
     fireEvent.click(screen.getByText('Keep both'))
     expect(resolveConflict).toHaveBeenCalledWith('c1', { keepBoth: 'for the EU launch' })
+  })
+
+  it('a conflict in the store needs no fresh read', () => {
+    _resetConflictReadsForTests()
+    render(<ConflictRenderer entry={conflictEntry()} focused={false} />)
+    expect(ensureKnowledgeLoaded).not.toHaveBeenCalled()
+  })
+
+  it('a conflict missing from the store reads storage fresh, once per entry', () => {
+    _resetConflictReadsForTests()
+    const other = entry({ id: 'r9', kind: 'conflict', ref: { type: 'conflict', id: 'c-other-window' } })
+    const { rerender, unmount } = render(<ConflictRenderer entry={other} focused={false} />)
+    expect(ensureKnowledgeLoaded).toHaveBeenCalledTimes(1)
+    expect(ensureKnowledgeLoaded).toHaveBeenCalledWith({ fresh: true })
+    rerender(<ConflictRenderer entry={other} focused />)
+    unmount()
+    render(<ConflictRenderer entry={other} focused={false} />)
+    expect(ensureKnowledgeLoaded).toHaveBeenCalledTimes(1)
   })
 })
 
