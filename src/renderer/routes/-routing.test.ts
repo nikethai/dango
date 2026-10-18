@@ -28,7 +28,7 @@ describe('/new wiring', () => {
   it('new route seeds the session and passes projectId', () => {
     const t = src('routes/new.tsx')
     expect(t).toContain("createFileRoute('/new')")
-    expect(t).toContain('seedNewChatSession(')
+    expect(t).toContain('seedDraftFromLink(')
     expect(t).toContain('projectId: session.projectId')
   })
   it('new route remounts the composer when a new prefill arrives', () => {
