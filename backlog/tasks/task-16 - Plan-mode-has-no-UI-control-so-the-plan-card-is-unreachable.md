@@ -4,6 +4,7 @@ title: 'Plan mode has no UI control, so the plan card is unreachable'
 status: Ideas
 assignee: []
 created_date: '2026-10-18 15:43'
+updated_date: '2026-10-18 16:13'
 labels: []
 dependencies: []
 type: feature
@@ -22,3 +23,9 @@ No component or route in the app writes planMode (settings.planMode / session.se
 - [ ] #2 A user can turn plan mode on for an agent chat from the UI
 - [ ] #3 A plan runs end to end against a real model: proposed, running, stopped, Continue, finished, Change in Review
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Maintainer, 2026-10-18: users should be able to turn plan mode on; the slice is the agent's choice; add an end-to-end test if possible. Decision: slice 06b (chat actions, composer) owns it — a plan-mode toggle for agent chats in the composer, plus an end-to-end test of the plan flow (proposed → Run plan → running → Stop → Continue → finished → one Change in Review) driven through generate() with a scripted fake model, since no real model or API key is available in the build container. A real-model check stays a manual step.
+<!-- SECTION:NOTES:END -->
