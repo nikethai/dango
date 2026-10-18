@@ -36,6 +36,7 @@ export function CostWarningRow({ value, onChange }: { value: number; onChange(ne
         <NumberInput
           prefix="$"
           min={0}
+          allowNegative={false}
           step={0.1}
           decimalScale={2}
           w={120}

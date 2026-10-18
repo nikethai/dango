@@ -75,6 +75,15 @@ describe('CostWarningRow', () => {
     fireEvent.keyDown(field(), { key: 'Enter' })
     expect(onChange).toHaveBeenCalledWith(0)
   })
+
+  it('does not accept a minus sign, so a typo cannot turn the warning off', () => {
+    const onChange = vi.fn()
+    wrap(<CostWarningRow value={0.5} onChange={onChange} />)
+    fireEvent.change(field(), { target: { value: '-2' } })
+    fireEvent.blur(field())
+    expect(field().value).not.toContain('-')
+    expect(onChange).not.toHaveBeenCalledWith(0)
+  })
 })
 
 describe('ShowThinkingRow', () => {
