@@ -299,8 +299,12 @@ export const MemorySyncConfigSchema = z.object({
 /** Local OS system notifications (not remote push). Default off. */
 export const SystemNotificationsConfigSchema = z.object({
   enabled: z.boolean().default(false).catch(false),
+  notifyOnNeedsYou: z.boolean().default(true).catch(true),
+  /** Long runs (chat, team room, Swarm) that finish in the background. */
   notifyOnGenerationComplete: z.boolean().default(true).catch(true),
+  /** Unused since slice 08 (room runs count as long runs); kept so stored settings still load. */
   notifyOnRoomComplete: z.boolean().default(true).catch(true),
+  /** Unused since slice 08 (no update notifications); kept so stored settings still load. */
   notifyOnUpdateAvailable: z.boolean().default(true).catch(true),
 })
 

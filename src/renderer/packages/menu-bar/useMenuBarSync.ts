@@ -4,6 +4,7 @@ import i18n from '@/i18n'
 import { loadReviewEntries, useLastCheckedAt, useReviewWaitingCount } from '@/packages/review'
 import platform, { platformCapabilities } from '@/platform'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
+import { createNeedsYouWatcher } from './needs-you-watcher'
 import { computeTrayStatus } from './tray-status'
 
 const MINUTE_MS = 60_000
@@ -12,6 +13,7 @@ const MINUTE_MS = 60_000
  * Pushes the menu bar / tray status (mood, status line, pause label) to the native shell from the main window.
  * Re-pushes on every input change and once a minute (for the "checked" text); the minute tick and
  * `session:changed` also reload Review entries so rows written by the quick window reach this hidden window.
+ * Also starts the needs-you notification watcher (main window on desktop; web and mobile run it too).
  */
 export function useMenuBarSync(): void {
   const waiting = useReviewWaitingCount()
@@ -76,6 +78,41 @@ export function useMenuBarSync(): void {
       unlistenToggle?.()
       offLanguage?.()
       unlistenSession?.()
+    }
+  }, [])
+
+  // Notifications: every window tracks its focus (so a focused quick window counts as active); one window watches
+  // Review for new Needs you entries: main on desktop, the only window on web and mobile.
+  useEffect(() => {
+    let disposed = false
+    let stopWatcher: (() => void) | undefined
+    const notifications = import('@/packages/notifications')
+
+    void (async () => {
+      try {
+        ;(await notifications).trackAppActive()
+      } catch {
+        // notifications unavailable; the watcher below would have nothing to call
+        return
+      }
+      if (platformCapabilities.supportsDesktopOnlySettings) {
+        let label: string | undefined
+        try {
+          label = await platform.getWindowLabel?.()
+        } catch {
+          return
+        }
+        if (label !== 'main') return
+      }
+      if (disposed) return
+      stopWatcher = createNeedsYouWatcher((event) => {
+        void notifications.then((m) => m.notifySystemEvent(event)).catch(() => undefined)
+      })
+    })()
+
+    return () => {
+      disposed = true
+      stopWatcher?.()
     }
   }, [])
 

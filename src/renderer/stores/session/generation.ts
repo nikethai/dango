@@ -1593,12 +1593,14 @@ export async function generate(
             try {
               const { notifySystemEvent } = await import('@/packages/notifications')
               const sessionName = (await chatStore.getSession(sessionId))?.name || session.name || undefined
-              void notifySystemEvent({
-                kind: 'generation_complete',
-                sessionId,
-                messageId: targetMsg.id,
-                sessionName,
-              })
+              if (typeof targetMsg.timestamp === 'number') {
+                void notifySystemEvent({
+                  kind: 'long_run_done',
+                  sessionId,
+                  sessionName,
+                  startedAt: targetMsg.timestamp,
+                })
+              }
             } catch {
               // non-fatal
             }
@@ -1710,12 +1712,14 @@ export async function generate(
         await modifyMessage(sessionId, targetMsg, true)
         try {
           const { notifySystemEvent } = await import('@/packages/notifications')
-          void notifySystemEvent({
-            kind: 'generation_complete',
-            sessionId,
-            messageId: targetMsg.id,
-            sessionName: session.name || undefined,
-          })
+          if (typeof targetMsg.timestamp === 'number') {
+            void notifySystemEvent({
+              kind: 'long_run_done',
+              sessionId,
+              sessionName: session.name || undefined,
+              startedAt: targetMsg.timestamp,
+            })
+          }
         } catch {
           // non-fatal
         }

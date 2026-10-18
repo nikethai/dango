@@ -1,56 +1,74 @@
 import type { SystemNotificationsConfig } from '@shared/types'
 import platform, { isCapacitorMobile } from '@/platform'
 import { settingsStore } from '@/stores/settingsStore'
-import { NotificationService } from './notification-service'
-import { DEFAULT_NOTIFICATIONS_CONFIG, type NotifyEvent, type SystemNotificationKind } from './types'
+import { ACTIVE_HEARTBEAT_MS, createActiveWindowTracker } from './active-window'
+import { NotificationService, routeNotificationClick } from './notification-service'
+import { DEFAULT_NOTIFICATIONS_CONFIG, type NotifyEvent, type NotifyResult } from './types'
 
-export type { NotifyEvent, SystemNotificationKind, NotificationServiceDeps } from './types'
-export { DEFAULT_NOTIFICATIONS_CONFIG } from './types'
-export { evaluateNotificationPolicy, NotificationService } from './notification-service'
+export { NotificationService, routeNotificationClick } from './notification-service'
+export type {
+  NotificationServiceDeps,
+  NotifyEvent,
+  NotifyResult,
+  SystemNotificationKind,
+} from './types'
+export { DEFAULT_NOTIFICATIONS_CONFIG, LONG_RUN_MS, NOTIFY_MIN_GAP_MS } from './types'
 
-let appActive = true
+/** Shared by every window of this origin, so the 10-minute gap holds across the main and quick windows. */
+const LAST_SHOWN_KEY = 'dango.notify.last-shown-at'
+
 let focusWired = false
 let clickWired = false
 let i18nWired = false
 
+function localStore(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage
+  } catch {
+    return null
+  }
+}
+
+const activeWindow = createActiveWindowTracker({
+  id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+  storage: localStore,
+  now: () => Date.now(),
+})
+
 function wireI18n() {
   if (i18nWired) return
   i18nWired = true
-  void import('@/i18n').then((mod) => {
-    const i18n = mod.default
-    notificationService.setDeps({
-      t: (key, options) => i18n.t(key, options as Record<string, unknown>),
+  void import('@/i18n')
+    .then((mod) => {
+      const i18n = mod.default
+      notificationService.setDeps({
+        t: (key, options) => String(i18n.t(key, options as Record<string, unknown>)),
+      })
     })
-  }).catch(() => {
-    i18nWired = false
-  })
+    .catch(() => {
+      i18nWired = false
+    })
 }
 
 function wireFocusTracking() {
-  if (focusWired || typeof window === 'undefined') return
+  if (focusWired || typeof window === 'undefined' || typeof document === 'undefined') return
   focusWired = true
 
-  const setActive = (active: boolean) => {
-    appActive = active
-  }
-
-  // Web / Capacitor webview visibility
-  const onVisibility = () => {
+  const refresh = () => {
     // On mobile, document.hasFocus() is unreliable; visibility is enough
-    if (isCapacitorMobile) {
-      setActive(document.visibilityState === 'visible')
-      return
-    }
-    setActive(document.visibilityState === 'visible' && document.hasFocus())
+    const visible = document.visibilityState === 'visible'
+    activeWindow.setFocused(isCapacitorMobile ? visible : visible && document.hasFocus())
   }
-  document.addEventListener('visibilitychange', onVisibility)
-  window.addEventListener('focus', () => setActive(true))
-  window.addEventListener('blur', () => setActive(false))
-  onVisibility()
+  document.addEventListener('visibilitychange', refresh)
+  window.addEventListener('focus', () => activeWindow.setFocused(true))
+  window.addEventListener('blur', () => activeWindow.setFocused(false))
+  window.addEventListener('pagehide', () => activeWindow.setFocused(false))
+  setInterval(() => activeWindow.heartbeat(), ACTIVE_HEARTBEAT_MS)
+  refresh()
 
-  // Desktop Tauri focus events
+  // Desktop Tauri emits this to every window; re-read this window's own focus.
   try {
-    platform.onWindowFocused(() => setActive(true))
+    platform.onWindowFocused(refresh)
   } catch {
     // ignore
   }
@@ -60,7 +78,7 @@ function wireFocusTracking() {
     void import('@capacitor/app')
       .then(({ App }) =>
         App.addListener('appStateChange', ({ isActive }) => {
-          setActive(isActive)
+          activeWindow.setFocused(isActive)
         })
       )
       .catch(() => {
@@ -75,12 +93,11 @@ function wireClickNavigation() {
   if (!platform.onSystemNotificationClick) return
 
   platform.onSystemNotificationClick((payload) => {
-    const sessionId = payload.sessionId
-    if (!sessionId) return
-    // Bring app forward on desktop when possible
-    void platform.showMainWindow?.().catch(() => {})
-    void import('@/router').then(({ router }) => {
-      void router.navigate({ to: `/session/${sessionId}` as never })
+    void routeNotificationClick(payload, {
+      showMainWindow: () => platform.showMainWindow?.() ?? Promise.resolve(),
+      navigate: (to) => {
+        void import('@/router').then(({ router }) => router.navigate({ to: to as never }))
+      },
     })
   })
 }
@@ -90,26 +107,59 @@ function getNotificationsConfig(): SystemNotificationsConfig {
   return { ...DEFAULT_NOTIFICATIONS_CONFIG, ...raw }
 }
 
+function readLastShownAt(): number | null {
+  try {
+    const raw = localStore()?.getItem(LAST_SHOWN_KEY)
+    const value = raw ? Number(raw) : Number.NaN
+    return Number.isFinite(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+function writeLastShownAt(t: number) {
+  try {
+    localStore()?.setItem(LAST_SHOWN_KEY, String(t))
+  } catch {
+    // Storage blocked: the gap then holds per window only.
+  }
+}
+
 export const notificationService = new NotificationService({
   getConfig: getNotificationsConfig,
   isAppActive: () => {
     wireFocusTracking()
-    return appActive
+    return activeWindow.isActive()
   },
   getPermission: () => platform.getSystemNotificationPermission(),
   requestPermission: () => platform.requestSystemNotificationPermission(),
   show: (payload) => platform.showSystemNotification(payload),
+  now: () => Date.now(),
+  setTimer: (fn, ms) => {
+    const id = setTimeout(fn, ms)
+    return () => clearTimeout(id)
+  },
+  getLastShownAt: readLastShownAt,
+  setLastShownAt: writeLastShownAt,
 })
 
+/**
+ * Starts this window's share of "is Dango active?" (focus flag + heartbeat). Every window calls it at startup so a
+ * focused quick window also counts when the main window decides.
+ */
+export function trackAppActive(): void {
+  wireFocusTracking()
+}
+
 /** Fire-and-forget notify with focus wiring + click routing initialized. */
-export async function notifySystemEvent(event: NotifyEvent): Promise<boolean> {
+export function notifySystemEvent(event: NotifyEvent): Promise<NotifyResult> {
   wireI18n()
   wireFocusTracking()
   wireClickNavigation()
   return notificationService.notify(event)
 }
 
-/** For tests: override app-active flag. */
+/** For tests: override this window's focus. */
 export function __setAppActiveForTests(active: boolean) {
-  appActive = active
+  activeWindow.setFocused(active)
 }

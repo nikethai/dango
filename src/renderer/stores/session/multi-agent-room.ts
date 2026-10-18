@@ -51,15 +51,21 @@ function scrollChatToLatest(behavior: 'auto' | 'smooth' = 'smooth') {
   setTimeout(run, 320)
 }
 
-/** Local OS notification when a multi-agent pipeline finishes (no message content). */
+/**
+ * Local OS notification when a multi-agent pipeline finishes in the background (no message content). The run started
+ * with the latest user message; the service skips runs shorter than LONG_RUN_MS.
+ */
 async function notifyRoomPipelineComplete(sessionId: string) {
   try {
     const { notifySystemEvent } = await import('@/packages/notifications')
     const session = await chatStore.getSession(sessionId)
+    const startedAt = session?.messages.findLast((m) => m.role === 'user')?.timestamp
+    if (typeof startedAt !== 'number') return
     await notifySystemEvent({
-      kind: 'room_complete',
+      kind: 'long_run_done',
       sessionId,
       sessionName: session?.name || undefined,
+      startedAt,
     })
   } catch {
     // non-fatal

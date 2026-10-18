@@ -25,11 +25,9 @@ export default function Toolbar({ session, compact }: { session: Session; compac
   const [showUpdateNotification, setShowUpdateNotification] = useState(false)
 
   useEffect(() => {
+    // Updates show the in-app button only; they never raise an OS notification.
     const offUpdateDownloaded = platform.onUpdateDownloaded(() => {
       setShowUpdateNotification(true)
-      void import('@/packages/notifications').then(({ notifySystemEvent }) =>
-        notifySystemEvent({ kind: 'update_available' })
-      )
     })
     return () => {
       offUpdateDownloaded()

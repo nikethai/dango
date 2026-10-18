@@ -144,7 +144,8 @@ export async function showWebOrCapacitorNotification(
   const n = new Notification(payload.title, {
     body: payload.body,
     data: payload.data,
-    tag: payload.data?.sessionId ? `dango-${payload.data.kind ?? 'event'}-${payload.data.sessionId}` : undefined,
+    // One tag: a new notification replaces the previous one instead of stacking.
+    tag: 'dango',
   })
   n.onclick = () => {
     window.focus()

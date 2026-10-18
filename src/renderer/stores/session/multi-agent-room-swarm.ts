@@ -268,9 +268,10 @@ export async function runAgentRoomSwarm(
     const { notifySystemEvent } = await import('@/packages/notifications')
     const session = await chatStore.getSession(sessionId)
     await notifySystemEvent({
-      kind: 'room_complete',
+      kind: 'long_run_done',
       sessionId,
       sessionName: session?.name || undefined,
+      startedAt: runStartedAt,
     })
   } catch {
     // non-fatal

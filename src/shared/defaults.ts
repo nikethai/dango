@@ -173,6 +173,7 @@ export function settings(): Settings {
       },
       notifications: {
         enabled: false,
+        notifyOnNeedsYou: true,
         notifyOnGenerationComplete: true,
         notifyOnRoomComplete: true,
         notifyOnUpdateAvailable: true,

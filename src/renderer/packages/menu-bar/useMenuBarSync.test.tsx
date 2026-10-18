@@ -20,6 +20,21 @@ const h = vi.hoisted(() => ({
   sessionCb: null as null | (() => void),
   lang: 'en',
   langSubs: new Set<() => void>(),
+  watcherNotify: null as null | ((e: unknown) => void),
+  stopWatcher: vi.fn(),
+  notifySystemEvent: vi.fn(async () => 'skipped'),
+  trackAppActive: vi.fn(),
+}))
+
+vi.mock('./needs-you-watcher', () => ({
+  createNeedsYouWatcher: (notify: (e: unknown) => void) => {
+    h.watcherNotify = notify
+    return h.stopWatcher
+  },
+}))
+vi.mock('@/packages/notifications', () => ({
+  notifySystemEvent: h.notifySystemEvent,
+  trackAppActive: h.trackAppActive,
 }))
 
 vi.mock('@/i18n', () => ({
@@ -93,6 +108,10 @@ beforeEach(() => {
   h.unsub.mockClear()
   h.setSettings.mockClear()
   h.loadReviewEntries.mockClear()
+  h.watcherNotify = null
+  h.stopWatcher.mockClear()
+  h.notifySystemEvent.mockClear()
+  h.trackAppActive.mockClear()
 })
 afterEach(() => {
   cleanup()
@@ -195,5 +214,37 @@ describe('useMenuBarSync', () => {
     h.loadReviewEntries.mockClear()
     h.sessionCb?.()
     expect(h.loadReviewEntries).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts the needs-you watcher in the main window and stops it on unmount', async () => {
+    const { unmount } = renderHook(() => useMenuBarSync())
+    await flush()
+    await flush()
+    expect(h.trackAppActive).toHaveBeenCalled()
+    expect(h.watcherNotify).not.toBeNull()
+    const event = { kind: 'needs_you', entryId: 'e1', text: 'Approve?' }
+    h.watcherNotify?.(event)
+    await flush()
+    await flush()
+    expect(h.notifySystemEvent).toHaveBeenCalledWith(event)
+    unmount()
+    expect(h.stopWatcher).toHaveBeenCalled()
+  })
+
+  it('the quick window tracks focus but does not watch', async () => {
+    h.label = 'quick'
+    renderHook(() => useMenuBarSync())
+    await flush()
+    await flush()
+    expect(h.trackAppActive).toHaveBeenCalled()
+    expect(h.watcherNotify).toBeNull()
+  })
+
+  it('web and mobile (single window) run the watcher', async () => {
+    h.supported = false
+    renderHook(() => useMenuBarSync())
+    await flush()
+    await flush()
+    expect(h.watcherNotify).not.toBeNull()
   })
 })
