@@ -114,4 +114,23 @@ describe('SidebarReviewRow', () => {
     const rule = css.match(/\.rail-icon-btn \.dg-badge\s*\{([^}]*)\}/)
     expect(rule?.[1]).toMatch(/position:\s*absolute/)
   })
+
+  it('expanded badge does not stretch like the row label (the label span has flex: 1)', () => {
+    const css = readFileSync(resolve(__dirname, '../../static/globals.css'), 'utf8')
+    const rule = css.match(/\.rail-nav-item \.dg-badge\s*\{([^}]*)\}/)
+    expect(rule?.[1]).toMatch(/flex:\s*none/)
+  })
+
+  it('rail badge sits above the icon corner and stays inside the 56px rail, even at 99+ (walk)', () => {
+    const css = readFileSync(resolve(__dirname, '../../static/globals.css'), 'utf8')
+    const body = css.match(/\.rail-icon-btn \.dg-badge\s*\{([^}]*)\}/)?.[1] ?? ''
+    // Button is 40px inside a 56px rail (8px each side), the icon is centred: a 99+ pill (about 31px wide) pinned
+    // 6px past the right edge ends at 54px, and 4px above the top clears the icon.
+    expect(body).toMatch(/top:\s*-4px/)
+    expect(body).toMatch(/right:\s*-6px/)
+    expect(body).toMatch(/padding:\s*0 4px/)
+    expect(body).toMatch(/min-width:\s*16px/)
+    expect(body).toMatch(/line-height:\s*16px/)
+    expect(body).toMatch(/transform:\s*none/)
+  })
 })

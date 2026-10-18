@@ -1102,12 +1102,16 @@
 
   .rail-icon-btn .dg-badge {
     position: absolute;
-    top: 2px;
-    right: 0;
-    transform: translateX(25%);
+    top: -4px;
+    right: -6px;
+    transform: none;
+    min-width: 16px;
+    padding: 0 4px;
+    line-height: 16px;
   }
 
   .rail-nav-item .dg-badge {
+    flex: none;
     margin-left: auto;
   }
 
