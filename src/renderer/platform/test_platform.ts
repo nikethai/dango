@@ -10,6 +10,7 @@
 import * as defaults from '@shared/defaults'
 import type { Config, Language, Settings, ShortcutSetting } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
+import type { TrayStatus } from '@/packages/menu-bar/tray-status'
 import { type ImageGenerationStorage, IndexedDBImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import type {
   Exporter,
@@ -135,7 +136,7 @@ export default class TestPlatform implements Platform {
   /** Recorded quick window heights (setQuickWindowHeight) for tests */
   public quickWindowHeights: number[] = []
   /** Recorded tray statuses (setTrayStatus) for tests */
-  public trayStatuses: import('@/packages/menu-bar/tray-status').TrayStatus[] = []
+  public trayStatuses: TrayStatus[] = []
   /** Number of hideQuickWindow calls for tests */
   public quickHidden = 0
   private systemNotificationClickHandlers = new Set<(payload: SystemNotificationClickPayload) => void>()
@@ -419,7 +420,7 @@ export default class TestPlatform implements Platform {
     return Promise.resolve()
   }
 
-  public setTrayStatus(status: import('@/packages/menu-bar/tray-status').TrayStatus): Promise<void> {
+  public setTrayStatus(status: TrayStatus): Promise<void> {
     this.trayStatuses.push(status)
     return Promise.resolve()
   }

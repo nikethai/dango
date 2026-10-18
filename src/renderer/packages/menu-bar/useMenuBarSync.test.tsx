@@ -17,6 +17,14 @@ const h = vi.hoisted(() => ({
   settings: {} as Record<string, unknown>,
   setSettings: vi.fn(),
   rejectSet: false,
+  sessionCb: null as null | (() => void),
+}))
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: (_name: string, cb: () => void) => {
+    h.sessionCb = cb
+    return Promise.resolve(() => undefined)
+  },
 }))
 
 vi.mock('@/packages/review', async () => {
@@ -69,6 +77,7 @@ beforeEach(() => {
   h.toggleCb = null
   h.settings = {}
   h.rejectSet = false
+  h.sessionCb = null
   h.unsub.mockClear()
   h.setSettings.mockClear()
   h.loadReviewEntries.mockClear()
@@ -145,5 +154,26 @@ describe('useMenuBarSync', () => {
     renderHook(() => useMenuBarSync())
     await flush()
     expect(h.statuses.length).toBeGreaterThan(0)
+  })
+
+  it('re-pushes when the language changes', async () => {
+    h.settings = { language: 'en' }
+    const { rerender } = renderHook(() => useMenuBarSync())
+    await flush()
+    const before = h.statuses.length
+    h.settings = { language: 'de' }
+    rerender()
+    await flush()
+    expect(h.statuses.length).toBeGreaterThan(before)
+  })
+
+  it('reloads entries on session:changed', async () => {
+    renderHook(() => useMenuBarSync())
+    await flush()
+    await flush()
+    expect(h.sessionCb).not.toBeNull()
+    h.loadReviewEntries.mockClear()
+    h.sessionCb?.()
+    expect(h.loadReviewEntries).toHaveBeenCalledTimes(1)
   })
 })

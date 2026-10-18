@@ -8,6 +8,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import localforage from 'localforage'
 import { v4 as uuidv4 } from 'uuid'
 import { parseLocale } from '@/i18n/parser'
+import type { TrayStatus } from '@/packages/menu-bar/tray-status'
 import { type ImageGenerationStorage, IndexedDBImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import { getOS } from '../packages/navigator'
 import type {
@@ -730,7 +731,7 @@ export default class DesktopPlatform implements Platform {
     return listenShellEvent('shell:hidden-to-tray', () => callback())
   }
 
-  public async setTrayStatus(status: import('@/packages/menu-bar/tray-status').TrayStatus): Promise<void> {
+  public async setTrayStatus(status: TrayStatus): Promise<void> {
     await this.ipc.invoke('shell:setTrayStatus', status)
   }
 
@@ -830,13 +831,7 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.invoke('computer:key', opts)
   }
 
-  public async computerScroll(opts: {
-    x?: number
-    y?: number
-    deltaY?: number
-    direction?: string
-    amount?: number
-  }) {
+  public async computerScroll(opts: { x?: number; y?: number; deltaY?: number; direction?: string; amount?: number }) {
     return this.ipc.invoke('computer:scroll', opts)
   }
 

@@ -16,6 +16,8 @@ const MINUTE_MS = 60_000
 export function useMenuBarSync(): void {
   const waiting = useReviewWaitingCount()
   const lastCheckedAt = useLastCheckedAt()
+  // Menu labels are translated here, so a language change must re-push them.
+  const language = useSettingsStore((s) => s.language)
   const paused = readBackgroundPaused(useSettingsStore((s) => s.backgroundPaused))
   // Latest inputs for the minute tick and the toggle handler, without re-creating the interval.
   const latest = useRef({ waiting, lastCheckedAt, paused })
@@ -77,5 +79,5 @@ export function useMenuBarSync(): void {
   // biome-ignore lint/correctness/useExhaustiveDependencies: inputs are the trigger; push reads them via the ref
   useEffect(() => {
     pushRef.current?.()
-  }, [waiting, lastCheckedAt, paused])
+  }, [waiting, lastCheckedAt, paused, language])
 }

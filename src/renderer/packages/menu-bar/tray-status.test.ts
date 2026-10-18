@@ -42,4 +42,26 @@ describe('computeTrayStatus', () => {
       quit: 'Quit Dango',
     })
   })
+
+  it('reads 1 and 2 minutes', () => {
+    expect(computeTrayStatus({ waiting: 0, paused: false, lastCheckedAt: now - 60_000, now }).statusLine).toContain(
+      'checked 1 min ago'
+    )
+    expect(computeTrayStatus({ waiting: 0, paused: false, lastCheckedAt: now - 120_000, now }).statusLine).toContain(
+      'checked 2 min ago'
+    )
+  })
+
+  it('switches from minutes to hours at 60 minutes', () => {
+    const at = (min: number) =>
+      computeTrayStatus({ waiting: 0, paused: false, lastCheckedAt: now - min * 60_000, now }).statusLine
+    expect(at(59)).toContain('checked 59 min ago')
+    expect(at(60)).toContain('checked 1 h ago')
+  })
+
+  it('treats a future timestamp as just now', () => {
+    expect(computeTrayStatus({ waiting: 0, paused: false, lastCheckedAt: now + 5 * 60_000, now }).statusLine).toBe(
+      'Nothing needs you · checked just now'
+    )
+  })
 })

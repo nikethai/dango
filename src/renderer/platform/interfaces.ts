@@ -1,4 +1,5 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: <any> */
+
 import type { Config, Language, Settings, ShortcutSetting } from '@shared/types'
 import type {
   WorkspaceDescriptor,
@@ -9,6 +10,7 @@ import type {
   WorkspaceTrustCategory,
   WorkspaceTrustValue,
 } from '@shared/types/workspace'
+import type { TrayStatus } from '@/packages/menu-bar/tray-status'
 import type { ImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import type { KnowledgeBaseController } from './knowledge-base/interface'
 
@@ -212,7 +214,7 @@ export interface Platform extends Storage {
   onScreenshotError?(callback: (message: string) => void): () => void
   onHiddenToTray?(callback: () => void): () => void
   /** Push the menu bar / tray status to the native shell (desktop shell only; absent elsewhere). */
-  setTrayStatus?(status: import('@/packages/menu-bar/tray-status').TrayStatus): Promise<void>
+  setTrayStatus?(status: TrayStatus): Promise<void>
   /** The tray's Pause / Resume row was clicked (`shell:tray-pause-toggle`). */
   onTrayPauseToggle?(callback: () => void): () => void
 
