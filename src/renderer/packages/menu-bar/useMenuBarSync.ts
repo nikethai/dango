@@ -16,8 +16,6 @@ const MINUTE_MS = 60_000
 export function useMenuBarSync(): void {
   const waiting = useReviewWaitingCount()
   const lastCheckedAt = useLastCheckedAt()
-  // Menu labels are translated here, so a language change must re-push them.
-  const language = useSettingsStore((s) => s.language)
   const paused = readBackgroundPaused(useSettingsStore((s) => s.backgroundPaused))
   // Latest inputs for the minute tick and the toggle handler, without re-creating the interval.
   const latest = useRef({ waiting, lastCheckedAt, paused })
@@ -28,6 +26,7 @@ export function useMenuBarSync(): void {
     let disposed = false
     let interval: ReturnType<typeof setInterval> | undefined
     let unlistenToggle: (() => void) | undefined
+    let offLanguage: (() => void) | undefined
     let unlistenSession: (() => void) | undefined
 
     const push = () => {
@@ -49,6 +48,9 @@ export function useMenuBarSync(): void {
       if (disposed || label !== 'main') return
       pushRef.current = push
       push()
+      // Labels are translated here; follow i18n itself, which switches after the settings value changes.
+      i18n.on('languageChanged', push)
+      offLanguage = () => i18n.off('languageChanged', push)
       interval = setInterval(() => {
         void loadReviewEntries().catch(() => undefined)
         push()
@@ -72,6 +74,7 @@ export function useMenuBarSync(): void {
       pushRef.current = null
       if (interval) clearInterval(interval)
       unlistenToggle?.()
+      offLanguage?.()
       unlistenSession?.()
     }
   }, [])
@@ -79,5 +82,5 @@ export function useMenuBarSync(): void {
   // biome-ignore lint/correctness/useExhaustiveDependencies: inputs are the trigger; push reads them via the ref
   useEffect(() => {
     pushRef.current?.()
-  }, [waiting, lastCheckedAt, paused, language])
+  }, [waiting, lastCheckedAt, paused])
 }

@@ -18,6 +18,16 @@ const h = vi.hoisted(() => ({
   setSettings: vi.fn(),
   rejectSet: false,
   sessionCb: null as null | (() => void),
+  lang: 'en',
+  langSubs: new Set<() => void>(),
+}))
+
+vi.mock('@/i18n', () => ({
+  default: {
+    t: (key: string) => (h.lang === 'de' && key === 'Open Review' ? 'Review öffnen' : key),
+    on: (_e: string, cb: () => void) => h.langSubs.add(cb),
+    off: (_e: string, cb: () => void) => h.langSubs.delete(cb),
+  },
 }))
 
 vi.mock('@tauri-apps/api/event', () => ({
@@ -78,6 +88,8 @@ beforeEach(() => {
   h.settings = {}
   h.rejectSet = false
   h.sessionCb = null
+  h.lang = 'en'
+  h.langSubs.clear()
   h.unsub.mockClear()
   h.setSettings.mockClear()
   h.loadReviewEntries.mockClear()
@@ -156,15 +168,23 @@ describe('useMenuBarSync', () => {
     expect(h.statuses.length).toBeGreaterThan(0)
   })
 
-  it('re-pushes when the language changes', async () => {
-    h.settings = { language: 'en' }
-    const { rerender } = renderHook(() => useMenuBarSync())
+  it('re-pushes translated labels when i18n emits languageChanged', async () => {
+    renderHook(() => useMenuBarSync())
     await flush()
+    expect(h.statuses.at(-1)?.menu.openReview).toBe('Open Review')
     const before = h.statuses.length
-    h.settings = { language: 'de' }
-    rerender()
+    h.lang = 'de'
+    act(() => h.langSubs.forEach((f) => f()))
+    expect(h.statuses.length).toBe(before + 1)
+    expect(h.statuses.at(-1)?.menu.openReview).toBe('Review öffnen')
+  })
+
+  it('stops listening to languageChanged on unmount', async () => {
+    const { unmount } = renderHook(() => useMenuBarSync())
     await flush()
-    expect(h.statuses.length).toBeGreaterThan(before)
+    expect(h.langSubs.size).toBe(1)
+    unmount()
+    expect(h.langSubs.size).toBe(0)
   })
 
   it('reloads entries on session:changed', async () => {

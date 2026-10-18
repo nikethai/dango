@@ -831,7 +831,13 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.invoke('computer:key', opts)
   }
 
-  public async computerScroll(opts: { x?: number; y?: number; deltaY?: number; direction?: string; amount?: number }) {
+  public async computerScroll(opts: {
+    x?: number
+    y?: number
+    deltaY?: number
+    direction?: string
+    amount?: number
+  }) {
     return this.ipc.invoke('computer:scroll', opts)
   }
 
