@@ -15,7 +15,7 @@ import { useProjectWorkspace } from '@/hooks/useProjectWorkspace'
 import { useScopes } from '@/hooks/useScopes'
 import { startNewChat } from '@/lib/startNewChat'
 import { platformCapabilities } from '@/platform'
-import { deleteScopeWithUndo } from '@/projects/scope-delete'
+import { deleteScopeOrToast } from '@/projects/scope-feedback'
 import { useSessionList } from '@/stores/chatStore'
 
 const SCOPE_TABS = ['overview', 'knowledge', 'sources', 'files', 'chats', 'settings'] as const
@@ -74,9 +74,9 @@ function ScopeContent({ scopeId }: { scopeId: string }) {
             agentOptions={agentOptions}
             onChange={(patch) => updateScope(scope.id, patch)}
             onDelete={() => {
-              void deleteScopeWithUndo(scope, sessionMetaList ?? [], { removeScope, putScope }).then(() =>
-                startNewChat({})
-              )
+              void deleteScopeOrToast(scope, sessionMetaList ?? [], { removeScope, putScope }).then((deleted) => {
+                if (deleted) startNewChat({})
+              })
             }}
           />
         ) : null

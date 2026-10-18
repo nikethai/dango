@@ -1295,6 +1295,8 @@
   "Self-hosted History Sync": "Self-hosted history sync",
   "Serper API Key": "Serper API key",
   "Couldn't undo. The change stays.": "Couldn't undo. The change stays.",
+  "Couldn't move this chat. Try again.": "Couldn't move this chat. Try again.",
+  "Couldn't delete {{name}}. Try again.": "Couldn't delete {{name}}. Try again.",
   "Undo": "Undo",
   "Assistant, {{state}}": "Assistant, {{state}}",
   "Idle": "Idle",

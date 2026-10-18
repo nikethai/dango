@@ -32,8 +32,7 @@ import { useScopes } from '@/hooks/useScopes'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { startNewChat } from '@/lib/startNewChat'
 import { getEffectiveProjectId } from '@/projects/project-context'
-import { deleteScopeWithUndo } from '@/projects/scope-delete'
-import { moveSessionToScope } from '@/projects/scope-sessions'
+import { deleteScopeOrToast, moveSessionToScopeOrToast } from '@/projects/scope-feedback'
 import { updateSessionList, useSessionList } from '@/stores/chatStore'
 import { useUIStore } from '@/stores/uiStore'
 import { DeleteScopeSheet } from '../scope/DeleteScopeSheet'
@@ -533,7 +532,7 @@ export default function SessionList({
         }
         setExpandedFolders((prev) => ({ ...prev, [dropTarget.folderId]: true }))
         projectsSection.ensureOpen()
-        await moveSessionToScope(activeId, dropTarget.folderId)
+        await moveSessionToScopeOrToast(activeId, dropTarget.folderId)
         refetch()
         return
       }
@@ -543,7 +542,7 @@ export default function SessionList({
         return
       }
       recentsSection.ensureOpen()
-      await moveSessionToScope(activeId, undefined)
+      await moveSessionToScopeOrToast(activeId, undefined)
       refetch()
       return
     }
@@ -560,7 +559,7 @@ export default function SessionList({
       } else {
         recentsSection.ensureOpen()
       }
-      await moveSessionToScope(activeId, targetFolderId)
+      await moveSessionToScopeOrToast(activeId, targetFolderId)
       refetch()
       return
     }
@@ -626,8 +625,8 @@ export default function SessionList({
   )
 
   const handleConfirmDeleteScope = (scope: Scope) => {
-    void deleteScopeWithUndo(scope, sortedSessions || [], { removeScope, putScope }).then(() => {
-      if (routerState.location.pathname === `/scope/${scope.id}`) startNewChat({})
+    void deleteScopeOrToast(scope, sortedSessions || [], { removeScope, putScope }).then((deleted) => {
+      if (deleted && routerState.location.pathname === `/scope/${scope.id}`) startNewChat({})
     })
   }
 

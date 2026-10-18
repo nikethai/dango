@@ -18,7 +18,7 @@ import { useTranslation } from 'react-i18next'
 import { useFolders } from '@/hooks/useFolders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { getEffectiveProjectId } from '@/projects/project-context'
-import { moveSessionToScope } from '@/projects/scope-sessions'
+import { moveSessionToScopeOrToast } from '@/projects/scope-feedback'
 import { router } from '@/router'
 import {
   deleteSession as deleteSessionStore,
@@ -161,7 +161,7 @@ function SessionItem(props: Props) {
   )
 
   const handleSaveFolder = async () => {
-    await moveSessionToScope(session.id, selectedFolderId || undefined)
+    await moveSessionToScopeOrToast(session.id, selectedFolderId || undefined)
     setFolderModalOpened(false)
   }
 

@@ -21,7 +21,7 @@ import { useProviders } from '@/hooks/useProviders'
 import platform from '@/platform'
 import { getEffectiveProjectId } from '@/projects/project-context'
 import { commitProjectContextDraft } from '@/projects/project-context-draft'
-import { moveSessionToScope } from '@/projects/scope-sessions'
+import { moveSessionToScopeOrToast } from '@/projects/scope-feedback'
 import { updateSessionWithMessages as updateSessionStore, useSession } from '@/stores/chatStore'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as scrollActions from '@/stores/scrollActions'
@@ -385,7 +385,7 @@ function RouteComponent() {
                     onSubmit={onSubmit}
                     onStopGenerating={onStopGenerating}
                     scopeId={getEffectiveProjectId(currentSession)}
-                    onScopeChange={(id) => void moveSessionToScope(currentSessionId, id)}
+                    onScopeChange={(id) => void moveSessionToScopeOrToast(currentSessionId, id)}
                   />
                 </ErrorBoundary>
               </ChatDockStack>

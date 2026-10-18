@@ -55,7 +55,7 @@ vi.mock('@/hooks/useScopes', () => ({
 }))
 vi.mock('@/platform', () => ({ platformCapabilities: { supportsProjectWorkspace: true } }))
 vi.mock('@/lib/startNewChat', () => ({ startNewChat: vi.fn() }))
-vi.mock('@/projects/scope-delete', () => ({ deleteScopeWithUndo: vi.fn() }))
+vi.mock('@/projects/scope-feedback', () => ({ deleteScopeOrToast: vi.fn() }))
 vi.mock('@/stores/chatStore', () => ({ useSessionList: () => ({ sessionMetaList: [] }) }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }))
 
