@@ -8,7 +8,7 @@ import {
   selectCandidates,
   setContradictionCheckerForTests,
 } from './contradictions'
-import { _resetScopesForTests, _setScopeReaderForTests } from './scopes'
+import { _resetScopesForTests, _setScopeReaderForTests, refreshScopes } from './scopes'
 import { _resetKnowledgeForTests, commitKnowledge } from './store'
 import { makeItem, resetTestStorage } from './test-storage'
 
@@ -164,6 +164,25 @@ describe('checkAgainstLayers', () => {
     expect(checker).toHaveBeenCalledTimes(1)
     const ids = (checker.mock.calls[0] as unknown as [{ candidates: KnowledgeItem[] }])[0].candidates.map((i) => i.id)
     expect(ids.sort()).toEqual(['a1', 'e1'])
+  })
+
+  it('a client scope with Everywhere facts turned off never sends them to the checker', async () => {
+    _setScopeReaderForTests(
+      async () =>
+        [{ id: 'acme', name: 'Acme', kind: 'client', readsEverywhere: { facts: false, documents: false } }] as never
+    )
+    await refreshScopes()
+    await seed()
+    const checker = vi.fn(async () => ['a1', 'e1'])
+    setContradictionCheckerForTests(checker)
+
+    expect(await checkAgainstLayers({ text: 'Launch is 13 Nov', targetScopeId: 'acme' })).toEqual({
+      conflictsWith: ['a1'],
+      overrides: [],
+      ok: true,
+    })
+    const ids = (checker.mock.calls[0] as unknown as [{ candidates: KnowledgeItem[] }])[0].candidates.map((i) => i.id)
+    expect(ids).toEqual(['a1'])
   })
 
   it('no candidates means no model call', async () => {

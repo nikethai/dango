@@ -3,6 +3,7 @@ import type { KnowledgeItem } from '@shared/types/knowledge'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { getLogger } from '@/lib/utils'
 import { tokenizeForIndex } from '@/packages/memory/query-index'
+import { getScopeReads } from './scopes'
 import { ensureKnowledgeLoaded, knowledgeStore } from './store'
 
 const log = getLogger('knowledge')
@@ -121,8 +122,8 @@ export function setContradictionCheckerForTests(fn: ContradictionChecker | null)
 }
 
 /**
- * Compares `text` with the approved items of the target scope and, when the target is not Everywhere,
- * the approved Everywhere facts and decisions, in one checker call. Target-scope ids are conflicts;
+ * Compares `text` with the approved items of the target scope and, when the target is not Everywhere and
+ * reads them (`getScopeReads(target).facts`), the approved Everywhere facts and decisions, in one checker call. Target-scope ids are conflicts;
  * Everywhere ids are overrides. A failed check (no model, provider offline, bad reply) finds nothing
  * and returns `ok: false`.
  */
@@ -133,14 +134,16 @@ export async function checkAgainstLayers(input: {
 }): Promise<{ conflictsWith: string[]; overrides: string[]; ok: boolean }> {
   await ensureKnowledgeLoaded()
   const { targetScopeId } = input
-  const targetIsEverywhere = targetScopeId === EVERYWHERE_SCOPE_ID
+  // Everywhere facts go to the checker only when the scope reads them: a client scope that turned them off
+  // never has them sent to its model.
+  const readsEverywhereFacts = targetScopeId !== EVERYWHERE_SCOPE_ID && getScopeReads(targetScopeId).facts
   const layer = knowledgeStore
     .getState()
     .state.items.filter(
       (i) =>
         i.status === 'approved' &&
         (i.scopeId === targetScopeId ||
-          (!targetIsEverywhere && i.scopeId === EVERYWHERE_SCOPE_ID && i.kind !== 'preference'))
+          (readsEverywhereFacts && i.scopeId === EVERYWHERE_SCOPE_ID && i.kind !== 'preference'))
     )
   const candidates = selectCandidates(input.text, layer)
   if (candidates.length === 0) return { conflictsWith: [], overrides: [], ok: true }
