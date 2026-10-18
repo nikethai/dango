@@ -5,6 +5,7 @@
 import { createMessage, type Message } from '@shared/types'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { createInstance } from 'i18next'
+import { useState } from 'react'
 import { initReactI18next } from 'react-i18next'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import en from '@/i18n/locales/en/translation.json'
@@ -15,7 +16,13 @@ vi.mock('@/modals/Settings', () => ({ navigateToSettings: vi.fn() }))
 vi.mock('@/packages/writing/runtime', () => ({ requestWritingRewrite: vi.fn() }))
 vi.mock('@/components/Markdown', () => ({
   // Stands in for rendering: emphasis markers do not reach the DOM.
-  default: ({ children }: { children: string }) => <div data-testid="markdown">{children.replace(/\*\*/g, '')}</div>,
+  default: ({ children }: { children: string }) =>
+    children.startsWith('<') ? (
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: test stand-in for rendered Markdown
+      <div data-testid="markdown" dangerouslySetInnerHTML={{ __html: children }} />
+    ) : (
+      <div data-testid="markdown">{children.replace(/\*\*/g, '')}</div>
+    ),
 }))
 
 import { QuickChatPanel, type QuickChatPanelProps, usedKnowledgeCount } from './index'
@@ -386,5 +393,56 @@ describe('QuickChatPanel', () => {
     } finally {
       HTMLElement.prototype.getBoundingClientRect = original
     }
+  })
+  it('announces block text with separators and skips MathML', () => {
+    const p = props({ view: 'answered', generating: true, answer: answer('', { id: 'a4' }), question: 'q' })
+    const { rerender, container } = render(<QuickChatPanel {...p} />)
+    const html = '<h2>Steps</h2><p>First</p><ul><li>a</li><li>b</li></ul><p><span class="katex-mathml">x</span>y</p>'
+    act(() => rerender(<QuickChatPanel {...p} generating={false} answer={answer(html, { id: 'a4' })} />))
+    expect(container.querySelector('[data-quick-answer-live]')?.textContent).toBe('Steps\nFirst\na\nb\ny')
+  })
+
+  for (const how of ['mouse', 'keyboard'] as const) {
+    it(`choosing a rewrite option moves focus into the rewrite view (${how}), and Esc goes back`, () => {
+      const onEsc = vi.fn()
+      const onRewriteBack = vi.fn()
+      function Harness() {
+        const [rewrite, setRewrite] = useState<QuickChatPanelProps['rewrite']>(null)
+        return (
+          <QuickChatPanel
+            {...props({ question: 'pasted text', onEsc, onRewriteBack })}
+            view={rewrite ? 'rewrite' : 'empty'}
+            rewrite={rewrite}
+            onRewrite={(option, text) => setRewrite({ option, text })}
+          />
+        )
+      }
+      render(<Harness />)
+      const trigger = screen.getByRole('button', { name: 'Rewrite' })
+      if (how === 'mouse') {
+        fireEvent.click(trigger)
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Formal' }))
+      } else {
+        fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+        const formal = screen.getByRole('menuitem', { name: 'Formal' })
+        fireEvent.keyDown(document.activeElement as Element, { key: 'End' })
+        fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowUp' })
+        expect(document.activeElement).toBe(formal)
+        fireEvent.click(formal)
+      }
+      const textarea = screen.getByRole('textbox', { name: 'Text to rewrite' })
+      expect(document.activeElement).toBe(textarea)
+      fireEvent.keyDown(textarea, { key: 'Escape' })
+      expect(onRewriteBack).toHaveBeenCalledTimes(1)
+      expect(onEsc).not.toHaveBeenCalled()
+    })
+  }
+
+  it('Esc in the rewrite view outside the RewritePanel goes back, not away', () => {
+    const p = props({ view: 'rewrite', rewrite: { option: null, text: 'draft' } })
+    render(<QuickChatPanel {...p} />)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Ask anything' }), { key: 'Escape' })
+    expect(p.onRewriteBack).toHaveBeenCalledTimes(1)
+    expect(p.onEsc).not.toHaveBeenCalled()
   })
 })

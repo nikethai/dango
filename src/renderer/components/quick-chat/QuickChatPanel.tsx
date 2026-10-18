@@ -130,8 +130,8 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
   }, [openMenu, view, question, answerText])
 
   // One Esc is one step: an open menu closes first; an Esc another handler took (RewritePanel) is skipped.
-  const escState = useRef({ openMenu, onEsc })
-  escState.current = { openMenu, onEsc }
+  const escState = useRef({ openMenu, onEsc, view, onRewriteBack })
+  escState.current = { openMenu, onEsc, view, onRewriteBack }
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return
@@ -144,11 +144,19 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
         if (triggerId) document.getElementById(triggerId)?.focus()
         return
       }
-      escState.current.onEsc()
+      // In the rewrite view Esc steps back to the answer; it never hides the window from there.
+      if (escState.current.view === 'rewrite') escState.current.onRewriteBack()
+      else escState.current.onEsc()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [])
+
+  // Choosing a rewrite option lands focus in the RewritePanel's text, so typing and Esc work there.
+  useEffect(() => {
+    if (view !== 'rewrite') return
+    bodyRef.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus()
+  }, [view])
 
   // Grow the one-row textarea with Shift+Enter lines, up to a cap.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-measure when the text changes
@@ -172,7 +180,7 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
     if (streamingId.current !== answer.id) return
     streamingId.current = null
     // Plain text as rendered (no Markdown syntax); an errored answer announces its error line.
-    const text = (answer.error ? answer.error : (answerRef.current?.textContent ?? '')).trim()
+    const text = answer.error ? answer.error.trim() : answerRef.current ? announcedText(answerRef.current) : ''
     if (text) setAnnouncement(text)
   }, [answer, generating])
 
@@ -371,3 +379,49 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
     </div>
   )
 })
+
+const BLOCK_TAGS = new Set([
+  'P',
+  'LI',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H5',
+  'H6',
+  'PRE',
+  'TD',
+  'TH',
+  'BLOCKQUOTE',
+  'TR',
+  'UL',
+  'OL',
+  'TABLE',
+  'DIV',
+])
+
+/** Rendered answer as plain text for the live region: blocks on their own lines, KaTeX's MathML copy skipped. */
+export function announcedText(root: Element): string {
+  const parts: string[] = []
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parts.push(node.textContent ?? '')
+      return
+    }
+    if (!(node instanceof Element)) return
+    if (node.classList.contains('katex-mathml')) return
+    if (node.tagName === 'BR') {
+      parts.push('\n')
+      return
+    }
+    const block = BLOCK_TAGS.has(node.tagName)
+    if (block) parts.push('\n')
+    for (const child of Array.from(node.childNodes)) walk(child)
+    if (block) parts.push('\n')
+  }
+  walk(root)
+  return parts
+    .join('')
+    .replace(/[ \t]*\n\s*/g, '\n')
+    .trim()
+}
