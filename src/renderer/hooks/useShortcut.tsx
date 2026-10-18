@@ -2,7 +2,7 @@ import { getDefaultStore } from 'jotai'
 import { useEffect } from 'react'
 import { startNewChat } from '@/lib/startNewChat'
 import { navigateToSettings } from '@/modals/Settings'
-import { scopeIdFromPath } from '@/projects/scope-navigation'
+import { newChatScopeId } from '@/projects/scope-navigation'
 import { router } from '@/router'
 import { uiStore } from '@/stores/uiStore'
 import { getOS } from '../packages/navigator'
@@ -58,7 +58,8 @@ export default function useShortcut() {
     // Create a genuinely new conversation; do not let Settings restore the previous session.
     // CmdOrCtrl + N
     if (e.key === 'n' && ctrlKey && !shift) {
-      startNewChat({ scopeId: scopeIdFromPath(router.state.location.pathname) })
+      const { pathname, search } = router.state.location
+      startNewChat({ scopeId: newChatScopeId(pathname, search) })
       return
     }
     // CmdOrCtrl + Shift + N

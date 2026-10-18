@@ -85,6 +85,11 @@
     padding: var(--dango-space-3) var(--dango-space-4);
   }
 
+  /* No hardware keyboard to press it with. */
+  .dango-review-toolbar__new .dg-kbd {
+    display: none;
+  }
+
   .dango-review-feed__row .dg-item {
     grid-template-columns: 20px minmax(0, 1fr);
   }

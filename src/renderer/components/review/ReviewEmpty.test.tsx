@@ -9,6 +9,8 @@ const h = vi.hoisted(() => ({
   navigateToSettings: vi.fn(),
   startNewChat: vi.fn(),
   platform: { showQuickWindow: undefined as undefined | (() => Promise<void>) },
+  search: {} as { scope?: string },
+  scopes: [] as { id: string; name: string }[],
 }))
 
 vi.mock('react-i18next', () => ({
@@ -17,8 +19,11 @@ vi.mock('react-i18next', () => ({
       key.replace(/\{\{(\w+)\}\}/g, (_: string, name: string) => String(vars?.[name] ?? name)),
   }),
 }))
-vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({}), useNavigate: () => vi.fn() }))
-vi.mock('@/hooks/useScopes', () => ({ useScopes: () => ({ scopes: [], getScope: () => undefined }) }))
+vi.mock('@tanstack/react-router', () => ({ useSearch: () => h.search, useNavigate: () => vi.fn() }))
+vi.mock('@/hooks/useScopes', () => ({
+  useScopes: () => ({ scopes: h.scopes, getScope: () => undefined }),
+  readScopes: () => Promise.resolve(h.scopes),
+}))
 vi.mock('@/lib/startNewChat', () => ({ startNewChat: h.startNewChat }))
 vi.mock('@/modals/Settings', () => ({ navigateToSettings: h.navigateToSettings }))
 vi.mock('@/platform', () => ({ default: h.platform }))
@@ -56,6 +61,8 @@ beforeEach(() => {
   h.navigateToSettings.mockClear()
   h.startNewChat.mockClear()
   h.platform.showQuickWindow = undefined
+  h.search = {}
+  h.scopes = []
   seed([])
 })
 afterEach(cleanup)
@@ -118,6 +125,17 @@ describe('ReviewHome empty states', () => {
     const rowEl = screen.getByText('Row d')
     expect(heading.compareDocumentPosition(rowEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByText('Connect a source to get started')).toBeNull()
+  })
+  it('scope B filtered with nothing in it while scope A waits: RV5 (T6)', () => {
+    h.scopes = [
+      { id: 'a', name: 'Acme' },
+      { id: 'b', name: 'Beta' },
+    ]
+    h.search = { scope: 'b' }
+    seed([row('w', { scopeId: 'a' })])
+    render(<ReviewHome sourceCount={1} />)
+    expect(screen.getByText('Nothing needs you')).toBeTruthy()
+    expect(screen.queryByText('Row w')).toBeNull()
   })
   it('one waiting row: neither', () => {
     seed([row('w')])

@@ -19,4 +19,8 @@ describe('Review home at phone width (walk at 390px)', () => {
     expect(rule('.dango-review-feed')).toMatch(/padding:\s*0 var\(--dango-space-4\)/)
     expect(rule('.dango-review-toolbar')).toMatch(/flex-wrap:\s*wrap/)
   })
+
+  it('hides the New chat key hint (M6)', () => {
+    expect(rule('.dango-review-toolbar__new .dg-kbd')).toMatch(/display:\s*none/)
+  })
 })

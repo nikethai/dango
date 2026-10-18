@@ -25,6 +25,8 @@ vi.mock('@/components/settings/useTrustSheet', () => ({
   useTrustSheet: () => ({ open: h.open, sheet: <div data-testid="trust-sheet" /> }),
 }))
 vi.mock('@/lib/startNewChat', () => ({ startNewChat: h.startNewChat }))
+// The ⌘N hint must follow the platform: this file runs as Windows, where the shortcut is Ctrl+N.
+vi.mock('@/packages/navigator', () => ({ getOS: () => 'Windows' }))
 vi.mock('@/stores/settingsStore', async () => {
   const { createStore: create } = await import('zustand/vanilla')
   const { useStore } = await import('zustand')
@@ -62,12 +64,12 @@ describe('ReviewToolbar', () => {
     const onScopeChange = vi.fn()
     render(<ReviewToolbar onScopeChange={onScopeChange} />)
     fireEvent.click(screen.getByRole('button', { name: /All scopes/ }))
-    const items = screen.getAllByRole('menuitem').map((el) => el.textContent?.trim())
+    const items = screen.getAllByRole('menuitemradio').map((el) => el.textContent?.trim())
     expect(items).toEqual(['All scopes', 'Everywhere', 'Acme', 'Beta'])
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Acme' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Acme' }))
     expect(onScopeChange).toHaveBeenCalledWith('p1')
     fireEvent.click(screen.getByRole('button', { name: /All scopes/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'All scopes' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'All scopes' }))
     expect(onScopeChange).toHaveBeenLastCalledWith(undefined)
   })
 
@@ -100,18 +102,18 @@ describe('ReviewToolbar keyboard', () => {
   it('focuses the current item on open and moves with arrows, Home and End', () => {
     render(<ReviewToolbar scopeId="p1" onScopeChange={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: /Acme/ }))
-    const acme = screen.getByRole('menuitem', { name: 'Acme' })
+    const acme = screen.getByRole('menuitemradio', { name: 'Acme' })
     expect(document.activeElement).toBe(acme)
     fireEvent.keyDown(acme, { key: 'ArrowDown' })
-    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Beta' }))
+    expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Beta' }))
     fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowDown' })
-    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'All scopes' }))
+    expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'All scopes' }))
     fireEvent.keyDown(document.activeElement as Element, { key: 'End' })
-    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Beta' }))
+    expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Beta' }))
     fireEvent.keyDown(document.activeElement as Element, { key: 'Home' })
-    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'All scopes' }))
+    expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'All scopes' }))
     fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowUp' })
-    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Beta' }))
+    expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Beta' }))
   })
 
   it('Escape closes from an item and from the trigger and refocuses the trigger', () => {
@@ -125,5 +127,52 @@ describe('ReviewToolbar keyboard', () => {
     fireEvent.keyDown(trigger, { key: 'Escape' })
     expect(screen.queryByRole('menu')).toBeNull()
     expect(document.activeElement).toBe(trigger)
+  })
+})
+
+describe('ReviewToolbar scope menu semantics (M5, T5)', () => {
+  it('items are radios with the current one checked, and only the focused item is a tab stop', () => {
+    render(<ReviewToolbar scopeId="p1" onScopeChange={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: /Acme/ }))
+    const items = screen.getAllByRole('menuitemradio')
+    expect(items.map((el) => el.getAttribute('aria-checked'))).toEqual(['false', 'false', 'true', 'false'])
+    const stops = () => items.filter((el) => el.tabIndex === 0).map((el) => el.textContent)
+    expect(stops()).toEqual(['Acme'])
+    fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowDown' })
+    expect(stops()).toEqual(['Beta'])
+  })
+
+  it('closes when focus tabs out of the menu, and stays open while it moves inside', () => {
+    render(
+      <>
+        <ReviewToolbar onScopeChange={() => {}} />
+        <button type="button">After</button>
+      </>
+    )
+    fireEvent.click(screen.getByRole('button', { name: /All scopes/ }))
+    const first = screen.getByRole('menuitemradio', { name: 'All scopes' })
+    fireEvent.blur(first, { relatedTarget: screen.getByRole('menuitemradio', { name: 'Acme' }) })
+    expect(screen.queryByRole('menu')).not.toBeNull()
+    // A click that does not move focus (WebKit buttons) has no relatedTarget: the mousedown handler owns that case.
+    fireEvent.blur(first, { relatedTarget: null })
+    expect(screen.queryByRole('menu')).not.toBeNull()
+    fireEvent.blur(first, { relatedTarget: screen.getByRole('button', { name: 'After' }) })
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+})
+
+describe('ReviewToolbar New chat hint (M6)', () => {
+  it('shows the platform modifier, not ⌘, off the Mac', () => {
+    render(<ReviewToolbar onScopeChange={() => {}} />)
+    const kbd = document.querySelector('.dango-review-toolbar__new kbd')
+    expect(kbd?.textContent).toBe('Ctrl+N')
+  })
+})
+
+describe('ReviewToolbar scope label (M4)', () => {
+  it('never says All scopes for a scope id it cannot name yet', () => {
+    render(<ReviewToolbar scopeId="not-loaded" onScopeChange={() => {}} />)
+    expect(screen.queryByRole('button', { name: /All scopes/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /Loading\.\.\./ })).toBeTruthy()
   })
 })
