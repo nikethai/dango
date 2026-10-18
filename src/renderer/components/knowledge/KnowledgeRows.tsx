@@ -20,6 +20,7 @@ function KnowledgeRow({ item, onNoneLeft }: { item: KnowledgeItem; onNoneLeft?: 
   const [draft, setDraft] = useState(item.text)
   const row = useRef<HTMLLIElement>(null)
   const menu = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
   const replacement = useKnowledgeItem(item.supersededBy)
 
   const builtIn = item.id === NEVER_SEND_EMAIL.id
@@ -32,12 +33,14 @@ function KnowledgeRow({ item, onNoneLeft }: { item: KnowledgeItem; onNoneLeft?: 
     ...scopes.filter((s) => s.id !== item.scopeId).map((s) => ({ id: s.id, name: s.name })),
   ]
 
-  // The Move menu takes focus, and closes on Escape or a press outside it.
+  // The Move menu takes focus, and closes on Escape or a press outside it. Its own trigger is not outside:
+  // a press there toggles it through the click instead.
   useEffect(() => {
     if (!moving) return
     menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
     const onDown = (e: MouseEvent) => {
-      if (!menu.current?.contains(e.target as Node)) setMoving(false)
+      const target = e.target as Node
+      if (!menu.current?.contains(target) && !trigger.current?.contains(target)) setMoving(false)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
@@ -127,43 +130,17 @@ function KnowledgeRow({ item, onNoneLeft }: { item: KnowledgeItem; onNoneLeft?: 
               {t('Edit')}
             </button>
             {canMove ? (
-              <span style={{ position: 'relative' }}>
-                <button
-                  type="button"
-                  className="dg-btn dg-btn--ghost"
-                  disabled={busy}
-                  aria-haspopup="menu"
-                  aria-expanded={moving}
-                  onClick={() => setMoving(!moving)}
-                >
-                  {t('Move to…')}
-                </button>
-                {moving ? (
-                  <div
-                    ref={menu}
-                    role="menu"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') setMoving(false)
-                    }}
-                    className="dg-menu"
-                    style={{ position: 'absolute', right: 0, zIndex: 10, marginTop: 'var(--dango-space-1)' }}
-                  >
-                    {targets.map((target) => (
-                      <button
-                        key={target.id}
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setMoving(false)
-                          void run(() => moveKnowledge(item.id, target.id))
-                        }}
-                      >
-                        {target.name}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </span>
+              <button
+                ref={trigger}
+                type="button"
+                className="dg-btn dg-btn--ghost"
+                disabled={busy}
+                aria-haspopup="menu"
+                aria-expanded={moving}
+                onClick={() => setMoving(!moving)}
+              >
+                {t('Move to…')}
+              </button>
             ) : null}
             <button type="button" className="dg-btn dg-btn--ghost" disabled={busy} onClick={remove}>
               {t('Remove')}
@@ -171,6 +148,35 @@ function KnowledgeRow({ item, onNoneLeft }: { item: KnowledgeItem; onNoneLeft?: 
           </>
         ) : null}
       </div>
+      {moving && canMove && !editing ? (
+        // In the row's flow, under its actions: it pushes the next row down instead of covering its actions.
+        <div
+          ref={menu}
+          role="menu"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setMoving(false)
+              trigger.current?.focus()
+            }
+          }}
+          className="dg-menu"
+          style={{ gridColumn: '1 / -1', justifySelf: 'end' }}
+        >
+          {targets.map((target) => (
+            <button
+              key={target.id}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMoving(false)
+                void run(() => moveKnowledge(item.id, target.id))
+              }}
+            >
+              {target.name}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </li>
   )
 }

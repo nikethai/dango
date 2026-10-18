@@ -16,6 +16,11 @@ import { KnowledgeTab } from './KnowledgeTab'
 vi.mock('@/storage', async () => (await import('@/packages/knowledge/test-storage')).default)
 vi.mock('@/packages/undo', () => ({ pushUndo: vi.fn(), undoEntry: vi.fn(), DEFAULT_UNDO_MS: 5000 }))
 vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
+const logError = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/utils', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/utils')>()),
+  getLogger: () => ({ error: logError, info: vi.fn(), log: vi.fn(), debug: vi.fn() }),
+}))
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, vars?: Record<string, string | number>) =>
@@ -142,6 +147,8 @@ describe('KnowledgeTab', () => {
     vi.mocked(addKnowledge).mockRejectedValueOnce(new Error('boom'))
     await submit()
     await waitFor(() => expect(toastActions.add).toHaveBeenCalledWith("Couldn't save that. Try again."))
+    expect(logError).toHaveBeenCalledWith('Knowledge action failed:', new Error('boom'))
+    expect(logError).not.toHaveBeenCalledWith('Knowledge action failed:', new Error('duplicate'))
   })
 
   it('ignores a second click while an action is pending', async () => {
@@ -196,6 +203,37 @@ describe('KnowledgeTab', () => {
     expect(screen.getByRole('menu')).toBeTruthy()
     fireEvent.mouseDown(document.body)
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('the Move to… trigger closes its own menu', async () => {
+    await seed({ id: 'k1', scopeId: 'acme', text: 'Launch is 6 Nov' })
+    render(<KnowledgeTab scopeId="acme" />)
+    await screen.findByText('Launch is 6 Nov')
+    const trigger = screen.getByRole('button', { name: 'Move to…' })
+    fireEvent.mouseDown(trigger)
+    fireEvent.click(trigger)
+    expect(screen.getByRole('menu')).toBeTruthy()
+    // A real press is mousedown then click: the menu must close, not close and reopen.
+    fireEvent.mouseDown(trigger)
+    fireEvent.click(trigger)
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('the Move menu sits in its row, under the actions, not over the next row', async () => {
+    await seed(
+      { id: 'k1', scopeId: 'acme', text: 'Launch is 6 Nov', updatedAt: 2 },
+      { id: 'k2', scopeId: 'acme', text: 'Budget is 10k', updatedAt: 1 }
+    )
+    render(<KnowledgeTab scopeId="acme" />)
+    await screen.findByText('Budget is 10k')
+    fireEvent.click(screen.getAllByRole('button', { name: 'Move to…' })[0])
+    const menu = screen.getByRole('menu')
+    expect(menu.style.position).not.toBe('absolute')
+    const row = menu.closest('li') as HTMLElement
+    expect(within(row).getByText('Launch is 6 Nov')).toBeTruthy()
+    expect(row.lastElementChild).toBe(menu)
+    expect(menu.style.gridColumn).toBe('1 / -1')
   })
 
   it('the add form focuses its textarea', async () => {
