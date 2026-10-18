@@ -1434,8 +1434,10 @@
   "{{agent}}'s prompt": "{{agent}}'s prompt",
   "Leave out": "Leave out",
   "Built-in agents can't take notes in their prompt.": "Built-in agents can't take notes in their prompt.",
-  "Move {{n}} notes": "Move {{n}} notes",
+  "Move {{count}} notes_one": "Move {{count}} note",
+  "Move {{count}} notes_other": "Move {{count}} notes",
   "Finish": "Finish",
   "Later": "Later",
-  "Moved {{a}} notes to Everywhere and {{b}} to agent prompts": "Moved {{a}} notes to Everywhere and {{b}} to agent prompts"
+  "Moved {{count}} notes to Everywhere and {{b}} to agent prompts_one": "Moved {{count}} note to Everywhere and {{b}} to agent prompts",
+  "Moved {{count}} notes to Everywhere and {{b}} to agent prompts_other": "Moved {{count}} notes to Everywhere and {{b}} to agent prompts"
 }

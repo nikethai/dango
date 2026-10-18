@@ -90,6 +90,14 @@ describe('MemoryMigrationSheet', () => {
     expect(within(dialog).getByRole('button', { name: 'Finish' })).toBeTruthy()
   })
 
+  it('no toast when nothing moved', async () => {
+    vi.mocked(applyMemoryMigration).mockResolvedValueOnce({ everywhere: 0, prompts: 0, leftOut: 3 })
+    const dialog = await openSheet()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Move 3 notes' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(toastActions.add).not.toHaveBeenCalled()
+  })
+
   it('Later closes the sheet without moving anything', async () => {
     const dialog = await openSheet()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Later' }))

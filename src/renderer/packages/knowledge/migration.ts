@@ -72,22 +72,48 @@ export function planMemoryMigration(input: {
   return rows
 }
 
-// ---- Agents (preflight C3: read storage directly, never the atom; built-ins from getBuiltInCopilotById) ----
+// ---- Agents (preflight C3: built-ins from getBuiltInCopilotById; the stored list, or the atom once it holds it) ----
 
 type Storage = {
   getItem<T>(key: string, fallback: T): Promise<T>
   setItemNow(key: string, value: unknown): Promise<void>
+  getAllKeys(): Promise<string[]>
 }
 
-async function getStorage(): Promise<{ storage: Storage; myCopilotsKey: string }> {
+async function getStorage(): Promise<{ storage: Storage; myCopilotsKey: string; memoryGlobalKey: string }> {
   const mod = await import('@/storage')
-  return { storage: mod.default as Storage, myCopilotsKey: mod.StorageKey.MyCopilots }
+  return {
+    storage: mod.default as Storage,
+    myCopilotsKey: mod.StorageKey.MyCopilots,
+    memoryGlobalKey: mod.StorageKey.MemoryBankGlobal,
+  }
 }
 
+const MEMORY_AGENT_PREFIX = 'memory:agent:'
+
+/**
+ * The local agents. Once the atom has loaded it is the newest list (an edit may still wait in the debounced
+ * write), so it wins; before that (an empty atom), the stored list.
+ */
 async function readLocalAgents(): Promise<CopilotDetail[]> {
+  try {
+    const { myCopilotsAtom } = await import('@/hooks/useCopilots')
+    const { getDefaultStore } = await import('jotai')
+    const current: unknown = await getDefaultStore().get(myCopilotsAtom)
+    if (Array.isArray(current) && current.length > 0) return current as CopilotDetail[]
+  } catch (error) {
+    log.error('Could not read agents from the atom:', error)
+  }
   const { storage, myCopilotsKey } = await getStorage()
   const list = await storage.getItem<CopilotDetail[]>(myCopilotsKey, [])
   return Array.isArray(list) ? list : []
+}
+
+/** Whether any old memory bank key exists. Checked before any bank read, since a read stores an empty bank. */
+async function hasMemoryKeys(): Promise<boolean> {
+  const { storage, memoryGlobalKey } = await getStorage()
+  const keys = await storage.getAllKeys()
+  return keys.some((k) => k === memoryGlobalKey || k.startsWith(MEMORY_AGENT_PREFIX))
 }
 
 /** Only a local agent the user made can take prompt text: never a built-in (even a stored override) or a remote one. */
@@ -139,13 +165,13 @@ export async function loadMigrationRows(): Promise<MigrationRow[]> {
 }
 
 /**
- * `'done'` when the move is stored as done, or when no live notes exist (then stored as done, so the sheet
- * never opens); otherwise `'pending'`.
+ * `'done'` when the move is stored as done. With no old memory keys at all, it stores `done` (the sheet never
+ * opens). When keys exist but the banks read empty, it is `'done'` for this launch only and nothing is stored:
+ * the bank reads swallow errors, so an empty read may be a failed one. Otherwise `'pending'`.
  */
 export async function loadMigrationState(): Promise<'pending' | 'done'> {
   if ((await readKnowledgeMigration()) === 'done') return 'done'
-  const rows = await loadMigrationRows()
-  if (rows.length === 0) {
+  if (!(await hasMemoryKeys())) {
     await writeKnowledgeMigrationDone({
       state: 'done',
       at: Date.now(),
@@ -153,8 +179,28 @@ export async function loadMigrationState(): Promise<'pending' | 'done'> {
     })
     return 'done'
   }
+  const rows = await loadMigrationRows()
+  if (rows.length === 0) return 'done'
   markKnowledgeMigrationPending()
   return 'pending'
+}
+
+const rowKey = (row: MigrationRow) =>
+  JSON.stringify([row.group.scope === 'agent' ? row.group.agentId : '', row.entryId])
+
+/**
+ * The rows to move: a fresh plan (so a note saved while the sheet was open is not stranded; it gets its
+ * default) with the user's choice kept for every row they saw. A row they saw that the fresh read lacks
+ * stays as chosen, so a failed read never drops their choices.
+ */
+export function mergeMigrationRows(fresh: MigrationRow[], chosen: MigrationRow[]): MigrationRow[] {
+  const byKey = new Map(chosen.map((r) => [rowKey(r), r]))
+  const merged = fresh.map((r) => {
+    const seen = byKey.get(rowKey(r))
+    byKey.delete(rowKey(r))
+    return seen ? { ...r, choice: seen.choice } : r
+  })
+  return [...merged, ...byKey.values()]
 }
 
 // ---- Apply ----
@@ -198,8 +244,11 @@ function existingLineKeys(prompt: string): Set<string> {
   return keys
 }
 
-/** Appends lines under a `Standing notes:` block at the end, reusing one that already ends the prompt. */
-export function appendStandingNotes(prompt: string, texts: string[]): string {
+/**
+ * Appends lines under a `Standing notes:` block at the end, reusing one that already ends the prompt.
+ * `added` is how many lines it appended (lines already there are skipped).
+ */
+export function appendStandingNotes(prompt: string, texts: string[]): { prompt: string; added: number } {
   const seen = existingLineKeys(prompt)
   const lines: string[] = []
   for (const text of texts) {
@@ -209,24 +258,32 @@ export function appendStandingNotes(prompt: string, texts: string[]): string {
     seen.add(key)
     lines.push(line)
   }
-  if (!lines.length) return prompt
+  if (!lines.length) return { prompt, added: 0 }
   const body = prompt.replace(/\s+$/, '')
   const all = body.split('\n')
   const header = all.lastIndexOf(STANDING_NOTES)
   const endsWithBlock = header >= 0 && all.slice(header + 1).every((l) => l.trim() === '' || /^\s*-\s/.test(l))
-  if (endsWithBlock) return `${body}\n${lines.join('\n')}`
-  return `${body ? `${body}\n\n` : ''}${STANDING_NOTES}\n${lines.join('\n')}`
+  const next = endsWithBlock
+    ? `${body}\n${lines.join('\n')}`
+    : `${body ? `${body}\n\n` : ''}${STANDING_NOTES}\n${lines.join('\n')}`
+  return { prompt: next, added: lines.length }
 }
 
 /**
  * Writes the move in a crash-safe order: Everywhere items, then agent prompts, then the `done` state. Each step
- * skips what is already there, so a second run (after a crash, or Later then Move) adds nothing. A row for an
- * agent that cannot take prompt text goes to Everywhere. Pushes no undo: the old banks stay as they were.
+ * skips what is already there, so a second run (after a crash, or Later then Move) adds nothing. The rows are
+ * re-planned from a fresh bank read first (see `mergeMigrationRows`). A row for an agent that cannot take prompt
+ * text goes to Everywhere. Counts are what was actually written. Pushes no undo: the old banks stay as they were.
  */
-export async function applyMemoryMigration(rows: MigrationRow[]): Promise<MigrationCounts> {
+export async function applyMemoryMigration(chosen: MigrationRow[]): Promise<MigrationCounts> {
   const { getBuiltInCopilotById, myCopilotsAtom } = await import('@/hooks/useCopilots')
   const { storage, myCopilotsKey } = await getStorage()
-  const local = await readLocalAgents()
+  const fresh = await loadMigrationRows().catch((error) => {
+    log.error('Could not re-read saved notes before the move:', error)
+    return [] as MigrationRow[]
+  })
+  const rows = mergeMigrationRows(fresh, chosen)
+  const agents = await readLocalAgents()
 
   const everywhere: MigrationRow[] = []
   const prompts = new Map<string, string[]>()
@@ -238,18 +295,19 @@ export async function applyMemoryMigration(rows: MigrationRow[]): Promise<Migrat
     }
     const agent =
       row.choice === 'agent-prompt' && row.group.scope === 'agent'
-        ? isEditable(row.group.agentId, local, getBuiltInCopilotById)
+        ? isEditable(row.group.agentId, agents, getBuiltInCopilotById)
         : undefined
     if (agent) prompts.set(agent.id, [...(prompts.get(agent.id) ?? []), row.text])
     else everywhere.push(row)
   }
-  const promptCount = [...prompts.values()].reduce((n, texts) => n + texts.length, 0)
 
   // 1. Everywhere items (one commit), skipping text that Everywhere already has.
   const now = Date.now()
   const candidates = await Promise.all(everywhere.map((row) => migratedItem(row, now)))
+  let itemsAdded = 0
   if (candidates.length) {
     await commitKnowledge((d) => {
+      itemsAdded = 0
       const present = new Set(
         d.items
           .filter((i) => i.scopeId === EVERYWHERE_SCOPE_ID && i.status === 'approved')
@@ -260,25 +318,25 @@ export async function applyMemoryMigration(rows: MigrationRow[]): Promise<Migrat
         if (present.has(key)) continue
         present.add(key)
         d.items.push(item)
+        itemsAdded += 1
       }
     })
   }
 
-  // 2. Agent prompts (one immediate write), re-read so a concurrent edit to another agent survives.
+  // 2. Agent prompts (one immediate write) on the same list the rows were routed with.
+  let linesAdded = 0
   if (prompts.size) {
-    const fresh = await readLocalAgents()
-    let changed = false
-    const next = fresh.map((c) => {
+    const next = agents.map((c) => {
       const texts = prompts.get(c.id)
-      if (!texts || !isEditable(c.id, fresh, getBuiltInCopilotById)) return c
-      const prompt = appendStandingNotes(c.prompt ?? '', texts)
-      if (prompt === c.prompt) return c
-      changed = true
-      return { ...c, prompt }
+      if (!texts) return c
+      const { prompt, added } = appendStandingNotes(c.prompt ?? '', texts)
+      linesAdded += added
+      return added ? { ...c, prompt } : c
     })
-    if (changed) {
+    if (linesAdded) {
       await storage.setItemNow(myCopilotsKey, next)
       try {
+        // Also replaces any older list still waiting in the atom's debounced write.
         const { getDefaultStore } = await import('jotai')
         getDefaultStore().set(myCopilotsAtom, next)
       } catch (error) {
@@ -288,7 +346,7 @@ export async function applyMemoryMigration(rows: MigrationRow[]): Promise<Migrat
   }
 
   // 3. Done, last: a crash before this reopens the sheet, and the steps above skip what they already wrote.
-  const counts = { everywhere: everywhere.length, prompts: promptCount, leftOut }
+  const counts = { everywhere: itemsAdded, prompts: linesAdded, leftOut }
   await writeKnowledgeMigrationDone({ state: 'done', at: Date.now(), counts })
   return counts
 }

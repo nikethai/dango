@@ -31,6 +31,7 @@ export const testStorage = {
     memory.delete(key)
     return Promise.resolve()
   }),
+  getAllKeys: vi.fn((): Promise<string[]> => Promise.resolve([...memory.keys()])),
 }
 
 /** Clears the map and the call history of every storage spy. */

@@ -119,9 +119,13 @@ export function MemoryMigrationSheet() {
     run(async () => {
       const counts = await applyMemoryMigration(rows)
       setOpened(false)
+      if (counts.everywhere + counts.prompts === 0) return
       const toastActions = await import('@/stores/toastActions')
       toastActions.add(
-        t('Moved {{a}} notes to Everywhere and {{b}} to agent prompts', { a: counts.everywhere, b: counts.prompts })
+        t('Moved {{count}} notes to Everywhere and {{b}} to agent prompts', {
+          count: counts.everywhere,
+          b: counts.prompts,
+        })
       )
     })
 
@@ -136,7 +140,7 @@ export function MemoryMigrationSheet() {
             {t('Later')}
           </button>
           <button type="button" className="dg-btn dg-btn--primary" onClick={move} disabled={busy}>
-            {n === 0 ? t('Finish') : t('Move {{n}} notes', { n })}
+            {n === 0 ? t('Finish') : t('Move {{count}} notes', { count: n })}
           </button>
         </>
       }

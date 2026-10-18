@@ -80,7 +80,10 @@ function copilots() {
   return getRaw<Array<{ id: string; prompt: string }>>('myCopilots') ?? []
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  const { getDefaultStore } = await import('jotai')
+  const { myCopilotsAtom } = await import('@/hooks/useCopilots')
+  getDefaultStore().set(myCopilotsAtom as never, [] as never)
   resetTestStorage()
   _resetKnowledgeForTests()
   banks.global = null
@@ -173,6 +176,7 @@ describe('applyMemoryMigration', () => {
     banks.agents = [
       { agentId: 'planner', bank: bank([entry('a1', 'Window seats'), entry('a2', 'No red-eyes')], 'planner') },
     ]
+    putRaw(MEMORY_GLOBAL, banks.global)
     return loadMigrationRows()
   }
 
@@ -186,9 +190,33 @@ describe('applyMemoryMigration', () => {
       'You plan trips.\n\nStanding notes:\n- Window seats\n- No red-eyes'
     )
 
-    await applyMemoryMigration(rows)
+    expect(await applyMemoryMigration(rows)).toEqual({ everywhere: 0, prompts: 0, leftOut: 1 })
     expect(knowledge().items).toEqual(items)
     expect(copilots()).toEqual(prompts)
+  })
+
+  it('agent edits still waiting in the atom are kept', async () => {
+    const rows = await sampleRows()
+    const { getDefaultStore } = await import('jotai')
+    const { myCopilotsAtom } = await import('@/hooks/useCopilots')
+    const edited = [{ ...PLANNER, prompt: 'You plan trips. Edited.' }]
+    getDefaultStore().set(myCopilotsAtom as never, edited as never)
+    await applyMemoryMigration(rows)
+    const expected = 'You plan trips. Edited.\n\nStanding notes:\n- Window seats\n- No red-eyes'
+    expect(copilots().find((c) => c.id === 'planner')?.prompt).toBe(expected)
+    expect((getDefaultStore().get(myCopilotsAtom) as Array<{ prompt: string }>)[0].prompt).toBe(expected)
+  })
+
+  it('a note added while the sheet was open is moved too, and choices are kept', async () => {
+    const rows = await sampleRows()
+    const chosen = rows.map((r) => (r.entryId === 'g2' ? { ...r, choice: 'leave-out' as const } : r))
+    banks.global?.entries.push(entry('g9', 'Drinks tea'))
+    expect(await applyMemoryMigration(chosen)).toEqual({ everywhere: 2, prompts: 2, leftOut: 2 })
+    expect(
+      knowledge()
+        .items.map((i) => i.text)
+        .sort()
+    ).toEqual(['Drinks tea', 'Prefers metric units'])
   })
 
   it('a crash after the items, then Move again, adds no duplicates', async () => {
@@ -266,7 +294,7 @@ describe('applyMemoryMigration', () => {
     expect(knowledge().items.map((i) => i.text)).toEqual(['lives in hanoi.', 'Prefers metric units'])
   })
 
-  it('memory keys are never written', async () => {
+  it('apply writes only knowledge, agents and the state, and never writes or removes a memory key', async () => {
     await applyMemoryMigration(await sampleRows())
     const keys = [...testStorage.setItemNow.mock.calls, ...testStorage.setItem.mock.calls].map((c) => c[0])
     expect(keys.filter((k) => k === MEMORY_GLOBAL || k.startsWith('memory'))).toEqual([])
@@ -275,7 +303,21 @@ describe('applyMemoryMigration', () => {
 })
 
 describe('loadMigrationState', () => {
-  it('empty banks mean done without a sheet', async () => {
+  it('banks that read empty while memory keys exist are done for this launch only', async () => {
+    putRaw(MEMORY_GLOBAL, { scope: 'global', entries: [{ id: 'g1' }] })
+    putRaw('memory:agent:planner', { scope: 'agent', entries: [] })
+    expect(await loadMigrationState()).toBe('done')
+    expect(getRaw('knowledge-migration')).toBeUndefined()
+    expect(testStorage.setItemNow.mock.calls.map((c) => c[0])).not.toContain('knowledge-migration')
+  })
+
+  it('an agent memory key alone also keeps the state unstored', async () => {
+    putRaw('memory:agent:planner', { scope: 'agent', entries: [] })
+    expect(await loadMigrationState()).toBe('done')
+    expect(getRaw('knowledge-migration')).toBeUndefined()
+  })
+
+  it('no memory keys at all mean done without a sheet, stored', async () => {
     banks.global = bank([entry('g1', 'Gone', { deleted: true })])
     expect(await loadMigrationState()).toBe('done')
     expect(getRaw('knowledge-migration')).toMatchObject({ state: 'done' })
@@ -284,6 +326,7 @@ describe('loadMigrationState', () => {
 
   it('live entries mean pending, and a stored done wins', async () => {
     banks.global = bank([entry('g1', 'Lives in Hanoi')])
+    putRaw(MEMORY_GLOBAL, banks.global)
     expect(await loadMigrationState()).toBe('pending')
     expect(getRaw('knowledge-migration')).toBeUndefined()
     expect(knowledgeStore.getState().migration).toBe('pending')
