@@ -1587,7 +1587,7 @@
   "This plan can no longer be continued.": "This plan can no longer be continued.",
   "Only the latest plan can be continued.": "Only the latest plan can be continued.",
   "Wait for the current reply to finish, then continue the plan.": "Wait for the current reply to finish, then continue the plan.",
-  "Turn on plan mode to continue this plan.": "Turn on plan mode to continue this plan.",
+  "Plan mode is off in this chat, so this plan can't continue.": "Plan mode is off in this chat, so this plan can't continue.",
   "Artifact view": "Artifact view",
   "Artifact actions": "Artifact actions",
   "Full screen": "Full screen",

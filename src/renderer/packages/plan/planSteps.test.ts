@@ -5,6 +5,7 @@ import {
   parsePlanSteps,
   planCardState,
   planContinueState,
+  planRunOrigin,
   planRunTasks,
   planStepViews,
   sortTasksForDisplay,
@@ -47,7 +48,10 @@ describe('planCardState', () => {
   it('pending → proposed', () => {
     expect(planCardState(plan({ status: 'pending' }), false)).toBe('proposed')
   })
-  it('revised → revised', () => {
+  it('rejected with the revised flag → revised', () => {
+    expect(planCardState(plan({ status: 'rejected', revised: true, version: 1 }), false)).toBe('revised')
+  })
+  it("a stored status 'revised' (written by an earlier 6a build) → revised", () => {
     expect(planCardState(plan({ status: 'revised', version: 1 }), false)).toBe('revised')
   })
   it('rejected → rejected', () => {
@@ -149,5 +153,18 @@ describe('sortTasksForDisplay', () => {
       task({ id: 'a', status: 'pending', createdAt: 10 }),
     ])
     expect(sorted.map((t) => t.id)).toEqual(['a', 'b'])
+  })
+})
+
+describe('planRunOrigin', () => {
+  it('is startedAt for a plan that never stopped, and undefined for a legacy plan', () => {
+    expect(planRunOrigin(plan({ status: 'approved', startedAt: 1_000 }))).toBe(1_000)
+    expect(planRunOrigin(plan({ status: 'approved' }))).toBeUndefined()
+  })
+  it('a resumed plan counts its earlier runs, not the time it sat stopped', () => {
+    // Ran 60 s, sat stopped, resumed at 500 s: the timer reads as if it started 60 s before the resume.
+    expect(planRunOrigin(plan({ status: 'approved', startedAt: 0, runMs: 60_000, runStartedAt: 500_000 }))).toBe(
+      440_000
+    )
   })
 })

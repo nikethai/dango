@@ -5,7 +5,7 @@ import type { Message, MessagePlanPart, Session } from '@shared/types'
 import { t } from 'i18next'
 import { scopeIdForSession } from '@/packages/chat-review'
 import { getStagedChangeSetId } from '@/packages/model-calls/toolsets/file'
-import { parsePlanSteps } from '@/packages/plan/planSteps'
+import { isRevisedPlan, parsePlanSteps } from '@/packages/plan/planSteps'
 import { addReviewEntry } from '@/packages/review'
 
 const TITLE_MAX = 80
@@ -23,7 +23,7 @@ export function nextPlanVersion(messages: Message[], beforeMessageId: string): n
   for (let i = earlier.length - 1; i >= 0; i--) {
     const plan = planOf(earlier[i])
     if (!plan) continue
-    return plan.status === 'revised' ? (plan.version ?? 1) + 1 : 1
+    return isRevisedPlan(plan) ? (plan.version ?? 1) + 1 : 1
   }
   return 1
 }
@@ -41,12 +41,16 @@ export function planTitle(planText: string): string {
 /**
  * The approved plan as kept when its run ends: `finishedAt` only when the run ended on its own. Stop counts during the
  * main stream and during the closing-answer (continue) stream, which registers its own abort and is read separately.
+ * A stopped run adds its time to `runMs`, so a later Continue's timer and finished duration skip the time it sat stopped.
  */
 export function finishExecutedPlan(
   plan: MessagePlanPart,
   run: { stoppedDuringStream: boolean; stoppedDuringContinue: boolean; now: number }
 ): MessagePlanPart {
-  return run.stoppedDuringStream || run.stoppedDuringContinue ? plan : { ...plan, finishedAt: run.now }
+  if (!run.stoppedDuringStream && !run.stoppedDuringContinue) return { ...plan, finishedAt: run.now }
+  const runStart = plan.runStartedAt ?? plan.startedAt
+  if (runStart === undefined) return plan
+  return { ...plan, runMs: (plan.runMs ?? 0) + Math.max(0, run.now - runStart) }
 }
 
 /** Continue applies to an approved plan whose run started and was stopped before it finished. */
@@ -69,7 +73,7 @@ export function planResumeRefusal(
   }
   if (session.messages.at(-1)?.id !== messageId) return t('Only the latest plan can be continued.')
   if (chat.generationActive) return t('Wait for the current reply to finish, then continue the plan.')
-  if (!chat.planModeOn) return t('Turn on plan mode to continue this plan.')
+  if (!chat.planModeOn) return t("Plan mode is off in this chat, so this plan can't continue.")
   return null
 }
 

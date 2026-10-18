@@ -81,7 +81,11 @@ import {
   resumedRunParts,
   withResumedParts,
 } from './plan-lifecycle'
-import { clearSessionGenerationLive, markSessionGenerationLive } from './session-live-generation'
+import {
+  clearSessionGenerationLive,
+  isSessionGenerationLive,
+  markSessionGenerationLive,
+} from './session-live-generation'
 import { getSessionWebBrowsing } from './session-web-browsing'
 import { buildVisibleAnswerContinuePrompt, mergeContinuedContentParts } from './tool-only-continue'
 
@@ -121,16 +125,17 @@ function withPlanPart(
   return [...withoutPlan, planPart]
 }
 
-function withPlanStatus(
+type PlanDecisionFields = Partial<Pick<MessagePlanPart, 'startedAt' | 'revised' | 'runStartedAt'>>
+
+function withPlanFields(
   message: Message,
-  status: MessagePlanPart['status'],
-  extra?: Pick<MessagePlanPart, 'startedAt'>
+  fields: PlanDecisionFields & Partial<Pick<MessagePlanPart, 'status'>>
 ): Message {
   let found = false
   const contentParts = message.contentParts.map((part) => {
     if (part.type !== 'plan') return part
     found = true
-    return { ...part, ...extra, status }
+    return { ...part, ...fields }
   })
   if (!found) {
     throw new Error('The proposed plan is no longer available.')
@@ -138,11 +143,31 @@ function withPlanStatus(
   return { ...message, contentParts }
 }
 
+function withPlanStatus(message: Message, status: MessagePlanPart['status'], extra?: PlanDecisionFields): Message {
+  return withPlanFields(message, { ...extra, status })
+}
+
+/**
+ * A plan run is about to start (Run plan or Continue): the message reads as generating from the same write, so the card
+ * shows running at once instead of "Plan stopped" with Continue while generate() sets up.
+ */
+const startingRun = (message: Message): Message => ({ ...message, generating: true })
+
+/** The run never started (a step before generate() threw): put the message back to not generating. */
+async function abandonStartingRun(sessionId: string, message: Message) {
+  try {
+    await modifyMessage(sessionId, { ...message, generating: false }, true)
+  } catch {
+    // non-fatal: the session may be gone
+  }
+}
+
 async function updatePendingPlanStatus(
   sessionId: string,
   messageId: string,
-  status: Extract<MessagePlanPart['status'], 'approved' | 'rejected' | 'revised'>,
-  extra?: Pick<MessagePlanPart, 'startedAt'>
+  status: Extract<MessagePlanPart['status'], 'approved' | 'rejected'>,
+  extra?: PlanDecisionFields,
+  opts?: { startRun?: boolean }
 ): Promise<{ message: Message; plan: MessagePlanPart }> {
   const session = await chatStore.getSession(sessionId)
   if (!session) {
@@ -156,7 +181,8 @@ async function updatePendingPlanStatus(
   if (!plan || plan.status !== 'pending') {
     throw new Error('This plan has already been decided.')
   }
-  const updatedMessage = withPlanStatus(message, status, extra)
+  const decided = withPlanStatus(message, status, extra)
+  const updatedMessage = opts?.startRun ? startingRun(decided) : decided
   await modifyMessage(sessionId, updatedMessage, true)
   return { message: updatedMessage, plan }
 }
@@ -166,13 +192,25 @@ export async function approveAndExecutePlan(sessionId: string, messageId: string
   if (planDecisionInFlight.has(key)) return
   planDecisionInFlight.add(key)
   try {
-    await updatePendingPlanStatus(sessionId, messageId, 'approved', { startedAt: Date.now() })
-    await chatStore.updateSession(sessionId, { planPhase: 'executing' })
-
-    const session = await chatStore.getSession(sessionId)
-    const message = session ? getMessageFromSession(session, messageId) : null
-    if (!session || !message) {
-      throw new Error('The approved plan could not be resumed.')
+    const { message: approved } = await updatePendingPlanStatus(
+      sessionId,
+      messageId,
+      'approved',
+      { startedAt: Date.now() },
+      { startRun: true }
+    )
+    let session: Session | null | undefined
+    let message: Message | null = null
+    try {
+      await chatStore.updateSession(sessionId, { planPhase: 'executing' })
+      session = await chatStore.getSession(sessionId)
+      message = session ? getMessageFromSession(session, messageId) : null
+      if (!session || !message) {
+        throw new Error('The approved plan could not be resumed.')
+      }
+    } catch (error) {
+      await abandonStartingRun(sessionId, approved)
+      throw error
     }
     await generate(sessionId, message, { operationType: 'send_message', prefetchedSession: session })
   } finally {
@@ -195,13 +233,23 @@ export async function resumeStoppedPlan(sessionId: string, messageId: string) {
     // The execution phase (and keeping the plan part) needs plan mode in an agent chat, as when the plan was approved.
     const settings = await chatStore.getSessionSettings(sessionId)
     const refusal = planResumeRefusal(session, messageId, {
-      generationActive: isSessionGenerationActive(sessionId),
+      // Setup-aware: another turn is live from send, before its stream registers an abort.
+      generationActive: isSessionGenerationActive(sessionId) || isSessionGenerationLive(sessionId),
       planModeOn: Boolean(session.agentMode && settings?.planMode),
     })
     if (refusal || !message) throw new Error(refusal ?? i18next.t('This plan can no longer be continued.'))
-    await chatStore.updateSession(sessionId, { planPhase: 'executing' })
-    const fresh = (await chatStore.getSession(sessionId)) ?? session
-    const target = getMessageFromSession(fresh, messageId) ?? message
+    // This run's start: the timer counts it on top of the stopped runs (runMs); startedAt still scopes the tasks.
+    const resuming = startingRun(withPlanFields(message, { runStartedAt: Date.now() }))
+    await modifyMessage(sessionId, resuming, true)
+    let fresh: Session
+    try {
+      await chatStore.updateSession(sessionId, { planPhase: 'executing' })
+      fresh = (await chatStore.getSession(sessionId)) ?? session
+    } catch (error) {
+      await abandonStartingRun(sessionId, resuming)
+      throw error
+    }
+    const target = getMessageFromSession(fresh, messageId) ?? resuming
     await generate(sessionId, target, {
       operationType: 'send_message',
       prefetchedSession: fresh,
@@ -235,8 +283,9 @@ export async function requestPlanChanges(sessionId: string, messageId: string, f
   if (planDecisionInFlight.has(key)) return
   planDecisionInFlight.add(key)
   try {
-    // Superseded by the next version, not rejected: the card folds it as "Plan v{{version}}".
-    const { plan } = await updatePendingPlanStatus(sessionId, messageId, 'revised')
+    // Superseded by the next version, not rejected: the card folds it as "Plan v{{version}}". Stored as 'rejected' +
+    // `revised: true` so builds before 6a (which drop a session whose plan status they don't know) still read it.
+    const { plan } = await updatePendingPlanStatus(sessionId, messageId, 'rejected', { revised: true })
     await chatStore.updateSession(sessionId, { planPhase: 'planning' })
     await submitNewUserMessage(sessionId, {
       newUserMsg: createMessage(
@@ -621,6 +670,14 @@ export async function generate(
   const configs = await platform.getConfig()
   if (!session || !settings) {
     await releaseExecutionPhase()
+    // A caller that marked the message generating (Run plan, Continue) must not leave it spinning.
+    if (session && targetMsg.generating) {
+      try {
+        await modifyMessage(sessionId, { ...targetMsg, generating: false }, true)
+      } catch {
+        // non-fatal
+      }
+    }
     return
   }
 
@@ -1357,11 +1414,12 @@ export async function generate(
         // If we just got a pending plan, mark it pending
         // If we're in execution phase with no existing plan, no plan part needed
         let finalPlanPart: MessagePlanPart | undefined
-        if (isPlanMode) {
-          if (isExecutionPhase) {
-            // Keep the approved plan; finishedAt is decided after the closing-answer stream below.
-            finalPlanPart = existingPlanPart
-          } else if (!isPendingPlan) {
+        if (isExecutionPhase) {
+          // Keep the approved plan, with or without plan mode (it may be off by now; dropping the part would lose the
+          // plan); finishedAt is decided after the closing-answer stream below.
+          finalPlanPart = existingPlanPart
+        } else if (isPlanMode) {
+          if (!isPendingPlan) {
             // New pending plan from this generation
             finalPlanPart = {
               type: 'plan',
@@ -1449,7 +1507,7 @@ export async function generate(
         }
 
         // The run is over (main and closing-answer streams): a finished plan gets finishedAt, a stopped one none.
-        if (isPlanMode && isExecutionPhase && existingPlanPart) {
+        if (isExecutionPhase && existingPlanPart) {
           finalPlanPart = finishExecutedPlan(existingPlanPart, {
             stoppedDuringStream,
             stoppedDuringContinue: wasGenerationCancelled(sessionId, targetMsg.id),
@@ -1490,104 +1548,116 @@ export async function generate(
           error: emptyCompletionError,
         }
         await settleStreamUi(targetMsg)
-
-        // Optional image-flow append after the reply is already visible
-        if (executionAgentImageFlowInstructions) {
-          try {
-            const fallbackGenerateImagePart = await maybeAutoStartAgentImageFlow(finalContentParts)
-            if (fallbackGenerateImagePart) {
-              targetMsg = {
-                ...targetMsg,
-                contentParts: [...(targetMsg.contentParts || []), fallbackGenerateImagePart],
-              }
-              await modifyMessage(sessionId, targetMsg, true)
-            }
-          } catch {
-            // non-fatal
-          }
-        }
-
-        await flushSessionTasks(sessionId)
-
-        // Provider usage status: local rollup + clear exhausted on success
+        // The answer and the plan part (with finishedAt) are saved: from here the error path must keep this plan,
+        // and nothing below may turn a finished turn into an error or file a second Change.
+        if (isExecutionPhase) activeExecutionPlan = finalPlanPart
         try {
-          const { providerUsageService } = await import('@/packages/usage-tracking')
-          await providerUsageService.init()
-          await providerUsageService.recordFromMessage(targetMsg, settingsStore.getState().usagePricingOverrides)
-          const pid = String(effectiveSettings.provider ?? targetMsg.aiProvider ?? '')
-          if (pid) {
-            await providerUsageService.clearExhausted(pid)
-            const budgetHit = await providerUsageService.evaluateAndMaybeNotify(settingsStore.getState(), pid)
-            if (budgetHit?.shouldToast) {
-              const { add: addToast } = await import('@/stores/toastActions')
-              addToast(budgetHit.message)
-            }
-          }
-        } catch {
-          // non-fatal
-        }
-
-        // Local OS notification when unfocused (never includes message content)
-        if (!roomMulti) {
-          try {
-            const { notifySystemEvent } = await import('@/packages/notifications')
-            const sessionName = (await chatStore.getSession(sessionId))?.name || session.name || undefined
-            void notifySystemEvent({
-              kind: 'generation_complete',
-              sessionId,
-              messageId: targetMsg.id,
-              sessionName,
-            })
-          } catch {
-            // non-fatal
-          }
-        }
-
-        if (isExecutionPhase) {
-          await chatStore.updateSession(sessionId, { planPhase: undefined })
-          // A finished plan with staged edits files one Change in Review (a stopped run has no finishedAt).
-          if (finalPlanPart?.finishedAt !== undefined) {
+          // Optional image-flow append after the reply is already visible
+          if (executionAgentImageFlowInstructions) {
             try {
-              const current = (await chatStore.getSession(sessionId)) ?? session
-              await recordFinishedPlan(current, targetMsg.id, finalPlanPart)
-            } catch (error) {
-              console.warn('[plan] Could not file the Change entry', error)
+              const fallbackGenerateImagePart = await maybeAutoStartAgentImageFlow(finalContentParts)
+              if (fallbackGenerateImagePart) {
+                targetMsg = {
+                  ...targetMsg,
+                  contentParts: [...(targetMsg.contentParts || []), fallbackGenerateImagePart],
+                }
+                await modifyMessage(sessionId, targetMsg, true)
+              }
+            } catch {
+              // non-fatal
             }
           }
-        }
 
-        // Global PostTurn hooks, then agent/copilot post hooks
-        if (!roomMulti) {
-          const outputText =
-            streamResult.text?.trim() ||
-            finalContentParts
-              .filter(
-                (part): part is Extract<(typeof finalContentParts)[number], { type: 'text' }> => part.type === 'text'
-              )
-              .map((part) => part.text)
-              .join('\n')
-              .trim()
+          await flushSessionTasks(sessionId)
+
+          // Provider usage status: local rollup + clear exhausted on success
           try {
-            const { runHooks } = await import('@/packages/hooks')
-            const { mergeHooksList, pushHookAudit, loadHookOverrides } = await import('@/stores/hooksStore')
-            const overrides = await loadHookOverrides()
-            const globalHooks = mergeHooksList(overrides)
-            await runHooks({
-              event: 'PostTurn',
-              hooks: globalHooks,
-              shellEnabled: false,
-              sessionId,
-              workspaceRoot: undefined,
-              output: outputText,
-              onRun: pushHookAudit,
-            })
+            const { providerUsageService } = await import('@/packages/usage-tracking')
+            await providerUsageService.init()
+            await providerUsageService.recordFromMessage(targetMsg, settingsStore.getState().usagePricingOverrides)
+            const pid = String(effectiveSettings.provider ?? targetMsg.aiProvider ?? '')
+            if (pid) {
+              await providerUsageService.clearExhausted(pid)
+              const budgetHit = await providerUsageService.evaluateAndMaybeNotify(settingsStore.getState(), pid)
+              if (budgetHit?.shouldToast) {
+                const { add: addToast } = await import('@/stores/toastActions')
+                addToast(budgetHit.message)
+              }
+            }
           } catch {
             // non-fatal
           }
-          if (isAgentEnabled && copilotOverrides?.hooks?.postTurn) {
-            const { executePostHooks } = await import('@/packages/copilot-hooks')
-            await executePostHooks(copilotOverrides.hooks.postTurn, outputText)
+
+          // Local OS notification when unfocused (never includes message content)
+          if (!roomMulti) {
+            try {
+              const { notifySystemEvent } = await import('@/packages/notifications')
+              const sessionName = (await chatStore.getSession(sessionId))?.name || session.name || undefined
+              void notifySystemEvent({
+                kind: 'generation_complete',
+                sessionId,
+                messageId: targetMsg.id,
+                sessionName,
+              })
+            } catch {
+              // non-fatal
+            }
           }
+
+          if (isExecutionPhase) {
+            try {
+              await chatStore.updateSession(sessionId, { planPhase: undefined })
+            } catch (error) {
+              // The phase release failing must not cost the finished plan its Change entry.
+              console.warn('[plan] Could not clear the execution phase', error)
+            }
+            // A finished plan with staged edits files one Change in Review (a stopped run has no finishedAt).
+            if (finalPlanPart?.finishedAt !== undefined) {
+              try {
+                const current = (await chatStore.getSession(sessionId)) ?? session
+                await recordFinishedPlan(current, targetMsg.id, finalPlanPart)
+              } catch (error) {
+                console.warn('[plan] Could not file the Change entry', error)
+              }
+            }
+          }
+
+          // Global PostTurn hooks, then agent/copilot post hooks
+          if (!roomMulti) {
+            const outputText =
+              streamResult.text?.trim() ||
+              finalContentParts
+                .filter(
+                  (part): part is Extract<(typeof finalContentParts)[number], { type: 'text' }> => part.type === 'text'
+                )
+                .map((part) => part.text)
+                .join('\n')
+                .trim()
+            try {
+              const { runHooks } = await import('@/packages/hooks')
+              const { mergeHooksList, pushHookAudit, loadHookOverrides } = await import('@/stores/hooksStore')
+              const overrides = await loadHookOverrides()
+              const globalHooks = mergeHooksList(overrides)
+              await runHooks({
+                event: 'PostTurn',
+                hooks: globalHooks,
+                shellEnabled: false,
+                sessionId,
+                workspaceRoot: undefined,
+                output: outputText,
+                onRun: pushHookAudit,
+              })
+            } catch {
+              // non-fatal
+            }
+            if (isAgentEnabled && copilotOverrides?.hooks?.postTurn) {
+              const { executePostHooks } = await import('@/packages/copilot-hooks')
+              await executePostHooks(copilotOverrides.hooks.postTurn, outputText)
+            }
+          }
+        } catch (error) {
+          // Post-turn work (tasks flush, usage, plan bookkeeping, hooks) never rewrites the settled message.
+          console.warn('[generate] Post-turn work failed after the answer was saved', error)
         }
 
         // In plan mode with pending plan, don't process queued messages yet - wait for approval

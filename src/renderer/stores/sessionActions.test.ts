@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import type { Message, Session, SessionThread } from '../../shared/types'
+import type { Message, MessagePlanPart, Session, SessionThread } from '../../shared/types'
 import { MessagePlanPartSchema } from '../../shared/types/session'
 
 import * as sessionActions from './sessionActions'
@@ -23,6 +23,7 @@ const {
   updateSessionMock,
   getSessionSettingsMock,
   updateMessageCacheMock,
+  addReviewEntryMock,
 } = vi.hoisted(() => ({
   updateSessionWithMessages: vi.fn(),
   useSessionMock: vi.fn(),
@@ -31,6 +32,7 @@ const {
   updateSessionMock: vi.fn(),
   getSessionSettingsMock: vi.fn(),
   updateMessageCacheMock: vi.fn(),
+  addReviewEntryMock: vi.fn(async (input: unknown) => input),
 }))
 
 vi.hoisted(() => {
@@ -143,6 +145,11 @@ vi.mock('@/i18n/locales', () => ({
 
 vi.mock('@/packages/apple_app_store', () => ({ tickAfterMessageGenerated: vi.fn() }))
 vi.mock('@/packages/notifications', () => ({ notifySystemEvent: vi.fn(async () => false) }))
+vi.mock('@/packages/review', () => ({ addReviewEntry: addReviewEntryMock }))
+vi.mock('@/packages/model-calls/toolsets/file', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/packages/model-calls/toolsets/file')>()),
+  getStagedChangeSetId: () => 'cs-plan',
+}))
 
 vi.mock('@/stores/settingsStore', () => ({
   settingsStore: {
@@ -195,6 +202,7 @@ beforeEach(() => {
   updateSessionMock.mockReset()
   getSessionSettingsMock.mockReset()
   updateMessageCacheMock.mockReset()
+  addReviewEntryMock.mockClear()
 })
 
 describe('fork actions', () => {
@@ -508,10 +516,27 @@ describe('plan lifecycle actions', () => {
     return written?.contentParts.find((p) => p.type === 'plan')
   }
 
-  test('requestPlanChanges marks the old plan revised, not rejected', async () => {
+  test('requestPlanChanges marks the old plan revised, stored as rejected plus a revised flag', async () => {
     getSessionMock.mockResolvedValue(pendingPlanSession())
     await sessionActions.requestPlanChanges('plan-session', 'a1', 'Shorter please').catch(() => {})
-    expect(writtenPlan()).toMatchObject({ type: 'plan', status: 'revised' })
+    expect(writtenPlan()).toMatchObject({ type: 'plan', status: 'rejected', revised: true })
+  })
+
+  test('a revised plan still parses with the schema of builds before 6a (status enum without revised)', async () => {
+    // MessagePlanPartSchema as on main before slice 6a: older builds drop a session whose plan fails this parse.
+    const { z } = await import('zod')
+    const OldPlanPartSchema = z.object({
+      type: z.literal('plan'),
+      planText: z.string(),
+      status: z.enum(['pending', 'approved', 'rejected']).default('pending'),
+    })
+    getSessionMock.mockResolvedValue(pendingPlanSession())
+    await sessionActions.requestPlanChanges('plan-session', 'a1', 'Shorter please').catch(() => {})
+    const written = writtenPlan()
+    expect(OldPlanPartSchema.safeParse(written).success).toBe(true)
+    // And this build reads it back as revised.
+    const { planCardState } = await import('@/packages/plan/planSteps')
+    expect(planCardState(MessagePlanPartSchema.parse(written), false)).toBe('revised')
   })
 
   test('approveAndExecutePlan stamps startedAt with the approval', async () => {
@@ -552,13 +577,16 @@ describe('plan lifecycle actions', () => {
 
   const toolC1 = (m: Message) => m.contentParts.some((p) => p.type === 'tool-call' && p.toolCallId === 'c1')
   const textOf = (m: Message) => m.contentParts.map((p) => (p.type === 'text' ? p.text : '')).join('')
-  async function resumeWithStream(answer: Message['contentParts']) {
+  async function resumeWithStream(answer: Message['contentParts'], opts: { stop?: boolean } = {}) {
     const { streamText } = await import('@/packages/model-calls')
+    const { cancelSessionGeneration } = await import('./session/generation-cancel')
     const calls: Array<{ messages: Message[]; knowledgeQuery?: string; memory?: { userQuery?: string } }> = []
-    vi.mocked(streamText).mockImplementation(async (_model, opts) => {
-      calls.push(opts as never)
+    vi.mocked(streamText).mockImplementation(async (_model, streamOpts) => {
+      calls.push(streamOpts as never)
       const parts = calls.length === 1 ? answer : [{ type: 'text' as const, text: 'Closing answer' }]
-      await opts.onResultChangeWithCancel?.({ contentParts: parts })
+      await streamOpts.onResultChangeWithCancel?.({ contentParts: parts, cancel: () => {} })
+      // Stop pressed while the stream runs: the registered abort fires, the stream returns normally.
+      if (opts.stop) cancelSessionGeneration('plan-session')
       const text = parts.map((p) => (p.type === 'text' ? p.text : '')).join('')
       const finishReason = parts.some((p) => p.type === 'text') ? 'stop' : 'tool-calls'
       return { result: { contentParts: parts, text, finishReason }, knowledgeIds: [] } as never
@@ -644,11 +672,107 @@ describe('plan lifecycle actions', () => {
   })
 
   test('an execution run that returns early does not leave the session executing', async () => {
-    getSessionMock.mockResolvedValueOnce(pendingPlanSession()).mockResolvedValue(stoppedPlanSession({ startedAt: 1 })) // as stored once approved
+    const approved = stoppedPlanSession({ startedAt: 1 }) // as stored once approved: generating from the approval
+    approved.messages[1] = { ...approved.messages[1], generating: true }
+    getSessionMock.mockResolvedValueOnce(pendingPlanSession()).mockResolvedValue(approved)
     getSessionSettingsMock.mockResolvedValue(undefined) // generate() returns before streaming
     await sessionActions.approveAndExecutePlan('plan-session', 'a1')
     expect(updateSessionMock).toHaveBeenCalledWith('plan-session', { planPhase: 'executing' })
     expect(updateSessionMock.mock.calls.at(-1)).toEqual(['plan-session', { planPhase: undefined }])
+    // Nor is the message left generating (the approval marks it generating at once, see M1).
+    expect((updateMessageMock.mock.calls.at(-1)?.[2] as Message).generating).toBe(false)
+  })
+
+  test('Run plan marks the message generating with the approval, so the card never flashes "Plan stopped"', async () => {
+    getSessionMock.mockResolvedValue(pendingPlanSession())
+    await sessionActions.approveAndExecutePlan('plan-session', 'a1').catch(() => {})
+    const first = updateMessageMock.mock.calls[0]?.[2] as Message
+    expect(first.contentParts.find((p) => p.type === 'plan')).toMatchObject({ status: 'approved' })
+    expect(first.generating).toBe(true)
+  })
+
+  test('Continue marks the message generating and stamps the new run start before the run sets up', async () => {
+    getSessionMock.mockResolvedValue(stoppedPlanSession({ startedAt: 1 }))
+    getSessionSettingsMock.mockResolvedValue({ planMode: true })
+    const before = Date.now()
+    await sessionActions.resumeStoppedPlan('plan-session', 'a1').catch(() => {})
+    const first = updateMessageMock.mock.calls[0]?.[2] as Message
+    expect(first.generating).toBe(true)
+    const plan = first.contentParts.find((p) => p.type === 'plan') as MessagePlanPart
+    expect(plan.startedAt).toBe(1) // the first start still scopes the run's tasks
+    expect(plan.runStartedAt).toBeGreaterThanOrEqual(before)
+  })
+
+  test('resumeStoppedPlan refuses while another turn is still setting up (live, no abort yet)', async () => {
+    const { markSessionGenerationLive, clearSessionGenerationLive } = await import('./session/session-live-generation')
+    markSessionGenerationLive('plan-session', 'other')
+    getSessionMock.mockResolvedValue(stoppedPlanSession({ startedAt: 1 }))
+    getSessionSettingsMock.mockResolvedValue({ planMode: true })
+    await expect(sessionActions.resumeStoppedPlan('plan-session', 'a1')).rejects.toThrow(/current reply/)
+    clearSessionGenerationLive('plan-session', 'other')
+    expect(updateSessionMock).not.toHaveBeenCalled()
+  })
+
+  const savedPlan = () =>
+    (updateMessageMock.mock.calls.at(-1)?.[2] as Message).contentParts.find(
+      (p): p is MessagePlanPart => p.type === 'plan'
+    )
+
+  test('a finished plan stays finished when post-turn work throws, and files one Change (I2)', async () => {
+    let thrown = false
+    updateSessionMock.mockImplementation((_id: string, patch: { planPhase?: string }) => {
+      // The post-settle phase release fails once (e.g. the session file is briefly locked).
+      if (!thrown && 'planPhase' in patch && patch.planPhase === undefined) {
+        thrown = true
+        return Promise.reject(new Error('session write failed'))
+      }
+      return Promise.resolve()
+    })
+    await resumeWithStream([{ type: 'text', text: 'Checked it' }])
+    expect(thrown).toBe(true)
+    const saved = updateMessageMock.mock.calls.at(-1)?.[2] as Message
+    expect(saved.error).toBeUndefined()
+    expect(savedPlan()?.finishedAt).toBeDefined()
+    expect(addReviewEntryMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('Stop during an execution run: no finishedAt and no Change entry (M9)', async () => {
+    await resumeWithStream([{ type: 'text', text: 'Half done' }], { stop: true })
+    const plan = savedPlan()
+    expect(plan).toMatchObject({ status: 'approved', startedAt: 1 })
+    expect(plan?.finishedAt).toBeUndefined()
+    expect(plan?.runMs).toBeGreaterThanOrEqual(0) // the stopped run's time is kept for the next run's timer
+    expect(addReviewEntryMock).not.toHaveBeenCalled()
+  })
+
+  test('a finished execution run files exactly one Change entry', async () => {
+    await resumeWithStream([{ type: 'text', text: 'Checked it' }])
+    expect(savedPlan()?.finishedAt).toBeDefined()
+    expect(addReviewEntryMock).toHaveBeenCalledTimes(1)
+    expect(addReviewEntryMock.mock.calls[0][0]).toMatchObject({ kind: 'change', chatId: 'plan-session' })
+  })
+
+  test('an approved plan keeps its plan part and finish when plan mode is off (M12)', async () => {
+    const { streamText } = await import('@/packages/model-calls')
+    vi.mocked(streamText).mockImplementation(async (_model, streamOpts) => {
+      const parts = [{ type: 'text' as const, text: 'Done' }]
+      await streamOpts.onResultChangeWithCancel?.({ contentParts: parts })
+      return { result: { contentParts: parts, text: 'Done', finishReason: 'stop' }, knowledgeIds: [] } as never
+    })
+    uuidQueue.push(...Array.from({ length: 50 }, (_, i) => `uuid-off-${i}`))
+    const pending = pendingPlanSession()
+    pending.agentMode = true
+    const approved = stoppedPlanSession({ startedAt: Date.now() })
+    getSessionMock.mockResolvedValueOnce(pending).mockResolvedValue(approved)
+    getSessionSettingsMock.mockResolvedValue({
+      planMode: false,
+      provider: 'openai',
+      modelId: 'gpt',
+      maxContextMessageCount: 20,
+    })
+    await sessionActions.approveAndExecutePlan('plan-session', 'a1')
+    expect(savedPlan()).toMatchObject({ status: 'approved' })
+    expect(savedPlan()?.finishedAt).toBeDefined()
   })
 
   test('old plan payloads still parse', () => {

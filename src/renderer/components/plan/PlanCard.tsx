@@ -11,6 +11,7 @@ import {
   type PlanStepView,
   parsePlanSteps,
   planCardState,
+  planRunOrigin,
   planRunTasks,
   planStepViews,
 } from '@/packages/plan/planSteps'
@@ -228,7 +229,8 @@ function LivePlan({
 }) {
   const { t } = useTranslation()
   const { pending, error, run } = useCardAction()
-  const elapsed = useThinkingTimer(plan.startedAt, running)
+  const runOrigin = planRunOrigin(plan)
+  const elapsed = useThinkingTimer(runOrigin, running)
   const total = steps.length
   const done = steps.filter((step) => step.status === 'done').length
   const currentIndex = steps.findIndex((step) => step.status === 'current')
@@ -250,7 +252,9 @@ function LivePlan({
       <div className="dg-plan__head">
         {running ? <Mascot state="working" size={20} /> : null}
         <strong>{title}</strong>
-        {running && plan.startedAt ? <span className="dg-plan__time">{formatDangoDuration(elapsed)}</span> : null}
+        {running && runOrigin !== undefined ? (
+          <span className="dg-plan__time">{formatDangoDuration(elapsed)}</span>
+        ) : null}
       </div>
       <PlanBody steps={steps} planText={plan.planText} />
       <div className="dg-plan__actions">
@@ -271,7 +275,7 @@ function LivePlan({
         ) : null}
         {!running && showContinue && continueState === 'blocked' ? (
           <span id={blockedHintId} className="dg-plan__note">
-            {t('Turn on plan mode to continue this plan.')}
+            {t("Plan mode is off in this chat, so this plan can't continue.")}
           </span>
         ) : null}
         {running && touchesFiles ? (
@@ -371,7 +375,8 @@ function foldedTitle(t: TFunction, state: 'finished' | 'rejected' | 'revised', p
   if (state === 'rejected') return t('Rejected plan')
   const count = parsePlanSteps(plan.planText).length
   if (count === 0) return t('Ran plan')
-  if (plan.startedAt === undefined || plan.finishedAt === undefined) return t('Ran plan · {{count}} steps', { count })
-  const duration = formatDangoDuration(plan.finishedAt - plan.startedAt)
+  const runOrigin = planRunOrigin(plan)
+  if (runOrigin === undefined || plan.finishedAt === undefined) return t('Ran plan · {{count}} steps', { count })
+  const duration = formatDangoDuration(plan.finishedAt - runOrigin)
   return t('Ran plan · {{count}} steps · {{duration}}', { count, duration })
 }

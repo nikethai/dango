@@ -188,6 +188,16 @@ describe('PlanCard running', () => {
     expect(screen.getByText('15 s')).toBeTruthy()
   })
 
+  it('a resumed run times this run plus the earlier ones, not the stopped gap', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_010_000)
+    renderCard(
+      { planText: FOUR, status: 'approved', startedAt: 0, runMs: 20_000, runStartedAt: 1_000_000 },
+      { generating: true }
+    )
+    expect(screen.getByText('30 s')).toBeTruthy()
+  })
+
   it('marks failed steps', () => {
     h.tasks = [task('a', 'failed', 1), task('b', 'in-progress', 2)]
     renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { generating: true, latestPlan: true })
@@ -249,7 +259,7 @@ describe('PlanCard stopped', () => {
     const { props } = renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { continueState: 'blocked' })
     const button = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement
     expect(button.disabled).toBe(true)
-    expect(screen.getByText('Turn on plan mode to continue this plan.')).toBeTruthy()
+    expect(screen.getByText("Plan mode is off in this chat, so this plan can't continue.")).toBeTruthy()
     expect(button.getAttribute('aria-describedby')).toBeTruthy()
     fireEvent.click(button)
     expect(props.onContinue).not.toHaveBeenCalled()
@@ -266,13 +276,26 @@ describe('PlanCard folded', () => {
     expect(screen.queryAllByRole('button')).toHaveLength(0)
   })
 
+  it('a resumed plan reports its run time, not the time it sat stopped', () => {
+    // Ran 60 s, stopped, Continue at 1 000 s ran another 60 s.
+    const { container } = renderCard({
+      planText: FOUR,
+      status: 'approved',
+      startedAt: 0,
+      runMs: 60_000,
+      runStartedAt: 1_000_000,
+      finishedAt: 1_060_000,
+    })
+    expect(container.querySelector('summary')?.textContent).toBe('Ran plan · 4 steps · 2 m')
+  })
+
   it('legacy finished plan omits the duration (R12)', () => {
     const { container } = renderCard({ planText: FOUR, status: 'approved' })
     expect(container.querySelector('summary')?.textContent).toBe('Ran plan · 4 steps')
   })
 
   it('revised plans fold and lose their actions', () => {
-    const { container } = renderCard({ planText: FOUR, status: 'revised', version: 2 })
+    const { container } = renderCard({ planText: FOUR, status: 'rejected', revised: true, version: 2 })
     const details = container.querySelector('details')
     expect(details?.open).toBe(false)
     expect(details?.querySelector('summary')?.textContent).toBe('Plan v2')

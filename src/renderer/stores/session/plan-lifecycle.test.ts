@@ -52,13 +52,21 @@ describe('nextPlanVersion', () => {
     expect(nextPlanVersion([msg('u1', [], 'user'), msg('a1')], 'a1')).toBe(1)
   })
   it('is 2 when the latest earlier plan is revised without a version', () => {
-    const messages = [msg('a0', [plan({ status: 'revised' })]), msg('u1', [], 'user'), msg('a1')]
+    const messages = [msg('a0', [plan({ status: 'rejected', revised: true })]), msg('u1', [], 'user'), msg('a1')]
     expect(nextPlanVersion(messages, 'a1')).toBe(2)
+  })
+  it("still reads a stored status 'revised'", () => {
+    const messages = [msg('a0', [plan({ status: 'revised', version: 2 })]), msg('u1', [], 'user'), msg('a1')]
+    expect(nextPlanVersion(messages, 'a1')).toBe(3)
+  })
+  it('is 1 when the latest earlier plan was rejected outright', () => {
+    const messages = [msg('a0', [plan({ status: 'rejected', version: 2 })]), msg('u1', [], 'user'), msg('a1')]
+    expect(nextPlanVersion(messages, 'a1')).toBe(1)
   })
   it('is 3 when the latest earlier plan is revised with version 2', () => {
     const messages = [
-      msg('a0', [plan({ status: 'revised' })]),
-      msg('a1', [plan({ status: 'revised', version: 2 })]),
+      msg('a0', [plan({ status: 'rejected', revised: true })]),
+      msg('a1', [plan({ status: 'rejected', revised: true, version: 2 })]),
       msg('u1', [], 'user'),
       msg('a2'),
     ]
@@ -148,9 +156,9 @@ describe('planResumeRefusal', () => {
     )
     expect(planResumeRefusal(sessionWith(), 'a1', ok)).toBe('This plan can no longer be continued.')
   })
-  it('refuses when plan mode is off', () => {
+  it('refuses when plan mode is off, without naming a control the app does not have yet', () => {
     expect(planResumeRefusal(sessionWith(stopped()), 'a1', { ...ok, planModeOn: false })).toBe(
-      'Turn on plan mode to continue this plan.'
+      "Plan mode is off in this chat, so this plan can't continue."
     )
   })
 })
@@ -166,6 +174,15 @@ describe('finishExecutedPlan', () => {
     expect(
       finishExecutedPlan(running, { stoppedDuringStream: true, stoppedDuringContinue: false, now: 5 }).finishedAt
     ).toBeUndefined()
+  })
+  it('stop keeps the run time in runMs; a resumed run counts from runStartedAt', () => {
+    expect(finishExecutedPlan(running, { stoppedDuringStream: true, stoppedDuringContinue: false, now: 5 }).runMs).toBe(
+      4
+    )
+    const resumed = plan({ status: 'approved', startedAt: 1, runMs: 4, runStartedAt: 100 })
+    expect(
+      finishExecutedPlan(resumed, { stoppedDuringStream: true, stoppedDuringContinue: false, now: 130 }).runMs
+    ).toBe(34)
   })
   it('stop during the closing answer (continue stream): no finishedAt', () => {
     expect(

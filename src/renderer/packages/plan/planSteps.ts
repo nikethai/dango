@@ -27,13 +27,20 @@ export function parsePlanSteps(planText: string): string[] {
 }
 
 /**
- * pending → proposed; revised → revised; rejected → rejected. An approved plan is running while its message generates,
- * finished once it has `finishedAt`, and stopped otherwise. A legacy approved plan (no `startedAt`) reads as finished.
+ * Superseded by a newer version after Request changes: stored as 'rejected' plus `revised: true` (older builds read it
+ * as rejected); a stored 'revised' from an early 6a build reads the same.
+ */
+export function isRevisedPlan(plan: Pick<MessagePlanPart, 'status' | 'revised'>): boolean {
+  return plan.status === 'revised' || (plan.status === 'rejected' && plan.revised === true)
+}
+
+/**
+ * pending → proposed; revised (isRevisedPlan) → revised; rejected → rejected. An approved plan is running while its
+ * message generates, finished once it has `finishedAt`, and stopped otherwise. A legacy approved plan (no `startedAt`) reads as finished.
  */
 export function planCardState(plan: MessagePlanPart, generating: boolean): PlanCardState {
+  if (isRevisedPlan(plan)) return 'revised'
   switch (plan.status) {
-    case 'revised':
-      return 'revised'
     case 'rejected':
       return 'rejected'
     case 'approved':
@@ -43,6 +50,15 @@ export function planCardState(plan: MessagePlanPart, generating: boolean): PlanC
     default:
       return 'proposed'
   }
+}
+
+/**
+ * Origin for a plan's run timer and finished duration: when the current run started, moved back by the time of earlier,
+ * stopped runs (`runMs`), so a plan continued later never counts the time it sat stopped. Undefined for a legacy plan.
+ */
+export function planRunOrigin(plan: Pick<MessagePlanPart, 'startedAt' | 'runStartedAt' | 'runMs'>): number | undefined {
+  const runStart = plan.runStartedAt ?? plan.startedAt
+  return runStart === undefined ? undefined : runStart - (plan.runMs ?? 0)
 }
 
 /**
