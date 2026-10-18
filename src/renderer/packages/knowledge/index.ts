@@ -1,3 +1,5 @@
+export { initKnowledge } from './init'
+export { scopeName } from './scopes'
 export { ensureKnowledgeLoaded, type KnowledgeMigrationState } from './store'
 export { contentHash, knowledgeTextKey, parseStaleAfter, quote } from './text'
 export { pushKnowledgeUndo } from './undo'

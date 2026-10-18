@@ -20,6 +20,8 @@ export const knowledgeStore = createStore<KnowledgeStoreState>()(() => ({
 
 export type CommitResult = {
   touched: { items: string[]; proposals: string[]; conflicts: string[] }
+  /** True for the commit a `revert()` makes, so listeners can reopen what it brings back. */
+  reverted: boolean
   /** Puts back this commit's pre-images onto a fresh read, as an ordinary commit. */
   revert: () => Promise<void>
 }
@@ -125,13 +127,19 @@ const listeners = new Set<KnowledgeCommitListener>()
 export function ensureKnowledgeLoaded(opts?: { fresh?: boolean }): Promise<void> {
   if (loaded && !opts?.fresh) return Promise.resolve()
   if (loading && !opts?.fresh) return loading
-  const run = enqueue(async () => {
+  const load = enqueue(async () => {
     const storage = await getStorage()
     const state = await readState(storage)
     const migration = await readMigration(storage)
     knowledgeStore.setState((s) => ({ state, migration: migration ?? s.migration }))
     loaded = true
   })
+  // The scope snapshot that `getScopeReads` and `scopeName` read (preflight C2). Lazy: it pulls in jotai
+  // and the scope atoms. A failed scope read keeps the last snapshot and never fails the load.
+  const scopes = import('./scopes')
+    .then((m) => m.refreshScopes())
+    .catch((error) => log.error('Knowledge scope refresh failed:', error))
+  const run = Promise.all([load, scopes]).then(() => undefined)
   loading = run
   run
     .catch(() => undefined)
@@ -146,7 +154,11 @@ export function ensureKnowledgeLoaded(opts?: { fresh?: boolean }): Promise<void>
  * `setItemNow`, updates the store, then calls the commit listeners (outside the lock, so a listener may
  * commit again). `revert` restores this commit's records only, so later commits by others survive.
  */
-export async function commitKnowledge(mutate: (draft: KnowledgeState) => void): Promise<CommitResult> {
+export function commitKnowledge(mutate: (draft: KnowledgeState) => void): Promise<CommitResult> {
+  return runCommit(mutate, false)
+}
+
+async function runCommit(mutate: (draft: KnowledgeState) => void, reverted: boolean): Promise<CommitResult> {
   const { pre, after } = await enqueue(async () => {
     const storage = await getStorage()
     const before = await readState(storage)
@@ -170,10 +182,11 @@ export async function commitKnowledge(mutate: (draft: KnowledgeState) => void): 
       proposals: [...pre.proposals.keys()],
       conflicts: [...pre.conflicts.keys()],
     },
+    reverted,
     revert: async () => {
-      await commitKnowledge((draft) => {
+      await runCommit((draft) => {
         for (const c of COLLECTIONS) restoreCollection(c, draft, pre[c] as Map<string, never>)
-      })
+      }, true)
     },
   }
 
