@@ -52,7 +52,7 @@ export function ScopePageView(props: ScopePageViewProps) {
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>{scope.name}</h2>
+            <h2 className="dg-type-title-2">{scope.name}</h2>
             {scope.kind === 'client' ? <span className="dg-chip">{t('client')}</span> : null}
           </div>
           <button type="button" className="dg-btn dg-btn--primary" onClick={props.onNewChat}>

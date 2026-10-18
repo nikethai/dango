@@ -27,7 +27,9 @@ function SwitchRow(props: {
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         <span id={props.id}>{props.label}</span>
-        <span style={{ fontSize: 12, color: 'var(--dango-muted)' }}>{props.caption}</span>
+        <span className="dg-type-caption" style={{ color: 'var(--dango-muted)' }}>
+          {props.caption}
+        </span>
       </div>
       <button
         type="button"
@@ -84,7 +86,7 @@ export function ScopeSettingsTab({ scope, agentOptions, onChange, onDelete }: Sc
         }}
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <span id={kindLabelId} style={{ fontSize: 14, fontWeight: 500 }}>
+        <span id={kindLabelId} className="dg-type-body" style={{ fontWeight: 500 }}>
           {t('Is this a project or a client?')}
         </span>
         <SegmentedControl
@@ -107,7 +109,7 @@ export function ScopeSettingsTab({ scope, agentOptions, onChange, onDelete }: Sc
         onChange={(value) => onChange({ defaultAgentId: !value || value === NO_AGENT_VALUE ? undefined : value })}
       />
       <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{t('What this scope reads from Everywhere')}</h3>
+        <h3 className="dg-type-headline">{t('What this scope reads from Everywhere')}</h3>
         <SwitchRow
           id={`${switchId}-prefs`}
           label={t('Preferences')}
@@ -129,7 +131,7 @@ export function ScopeSettingsTab({ scope, agentOptions, onChange, onDelete }: Sc
           checked={reads.documents}
           onToggle={() => onChange({ readsEverywhere: { facts: reads.facts, documents: !reads.documents } })}
         />
-        <span style={{ fontSize: 12, color: 'var(--dango-muted)' }}>
+        <span className="dg-type-caption" style={{ color: 'var(--dango-muted)' }}>
           {t('When this scope and Everywhere disagree, this scope wins here.')}
         </span>
       </section>

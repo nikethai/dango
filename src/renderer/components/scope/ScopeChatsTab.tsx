@@ -22,7 +22,9 @@ export function ChatRows({ chats, onOpenChat }: { chats: SessionMeta[]; onOpenCh
             onClick={() => onOpenChat(chat.id)}
           >
             <span className="truncate">{chat.name}</span>
-            <span style={{ color: 'var(--dango-muted)', fontSize: 12 }}>{formatRailRelativeTime(chat.updatedAt)}</span>
+            <span className="dg-type-caption" style={{ color: 'var(--dango-muted)' }}>
+              {formatRailRelativeTime(chat.updatedAt)}
+            </span>
           </button>
         </li>
       ))}

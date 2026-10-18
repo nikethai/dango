@@ -98,18 +98,18 @@
   }
 }
 
-.dg-mascot[data-pose='idle'] .eyes {
+.dg-mascot[data-pose="idle"] .eyes {
   transform-box: fill-box;
   transform-origin: center;
   animation: dango-blink 4s infinite;
 }
 
-.dg-mascot[data-pose='thinking'] .dots,
-.dg-mascot[data-pose='replying'] .dots {
+.dg-mascot[data-pose="thinking"] .dots,
+.dg-mascot[data-pose="replying"] .dots {
   animation: dango-pulse 1.2s ease-in-out infinite alternate;
 }
 
-.dg-mascot[data-pose='working'] .ring {
+.dg-mascot[data-pose="working"] .ring {
   transform-box: view-box;
   transform-origin: 32px 33px;
   animation: dango-spin 1.6s linear infinite;
@@ -126,4 +126,50 @@
   .dg-mascot * {
     animation: none !important;
   }
+}
+
+/* Type scale (design/dango/tokens.json › type › Interface). Use the classes; the variables are for composites. */
+:root {
+  --dango-type-title-2-size: 17px;
+  --dango-type-title-2-line: 22px;
+  --dango-type-headline-size: 15px;
+  --dango-type-headline-line: 20px;
+  --dango-type-body-size: 14px;
+  --dango-type-body-line: 20px;
+  --dango-type-callout-size: 13px;
+  --dango-type-callout-line: 18px;
+  --dango-type-caption-size: 12px;
+  --dango-type-caption-line: 16px;
+}
+
+/* Pane headers: a scope's name, Everywhere. */
+.dg-type-title-2 {
+  margin: 0;
+  font-size: var(--dango-type-title-2-size);
+  line-height: var(--dango-type-title-2-line);
+  font-weight: 600;
+}
+
+/* Section headings inside a page or sheet. */
+.dg-type-headline {
+  margin: 0;
+  font-size: var(--dango-type-headline-size);
+  line-height: var(--dango-type-headline-line);
+  font-weight: 600;
+}
+
+.dg-type-body {
+  font-size: var(--dango-type-body-size);
+  line-height: var(--dango-type-body-line);
+}
+
+.dg-type-callout {
+  font-size: var(--dango-type-callout-size);
+  line-height: var(--dango-type-callout-line);
+}
+
+/* Item metadata, timestamps, captions under controls. */
+.dg-type-caption {
+  font-size: var(--dango-type-caption-size);
+  line-height: var(--dango-type-caption-line);
 }

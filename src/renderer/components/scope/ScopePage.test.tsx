@@ -102,6 +102,11 @@ describe('ScopePageView', () => {
     expect(screen.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected')).toBe('true')
   })
 
+  it('scope name uses the title-2 type style', () => {
+    view({ chats: [chat] })
+    expect(screen.getByRole('heading', { level: 2, name: 'Acme Co' }).className).toContain('dg-type-title-2')
+  })
+
   it('client chip', () => {
     view()
     const chip = screen.getByText('client')

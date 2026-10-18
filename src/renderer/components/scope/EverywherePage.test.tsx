@@ -26,6 +26,12 @@ describe('EverywherePage', () => {
     expect(screen.getByText("Read by every scope. A scope's own knowledge wins inside that scope.")).toBeTruthy()
   })
 
+  it('uses the type scale: title-2 for the heading, headline for sections', () => {
+    render(<EverywherePage />)
+    expect(screen.getByRole('heading', { level: 2, name: 'Everywhere' }).className).toContain('dg-type-title-2')
+    for (const h of screen.getAllByRole('heading', { level: 3 })) expect(h.className).toContain('dg-type-headline')
+  })
+
   it('renders the three sections in order', () => {
     const { container } = render(<EverywherePage />)
     const sections = Array.from(container.querySelectorAll('[data-section]'))

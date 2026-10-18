@@ -68,7 +68,7 @@ export function NewScopeSheet({ opened, onClose, onCreate }: NewScopeSheetProps)
           }}
         />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span id={kindLabelId} style={{ fontSize: 14, fontWeight: 500 }}>
+          <span id={kindLabelId} className="dg-type-body" style={{ fontWeight: 500 }}>
             {t('Is this a project or a client?')}
           </span>
           <SegmentedControl
@@ -80,7 +80,7 @@ export function NewScopeSheet({ opened, onClose, onCreate }: NewScopeSheetProps)
               { label: t('Client'), value: 'client' },
             ]}
           />
-          <span style={{ fontSize: 12, color: 'var(--dango-muted)' }}>
+          <span className="dg-type-caption" style={{ color: 'var(--dango-muted)' }}>
             {t("Client scopes don't read your Everywhere documents unless you turn that on.")}
           </span>
         </div>

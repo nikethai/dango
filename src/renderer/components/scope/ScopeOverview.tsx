@@ -9,7 +9,6 @@ const linkStyle = {
   border: 0,
   background: 'transparent',
   font: 'inherit',
-  fontSize: 13,
   color: 'var(--dango-green-text)',
   cursor: 'pointer',
   padding: 0,
@@ -49,10 +48,15 @@ export function ScopeOverview(props: {
     <div className="flex flex-col gap-6 py-4">
       <section aria-labelledby={recentId}>
         <div className="flex items-baseline justify-between">
-          <h2 id={recentId} style={{ fontSize: '0.9375rem', fontWeight: 600, margin: 0 }}>
+          <h2 id={recentId} className="dg-type-headline">
             {t('Recent chats')}
           </h2>
-          <button type="button" style={linkStyle} onClick={() => props.onTabChange('chats')}>
+          <button
+            type="button"
+            className="dg-type-callout"
+            style={linkStyle}
+            onClick={() => props.onTabChange('chats')}
+          >
             {t('All chats')}
           </button>
         </div>
@@ -60,10 +64,15 @@ export function ScopeOverview(props: {
       </section>
       <section aria-labelledby={knowledgeId}>
         <div className="flex items-baseline justify-between">
-          <h2 id={knowledgeId} style={{ fontSize: '0.9375rem', fontWeight: 600, margin: 0 }}>
+          <h2 id={knowledgeId} className="dg-type-headline">
             {t('Knowledge')}
           </h2>
-          <button type="button" style={linkStyle} onClick={() => props.onTabChange('knowledge')}>
+          <button
+            type="button"
+            className="dg-type-callout"
+            style={linkStyle}
+            onClick={() => props.onTabChange('knowledge')}
+          >
             {t('Open knowledge')}
           </button>
         </div>
