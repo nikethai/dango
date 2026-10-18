@@ -8,7 +8,7 @@ import type { ScopeTab } from './ScopePage'
 const linkStyle = {
   border: 0,
   background: 'transparent',
-  font: 'inherit',
+  fontFamily: 'inherit',
   color: 'var(--dango-green-text)',
   cursor: 'pointer',
   padding: 0,

@@ -36,4 +36,21 @@ describe('Dango type scale', () => {
     const offenders = files.filter((f) => /fontSize\s*:/.test(readFileSync(resolve(dir, f), 'utf8')))
     expect(offenders).toEqual([])
   })
+
+  it('no inline font shorthand overrides a dg-type class on the same element', () => {
+    const dir = resolve(root, 'src/renderer/components/scope')
+    const files = readdirSync(dir).filter((f) => f.endsWith('.tsx') && !f.includes('.test.'))
+    const offenders: string[] = []
+    for (const f of files) {
+      const src = readFileSync(resolve(dir, f), 'utf8')
+      // Opening tags that carry a dg-type-* class; check their inline style (literal or a named const).
+      for (const tag of src.match(/<\w+[^>]*className="[^"]*dg-type-[^"]*"[^>]*>/g) ?? []) {
+        const literal = tag.match(/style=\{\{([^}]*)\}\}/)?.[1] ?? ''
+        const named = tag.match(/style=\{(\w+)\}/)?.[1]
+        const body = named ? (src.match(new RegExp(`const ${named} = \\{([^}]*)\\}`))?.[1] ?? '') : ''
+        if (/\bfont\s*:/.test(literal + body)) offenders.push(`${f}: ${tag.slice(0, 60)}`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
 })
