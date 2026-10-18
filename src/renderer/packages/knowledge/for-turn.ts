@@ -90,8 +90,8 @@ export const KNOWLEDGE_TOKEN_BUDGET = 1_500
  * What of `items` (from `knowledgeForTurn(scopeId)`) fits the prompt, in priority order: the built-in "Never
  * send email", Everywhere preferences, the scope's items newest first, then Everywhere facts and decisions
  * ranked against `query` (the last user message) with `selectCandidates`, the unranked ones after them, newest
- * first. Stops at the first item that would take the section past `budget` tokens. What it returns is what
- * gets injected, so `knowledgeIds` is exactly this list (the built-in excepted).
+ * first. Skips any item that would take the section past `budget` tokens and goes on with the next. What it
+ * returns is what gets injected, so `knowledgeIds` is exactly this list (the built-in excepted).
  */
 export function fitKnowledgeToBudget(
   scopeId: string,
@@ -114,7 +114,8 @@ export function fitKnowledgeToBudget(
   const out: KnowledgeItem[] = []
   for (const item of [...builtIn, ...preferences, ...own, ...ranked, ...rest]) {
     const cost = estimateTokens(line(item)) + 1
-    if (item.id !== NEVER_SEND_EMAIL.id && used + cost > budget) break
+    // An item that doesn't fit is skipped; smaller ones after it still get in, in priority order.
+    if (item.id !== NEVER_SEND_EMAIL.id && used + cost > budget) continue
     used += cost
     out.push(item)
   }
@@ -167,12 +168,15 @@ export async function checkKnowledgeHealth(now: number = Date.now()): Promise<vo
   for (const item of items) {
     if (item.id === NEVER_SEND_EMAIL.id) continue
     let notice: Notice | undefined
-    // Fails closed: an item whose check throws (hashing unavailable, a malformed record) counts as unverified.
+    // Fails closed: an item whose check throws (hashing unavailable, a malformed record) counts as unverified,
+    // but files no notice: nothing is known to have changed outside Dango, and the next load checks it again.
     let verified = false
     try {
       verified = await isVerified(item)
     } catch (error) {
       log.error(`Knowledge health check failed for ${item.id}:`, error)
+      unverified.add(item.id)
+      continue
     }
     if (!verified) {
       unverified.add(item.id)

@@ -204,7 +204,7 @@ describe('knowledgeForTurn', () => {
     expect(ids('acme')).toEqual([NEVER_SEND_EMAIL.id])
   })
 
-  it('an item whose hash throws is left out and re-checked; the others still count', async () => {
+  it('an item whose hash throws is left out with no notice or re-check; the others still count', async () => {
     const made = await Promise.all([
       makeItem({ id: 'h-bad', scopeId: 'acme', text: 'Hash me if you can' }),
       makeItem({ id: 'h-good', scopeId: 'acme', text: 'Budget is 12k' }),
@@ -223,7 +223,9 @@ describe('knowledgeForTurn', () => {
 
     expect(ids('acme')).toEqual(['h-good', NEVER_SEND_EMAIL.id])
     expect(knowledgeStore.getState().unverified).toEqual(new Set(['h-bad']))
-    expect(recheckCalls().map(([e]) => e.ref)).toEqual([{ type: 'knowledge', id: 'h-bad' }])
+    // Nothing is known to have changed outside Dango: no "Can't verify" entry and no stored notice.
+    expect(recheckCalls()).toEqual([])
+    expect(stored().items.find((i) => i.id === 'h-bad')?.healthNotice).toBeUndefined()
   })
 
   it('unverified is replaced on every load', async () => {
@@ -353,7 +355,7 @@ describe('fitKnowledgeToBudget', () => {
     expect(fitted.map((i) => i.id)).toEqual([NEVER_SEND_EMAIL.id, 'e-pref', 'a-new', 'a-old', 'e-fact'])
   })
 
-  it('stays within the budget and stops at the first item that does not fit', async () => {
+  it('stays within the budget; an oversized item does not block later small ones', async () => {
     await seed([
       { id: 'a1', text: long(400, 'alpha'), updatedAt: 9 },
       { id: 'a2', text: long(400, 'beta'), updatedAt: 8 },
@@ -366,7 +368,9 @@ describe('fitKnowledgeToBudget', () => {
     const ids = fitted.map((i) => i.id)
     expect(ids.slice(0, 2)).toEqual([NEVER_SEND_EMAIL.id, 'e-pref'])
     expect(ids).toContain('a1')
-    expect(ids).not.toContain('a4')
+    expect(ids).not.toContain('a3')
+    // a4 comes after the items that did not fit and still gets in, in priority order.
+    expect(ids.at(-1)).toBe('a4')
     expect(ids.length).toBeLessThan(6)
     expect(estimateTokens(formatKnowledgeSection('acme', fitted))).toBeLessThanOrEqual(KNOWLEDGE_TOKEN_BUDGET)
   })
