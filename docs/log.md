@@ -3,6 +3,7 @@
 Newest first. Add a line when you create, accept, supersede or move a decision, spec or research note.
 
 ## 2026-10-18
+* **Implementation**: [slice 04 knowledge](specs/2026-10-17-slice-04-knowledge.md) built on `feat/redesign-04-knowledge` — approved knowledge per scope and Everywhere, proposals from chat with an inline card, approve/edit/remove/move with undo, conflicts (Keep this, Keep both), Review renderers, Knowledge tab, and the one-time move of old memory.
 * **Implementation**: [slice 03 scopes](specs/2026-10-17-slice-03-scopes.md) built on `feat/redesign-03-scopes` — projects become scopes (migration 17→18), Everywhere and client scopes, scope page with Overview/Knowledge/Sources/Files/Chats/Settings, scope pill in the composer, one writer for a chat's scope.
 
 ## 2026-10-17
