@@ -2,6 +2,7 @@ import type { KnowledgeState } from '@shared/types/knowledge'
 import type { MemoryBank, MemoryEntry } from '@shared/types/memory'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { isLegacyMemoryActive } from './for-turn'
 import { applyMemoryMigration, loadMigrationRows, loadMigrationState, planMemoryMigration } from './migration'
 import { _resetKnowledgeForTests, commitKnowledge, knowledgeStore } from './store'
 import { getRaw, putRaw, resetTestStorage, testStorage } from './test-storage'
@@ -14,12 +15,12 @@ const banks = vi.hoisted(() => ({
   agents: [] as Array<{ agentId: string; bank: MemoryBank }>,
 }))
 
-vi.mock('@/packages/memory/repository', () => ({
-  getMemoryRepository: () => ({
-    loadGlobal: vi.fn(async () => banks.global ?? { scope: 'global', entries: [], profileSummary: '', version: 1 }),
-    loadAllAgentBanks: vi.fn(async () => banks.agents),
-  }),
+const legacy = vi.hoisted(() => ({ enabled: true }))
+vi.mock('@/stores/memoryStore', () => ({
+  memoryStore: { getState: () => ({ settings: { enabled: legacy.enabled } }) },
 }))
+vi.mock('@/packages/review', () => ({ addReviewEntry: vi.fn() }))
+vi.mock('i18next', () => ({ t: (key: string) => key }))
 
 vi.mock('@/hooks/useCopilots', async () => {
   const { atom } = await import('jotai')
@@ -45,6 +46,12 @@ vi.mock('@/stores/queryClient', () => ({
 }))
 
 const MEMORY_GLOBAL = 'memory-bank-global'
+
+/** Writes the fixture banks as raw storage values, as the old memory store keeps them. */
+function saveBanks() {
+  if (banks.global) putRaw(MEMORY_GLOBAL, banks.global)
+  for (const { agentId, bank } of banks.agents) putRaw(`memory:agent:${agentId}`, bank)
+}
 
 function entry(id: string, content: string, over: Partial<MemoryEntry> = {}): MemoryEntry {
   return {
@@ -88,6 +95,7 @@ beforeEach(async () => {
   _resetKnowledgeForTests()
   banks.global = null
   banks.agents = []
+  legacy.enabled = true
   putRaw('myCopilots', [PLANNER, { id: 'builtin:task-planner', name: 'Task Planner', prompt: 'Override.' }])
 })
 
@@ -142,6 +150,7 @@ describe('planMemoryMigration', () => {
       { agentId: 'remote-1', bank: bank([entry('r1', 'Be brief')], 'remote-1') },
       { agentId: 'planner', bank: bank([entry('p1', 'Window seats')], 'planner') },
     ]
+    saveBanks()
     const rows = await loadMigrationRows()
     const byId = Object.fromEntries(rows.map((r) => [r.entryId, r]))
     expect(byId.b1.choice).toBe('everywhere')
@@ -176,7 +185,7 @@ describe('applyMemoryMigration', () => {
     banks.agents = [
       { agentId: 'planner', bank: bank([entry('a1', 'Window seats'), entry('a2', 'No red-eyes')], 'planner') },
     ]
-    putRaw(MEMORY_GLOBAL, banks.global)
+    saveBanks()
     return loadMigrationRows()
   }
 
@@ -195,22 +204,28 @@ describe('applyMemoryMigration', () => {
     expect(copilots()).toEqual(prompts)
   })
 
-  it('agent edits still waiting in the atom are kept', async () => {
+  it("another window's agent edit made during the move survives", async () => {
     const rows = await sampleRows()
-    const { getDefaultStore } = await import('jotai')
-    const { myCopilotsAtom } = await import('@/hooks/useCopilots')
-    const edited = [{ ...PLANNER, prompt: 'You plan trips. Edited.' }]
-    getDefaultStore().set(myCopilotsAtom as never, edited as never)
-    await applyMemoryMigration(rows)
+    const write = testStorage.setItemNow.getMockImplementation()
+    testStorage.setItemNow.mockImplementation(async (key: string, value: unknown) => {
+      await write?.(key, value)
+      // Another window saves an edit to Planner while the items are being written.
+      if (key === 'knowledge') putRaw('myCopilots', [{ ...PLANNER, prompt: 'You plan trips. Edited.' }])
+    })
+    try {
+      await applyMemoryMigration(rows)
+    } finally {
+      testStorage.setItemNow.mockImplementation(write as never)
+    }
     const expected = 'You plan trips. Edited.\n\nStanding notes:\n- Window seats\n- No red-eyes'
     expect(copilots().find((c) => c.id === 'planner')?.prompt).toBe(expected)
-    expect((getDefaultStore().get(myCopilotsAtom) as Array<{ prompt: string }>)[0].prompt).toBe(expected)
   })
 
   it('a note added while the sheet was open is moved too, and choices are kept', async () => {
     const rows = await sampleRows()
     const chosen = rows.map((r) => (r.entryId === 'g2' ? { ...r, choice: 'leave-out' as const } : r))
     banks.global?.entries.push(entry('g9', 'Drinks tea'))
+    saveBanks()
     expect(await applyMemoryMigration(chosen)).toEqual({ everywhere: 2, prompts: 2, leftOut: 2 })
     expect(
       knowledge()
@@ -303,36 +318,59 @@ describe('applyMemoryMigration', () => {
 })
 
 describe('loadMigrationState', () => {
-  it('banks that read empty while memory keys exist are done for this launch only', async () => {
-    putRaw(MEMORY_GLOBAL, { scope: 'global', entries: [{ id: 'g1' }] })
-    putRaw('memory:agent:planner', { scope: 'agent', entries: [] })
-    expect(await loadMigrationState()).toBe('done')
-    expect(getRaw('knowledge-migration')).toBeUndefined()
-    expect(testStorage.setItemNow.mock.calls.map((c) => c[0])).not.toContain('knowledge-migration')
-  })
-
-  it('an agent memory key alone also keeps the state unstored', async () => {
-    putRaw('memory:agent:planner', { scope: 'agent', entries: [] })
-    expect(await loadMigrationState()).toBe('done')
-    expect(getRaw('knowledge-migration')).toBeUndefined()
-  })
-
-  it('no memory keys at all mean done without a sheet, stored', async () => {
+  it('banks that read fine with no live notes are stored as done, and old memory turns off', async () => {
     banks.global = bank([entry('g1', 'Gone', { deleted: true })])
+    banks.agents = [{ agentId: 'planner', bank: bank([], 'planner') }]
+    saveBanks()
+    expect(isLegacyMemoryActive()).toBe(true)
     expect(await loadMigrationState()).toBe('done')
     expect(getRaw('knowledge-migration')).toMatchObject({ state: 'done' })
     expect(knowledgeStore.getState().migration).toBe('done')
+    expect(isLegacyMemoryActive()).toBe(false)
+  })
+
+  it('no memory keys at all are stored as done, and no memory key is written', async () => {
+    expect(await loadMigrationState()).toBe('done')
+    expect(getRaw('knowledge-migration')).toMatchObject({ state: 'done' })
+    expect(isLegacyMemoryActive()).toBe(false)
+    expect(testStorage.setItemNow.mock.calls.map((c) => c[0])).toEqual(['knowledge-migration'])
+  })
+
+  it('a read that throws stores nothing and leaves old memory on', async () => {
+    saveBanks()
+    putRaw('memory:agent:planner', bank([entry('a1', 'Window seats')], 'planner'))
+    const read = testStorage.getItem.getMockImplementation()
+    testStorage.getItem.mockImplementation(((key: string, fallback: unknown) =>
+      key === 'memory:agent:planner' ? Promise.reject(new Error('disk')) : read?.(key, fallback)) as never)
+    try {
+      expect(await loadMigrationState()).toBe('pending')
+      await expect(loadMigrationRows()).rejects.toThrow()
+    } finally {
+      testStorage.getItem.mockImplementation(read as never)
+    }
+    expect(getRaw('knowledge-migration')).toBeUndefined()
+    expect(knowledgeStore.getState().migration).not.toBe('done')
+    expect(isLegacyMemoryActive()).toBe(true)
+  })
+
+  it('a bank that does not parse is a failed read, not an empty one', async () => {
+    putRaw(MEMORY_GLOBAL, { scope: 'global', entries: [{ id: 'g1', content: 42 }] })
+    expect(await loadMigrationState()).toBe('pending')
+    expect(getRaw('knowledge-migration')).toBeUndefined()
+    expect(isLegacyMemoryActive()).toBe(true)
   })
 
   it('live entries mean pending, and a stored done wins', async () => {
     banks.global = bank([entry('g1', 'Lives in Hanoi')])
-    putRaw(MEMORY_GLOBAL, banks.global)
+    saveBanks()
     expect(await loadMigrationState()).toBe('pending')
     expect(getRaw('knowledge-migration')).toBeUndefined()
     expect(knowledgeStore.getState().migration).toBe('pending')
+    expect(isLegacyMemoryActive()).toBe(true)
 
     putRaw('knowledge-migration', { state: 'done', at: 1, counts: { everywhere: 0, prompts: 0, leftOut: 0 } })
     expect(await loadMigrationState()).toBe('done')
     expect(knowledgeStore.getState().migration).toBe('done')
+    expect(isLegacyMemoryActive()).toBe(false)
   })
 })

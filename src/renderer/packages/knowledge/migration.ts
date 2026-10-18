@@ -1,6 +1,6 @@
 import type { CopilotDetail } from '@shared/types'
 import type { KnowledgeItem, KnowledgeKind, KnowledgeSourceInput } from '@shared/types/knowledge'
-import type { MemoryBank, MemoryEntry } from '@shared/types/memory'
+import { emptyMemoryBank, type MemoryBank, type MemoryEntry } from '@shared/types/memory'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { t } from 'i18next'
 import { v4 as uuidv4 } from 'uuid'
@@ -92,28 +92,50 @@ async function getStorage(): Promise<{ storage: Storage; myCopilotsKey: string; 
 const MEMORY_AGENT_PREFIX = 'memory:agent:'
 
 /**
- * The local agents. Once the atom has loaded it is the newest list (an edit may still wait in the debounced
- * write), so it wins; before that (an empty atom), the stored list.
+ * The stored local agents. Storage, not the atom: the atom may hold an older list than another window wrote.
+ * StoreStorage has no flush for its debounced writes, so an edit in this window from the last ~2 s may be missing.
  */
 async function readLocalAgents(): Promise<CopilotDetail[]> {
-  try {
-    const { myCopilotsAtom } = await import('@/hooks/useCopilots')
-    const { getDefaultStore } = await import('jotai')
-    const current: unknown = await getDefaultStore().get(myCopilotsAtom)
-    if (Array.isArray(current) && current.length > 0) return current as CopilotDetail[]
-  } catch (error) {
-    log.error('Could not read agents from the atom:', error)
-  }
   const { storage, myCopilotsKey } = await getStorage()
   const list = await storage.getItem<CopilotDetail[]>(myCopilotsKey, [])
   return Array.isArray(list) ? list : []
 }
 
-/** Whether any old memory bank key exists. Checked before any bank read, since a read stores an empty bank. */
-async function hasMemoryKeys(): Promise<boolean> {
+type Banks = { global: MemoryBank; agents: { agentId: string; bank: MemoryBank }[] }
+
+/**
+ * Reads the old banks' raw values. Unlike the memory package's loaders, a read error or a bank that does not
+ * parse throws here, so an unreadable bank is never mistaken for an empty one. Only keys that exist are read
+ * (a read of a missing key would store the default).
+ */
+async function readBanks(): Promise<Banks> {
+  const { normalizeBank } = await import('@/packages/memory/clone')
   const { storage, memoryGlobalKey } = await getStorage()
   const keys = await storage.getAllKeys()
-  return keys.some((k) => k === memoryGlobalKey || k.startsWith(MEMORY_AGENT_PREFIX))
+  const read = async (key: string, scope: 'global' | 'agent', agentId?: string): Promise<MemoryBank> => {
+    const raw = await storage.getItem<unknown>(key, null)
+    if (raw === null || raw === undefined) return emptyMemoryBank(scope, agentId)
+    const rawEntries = (raw as { entries?: unknown }).entries
+    if (typeof raw !== 'object' || (rawEntries !== undefined && !Array.isArray(rawEntries))) {
+      throw new Error(`Unreadable memory bank: ${key}`)
+    }
+    const bank = normalizeBank(raw, scope, agentId)
+    // normalizeBank returns an empty bank when parsing fails.
+    if (Array.isArray(rawEntries) && rawEntries.length > 0 && bank.entries.length === 0) {
+      throw new Error(`Unreadable memory bank: ${key}`)
+    }
+    return bank
+  }
+  const agentIds = keys.filter((k) => k.startsWith(MEMORY_AGENT_PREFIX)).map((k) => k.slice(MEMORY_AGENT_PREFIX.length))
+  const [global, agents] = await Promise.all([
+    keys.includes(memoryGlobalKey) ? read(memoryGlobalKey, 'global') : Promise.resolve(emptyMemoryBank('global')),
+    Promise.all(
+      agentIds
+        .sort()
+        .map(async (agentId) => ({ agentId, bank: await read(`${MEMORY_AGENT_PREFIX}${agentId}`, 'agent', agentId) }))
+    ),
+  ])
+  return { global, agents }
 }
 
 /** Only a local agent the user made can take prompt text: never a built-in (even a stored override) or a remote one. */
@@ -140,12 +162,10 @@ async function remoteAgentName(id: string): Promise<string | undefined> {
   return undefined
 }
 
-/** Reads both banks and the agents, and plans the rows the sheet shows. */
+/** Reads both banks and the agents, and plans the rows the sheet shows. Throws when a bank cannot be read. */
 export async function loadMigrationRows(): Promise<MigrationRow[]> {
-  const { getMemoryRepository } = await import('@/packages/memory/repository')
   const { getBuiltInCopilotById } = await import('@/hooks/useCopilots')
-  const repo = getMemoryRepository()
-  const [global, agents, local] = await Promise.all([repo.loadGlobal(), repo.loadAllAgentBanks(), readLocalAgents()])
+  const [{ global, agents }, local] = await Promise.all([readBanks(), readLocalAgents()])
   const names = new Map<string, string>()
   for (const { agentId } of agents) {
     const builtIn = getBuiltInCopilotById(agentId)
@@ -165,13 +185,21 @@ export async function loadMigrationRows(): Promise<MigrationRow[]> {
 }
 
 /**
- * `'done'` when the move is stored as done. With no old memory keys at all, it stores `done` (the sheet never
- * opens). When keys exist but the banks read empty, it is `'done'` for this launch only and nothing is stored:
- * the bank reads swallow errors, so an empty read may be a failed one. Otherwise `'pending'`.
+ * `'done'` when the move is stored as done, or when every bank reads fine and holds no live note (then it is
+ * stored as done, which also turns old memory off in every window). A failed read stores nothing and leaves
+ * old memory as it was; the sheet's own read then fails too, so it stays closed this launch. Otherwise `'pending'`.
  */
 export async function loadMigrationState(): Promise<'pending' | 'done'> {
   if ((await readKnowledgeMigration()) === 'done') return 'done'
-  if (!(await hasMemoryKeys())) {
+  let rows: MigrationRow[]
+  try {
+    rows = await loadMigrationRows()
+  } catch (error) {
+    log.error('Could not read saved notes; the move waits for the next launch:', error)
+    markKnowledgeMigrationPending()
+    return 'pending'
+  }
+  if (rows.length === 0) {
     await writeKnowledgeMigrationDone({
       state: 'done',
       at: Date.now(),
@@ -179,8 +207,6 @@ export async function loadMigrationState(): Promise<'pending' | 'done'> {
     })
     return 'done'
   }
-  const rows = await loadMigrationRows()
-  if (rows.length === 0) return 'done'
   markKnowledgeMigrationPending()
   return 'pending'
 }
@@ -323,12 +349,14 @@ export async function applyMemoryMigration(chosen: MigrationRow[]): Promise<Migr
     })
   }
 
-  // 2. Agent prompts (one immediate write) on the same list the rows were routed with.
+  // 2. Agent prompts (one immediate write), on a fresh read so another window's agent edits survive. An agent
+  // removed since routing gets nothing; editability is checked again on this list.
   let linesAdded = 0
   if (prompts.size) {
-    const next = agents.map((c) => {
+    const latest = await readLocalAgents()
+    const next = latest.map((c) => {
       const texts = prompts.get(c.id)
-      if (!texts) return c
+      if (!texts || !isEditable(c.id, latest, getBuiltInCopilotById)) return c
       const { prompt, added } = appendStandingNotes(c.prompt ?? '', texts)
       linesAdded += added
       return added ? { ...c, prompt } : c
@@ -336,7 +364,7 @@ export async function applyMemoryMigration(chosen: MigrationRow[]): Promise<Migr
     if (linesAdded) {
       await storage.setItemNow(myCopilotsKey, next)
       try {
-        // Also replaces any older list still waiting in the atom's debounced write.
+        // Keeps this window's agent UI in step (its debounced write then carries the same list).
         const { getDefaultStore } = await import('jotai')
         getDefaultStore().set(myCopilotsAtom, next)
       } catch (error) {
