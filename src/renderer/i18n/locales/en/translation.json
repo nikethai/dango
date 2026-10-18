@@ -1603,5 +1603,6 @@
   "The rewrite didn't go through. Your text is unchanged.": "The rewrite didn't go through. Your text is unchanged.",
   "The model stopped before finishing.": "The model stopped before finishing.",
   "The rewrite took over a minute and was stopped.": "The rewrite took over a minute and was stopped.",
-  "Enter a language name, such as Spanish.": "Enter a language name, such as Spanish."
+  "Enter a language name, such as Spanish.": "Enter a language name, such as Spanish.",
+  "Use up to 8,000 characters.": "Use up to 8,000 characters."
 }

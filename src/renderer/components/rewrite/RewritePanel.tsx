@@ -61,8 +61,9 @@ const field: React.CSSProperties = {
 
 export default function RewritePanel({ text, option, model, onUse, onBack, onChooseModel }: RewritePanelProps) {
   const { t } = useTranslation()
-  const { state, rewrite } = useWritingRewrite()
+  const { state, rewrite, reset } = useWritingRewrite()
   const targetId = useId()
+  const limitId = useId()
   const targetErrorId = `${targetId}-error`
   const [draft, setDraft] = useState(text)
   const [style, setStyle] = useState<WritingStyle | null>(option)
@@ -72,6 +73,7 @@ export default function RewritePanel({ text, option, model, onUse, onBack, onCho
   const [copied, setCopied] = useState(false)
 
   const run = (nextStyle: WritingStyle, nextDraft = draft, nextTarget = target) => {
+    reset()
     setCopied(false)
     setUnsupported(false)
     if (nextDraft.trim().length === 0 || nextDraft.length > MAX_WRITING_INPUT_CHARS) {
@@ -111,7 +113,7 @@ export default function RewritePanel({ text, option, model, onUse, onBack, onCho
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Escape') return
+    if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
     event.preventDefault()
     onBack()
   }
@@ -130,6 +132,7 @@ export default function RewritePanel({ text, option, model, onUse, onBack, onCho
     incomplete: t('The model stopped before finishing.'),
     timeout: t('The rewrite took over a minute and was stopped.'),
   }
+  const tooLong = draft.length > MAX_WRITING_INPUT_CHARS
   const running = state.status === 'running'
   const output = state.status === 'complete' ? state.result.text : state.status === 'running' ? state.text : ''
   const chooseModel = onChooseModel ?? (() => navigateToSettings('/provider'))
@@ -161,13 +164,23 @@ export default function RewritePanel({ text, option, model, onUse, onBack, onCho
       <textarea
         data-autofocus
         aria-label={t('Text to rewrite')}
-        aria-invalid={invalid === 'text' || undefined}
+        aria-invalid={invalid === 'text' || tooLong || undefined}
+        aria-describedby={tooLong ? limitId : undefined}
         className="dg-type-body"
         rows={4}
         value={draft}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => {
+          setDraft(event.target.value)
+          if (invalid === 'text' && event.target.value.trim().length > 0) setInvalid(null)
+        }}
         style={{ ...field, resize: 'vertical' }}
       />
+
+      {tooLong && (
+        <div id={limitId} className="dg-type-caption" style={{ color: 'var(--dango-danger)' }}>
+          {t('Use up to 8,000 characters.')}
+        </div>
+      )}
 
       {style === 'translate' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--dango-space-1)' }}>
