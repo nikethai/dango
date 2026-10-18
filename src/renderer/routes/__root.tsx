@@ -1,6 +1,7 @@
 import { Theme } from '@shared/types'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
+import { MemoryMigrationSheet } from '@/components/knowledge/MemoryMigrationSheet'
 import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
 import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
@@ -230,6 +231,8 @@ function Root() {
       {/* <ReportContentDialog /> */}
       {/* Search */}
       <SearchDialog />
+      {/* One-time move of old memory into knowledge (not in Quick Chat) */}
+      {isQuickRoute ? null : <MemoryMigrationSheet />}
       {/* Welcome when no model configured */}
       {/* <WelcomeDialog /> */}
       <Toasts /> {/* mui */}

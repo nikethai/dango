@@ -1426,5 +1426,16 @@
   "superseded": "superseded",
   "removed": "removed",
   "moved": "moved",
-  "kept both": "kept both"
+  "kept both": "kept both",
+  "Choose where your saved notes go": "Choose where your saved notes go",
+  "Dango now keeps knowledge per scope, plus Everywhere for what applies to all of them. Pick a place for each note. Nothing is deleted.": "Dango now keeps knowledge per scope, plus Everywhere for what applies to all of them. Pick a place for each note. Nothing is deleted.",
+  "Saved for every chat": "Saved for every chat",
+  "Saved for {{agent}}": "Saved for {{agent}}",
+  "{{agent}}'s prompt": "{{agent}}'s prompt",
+  "Leave out": "Leave out",
+  "Built-in agents can't take notes in their prompt.": "Built-in agents can't take notes in their prompt.",
+  "Move {{n}} notes": "Move {{n}} notes",
+  "Finish": "Finish",
+  "Later": "Later",
+  "Moved {{a}} notes to Everywhere and {{b}} to agent prompts": "Moved {{a}} notes to Everywhere and {{b}} to agent prompts"
 }

@@ -57,7 +57,7 @@ async function readState(storage: KnowledgeStorage): Promise<KnowledgeState> {
   return raw && typeof raw === 'object' ? KnowledgeStateSchema.parse(raw) : emptyKnowledgeState()
 }
 
-async function readMigration(storage: KnowledgeStorage): Promise<KnowledgeMigrationState | undefined> {
+async function readMigration(storage: KnowledgeStorage): Promise<'pending' | 'done' | undefined> {
   const raw = await storage.getItem<{ state?: unknown } | null>(MIGRATION_KEY, null)
   const s = raw?.state
   return s === 'done' || s === 'pending' ? s : undefined
@@ -218,6 +218,35 @@ async function runCommit(mutate: (draft: KnowledgeState) => void, reverted: bool
     }
   }
   return result
+}
+
+/** What the one-time move of old memory stores under `knowledge-migration` when it finishes. */
+export type KnowledgeMigrationRecord = {
+  state: 'done'
+  at: number
+  counts: { everywhere: number; prompts: number; leftOut: number }
+}
+
+/** The stored migration state, or `undefined` when nothing is stored yet. A stored state also sets the store's `migration`. */
+export function readKnowledgeMigration(): Promise<'pending' | 'done' | undefined> {
+  return enqueue(async () => {
+    const migration = await readMigration(await getStorage())
+    if (migration) knowledgeStore.setState({ migration })
+    return migration
+  })
+}
+
+/** Marks the move done: writes the record on the knowledge lock (preflight C4), then the store's `migration`. */
+export function writeKnowledgeMigrationDone(record: KnowledgeMigrationRecord): Promise<void> {
+  return enqueue(async () => {
+    await (await getStorage()).setItemNow(MIGRATION_KEY, record)
+    knowledgeStore.setState({ migration: 'done' })
+  })
+}
+
+/** Records in the store (not storage) that a move is waiting for the user. A stored `done` wins. */
+export function markKnowledgeMigrationPending(): void {
+  knowledgeStore.setState((s) => (s.migration === 'done' ? s : { migration: 'pending' }))
 }
 
 export function onKnowledgeCommit(listener: KnowledgeCommitListener): () => void {
