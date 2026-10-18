@@ -62,7 +62,10 @@ function ChoiceRow({
     { value: 'leave-out', label: t('Leave out') },
   ]
   return (
-    <li className="dg-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+    <li
+      className="dg-item"
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 'var(--dango-space-2)' }}
+    >
       <span className="dg-item__text">{row.text}</span>
       <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={row.text}>
         {choices.map((c) => (
@@ -81,6 +84,19 @@ function ChoiceRow({
       </div>
     </li>
   )
+}
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string
+
+/**
+ * `Moved {a} notes to Everywhere and {b} to agent prompts`, each count with its own plural form: the prompts
+ * part is translated on its own (`{{count}} to agent prompts`, plural by b) and passed in.
+ */
+export function movedNotesMessage(translate: Translate, counts: { everywhere: number; prompts: number }): string {
+  return translate('Moved {{count}} notes to Everywhere and {{prompts}}', {
+    count: counts.everywhere,
+    prompts: translate('{{count}} to agent prompts', { count: counts.prompts }),
+  })
 }
 
 /** Once per launch until done: asks where each old memory note goes, then moves them (Task 10). */
@@ -121,12 +137,7 @@ export function MemoryMigrationSheet() {
       setOpened(false)
       if (counts.everywhere + counts.prompts === 0) return
       const toastActions = await import('@/stores/toastActions')
-      toastActions.add(
-        t('Moved {{count}} notes to Everywhere and {{b}} to agent prompts', {
-          count: counts.everywhere,
-          b: counts.prompts,
-        })
-      )
+      toastActions.add(movedNotesMessage(t, counts))
     })
 
   return (

@@ -242,6 +242,24 @@ describe('KnowledgeTab', () => {
     expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Knowledge' }))
   })
 
+  it('search, add and edit fields share the dango-field style, with no inline field styling', async () => {
+    await seed({ id: 'k1', scopeId: 'acme', text: 'Launch is 6 Nov' })
+    render(<KnowledgeTab scopeId="acme" />)
+    await screen.findByText('Launch is 6 Nov')
+    fireEvent.click(screen.getByRole('button', { name: 'Add knowledge' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    const fields = [
+      screen.getByRole('searchbox', { name: 'Search knowledge' }),
+      screen.getByRole('textbox', { name: 'Knowledge' }),
+      screen.getByRole('textbox', { name: 'Edit' }),
+    ]
+    for (const field of fields) {
+      expect(field.classList.contains('dango-field')).toBe(true)
+      expect(field.style.border).toBe('')
+      expect(field.style.padding).toBe('')
+    }
+  })
+
   it('Edit then Save calls editKnowledge', async () => {
     await seed({ id: 'k1', scopeId: 'acme', text: 'Launch is 6 Nov' })
     render(<KnowledgeTab scopeId="acme" />)

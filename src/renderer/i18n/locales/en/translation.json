@@ -1443,6 +1443,8 @@
   "Move {{count}} notes_other": "Move {{count}} notes",
   "Finish": "Finish",
   "Later": "Later",
-  "Moved {{count}} notes to Everywhere and {{b}} to agent prompts_one": "Moved {{count}} note to Everywhere and {{b}} to agent prompts",
-  "Moved {{count}} notes to Everywhere and {{b}} to agent prompts_other": "Moved {{count}} notes to Everywhere and {{b}} to agent prompts"
+  "Moved {{count}} notes to Everywhere and {{prompts}}_one": "Moved {{count}} note to Everywhere and {{prompts}}",
+  "Moved {{count}} notes to Everywhere and {{prompts}}_other": "Moved {{count}} notes to Everywhere and {{prompts}}",
+  "{{count}} to agent prompts_one": "{{count}} to agent prompts",
+  "{{count}} to agent prompts_other": "{{count}} to agent prompts"
 }

@@ -36,16 +36,8 @@ export function KnowledgeTab({ scopeId }: { scopeId: string }) {
           placeholder={t('Search knowledge')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="dg-type-body"
-          style={{
-            flex: 1,
-            minWidth: 160,
-            padding: 'var(--dango-space-2)',
-            border: '1px solid var(--dango-line)',
-            borderRadius: 'var(--dango-radius-sm)',
-            background: 'var(--dango-raised)',
-            color: 'var(--dango-ink)',
-          }}
+          className="dango-field"
+          style={{ flex: 1, minWidth: 160, width: 'auto' }}
         />
         <button type="button" className="dg-btn" onClick={() => setAdding(true)} disabled={adding}>
           {t('Add knowledge')}

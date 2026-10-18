@@ -177,7 +177,7 @@
 /* Text fields inside Review items and sheets (knowledge renderers). */
 .dango-field {
   width: 100%;
-  padding: var(--dango-space-2) 10px;
+  padding: var(--dango-space-2) var(--dango-space-3);
   border: 1px solid var(--dango-line);
   border-radius: var(--dango-radius-md);
   background: var(--dango-raised);

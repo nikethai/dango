@@ -55,15 +55,7 @@ export function AddKnowledgeForm({
         value={text}
         rows={3}
         onChange={(e) => setText(e.target.value)}
-        className="dg-type-body"
-        style={{
-          width: '100%',
-          padding: 'var(--dango-space-2)',
-          border: '1px solid var(--dango-line)',
-          borderRadius: 'var(--dango-radius-sm)',
-          background: 'var(--dango-raised)',
-          color: 'var(--dango-ink)',
-        }}
+        className="dango-field"
       />
       <div className="flex gap-2">
         <button type="submit" className="dg-btn dg-btn--primary" disabled={busy || !text.trim()}>

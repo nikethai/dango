@@ -75,15 +75,7 @@ function KnowledgeRow({ item, onNoneLeft }: { item: KnowledgeItem; onNoneLeft?: 
             value={draft}
             rows={3}
             onChange={(e) => setDraft(e.target.value)}
-            className="dg-type-body"
-            style={{
-              width: '100%',
-              padding: 'var(--dango-space-2)',
-              border: '1px solid var(--dango-line)',
-              borderRadius: 'var(--dango-radius-sm)',
-              background: 'var(--dango-raised)',
-              color: 'var(--dango-ink)',
-            }}
+            className="dango-field"
           />
         ) : builtIn ? (
           <span>{item.text}</span>
