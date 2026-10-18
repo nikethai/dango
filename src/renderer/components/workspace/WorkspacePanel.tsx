@@ -17,6 +17,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconCopy,
+  IconDownload,
   IconReload,
   IconX,
 } from '@tabler/icons-react'
@@ -25,16 +26,20 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { copyToClipboard } from '@/packages/navigator'
+import platform from '@/platform'
 import * as toastActions from '@/stores/toastActions'
 import { useUIStore, type WorkspaceArtifactVersion, type WorkspacePanelState } from '@/stores/uiStore'
 import Toolbar from '../layout/Toolbar'
 import WindowControls from '../layout/WindowControls'
 import Markdown from '../Markdown'
 import { MessageMermaid } from '../Mermaid'
+import { artifactFileName } from './artifactFile'
 import { HtmlWorkspaceView } from './HtmlWorkspaceView'
 import { WorkspaceCodeView } from './WorkspaceCodeView'
 
 const EXIT_MS = 260
+export const WORKSPACE_MIN_WIDTH_PX = 380
+export const WORKSPACE_MAX_WIDTH_PX = 460
 const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
 
 type WorkspaceContent = NonNullable<WorkspacePanelState>
@@ -90,7 +95,8 @@ function WorkspacePreview(props: {
 function WorkspacePanel({ session }: { session?: Session }) {
   const { t } = useTranslation()
   const panel = useUIStore((s) => s.workspacePanel)
-  const widthPx = useUIStore((s) => s.workspaceWidthPx)
+  const storedWidthPx = useUIStore((s) => s.workspaceWidthPx)
+  const widthPx = Math.min(WORKSPACE_MAX_WIDTH_PX, Math.max(WORKSPACE_MIN_WIDTH_PX, storedWidthPx))
   const expanded = useUIStore((s) => s.workspaceExpanded)
   const realTheme = useUIStore((s) => s.realTheme)
   const setWorkspacePanel = useUIStore((s) => s.setWorkspacePanel)
@@ -215,6 +221,14 @@ function WorkspacePanel({ session }: { session?: Session }) {
     toastActions.add(t('copied to clipboard'))
   }
 
+  const download = () => {
+    if (!sourceText) return
+    const filename = artifactFileName({ title: source.title, kind: source.kind, language: source.language })
+    void platform.exporter.exportTextFile(filename, sourceText).catch(() => {
+      toastActions.add(t('Download failed'))
+    })
+  }
+
   return (
     <aside
       ref={panelRef}
@@ -226,7 +240,7 @@ function WorkspacePanel({ session }: { session?: Session }) {
           transition: `width ${EXIT_MS}ms ${EASE}`,
         } as React.CSSProperties
       }
-      aria-label={t('Artifact Studio')}
+      aria-label={t('Artifact')}
       aria-hidden={!open}
       tabIndex={-1}
     >
@@ -237,8 +251,8 @@ function WorkspacePanel({ session }: { session?: Session }) {
           role="separator"
           aria-orientation="vertical"
           aria-valuenow={widthPx}
-          aria-valuemin={320}
-          aria-valuemax={720}
+          aria-valuemin={WORKSPACE_MIN_WIDTH_PX}
+          aria-valuemax={WORKSPACE_MAX_WIDTH_PX}
           aria-label={t('Resize workspace')}
         />
       ) : null}
@@ -287,7 +301,7 @@ function WorkspacePanel({ session }: { session?: Session }) {
             </div>
 
             <div className="workspace-panel-header-actions">
-              <div className="workspace-tabs" role="tablist" aria-label={t('Artifact')}>
+              <div className="workspace-tabs" role="tablist" aria-label={t('Artifact view')}>
                 <button
                   type="button"
                   role="tab"
@@ -307,15 +321,15 @@ function WorkspacePanel({ session }: { session?: Session }) {
                   {t('Code')}
                 </button>
               </div>
-              <div className="workspace-header-icons" role="toolbar" aria-label={t('Artifact Studio actions')}>
-                <Tooltip label={expanded ? t('Exit full workspace') : t('Expand workspace')} openDelay={200}>
+              <div className="workspace-header-icons" role="toolbar" aria-label={t('Artifact actions')}>
+                <Tooltip label={expanded ? t('Exit full screen') : t('Full screen')} openDelay={200}>
                   <ActionIcon
                     variant="subtle"
                     color="gray"
                     size={26}
                     radius="md"
                     onClick={toggleExpanded}
-                    aria-label={expanded ? t('Exit full workspace') : t('Expand workspace')}
+                    aria-label={expanded ? t('Exit full screen') : t('Full screen')}
                     aria-pressed={expanded}
                     className="workspace-action-btn workspace-header-expand"
                   >
@@ -339,21 +353,34 @@ function WorkspacePanel({ session }: { session?: Session }) {
                     <IconReload size={14} stroke={1.6} />
                   </ActionIcon>
                 </Tooltip>
-                <Tooltip label={t('Copy source')} openDelay={200}>
+                <Tooltip label={t('Copy')} openDelay={200}>
                   <ActionIcon
                     variant="subtle"
                     color="gray"
                     size={26}
                     radius="md"
                     onClick={copySource}
-                    aria-label={t('Copy source')}
+                    aria-label={t('Copy')}
                     className="workspace-action-btn"
                   >
                     <IconCopy size={14} stroke={1.6} />
                   </ActionIcon>
                 </Tooltip>
+                <Tooltip label={t('Download')} openDelay={200}>
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    size={26}
+                    radius="md"
+                    onClick={download}
+                    aria-label={t('Download')}
+                    className="workspace-action-btn"
+                  >
+                    <IconDownload size={14} stroke={1.6} />
+                  </ActionIcon>
+                </Tooltip>
                 {expanded && session ? <Toolbar session={session} compact /> : null}
-                <Tooltip label={t('Close workspace')} openDelay={200}>
+                <Tooltip label={t('Close')} openDelay={200}>
                   <ActionIcon
                     variant="subtle"
                     color="gray"

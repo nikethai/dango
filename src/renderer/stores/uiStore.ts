@@ -77,7 +77,7 @@ export const uiStore = createStore(
          * html / markdown / svg / mermaid / code are first-class panel kinds.
          */
         workspacePanel: null as null | WorkspacePanelState,
-        workspaceWidthPx: 520 as number,
+        workspaceWidthPx: 460 as number,
         workspaceExpanded: false as boolean,
         /** One-send explicit Project context draft, keyed by session id. */
         projectContextDrafts: {} as Record<string, import('@shared/types/workspace').WorkspaceContextDraftEntry[]>,
@@ -152,7 +152,7 @@ export const uiStore = createStore(
         },
 
         setWorkspaceWidthPx: (workspaceWidthPx: number) => {
-          const clamped = Math.min(720, Math.max(320, Math.round(workspaceWidthPx)))
+          const clamped = Math.min(460, Math.max(380, Math.round(workspaceWidthPx)))
           set((state) => (state.workspaceWidthPx === clamped ? state : { workspaceWidthPx: clamped }))
         },
 

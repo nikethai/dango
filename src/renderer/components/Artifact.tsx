@@ -262,14 +262,14 @@ export function ArtifactWithButtons(props: {
             <IconReload size={16} stroke={1.5} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label={t('Open in workspace')} openDelay={200}>
+        <Tooltip label={t('Open')} openDelay={200}>
           <ActionIcon
             variant="subtle"
             color="gray"
             size={36}
             radius="xl"
             onClick={openWorkspace}
-            aria-label={t('Open in workspace')}
+            aria-label={t('Open')}
             className="artifact-card-btn"
           >
             <IconLayoutSidebarRightExpand size={16} stroke={1.5} />
