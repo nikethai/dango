@@ -567,7 +567,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
           <Flex direction="column" gap="sm">
             <Text size="sm" c="dimmed">
               {t(
-                'Choose a folder from the Projects rail using the system folder picker. Pasted absolute paths cannot authorize access. Generic project shell is unavailable.'
+                'Choose a folder from the Scopes rail using the system folder picker. Pasted absolute paths cannot authorize access. Generic project shell is unavailable.'
               )}
             </Text>
             <Flex justify="flex-end" gap="xs" mt="xs">
@@ -736,7 +736,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
         <Flex direction="column" gap="sm">
           <Text size="sm" c="dimmed">
             {t(
-              'Choose a folder from the Projects rail using the system folder picker. Pasted absolute paths cannot authorize access. Generic project shell is unavailable.'
+              'Choose a folder from the Scopes rail using the system folder picker. Pasted absolute paths cannot authorize access. Generic project shell is unavailable.'
             )}
           </Text>
           <Flex justify="flex-end" gap="xs" mt="xs">

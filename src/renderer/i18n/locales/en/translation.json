@@ -1185,7 +1185,7 @@
   "Selected context is too large": "Selected context is too large",
   "This file cannot be attached": "This file cannot be attached",
   "Unbind folder": "Unbind folder",
-  "Choose a folder from the Projects rail using the system folder picker. Pasted absolute paths cannot authorize access. Generic project shell is unavailable.": "Choose a folder from the Projects rail using the system folder picker. Pasted absolute paths cannot authorize access. Generic project shell is unavailable.",
+  "Choose a folder from the Scopes rail using the system folder picker. Pasted absolute paths cannot authorize access. Generic project shell is unavailable.": "Choose a folder from the Scopes rail using the system folder picker. Pasted absolute paths cannot authorize access. Generic project shell is unavailable.",
   "Source": "Source",
   "Close workspace": "Close workspace",
   "Expand workspace": "Expand workspace",
