@@ -11,6 +11,7 @@ import {
   type PlanStepView,
   parsePlanSteps,
   planCardState,
+  planHasMoreThanSteps,
   planRunOrigin,
   planRunTasks,
   planStepViews,
@@ -80,14 +81,58 @@ function StepList({ steps }: { steps: PlanStepView[] }) {
   )
 }
 
-function PlanBody({ steps, planText }: { steps: PlanStepView[]; planText: string }) {
-  if (steps.length > 0) return <StepList steps={steps} />
+function PlanMarkdown({ planText }: { planText: string }) {
   return (
     <div className="dg-plan__body">
       <Markdown enableLaTeXRendering={false} enableMermaidRendering={false}>
         {planText}
       </Markdown>
     </div>
+  )
+}
+
+/** The whole plan as written (intro, nested detail, notes) under the step list. */
+function FullPlan({ planText, defaultOpen }: { planText: string; defaultOpen: boolean }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <details className="dg-think dg-plan__full" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>
+        <span className="dg-think__title">
+          {t('Full plan')}
+          <ChevronRight className="dg-think__chevron" size={15} strokeWidth={1.8} aria-hidden="true" />
+        </span>
+      </summary>
+      {open ? (
+        <div className="dg-think__body">
+          <PlanMarkdown planText={planText} />
+        </div>
+      ) : null}
+    </details>
+  )
+}
+
+/**
+ * Steps first, so the card stays scannable; when the plan says more than its steps, the full text follows in a
+ * "Full plan" disclosure (open on a proposed plan, which the person approves; closed once decided). A plan without a
+ * list shows its text directly.
+ */
+function PlanBody({
+  steps,
+  planText,
+  fullPlanOpen = false,
+}: {
+  steps: PlanStepView[]
+  planText: string
+  fullPlanOpen?: boolean
+}) {
+  const hasMore = useMemo(() => planHasMoreThanSteps(planText), [planText])
+  if (steps.length === 0) return <PlanMarkdown planText={planText} />
+  return (
+    <>
+      <StepList steps={steps} />
+      {hasMore ? <FullPlan planText={planText} defaultOpen={fullPlanOpen} /> : null}
+    </>
   )
 }
 
@@ -158,7 +203,7 @@ function ProposedPlan({
         {steps.length > 0 ? <span className="dg-chip">{t('{{count}} steps', { count: steps.length })}</span> : null}
         {touchesFiles ? <span className="dg-chip dg-chip--blue">{t('edits files · asks before applying')}</span> : null}
       </div>
-      <PlanBody steps={steps} planText={plan.planText} />
+      <PlanBody steps={steps} planText={plan.planText} fullPlanOpen />
       {showForm ? (
         <div className="dg-plan__feedback">
           <textarea
@@ -328,7 +373,8 @@ export default function PlanCard({
   const state = planCardState(plan, generating)
   // Tasks are session-wide: only the latest plan's run (running or stopped) reads them.
   const readsTasks = latestPlan && (state === 'running' || state === 'stopped')
-  const allTasks = useTaskStore((s) => s.tasks)
+  // Other cards select a constant, so task changes never re-render them.
+  const allTasks = useTaskStore((s) => (readsTasks ? s.tasks : NO_TASKS))
   const tasks = useMemo(
     () => (readsTasks ? planRunTasks(allTasks, sessionId, plan.startedAt) : NO_TASKS),
     [readsTasks, allTasks, sessionId, plan.startedAt]

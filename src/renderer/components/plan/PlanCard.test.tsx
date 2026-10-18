@@ -14,10 +14,15 @@ import PlanCard, { type PlanCardProps } from './PlanCard'
 const h = vi.hoisted(() => ({
   tasks: [] as Task[],
   hydrate: vi.fn(async () => {}),
+  selected: [] as unknown[],
 }))
 
 vi.mock('@/stores/taskStore', () => ({
-  useTaskStore: (selector: (state: { tasks: Task[] }) => unknown) => selector({ tasks: h.tasks }),
+  useTaskStore: (selector: (state: { tasks: Task[] }) => unknown) => {
+    const value = selector({ tasks: h.tasks })
+    h.selected.push(value)
+    return value
+  },
   taskStore: { getState: () => ({ hydrateSessionTasks: h.hydrate }) },
 }))
 
@@ -33,6 +38,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   h.tasks = []
+  h.selected = []
   h.hydrate.mockClear()
 })
 
@@ -263,6 +269,58 @@ describe('PlanCard stopped', () => {
     expect(button.getAttribute('aria-describedby')).toBeTruthy()
     fireEvent.click(button)
     expect(props.onContinue).not.toHaveBeenCalled()
+  })
+})
+
+describe('PlanCard full plan (I3)', () => {
+  const PROSE =
+    'We move the notes first.\n\n1. Find the files\n   - in src\n2. Update the index\n\n## Risks\n- Links break'
+
+  it('proposed: the steps stay scannable and the whole plan is open beneath them', () => {
+    const { container } = renderCard({ planText: PROSE })
+    expect(screen.getByText('2 steps')).toBeTruthy()
+    expect(container.querySelectorAll('ol > li')).toHaveLength(2)
+    const full = screen.getByText('Full plan').closest('details') as HTMLDetailsElement
+    expect(full.open).toBe(true)
+    expect(full.querySelector('[data-testid="markdown"]')?.textContent).toBe(PROSE)
+  })
+
+  it('no Full plan disclosure when the steps are the whole plan', () => {
+    renderCard({ planText: FOUR })
+    expect(screen.queryByText('Full plan')).toBeNull()
+  })
+
+  it('running and folded cards keep the full plan one click away, closed', () => {
+    const { container, unmount } = renderCard(
+      { planText: PROSE, status: 'approved', startedAt: 1 },
+      { generating: true }
+    )
+    expect((screen.getByText('Full plan').closest('details') as HTMLDetailsElement).open).toBe(false)
+    expect(container.querySelector('ol')).toBeTruthy()
+    unmount()
+    renderCard({ planText: PROSE, status: 'rejected' })
+    expect((screen.getByText('Full plan').closest('details') as HTMLDetailsElement).open).toBe(false)
+  })
+
+  it('Enter on the Full plan summary toggles it and does not run the plan', () => {
+    const { props } = renderCard({ planText: PROSE })
+    fireEvent.keyDown(screen.getByText('Full plan'), { key: 'Enter' })
+    expect(props.onRun).not.toHaveBeenCalled()
+  })
+})
+
+describe('PlanCard task subscription (M7)', () => {
+  it('a card that does not read tasks does not select them, so task changes do not re-render it', () => {
+    h.tasks = [task('a', 'done', 1)]
+    renderCard({ planText: FOUR, status: 'approved', startedAt: 1, finishedAt: 2 }, { latestPlan: true })
+    expect(h.selected.length).toBeGreaterThan(0)
+    expect(h.selected.every((value) => value !== h.tasks)).toBe(true)
+  })
+
+  it('the latest running plan selects the tasks', () => {
+    h.tasks = [task('a', 'done', 1)]
+    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { generating: true, latestPlan: true })
+    expect(h.selected).toContain(h.tasks)
   })
 })
 

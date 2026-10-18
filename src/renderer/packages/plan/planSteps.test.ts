@@ -5,6 +5,7 @@ import {
   parsePlanSteps,
   planCardState,
   planContinueState,
+  planHasMoreThanSteps,
   planRunOrigin,
   planRunTasks,
   planStepViews,
@@ -30,7 +31,32 @@ const plan = (fields: Partial<MessagePlanPart>): MessagePlanPart => ({
 
 describe('parsePlanSteps', () => {
   it('reads numbered and bulleted lines', () => {
-    expect(parsePlanSteps('Intro\n1. Find\n2) Update\n- Move\n* Log')).toEqual(['Find', 'Update', 'Move', 'Log'])
+    // One list is one kind: a bulleted list after a numbered one is a second list (see I3), so each kind is read alone.
+    expect(parsePlanSteps('Intro\n1. Find\n2) Update')).toEqual(['Find', 'Update'])
+    expect(parsePlanSteps('Intro\n- Move\n* Log\n+ Ship')).toEqual(['Move', 'Log', 'Ship'])
+  })
+  it('counts only the top-level items of the first list: nested bullets are part of their step', () => {
+    const text = '1. Find the files\n   - in src\n   - in docs\n2. Update the index\n    1. sort it\n3. Log'
+    expect(parsePlanSteps(text)).toEqual(['Find the files', 'Update the index', 'Log'])
+  })
+  it('an indented list is still the top level when it is the first list', () => {
+    expect(parsePlanSteps('  1. Find\n     - deep\n  2. Update')).toEqual(['Find', 'Update'])
+  })
+  it('stops at a Notes or Risks section: heading, bold label or "Label:" line', () => {
+    expect(parsePlanSteps('1. A\n2. B\n\n## Risks\n1. r1\n2. r2')).toEqual(['A', 'B'])
+    expect(parsePlanSteps('- A\n- B\n\n**Notes**\n- n1')).toEqual(['A', 'B'])
+    expect(parsePlanSteps('1. A\n2. B\nRisks:\n3. r1')).toEqual(['A', 'B'])
+  })
+  it('stops at prose after a blank line, and at a list of the other kind', () => {
+    expect(parsePlanSteps('- A\n- B\n\nThen we ship.\n- C')).toEqual(['A', 'B'])
+    expect(parsePlanSteps('1. A\n2. B\n- touched: a.ts')).toEqual(['A', 'B'])
+  })
+  it('keeps a loose list (blank lines between items) and lazy continuation lines', () => {
+    expect(parsePlanSteps('1. A\n\n2. B\n\n3. C')).toEqual(['A', 'B', 'C'])
+    expect(parsePlanSteps('1. A\nmore about A\n2. B')).toEqual(['A', 'B'])
+  })
+  it('ignores list-looking lines inside code fences', () => {
+    expect(parsePlanSteps('```\n1. not a step\n```\n1. Real')).toEqual(['Real'])
   })
   it('plain prose has no steps', () => {
     expect(parsePlanSteps('Inspect the issue, implement the fix, then validate it.')).toEqual([])
@@ -166,5 +192,19 @@ describe('planRunOrigin', () => {
     expect(planRunOrigin(plan({ status: 'approved', startedAt: 0, runMs: 60_000, runStartedAt: 500_000 }))).toBe(
       440_000
     )
+  })
+})
+
+describe('planHasMoreThanSteps', () => {
+  it('false when the plan is only its step list', () => {
+    expect(planHasMoreThanSteps('1. Find\n2. Update\n')).toBe(false)
+  })
+  it('true with an intro, nested detail or a trailing section', () => {
+    expect(planHasMoreThanSteps('Here is the plan.\n\n1. Find\n2. Update')).toBe(true)
+    expect(planHasMoreThanSteps('1. Find\n   - in src\n2. Update')).toBe(true)
+    expect(planHasMoreThanSteps('1. Find\n2. Update\n\n## Risks\n- none')).toBe(true)
+  })
+  it('true for prose without steps', () => {
+    expect(planHasMoreThanSteps('Just do it.')).toBe(true)
   })
 })

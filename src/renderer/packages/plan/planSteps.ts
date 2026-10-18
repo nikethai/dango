@@ -11,19 +11,83 @@ export type PlanStepView = { title: string; status: 'pending' | 'current' | 'don
 
 export const MAX_PLAN_STEPS = 20
 
-/** "1. Find", "2) Update", "- Move", "* Log". */
-const STEP_LINE = /^\s*(?:\d+[.)]|[-*])\s+(.+)$/
+/** A list item: up to 3 spaces of indent, a marker ("1." "2)" or "-" "*" "+"), a space, the text. */
+const ITEM_LINE = /^( {0,3}|\t?)(\d+[.)]|[-*+])\s+(.+)$/
+const ANY_ITEM_LINE = /^\s*(?:\d+[.)]|[-*+])\s+\S/
+const HEADING_LINE = /^\s{0,3}#{1,6}\s/
+const FENCE_LINE = /^\s*(```|~~~)/
+/** A section label such as "Risks:", "**Notes**" or "**Risks:**" on a line of its own. */
+const LABEL_LINE = /^\s*(?:\*\*[^*]+\*\*:?|__[^_]+__:?|[^\s].*:)\s*$/
 
-/** The plan's numbered or bulleted lines, in order, at most 20. Prose without such lines has no steps. */
-export function parsePlanSteps(planText: string): string[] {
+type ParsedSteps = { steps: string[]; stepLines: Set<number> }
+
+/**
+ * The steps are the top-level items of the plan's first list, at most 20:
+ * - The first item line (outside code fences, indent 0–3) opens the list and fixes its indent and kind: numbered
+ *   ("1." / "1)") or bulleted ("-", "*", "+").
+ * - Items of the same kind at that indent (one extra space allowed) are steps. Deeper lines (nested bullets,
+ *   continuation text, indented code) and blank lines belong to the current step.
+ * - The list ends at a heading, a code fence, a section label ("Risks:", "**Notes**"), an item of the other kind at
+ *   the list's indent, or a non-item line at the list's indent that follows a blank line (prose after the list).
+ *   Such a line straight after an item line is a lazy continuation of that item.
+ */
+function parseSteps(planText: string): ParsedSteps {
   const steps: string[] = []
-  for (const line of planText.split('\n')) {
-    const step = STEP_LINE.exec(line)?.[1]?.trim()
-    if (!step) continue
-    steps.push(step)
-    if (steps.length === MAX_PLAN_STEPS) break
+  const stepLines = new Set<number>()
+  const lines = planText.split(/\r?\n/)
+  let list: { indent: number; numbered: boolean } | null = null
+  let inFence = false
+  let afterBlank = false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (FENCE_LINE.test(line)) {
+      if (list && indentOf(line) <= list.indent + 1) break
+      inFence = !inFence
+      continue
+    }
+    if (inFence) continue
+    if (!line.trim()) {
+      afterBlank = true
+      continue
+    }
+    const item = ITEM_LINE.exec(line)
+    if (!list) {
+      if (item) list = { indent: indentOf(line), numbered: /\d/.test(item[2]) }
+      else continue
+    }
+    const indent = indentOf(line)
+    const topLevel = indent <= list.indent + 1
+    if (topLevel && HEADING_LINE.test(line)) break
+    if (topLevel && item) {
+      if (/\d/.test(item[2]) !== list.numbered) break
+      const step = item[3].trim()
+      if (step) {
+        steps.push(step)
+        stepLines.add(i)
+        if (steps.length === MAX_PLAN_STEPS) break
+      }
+    } else if (topLevel && !ANY_ITEM_LINE.test(line)) {
+      if (afterBlank || LABEL_LINE.test(line)) break
+    }
+    afterBlank = false
   }
-  return steps
+  return { steps, stepLines }
+}
+
+function indentOf(line: string): number {
+  const lead = /^[ \t]*/.exec(line)?.[0] ?? ''
+  return lead.replace(/\t/g, '    ').length
+}
+
+/** The plan's steps (see parseSteps for the exact rule). Prose without a list has no steps. */
+export function parsePlanSteps(planText: string): string[] {
+  return parseSteps(planText).steps
+}
+
+/** Whether the plan says more than its step lines (an intro, nested detail, notes): the card then offers the full text. */
+export function planHasMoreThanSteps(planText: string): boolean {
+  const { stepLines } = parseSteps(planText)
+  return planText.split(/\r?\n/).some((line, i) => line.trim() !== '' && !stepLines.has(i))
 }
 
 /**
