@@ -19,35 +19,50 @@ export function listKnowledgeUses(itemId: string): KnowledgeUse[] {
   return selectKnowledgeUses(knowledgeStore.getState().state, itemId)
 }
 
-const sameRef = (a: KnowledgeUseRef, b: KnowledgeUseRef) => a.type === b.type && a.id === b.id
-const refKey = (u: KnowledgeUse) => JSON.stringify([u.ref.type, u.ref.id])
+const keyOfUse = (itemId: string, ref: KnowledgeUseRef) => JSON.stringify([itemId, ref.type, ref.id])
 
 /**
  * Records that a chat, draft or change used these items (background write: no undo). The same item and ref
  * only moves `at` (and takes the newer label); each item keeps its newest `USES_PER_ITEM`. Ids that name
- * no stored item (the built-in one included) are skipped.
+ * no stored item (the built-in one included) are skipped. Indexed once per commit, so a turn with many items
+ * stays linear in the number of uses.
  */
 export async function recordKnowledgeUse(itemIds: string[], ref: KnowledgeUseRef): Promise<void> {
   const ids = [...new Set(itemIds)]
   if (!ids.length) return
   await commitKnowledge((d) => {
     const now = Date.now()
+    const items = new Map(d.items.map((i) => [i.id, i]))
+    const uses = new Map(d.uses.map((u) => [keyOfUse(u.itemId, u.ref), u]))
+    const touched = new Set<string>()
     for (const itemId of ids) {
-      const item = d.items.find((i) => i.id === itemId)
+      const item = items.get(itemId)
       if (!item) continue
-      const existing = d.uses.find((u) => u.itemId === itemId && sameRef(u.ref, ref))
+      touched.add(itemId)
+      const existing = uses.get(keyOfUse(itemId, ref))
       if (existing) {
         existing.at = now
         existing.ref = { ...ref }
       } else {
-        d.uses.push({ itemId, scopeId: item.scopeId, ref: { ...ref }, at: now })
-      }
-      const mine = selectKnowledgeUses(d, itemId)
-      if (mine.length > USES_PER_ITEM) {
-        const dropped = new Set(mine.slice(USES_PER_ITEM).map(refKey))
-        d.uses = d.uses.filter((u) => u.itemId !== itemId || !dropped.has(refKey(u)))
+        const use: KnowledgeUse = { itemId, scopeId: item.scopeId, ref: { ...ref }, at: now }
+        d.uses.push(use)
+        uses.set(keyOfUse(itemId, ref), use)
       }
     }
+    // Trim only the items this call touched: group their uses, keep each one's newest.
+    const perItem = new Map<string, KnowledgeUse[]>()
+    for (const u of d.uses) {
+      if (!touched.has(u.itemId)) continue
+      const list = perItem.get(u.itemId)
+      if (list) list.push(u)
+      else perItem.set(u.itemId, [u])
+    }
+    const dropped = new Set<string>()
+    for (const list of perItem.values()) {
+      if (list.length <= USES_PER_ITEM) continue
+      for (const u of [...list].sort((a, b) => b.at - a.at).slice(USES_PER_ITEM)) dropped.add(keyOfUse(u.itemId, u.ref))
+    }
+    if (dropped.size) d.uses = d.uses.filter((u) => !dropped.has(keyOfUse(u.itemId, u.ref)))
   })
 }
 

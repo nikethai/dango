@@ -131,6 +131,16 @@ vi.mock('../mcp/controller', () => ({
   },
 }))
 
+const knowledgeTurn = vi.hoisted(() => ({ items: [] as unknown[] }))
+vi.mock('@/packages/knowledge/store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/packages/knowledge/store')>()),
+  ensureKnowledgeLoaded: vi.fn(async () => {}),
+}))
+vi.mock('@/packages/knowledge/for-turn', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/packages/knowledge/for-turn')>()),
+  knowledgeForTurn: vi.fn(() => knowledgeTurn.items),
+}))
+
 vi.mock('./message-utils', () => ({
   convertToModelMessages: convertToModelMessagesMock,
   injectModelSystemPrompt: injectModelSystemPromptMock,
@@ -493,5 +503,41 @@ describe('streamText reasoning replay', () => {
         includeAssistantReasoning: false,
       })
     )
+  })
+})
+
+describe('streamText approved knowledge', () => {
+  it('injects knowledge within the token budget and reports exactly what it injected', async () => {
+    const { NEVER_SEND_EMAIL } = await import('@/packages/knowledge/select')
+    const { KNOWLEDGE_TOKEN_BUDGET } = await import('@/packages/knowledge/for-turn')
+    const { estimateTokens } = await import('@/packages/token-estimation/tokenizer')
+    const words = (n: number, w: string) => Array.from({ length: n }, (_, i) => `${w}${i}`).join(' ')
+    const scoped = Array.from({ length: 30 }, (_, i) => ({
+      id: `a${i}`,
+      scopeId: 'acme',
+      kind: 'fact',
+      text: `Note ${i} ${words(60, `w${i}x`)}`,
+      status: 'approved',
+      updatedAt: 100 - i,
+    }))
+    knowledgeTurn.items = [...scoped, NEVER_SEND_EMAIL]
+    injectModelSystemPromptMock.mockClear()
+    const chat = vi.fn(async () => ({ contentParts: [], text: 'done' }) as StreamTextResult)
+    const { streamText } = await import('./stream-text')
+
+    const { knowledgeIds } = await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'hello')],
+      knowledgeScopeId: 'acme',
+      onResultChangeWithCancel: vi.fn(),
+    })
+
+    const section = injectModelSystemPromptMock.mock.calls.at(-1)?.at(-1) as unknown as string
+    expect(estimateTokens(section)).toBeLessThanOrEqual(KNOWLEDGE_TOKEN_BUDGET)
+    expect(section).toContain('- Never send email (preference)')
+    const injected = scoped.filter((i) => section.includes(`- Note ${i.id.slice(1)} `)).map((i) => i.id)
+    expect(injected.length).toBeGreaterThan(0)
+    expect(injected.length).toBeLessThan(scoped.length)
+    expect(knowledgeIds).toEqual(injected)
+    knowledgeTurn.items = []
   })
 })

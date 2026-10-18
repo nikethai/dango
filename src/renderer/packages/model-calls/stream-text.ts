@@ -11,7 +11,13 @@ import type { ModelMessage, ToolSet } from 'ai'
 import { t } from 'i18next'
 import { uniqueId } from 'lodash'
 import { createModelDependencies } from '@/adapters'
-import { formatKnowledgeSection, isLegacyMemoryActive, knowledgeForTurn } from '@/packages/knowledge/for-turn'
+import { getLogger } from '@/lib/utils'
+import {
+  fitKnowledgeToBudget,
+  formatKnowledgeSection,
+  isLegacyMemoryActive,
+  knowledgeForTurn,
+} from '@/packages/knowledge/for-turn'
 import { NEVER_SEND_EMAIL } from '@/packages/knowledge/select'
 import { ensureKnowledgeLoaded } from '@/packages/knowledge/store'
 import { hostPreSearchMemories } from '@/packages/memory/host-presearch'
@@ -21,7 +27,6 @@ import platform from '@/platform'
 import { ensureMemoryStoreInit, memoryStore } from '@/stores/memoryStore'
 import { settingsStore } from '@/stores/settingsStore'
 import { formatActiveTaskContext, taskStore } from '@/stores/taskStore'
-import { wrapToolsWithApproval } from './wrap-tools-approval'
 import { getMessageText } from '@/utils/message'
 import type {
   ModelInterface,
@@ -51,15 +56,6 @@ import {
   knowledgeBaseSearchByPromptEngineering,
   searchByPromptEngineering,
 } from './tools'
-import { attachmentFileToolSet, createWorkspaceFileToolSet } from './toolsets/file'
-import generateImageToolSet, {
-  buildChatImageCatalog,
-  createGenerateImageTool,
-  formatImageCatalogInstructions,
-  type ChatImageHandle,
-} from './toolsets/generate-image'
-import { getToolSet } from './toolsets/knowledge-base'
-import taskTrackingToolSet from './toolsets/task-tracking'
 import {
   createBrowserToolSet,
   getLastBrowserObservationEmbedded,
@@ -79,10 +75,21 @@ import {
   computerUiSpaceLockInstructions,
   filterToolsForComputerUiSpace,
 } from './toolsets/computer-ui-lock'
-
+import { attachmentFileToolSet, createWorkspaceFileToolSet } from './toolsets/file'
+import generateImageToolSet, {
+  buildChatImageCatalog,
+  type ChatImageHandle,
+  createGenerateImageTool,
+  formatImageCatalogInstructions,
+} from './toolsets/generate-image'
+import { getToolSet } from './toolsets/knowledge-base'
+import taskTrackingToolSet from './toolsets/task-tracking'
 import videoToolSet, { initVideoToolBudget, resetVideoToolBudget } from './toolsets/video'
 import videoUrlToolSet from './toolsets/video-url'
 import websearchToolSet, { parseLinkTool, webSearchTool } from './toolsets/web-search'
+import { wrapToolsWithApproval } from './wrap-tools-approval'
+
+const knowledgeLog = getLogger('knowledge')
 
 /** Agent coding context: enables workspace write tools when a native capability is ready. */
 export type AgentCodingOptions = {
@@ -505,9 +512,13 @@ export async function streamText(
   try {
     await ensureKnowledgeLoaded({ fresh: true })
   } catch (err) {
-    console.error('Failed to load knowledge:', err)
+    knowledgeLog.error('Failed to load knowledge:', err)
   }
-  const knowledgeItems = knowledgeForTurn(knowledgeScope)
+  // Within the token budget, Everywhere facts ranked against the question; knowledgeIds is what was injected.
+  const lastUserMessage = [...params.messages].reverse().find((m) => m.role === 'user')
+  const knowledgeItems = fitKnowledgeToBudget(knowledgeScope, knowledgeForTurn(knowledgeScope), {
+    query: lastUserMessage ? getMessageText(lastUserMessage, false, false) : '',
+  })
   const knowledgeIds = knowledgeItems.filter((i) => i.id !== NEVER_SEND_EMAIL.id).map((i) => i.id)
   const legacyMemoryActive = isLegacyMemoryActive()
   const memorySettings = memoryStore.getState().settings

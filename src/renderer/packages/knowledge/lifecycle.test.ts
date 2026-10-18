@@ -18,7 +18,7 @@ import { _resetScopesForTests, _setScopeReaderForTests } from './scopes'
 import { _resetKnowledgeForTests, commitKnowledge } from './store'
 import { getRaw, type MakeItemInput, makeItem, putRaw, resetTestStorage, testStorage } from './test-storage'
 import { contentHash } from './text'
-import { recordKnowledgeUse } from './uses'
+import { listKnowledgeUses, recordKnowledgeUse, USES_PER_ITEM } from './uses'
 
 vi.mock('@/storage', async () => (await import('./test-storage')).default)
 vi.mock('i18next', () => ({
@@ -367,5 +367,42 @@ describe('fix round 1', () => {
     expect(bump).toBe(3)
     expect(stored().items[0]).toMatchObject({ text: 'Launch is 6 Nov', approvedRevisionId: 'r1' })
     expect(pushUndo).not.toHaveBeenCalled()
+  })
+})
+
+describe('recordKnowledgeUse', () => {
+  it('moves at and the label for the same item and ref, adds new refs, skips unknown ids', async () => {
+    await seed({ id: 'k1', text: 'Launch is 4 Nov' }, { id: 'k2', text: 'Budget is 10k' })
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+    await recordKnowledgeUse(['k1', 'k2', 'missing', 'k1'], { type: 'chat', id: 'c1', label: 'Old name' })
+    now.mockReturnValue(2_000)
+    await recordKnowledgeUse(['k1'], { type: 'chat', id: 'c1', label: 'New name' })
+    await recordKnowledgeUse(['k1'], { type: 'draft', id: 'd1', label: 'Reply' })
+    now.mockRestore()
+
+    expect(listKnowledgeUses('k1')).toEqual([
+      { itemId: 'k1', scopeId: 'acme', ref: { type: 'chat', id: 'c1', label: 'New name' }, at: 2_000 },
+      { itemId: 'k1', scopeId: 'acme', ref: { type: 'draft', id: 'd1', label: 'Reply' }, at: 2_000 },
+    ])
+    expect(listKnowledgeUses('k2')).toHaveLength(1)
+    expect(stored().uses.filter((u) => u.itemId === 'missing')).toHaveLength(0)
+  })
+
+  it('keeps each item to its newest USES_PER_ITEM uses, and other items untouched', async () => {
+    await seed({ id: 'k1', text: 'Launch is 4 Nov' }, { id: 'k2', text: 'Budget is 10k' })
+    let at = 0
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => ++at)
+    await recordKnowledgeUse(['k2'], { type: 'chat', id: 'c0', label: 'k2 chat' })
+    for (let i = 0; i < USES_PER_ITEM + 3; i += 1) {
+      await recordKnowledgeUse(['k1'], { type: 'chat', id: `c${i}`, label: `Chat ${i}` })
+    }
+    now.mockRestore()
+
+    const uses = listKnowledgeUses('k1')
+    expect(uses).toHaveLength(USES_PER_ITEM)
+    expect(uses[0].ref.id).toBe(`c${USES_PER_ITEM + 2}`)
+    expect(uses.map((u) => u.ref.id)).not.toContain('c2')
+    expect(uses.map((u) => u.ref.id)).toContain('c3')
+    expect(listKnowledgeUses('k2')).toHaveLength(1)
   })
 })
