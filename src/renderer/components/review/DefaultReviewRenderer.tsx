@@ -9,20 +9,15 @@ import {
   hasReviewOpener,
   openReviewEntry,
   type ReviewRendererProps,
-  setReviewEntryState,
   undoArrival,
   useReviewEntries,
 } from '@/packages/review'
 import { defaultActions } from './defaultActions'
+import { dismissReviewEntry } from './dismissEntry'
 import { clip, displayKind } from './feedSelectors'
 import { ReviewItem } from './ReviewItem'
 
 const warn = (what: string) => (error: unknown) => console.warn(`[review] ${what} failed`, error)
-
-async function pushDismissUndo(message: string, reopen: () => Promise<unknown>) {
-  const { pushUndo } = await import('@/packages/undo')
-  pushUndo({ message, group: 'other', undo: async () => void (await reopen()) })
-}
 
 export function DefaultReviewRenderer({ entry: initial, focused }: ReviewRendererProps) {
   const { t } = useTranslation()
@@ -60,15 +55,9 @@ export function DefaultReviewRenderer({ entry: initial, focused }: ReviewRendere
               .catch(warn('apply'))
               .finally(rerender),
           dismiss: () =>
-            void setReviewEntryState({ id: entry.id }, 'dismissed')
-              .then((next) => {
-                // No row written (it vanished or the write failed): nothing was dismissed, so no toast.
-                if (!next) return
-                return pushDismissUndo(t('Dismissed "{{text}}"', { text: clip(entry.text) }), () =>
-                  setReviewEntryState({ id: entry.id }, 'open')
-                )
-              })
-              .catch(warn('dismiss')),
+            void dismissReviewEntry(entry.id, t('Dismissed "{{text}}"', { text: clip(entry.text) })).catch(
+              warn('dismiss')
+            ),
         },
         { canOpen, canUndo, canApply }
       ).map((a) => ({ ...a, label: t(a.label) })),

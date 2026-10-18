@@ -1,0 +1,24 @@
+/* Review home feed (slice 05). Only --dango-* tokens. */
+.dango-review-feed {
+  padding: 0 var(--dango-space-7);
+}
+
+.dango-review-feed__day {
+  margin: var(--dango-space-5) 0 var(--dango-space-2);
+  color: var(--dango-muted);
+}
+
+.dango-review-feed__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-2);
+}
+
+/* The row's renderer draws the focus ring from its `focused` prop (.dg-item.is-focused). */
+.dango-review-feed__row:focus,
+.dango-review-feed__empty:focus {
+  outline: none;
+}
