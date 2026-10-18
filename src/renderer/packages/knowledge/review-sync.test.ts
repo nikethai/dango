@@ -1,9 +1,18 @@
 import type { KnowledgeConflict, KnowledgeProposal } from '@shared/types/knowledge'
+import type { Scope } from '@shared/types/scope'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addReviewEntry, setReviewEntryState } from '@/packages/review'
+import { _resetInitForTests, initKnowledge } from './init'
 import { startReviewSync } from './review-sync'
-import { _resetScopesForTests, getScopeReads, refreshScopes, scopeName, watchScopes } from './scopes'
+import {
+  _resetScopesForTests,
+  _setScopeReaderForTests,
+  getScopeReads,
+  refreshScopes,
+  scopeName,
+  watchScopes,
+} from './scopes'
 import { _resetKnowledgeForTests, commitKnowledge } from './store'
 import { makeItem, putRaw, resetTestStorage } from './test-storage'
 
@@ -48,7 +57,10 @@ beforeEach(() => {
   stop = startReviewSync()
 })
 
-afterEach(() => stop())
+afterEach(() => {
+  stop()
+  _resetInitForTests()
+})
 
 describe('review sync', () => {
   it('new proposal → open proposal entry', async () => {
@@ -154,6 +166,56 @@ describe('review sync', () => {
     expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'proposal', id: 'p-1' } }, 'open')
   })
 
+  it('conflict deleted by a commit → dismissed', async () => {
+    const item = await makeItem({ text: 'Launch is 6 Nov' })
+    await commitKnowledge((d) => {
+      d.items.push(item)
+      d.proposals.push(proposal())
+      d.conflicts.push(conflict())
+    })
+    vi.mocked(setReviewEntryState).mockClear()
+    await commitKnowledge((d) => {
+      d.conflicts = []
+    })
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'conflict', id: 'c-1' } }, 'dismissed')
+  })
+
+  it('conflict resolved by keeping the new statement → both entries done', async () => {
+    const item = await makeItem({ text: 'Launch is 6 Nov' })
+    await commitKnowledge((d) => {
+      d.items.push(item)
+      d.proposals.push(proposal({ conflictsWith: ['k1'] }))
+      d.conflicts.push(conflict())
+    })
+    vi.mocked(addReviewEntry).mockClear()
+    vi.mocked(setReviewEntryState).mockClear()
+    // The shape T5's Keep this (new statement) commits: old item superseded, new item from the proposal.
+    const kept = await makeItem({ id: 'k2', text: 'Launch is 13 Nov', proposalId: 'p-1' })
+    await commitKnowledge((d) => {
+      d.items[0].status = 'superseded'
+      d.items[0].supersededBy = 'k2'
+      d.items.push(kept)
+      d.proposals = []
+      d.conflicts[0].state = 'resolved'
+      d.conflicts[0].resolvedAt = 3_000
+    })
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'conflict', id: 'c-1' } }, 'done')
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'proposal', id: 'p-1' } }, 'done')
+    expect(setReviewEntryState).toHaveBeenCalledTimes(2)
+    expect(addReviewEntry).not.toHaveBeenCalled()
+  })
+
+  it('initKnowledge called twice → one listener', async () => {
+    stop()
+    _resetInitForTests()
+    await Promise.all([initKnowledge(), initKnowledge()])
+    await initKnowledge()
+    await commitKnowledge((d) => {
+      d.proposals.push(proposal())
+    })
+    expect(addReviewEntry).toHaveBeenCalledTimes(1)
+  })
+
   it('stops after unsubscribe', async () => {
     stop()
     await commitKnowledge((d) => {
@@ -185,7 +247,25 @@ describe('scopes', () => {
     expect(getScopeReads('c2')).toEqual({ facts: true, documents: false })
     expect(getScopeReads('p1')).toEqual({ facts: true, documents: true })
     expect(getScopeReads(EVERYWHERE_SCOPE_ID)).toEqual({ facts: true, documents: true })
-    expect(getScopeReads('nope')).toEqual({ facts: true, documents: true })
+  })
+
+  it('an unknown scope gets the client defaults', async () => {
+    putRaw('myProjects', scopes)
+    await refreshScopes()
+    expect(getScopeReads('nope')).toEqual({ facts: true, documents: false })
+  })
+
+  it('a slower, older refresh never overwrites a newer one', async () => {
+    const release: Array<(v: Scope[]) => void> = []
+    _setScopeReaderForTests(() => new Promise((r) => release.push(r)))
+    const older = refreshScopes()
+    const newer = refreshScopes()
+    await vi.waitFor(() => expect(release).toHaveLength(2))
+    release[1]([{ id: 'p1', name: 'New', kind: 'project', order: 0 }])
+    await newer
+    release[0]([{ id: 'p1', name: 'Old', kind: 'project', order: 0 }])
+    await older
+    expect(scopeName('p1')).toBe('New')
   })
 
   it('snapshot follows myProjectsAtom', async () => {
