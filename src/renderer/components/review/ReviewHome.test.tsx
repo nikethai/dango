@@ -1,7 +1,6 @@
 /**
  * @vitest-environment jsdom
  */
-import type { ReviewEntry } from '@shared/types/review'
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -35,16 +34,7 @@ vi.mock('./ReviewToolbar', () => ({
   },
 }))
 
-import { openReviewEntry, registerReviewOpener, reviewRegistryStore } from '@/packages/review/registry'
 import { ReviewHome } from './ReviewHome'
-
-const question = {
-  id: 'q',
-  kind: 'question',
-  scopeId: 'p1',
-  text: 'Why?',
-  ref: { type: 'question' },
-} as unknown as ReviewEntry
 
 beforeEach(() => {
   h.search = {}
@@ -52,7 +42,6 @@ beforeEach(() => {
   h.startNewChat.mockClear()
   h.feedScope.mockClear()
   h.toolbarScope.mockClear()
-  reviewRegistryStore.setState({ openers: {} })
 })
 afterEach(cleanup)
 
@@ -77,27 +66,5 @@ describe('ReviewHome scope filter', () => {
     h.search = { scope: 'everywhere' }
     render(<ReviewHome sourceCount={1} />)
     expect(h.feedScope).toHaveBeenLastCalledWith('everywhere')
-  })
-})
-
-describe('ReviewHome question opener', () => {
-  it('registers a prefilled new chat when none exists', async () => {
-    render(<ReviewHome />)
-    await openReviewEntry(question)
-    expect(h.startNewChat).toHaveBeenCalledWith({ prefill: 'Why?', scopeId: 'p1' })
-  })
-  it('leaves an existing opener alone', async () => {
-    const other = vi.fn()
-    registerReviewOpener('question', other)
-    render(<ReviewHome />)
-    await openReviewEntry(question)
-    expect(other).toHaveBeenCalled()
-    expect(h.startNewChat).not.toHaveBeenCalled()
-  })
-  it('unregisters on unmount', () => {
-    const { unmount } = render(<ReviewHome />)
-    expect(reviewRegistryStore.getState().openers.question).toBeDefined()
-    unmount()
-    expect(reviewRegistryStore.getState().openers.question).toBeUndefined()
   })
 })

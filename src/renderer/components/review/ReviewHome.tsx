@@ -1,10 +1,7 @@
-import type { ReviewEntry } from '@shared/types/review'
 import { isEverywhere } from '@shared/types/scope'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useEffect } from 'react'
 import { useScopes } from '@/hooks/useScopes'
-import { startNewChat } from '@/lib/startNewChat'
-import { hasReviewOpener, registerReviewOpener, useLastCheckedAt, useReviewEntries } from '@/packages/review'
+import { useLastCheckedAt, useReviewEntries } from '@/packages/review'
 import { hasSources } from './feedSelectors'
 import { ReviewEmpty } from './ReviewEmpty'
 import { ReviewFeed } from './ReviewFeed'
@@ -26,12 +23,6 @@ export function ReviewHome({ sourceCount }: ReviewHomeProps) {
   const entries = useReviewEntries()
   const lastCheckedAt = useLastCheckedAt()
   const sourced = hasSources({ sourceCount, entries, lastCheckedAt })
-
-  // Default opener for a question row: a chat with the question prefilled. Slice 10 may replace it.
-  useEffect(() => {
-    if (hasReviewOpener({ ref: { type: 'question' } } as ReviewEntry)) return
-    return registerReviewOpener('question', (e) => startNewChat({ prefill: e.text, scopeId: e.scopeId }))
-  }, [])
 
   return (
     <div className="dango-review-home">

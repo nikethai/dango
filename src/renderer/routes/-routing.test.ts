@@ -10,6 +10,14 @@ vi.mock('@/components/layout/Page', () => ({ default: () => null }))
 
 const src = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8')
 
+describe('default question opener', () => {
+  it('is registered once at app init next to initKnowledge, not by ReviewHome (M3)', () => {
+    const root = src('routes/__root.tsx')
+    expect(root).toMatch(/initKnowledge\(\)[\s\S]{0,200}registerDefaultQuestionOpener\(\)/)
+    expect(src('components/review/ReviewHome.tsx')).not.toContain('registerReviewOpener')
+  })
+})
+
 describe('/ is Review', () => {
   const beforeLoad = Route.options.beforeLoad as (ctx: unknown) => void
   it('renders ReviewHome', () => {
