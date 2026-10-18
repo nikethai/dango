@@ -27,6 +27,7 @@ import { Route as SettingsVideoUrlImport } from './routes/settings/video-url'
 import { Route as SettingsUserPersonalInfoImport } from './routes/settings/user-personal-info'
 import { Route as SettingsUsageImport } from './routes/settings/usage'
 import { Route as SettingsSyncImport } from './routes/settings/sync'
+import { Route as SettingsSourcesImport } from './routes/settings/sources'
 import { Route as SettingsSkillsImport } from './routes/settings/skills'
 import { Route as SettingsMemoryImport } from './routes/settings/memory'
 import { Route as SettingsMcpImport } from './routes/settings/mcp'
@@ -149,6 +150,12 @@ const SettingsUsageRoute = SettingsUsageImport.update({
 const SettingsSyncRoute = SettingsSyncImport.update({
   id: '/sync',
   path: '/sync',
+  getParentRoute: () => SettingsRouteRoute,
+} as any)
+
+const SettingsSourcesRoute = SettingsSourcesImport.update({
+  id: '/sources',
+  path: '/sources',
   getParentRoute: () => SettingsRouteRoute,
 } as any)
 
@@ -531,6 +538,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSkillsImport
       parentRoute: typeof SettingsRouteImport
     }
+    '/settings/sources': {
+      id: '/settings/sources'
+      path: '/sources'
+      fullPath: '/settings/sources'
+      preLoaderRoute: typeof SettingsSourcesImport
+      parentRoute: typeof SettingsRouteImport
+    }
     '/settings/sync': {
       id: '/settings/sync'
       path: '/sync'
@@ -668,6 +682,7 @@ interface SettingsRouteRouteChildren {
   SettingsMcpRoute: typeof SettingsMcpRoute
   SettingsMemoryRoute: typeof SettingsMemoryRoute
   SettingsSkillsRoute: typeof SettingsSkillsRoute
+  SettingsSourcesRoute: typeof SettingsSourcesRoute
   SettingsSyncRoute: typeof SettingsSyncRoute
   SettingsUsageRoute: typeof SettingsUsageRoute
   SettingsUserPersonalInfoRoute: typeof SettingsUserPersonalInfoRoute
@@ -695,6 +710,7 @@ const SettingsRouteRouteChildren: SettingsRouteRouteChildren = {
   SettingsMcpRoute: SettingsMcpRoute,
   SettingsMemoryRoute: SettingsMemoryRoute,
   SettingsSkillsRoute: SettingsSkillsRoute,
+  SettingsSourcesRoute: SettingsSourcesRoute,
   SettingsSyncRoute: SettingsSyncRoute,
   SettingsUsageRoute: SettingsUsageRoute,
   SettingsUserPersonalInfoRoute: SettingsUserPersonalInfoRoute,
@@ -740,6 +756,7 @@ export interface FileRoutesByFullPath {
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
   '/settings/skills': typeof SettingsSkillsRoute
+  '/settings/sources': typeof SettingsSourcesRoute
   '/settings/sync': typeof SettingsSyncRoute
   '/settings/usage': typeof SettingsUsageRoute
   '/settings/user-personal-info': typeof SettingsUserPersonalInfoRoute
@@ -782,6 +799,7 @@ export interface FileRoutesByTo {
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
   '/settings/skills': typeof SettingsSkillsRoute
+  '/settings/sources': typeof SettingsSourcesRoute
   '/settings/sync': typeof SettingsSyncRoute
   '/settings/usage': typeof SettingsUsageRoute
   '/settings/user-personal-info': typeof SettingsUserPersonalInfoRoute
@@ -828,6 +846,7 @@ export interface FileRoutesById {
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
   '/settings/skills': typeof SettingsSkillsRoute
+  '/settings/sources': typeof SettingsSourcesRoute
   '/settings/sync': typeof SettingsSyncRoute
   '/settings/usage': typeof SettingsUsageRoute
   '/settings/user-personal-info': typeof SettingsUserPersonalInfoRoute
@@ -875,6 +894,7 @@ export interface FileRouteTypes {
     | '/settings/mcp'
     | '/settings/memory'
     | '/settings/skills'
+    | '/settings/sources'
     | '/settings/sync'
     | '/settings/usage'
     | '/settings/user-personal-info'
@@ -916,6 +936,7 @@ export interface FileRouteTypes {
     | '/settings/mcp'
     | '/settings/memory'
     | '/settings/skills'
+    | '/settings/sources'
     | '/settings/sync'
     | '/settings/usage'
     | '/settings/user-personal-info'
@@ -960,6 +981,7 @@ export interface FileRouteTypes {
     | '/settings/mcp'
     | '/settings/memory'
     | '/settings/skills'
+    | '/settings/sources'
     | '/settings/sync'
     | '/settings/usage'
     | '/settings/user-personal-info'
@@ -1056,6 +1078,7 @@ export const routeTree = rootRoute
         "/settings/mcp",
         "/settings/memory",
         "/settings/skills",
+        "/settings/sources",
         "/settings/sync",
         "/settings/usage",
         "/settings/user-personal-info",
@@ -1173,6 +1196,10 @@ export const routeTree = rootRoute
     },
     "/settings/skills": {
       "filePath": "settings/skills.tsx",
+      "parent": "/settings"
+    },
+    "/settings/sources": {
+      "filePath": "settings/sources.tsx",
       "parent": "/settings"
     },
     "/settings/sync": {

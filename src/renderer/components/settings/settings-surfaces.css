@@ -863,3 +863,46 @@
   line-height: 1.5;
   margin-bottom: 0.35rem;
 }
+
+/* ── Nav: Advanced group button and section tabs ── */
+.settings-nav-group {
+  display: flex;
+  align-items: center;
+  gap: var(--dango-space-1);
+  margin-top: var(--dango-space-2);
+  padding: var(--dango-space-1) var(--dango-space-3);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dango-muted);
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.settings-nav-group[aria-expanded='true'] .settings-nav-group-chevron {
+  transform: rotate(90deg);
+}
+
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dango-space-1);
+  padding: var(--dango-space-4) var(--dango-space-8) 0;
+}
+
+.settings-tabs a {
+  padding: var(--dango-space-1) var(--dango-space-3);
+  border-radius: var(--dango-radius-md);
+  color: var(--dango-ink-2);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.settings-tabs a[aria-current='page'] {
+  background: var(--dango-green-wash);
+  color: var(--dango-green-text);
+  font-weight: 600;
+}

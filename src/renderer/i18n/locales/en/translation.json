@@ -1276,6 +1276,8 @@
   "Reading file…": "Reading file…",
   "Loading webpage…": "Loading webpage…",
   "Advanced": "Advanced",
+  "No sources connected yet.": "No sources connected yet.",
+  "Folders, Gmail, Asana, Codex threads and documents Dango reads from. Each source belongs to one scope.": "Folders, Gmail, Asana, Codex threads and documents Dango reads from. Each source belongs to one scope.",
   "Using tools…": "Using tools…",
   "Using {{count}} tools…": "Using {{count}} tools…",
   "Automatically open finished artifacts in the side workspace (chat stays open)": "Automatically open finished artifacts in the side workspace (chat stays open)",
