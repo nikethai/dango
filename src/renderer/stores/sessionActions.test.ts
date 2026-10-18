@@ -781,6 +781,7 @@ describe('plan lifecycle actions', () => {
       expect(Date.now() - event.startedAt).toBeLessThan(60_000)
     } finally {
       vi.useRealTimers()
+      vi.mocked(streamText).mockReset()
     }
   })
 

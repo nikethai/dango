@@ -46,19 +46,6 @@ const activeWindow = createActiveWindowTracker({
 
 const seenEntries = createSeenEntriesLedger({ storage: localStore, now: () => Date.now() })
 
-let heartbeat: ReturnType<typeof setInterval> | undefined
-
-/** The focus heartbeat runs only while notifications are enabled; nothing reads the flag otherwise. */
-function syncHeartbeat(enabled: boolean) {
-  if (enabled && !heartbeat) {
-    activeWindow.heartbeat()
-    heartbeat = setInterval(() => activeWindow.heartbeat(), ACTIVE_HEARTBEAT_MS)
-  } else if (!enabled && heartbeat) {
-    clearInterval(heartbeat)
-    heartbeat = undefined
-  }
-}
-
 function wireI18n() {
   if (i18nWired) return
   i18nWired = true
@@ -84,8 +71,8 @@ function wireFocusTracking() {
   window.addEventListener('blur', () => activeWindow.setFocused(false))
   window.addEventListener('pagehide', () => activeWindow.setFocused(false))
   refresh()
-  syncHeartbeat(getNotificationsConfig().enabled === true)
-  settingsStore.subscribe((state) => syncHeartbeat(state.extension?.notifications?.enabled === true))
+  // Always on: settings are not synced across windows, so a window with a stale "off" must still report its focus.
+  setInterval(() => activeWindow.heartbeat(), ACTIVE_HEARTBEAT_MS)
 
   // Desktop Tauri emits this to every window; re-read this window's own focus.
   try {
