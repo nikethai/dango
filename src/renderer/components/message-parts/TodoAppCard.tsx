@@ -3,10 +3,10 @@
  */
 
 import clsx from 'clsx'
-import { type FC, useCallback, useMemo, useState } from 'react'
+import { type FC, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TaskSnapshot } from '@/packages/tools/task-tools'
-import { type TaskStatus, useTaskStore } from '@/stores/taskStore'
+import { type TaskStatus, taskStore, useTaskStore } from '@/stores/taskStore'
 
 const statusLabelKey: Record<TaskStatus, string> = {
   pending: 'Pending',
@@ -74,6 +74,11 @@ export const TodoAppCard: FC<TodoAppCardProps> = ({
   const allTasks = useTaskStore((s) => s.tasks)
   const toggleTaskDone = useTaskStore((s) => s.toggleTaskDone)
   const liveTasks = useMemo(() => allTasks.filter((task) => task.sessionId === sessionId), [allTasks, sessionId])
+
+  // The task dock used to load the session's tasks; the card does now, so toggles work after a reload.
+  useEffect(() => {
+    void taskStore.getState().hydrateSessionTasks(sessionId)
+  }, [sessionId])
 
   const items: TaskSnapshot[] = useMemo(() => {
     if (snapshot.length > 0) {

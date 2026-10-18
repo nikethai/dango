@@ -1,0 +1,101 @@
+/* Chat thread additions (slice 06a). Only what dango-components.css lacks; tokens only. */
+
+/* Thinking line: Stop sits beside the <details>, aligned to its summary row (never inside <summary>). */
+.dg-think-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dango-space-2);
+  min-width: 0;
+}
+.dg-think-line > .dg-think {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dg-think-line__stop {
+  flex: 0 0 auto;
+}
+
+/* The 30 s reassurance note: its own row under the summary row. */
+.dg-think summary {
+  flex-wrap: wrap;
+}
+.dg-think__note {
+  flex: 1 0 100%;
+  color: var(--dango-muted);
+}
+
+/* Finished line: the chevron follows the title text. */
+.dg-think__chevron {
+  margin-left: var(--dango-space-1);
+  vertical-align: text-bottom;
+}
+
+/* Reduced motion: the mascot's visible state word would repeat the title ("Thinking Thinking"). */
+.dg-think .dango-mascot__state {
+  display: none;
+}
+
+/* Tool block (Task 3): the finished thought line and the tool block stack with a small gap. */
+.dg-think-line + .dg-tool-block {
+  margin-top: var(--dango-space-2);
+}
+.dg-tool-block .dg-think__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-1);
+}
+/* Rows are buttons: drop the browser chrome, keep dg-tool's mono line. */
+button.dg-tool {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dg-tool__target {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Plan card (Task 5). dg-plan has no failed step, error line, feedback field or folded step list. */
+.dg-plan:focus-visible {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: 2px;
+}
+.dg-plan li.is-failed .dg-plan__n,
+.dg-plan-fold li.is-failed .dg-plan__n {
+  color: var(--dango-danger);
+}
+.dg-plan__step {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dg-plan__actions .dg-plan__note {
+  margin-left: auto;
+}
+.dg-plan__feedback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-2);
+}
+.dg-plan__error {
+  margin: 0;
+  color: var(--dango-danger);
+}
+/* Folded plan (finished, rejected, revised): the step rows of dg-plan inside a dg-think disclosure. */
+.dg-plan-fold ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.dg-plan-fold li {
+  display: flex;
+  gap: var(--dango-space-2);
+  align-items: center;
+  padding: var(--dango-space-1) 0;
+}

@@ -76,6 +76,7 @@ import { countWord } from '@/packages/word-count'
 import platform from '@/platform'
 import { router } from '@/router'
 import storage from '@/storage'
+import { getLiveGenerationStartedAt } from '@/stores/session/session-live-generation'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import {
@@ -85,6 +86,7 @@ import {
   shouldShowAssistantPending,
 } from '@/utils/message-stream-ui'
 import '../../static/Block.css'
+import { type PlanContinueState, planCardState } from '@/packages/plan/planSteps'
 import {
   approveAndExecutePlan,
   generateMore,
@@ -93,6 +95,7 @@ import {
   rejectPlan,
   removeMessage,
   requestPlanChanges,
+  resumeStoppedPlan,
   submitNewUserMessage,
 } from '@/stores/sessionActions'
 import * as toastActions from '@/stores/toastActions'
@@ -105,8 +108,7 @@ import {
   isContainRenderableCode,
 } from '../Artifact'
 import { ScalableIcon } from '../common/ScalableIcon'
-import { ReasoningContentUI } from '../message-parts/ReasoningContentUI'
-import AssistantPending from './AssistantPending'
+import { ThinkingLine } from './ThinkingLine'
 
 // Tool/thinking renderers are agent-only — lazy-load them and skip on Android.
 // CHATBOX_BUILD_PLATFORM is a Vite-defined compile-time constant so the
@@ -121,9 +123,7 @@ const ToolCallPartUI = isAgentEnabled
 const TodoAppCard = isAgentEnabled
   ? lazy(() => import('../message-parts/TodoAppCard').then((m) => ({ default: m.TodoAppCard })))
   : null
-const PlanApproval = isAgentEnabled
-  ? lazy(() => import('../PlanApproval/PlanApproval').then((m) => ({ default: m.default })))
-  : null
+const PlanCard = isAgentEnabled ? lazy(() => import('../plan/PlanCard')) : null
 
 import FollowUpSuggestions from '../search/FollowUpSuggestions'
 import { SourceCardList } from '../search/SourceCardList'
@@ -149,6 +149,14 @@ interface Props {
   discussionGroupStart?: boolean
   /** When false, suppress follow-up suggestions (only the latest assistant message should show them). */
   showFollowUpSuggestions?: boolean
+  /** Whether finished thinking text starts open (settings + scope kind, resolved by MessageList). */
+  thinkingDefaultOpen?: boolean
+  /** The chat's plans edit files (agent mode with a project or workspace), resolved by MessageList. */
+  planTouchesFiles?: boolean
+  /** This message holds the chat's latest plan; only that plan's card reads the session's tasks. Default false. */
+  latestPlan?: boolean
+  /** Whether this message's stopped plan offers Continue, resolved by MessageList. Default hidden. */
+  planContinue?: PlanContinueState
 }
 
 const _Message: FC<Props> = (props) => {
@@ -163,6 +171,10 @@ const _Message: FC<Props> = (props) => {
     sessionPicUrl: _sessionPicUrl,
     discussionGroupStart,
     showFollowUpSuggestions = false,
+    thinkingDefaultOpen = true,
+    planTouchesFiles = false,
+    latestPlan = false,
+    planContinue = 'hidden',
   } = props
 
   const { t } = useTranslation()
@@ -285,6 +297,8 @@ const _Message: FC<Props> = (props) => {
 
   const onRejectPlan = useCallback(() => rejectPlan(sessionId, msg.id), [sessionId, msg.id])
 
+  const onContinuePlan = useCallback(() => resumeStoppedPlan(sessionId, msg.id), [sessionId, msg.id])
+
   const onCopyMsg = useCallback(() => {
     copyToClipboard(getMessageText(msg, true, false))
     toastActions.add(t('copied to clipboard'), 2000)
@@ -294,16 +308,11 @@ const _Message: FC<Props> = (props) => {
     void router.navigate({ to: '/image-creator', search: { prompt: messageText } })
   }, [messageText])
 
-  // reasoning
-  const onCopyReasoningContent =
-    (content: string): MouseEventHandler<HTMLButtonElement> =>
-    (e) => {
-      e.stopPropagation()
-      if (content) {
-        copyToClipboard(content)
-        toastActions.add(t('copied to clipboard'))
-      }
-    }
+  const onStopGeneration = useCallback(() => {
+    void import('@/stores/session/stop-generation')
+      .then(({ stopSessionGeneration }) => stopSessionGeneration(sessionId, msg))
+      .catch((error) => console.error('Failed to stop generation', error))
+  }, [sessionId, msg])
 
   const onReport = useCallback(async () => {
     await NiceModal.show('report-content', { contentId: getMessageText(msg) || msg.id })
@@ -533,6 +542,13 @@ const _Message: FC<Props> = (props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- partsRevision captures in-place stream mutations
   }, [contentParts, partsRevision, msg.generating, msg.role, keepEmptyThinking])
 
+  // While this message runs a plan, the plan card shows the mascot; the live line hides its own (one mascot on screen).
+  // Live timers count from the turn's start (stable across remounts); the timestamp moves on every persisted write.
+  const liveTimerOrigin = (msg.generating ? getLiveGenerationStartedAt(msg.id) : undefined) ?? msg.timestamp
+  const planRunning = contentParts.some(
+    (part) => part.type === 'plan' && planCardState(part, Boolean(msg.generating)) === 'running'
+  )
+
   const messageTaskSnapshot = useMemo(
     () => (contentPartsHaveTaskTools(contentParts) ? snapshotTasksFromContentParts(contentParts) : []),
     [contentParts, contentParts.length, msg.generating]
@@ -713,7 +729,7 @@ const _Message: FC<Props> = (props) => {
             onMouseUp={handleSelectionMouseUp}
           >
             {msg.reasoningContent && !groupedParts.some((g) => g.type === 'thinking-group') && (
-              <ReasoningContentUI message={msg} onCopyReasoningContent={onCopyReasoningContent} />
+              <ThinkingLine live={false} text={msg.reasoningContent} defaultOpen={thinkingDefaultOpen} />
             )}
             {groupedParts.length > 0 && (
               <div>
@@ -723,15 +739,15 @@ const _Message: FC<Props> = (props) => {
                       <div key={`thinking-group-${msg.id}`} className="msg-thinking-slot">
                         <Suspense
                           fallback={
-                            // Quiet Grok line only — dock owns activity chrome.
-                            group.workActive || msg.generating ? (
-                              <div className="msg-worked is-live is-settled" aria-hidden>
-                                <div className="msg-worked-row">
-                                  <span className="msg-worked-toggle">
-                                    <span className="msg-worked-label">{t('Thinking…')}</span>
-                                  </span>
-                                </div>
-                              </div>
+                            group.workActive ? (
+                              <ThinkingLine
+                                live
+                                startedAt={liveTimerOrigin}
+                                text=""
+                                defaultOpen={thinkingDefaultOpen}
+                                showMascot={!planRunning}
+                                onStop={onStopGeneration}
+                              />
                             ) : null
                           }
                         >
@@ -739,17 +755,24 @@ const _Message: FC<Props> = (props) => {
                             message={msg}
                             parts={group.parts}
                             monologueTexts={group.monologueTexts}
-                            isLastGroup={group.workActive || Boolean(msg.generating)}
+                            isLastGroup={group.workActive}
+                            defaultOpen={thinkingDefaultOpen}
+                            showMascot={!planRunning}
+                            onStop={onStopGeneration}
                           />
                         </Suspense>
                       </div>
                     ) : null
                   ) : group.part.type === 'reasoning' ? (
                     <div key={`reasoning-${msg.id}-${group.index}`} className="msg-thinking-slot">
-                      <ReasoningContentUI
-                        message={msg}
-                        part={group.part}
-                        onCopyReasoningContent={onCopyReasoningContent}
+                      <ThinkingLine
+                        live={Boolean(msg.generating) && contentParts[contentParts.length - 1] === group.part}
+                        startedAt={group.part.startTime}
+                        durationMs={group.part.duration}
+                        text={group.part.text}
+                        defaultOpen={thinkingDefaultOpen}
+                        showMascot={!planRunning}
+                        onStop={onStopGeneration}
                       />
                     </div>
                   ) : group.part.type === 'text' ? (
@@ -842,13 +865,20 @@ const _Message: FC<Props> = (props) => {
                       </div>
                     )
                   ) : group.part.type === 'plan' ? (
-                    PlanApproval ? (
-                      <Suspense fallback={null} key={`plan-approval-${msg.id}-${group.index}`}>
-                        <PlanApproval
-                          planPart={group.part}
-                          onApprove={onApprovePlan}
+                    PlanCard ? (
+                      <Suspense fallback={null} key={`plan-card-${msg.id}-${group.index}`}>
+                        <PlanCard
+                          plan={group.part}
+                          sessionId={sessionId}
+                          generating={Boolean(msg.generating)}
+                          touchesFiles={planTouchesFiles}
+                          latestPlan={latestPlan}
+                          onRun={onApprovePlan}
                           onRequestChanges={onRequestPlanChanges}
                           onReject={onRejectPlan}
+                          onStop={onStopGeneration}
+                          onContinue={onContinuePlan}
+                          continueState={planContinue}
                         />
                       </Suspense>
                     ) : null
@@ -910,7 +940,18 @@ const _Message: FC<Props> = (props) => {
             message: msg,
             contentParts,
             workStripAvailable: Boolean(ThinkingGroupUI),
-          }) && <AssistantPending className="mt-0.5" />}
+          }) && (
+            <div className="mt-0.5">
+              <ThinkingLine
+                live
+                startedAt={liveTimerOrigin}
+                text=""
+                defaultOpen={thinkingDefaultOpen}
+                showMascot={!planRunning}
+                onStop={onStopGeneration}
+              />
+            </div>
+          )}
 
           {!msg.generating && settledReady && tips.length > 0 && (
             <Text size="xs" c="chatbox-tertiary" className="mt-1 opacity-80">

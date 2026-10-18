@@ -38,7 +38,6 @@ import {
   isSessionGenerationLive,
   subscribeSessionGenerationLive,
 } from '@/stores/session/session-live-generation'
-import { continueActiveSessionTasks } from '@/stores/session/messages'
 import { getAllMessageList, initEmptyChatSession } from '@/stores/sessionHelpers'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { getModelDisplayName } from '@/utils/modelDisplayName'
@@ -219,11 +218,6 @@ function QuickChatPage() {
     return true
   }, [session, lastGenerating])
 
-  const onContinueTasks = useCallback(() => {
-    if (!session) return
-    void continueActiveSessionTasks(session.id)
-  }, [session])
-
   const onStartNewThread = useCallback(() => {
     if (!session) return false
     void startNewThread(session.id)
@@ -328,9 +322,6 @@ function QuickChatPage() {
         <div className="session-dock-pad">
           <ChatDockStack
             key={session.id}
-            sessionId={session.id}
-            onContinueTasks={onContinueTasks}
-            taskDetailsMode="sheet"
             generating={isGenerating}
             liveMessage={lastGenerating}
           >

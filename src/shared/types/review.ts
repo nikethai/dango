@@ -29,6 +29,8 @@ export type ReviewEntry = {
   actionLabel?: string
   options?: ReviewOption[]
   resolvedAt?: number
+  /** The chat the entry came from (Change entries from a finished plan); its opener navigates there. */
+  chatId?: string
 }
 export type ReviewEntryInput = Omit<ReviewEntry, 'id' | 'state' | 'createdAt'> &
   Partial<Pick<ReviewEntry, 'id' | 'state' | 'createdAt'>>
@@ -52,6 +54,7 @@ export const ReviewEntrySchema: z.ZodType<ReviewEntry> = z.looseObject({
   actionLabel: z.string().optional(),
   options: z.array(z.looseObject({ id: z.string(), text: z.string(), source: z.string().optional() })).optional(),
   resolvedAt: z.number().optional(),
+  chatId: z.string().optional(),
 })
 
 export const WAITING_KINDS: readonly ReviewKind[] = ['needs-you', 'proposal', 'conflict']

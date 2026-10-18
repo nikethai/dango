@@ -230,7 +230,16 @@ export const MessageToolCallPartSchema = z.object({
 export const MessagePlanPartSchema = z.object({
   type: z.literal('plan'),
   planText: z.string(),
-  status: z.enum(['pending', 'approved', 'rejected']).default('pending'),
+  // Written: 'pending' | 'approved' | 'rejected' only, so builds before slice 6a (a three-value enum, no .catch) still
+  // parse synced and imported sessions. 'revised' is read for safety only (an early 6a build wrote it); write a
+  // revised plan as 'rejected' + `revised: true`, and read it through isRevisedPlan().
+  status: z.enum(['pending', 'approved', 'rejected', 'revised']).default('pending'),
+  revised: z.boolean().optional(), // with status 'rejected': superseded by a newer version after Request changes
+  version: z.number().int().positive().optional(), // absent = 1
+  startedAt: z.number().optional(), // set when the plan is approved and starts running
+  finishedAt: z.number().optional(), // set when the run ends on its own; a stopped run has none
+  runStartedAt: z.number().optional(), // start of the current run after Continue; absent = startedAt
+  runMs: z.number().optional(), // time of earlier, stopped runs, so a resumed plan's timer skips the stopped time
 })
 
 // Plan phase for 2-phase agent execution

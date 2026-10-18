@@ -27,6 +27,7 @@ export {
   regenerateInNewFork,
   rejectPlan,
   requestPlanChanges,
+  resumeStoppedPlan,
 } from './session/generation'
 // Re-export message operations from session/messages.ts
 export {

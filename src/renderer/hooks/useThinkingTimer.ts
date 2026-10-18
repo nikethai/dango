@@ -114,3 +114,20 @@ export function formatWorkedDuration(milliseconds: number): string {
 
   return `${minutes}m ${remainingSeconds}s`
 }
+
+/**
+ * Spaced duration for Dango thinking/plan labels: "12 s", "1 m 12 s". Never below "1 s".
+ * Units are not translated, matching formatWorkedDuration.
+ */
+export function formatDangoDuration(milliseconds: number): string {
+  const totalSeconds = Number.isFinite(milliseconds) ? Math.max(1, Math.round(milliseconds / 1000)) : 1
+
+  if (totalSeconds < 60) {
+    return `${totalSeconds} s`
+  }
+
+  const minutes = Math.floor(totalSeconds / 60)
+  const remainingSeconds = totalSeconds % 60
+
+  return remainingSeconds === 0 ? `${minutes} m` : `${minutes} m ${remainingSeconds} s`
+}

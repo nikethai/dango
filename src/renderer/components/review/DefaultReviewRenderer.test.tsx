@@ -202,6 +202,17 @@ describe('DefaultReviewRenderer', () => {
     expect(getItem).not.toHaveBeenCalled()
   })
 
+  it('a Change row shows Open only when its opener can open that entry (R15)', () => {
+    registerReviewOpener('change', vi.fn(), { canOpen: (x) => Boolean(x.chatId) })
+    const withChat = row({ id: 'c1', kind: 'change', ref: { type: 'change', id: 'cs-1' }, chatId: 's1' })
+    const noChat = row({ id: 'c2', kind: 'change', ref: { type: 'change', id: 'cs-2' } })
+    const { unmount } = render(<DefaultReviewRenderer entry={withChat} focused={false} />)
+    expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy()
+    unmount()
+    render(<DefaultReviewRenderer entry={noChat} focused={false} />)
+    expect(screen.queryByRole('button', { name: 'Open' })).toBeNull()
+  })
+
   it('a question row rendered before its opener registers gains Answer (I2)', () => {
     const e = row()
     seed(e)

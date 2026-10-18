@@ -3,6 +3,7 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
 import { MemoryMigrationSheet } from '@/components/knowledge/MemoryMigrationSheet'
 import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
+import { registerChangeOpener } from '@/components/review/changeOpener'
 import { registerDefaultQuestionOpener } from '@/components/review/questionOpener'
 import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
@@ -55,6 +56,8 @@ function Root() {
   }, [])
   // Review's default 'question' opener, app-wide (slice 10 may replace it).
   useEffect(() => registerDefaultQuestionOpener(), [])
+  // Change rows from a finished plan open the chat they came from (slice 6a).
+  useEffect(() => registerChangeOpener(), [])
 
   useEffect(() => {
     void platform.getWindowLabel?.().then((label) => {

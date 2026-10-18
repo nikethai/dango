@@ -1,300 +1,109 @@
-import { ActionIcon, Box, Collapse, Group, Text } from '@mantine/core'
 import type { Message, MessageContentParts, MessageReasoningPart, MessageToolCallPart } from '@shared/types'
-import { IconCircleXFilled, IconCopy } from '@tabler/icons-react'
-import clsx from 'clsx'
-import { type FC, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type FC, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import Markdown from '@/components/Markdown'
-import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { formatWorkedDuration } from '@/hooks/useThinkingTimer'
-import { copyToClipboard } from '@/packages/navigator'
-import { isTaskTrackingTool } from '@/packages/tools/task-tools'
-import * as toastActions from '@/stores/toastActions'
-import { ScalableIcon } from '../common/ScalableIcon'
-import { ToolCallPartUI } from './ToolCallPartUI'
+import { ThinkingLine } from '@/components/chat/ThinkingLine'
+import { liveToolHint } from '@/packages/thinking/tool-summary'
+import { getLiveGenerationStartedAt } from '@/stores/session/session-live-generation'
+import { ToolBlock } from './ToolBlock'
+
+/** While generating, the line stays live until work has been inactive this long (narration between tool calls). */
+export const LEAVE_LIVE_MS = 1_500
 
 interface ThinkingGroupUIProps {
   message: Message
   sessionId?: string
   parts: MessageContentParts
-  /** Mid-turn assistant prose absorbed from between tools — only shown when expanded */
+  /** Mid-turn assistant prose absorbed from between tools; part of the thinking text. */
   monologueTexts?: string[]
-  /** True while the model is still running tools/reasoning (not final answer yet) */
+  /** True while the model is still working (reasoning or tools) and no answer has started: `group.workActive`. */
   isLastGroup: boolean
+  /** Whether the thinking text starts open (setting and scope kind). */
+  defaultOpen: boolean
+  /** False while a running plan card in the same message shows the mascot. */
+  showMascot: boolean
+  onStop: () => void
 }
 
 /**
- * Single product “Worked” strip for an assistant turn.
- * All tools + reasoning + monologue live here; final answer renders outside.
- * Collapsed by default when finished successfully.
+ * An assistant turn's work. While work is active: one live ThinkingLine (tools summarised in its hint).
+ * Once the answer starts: a "Thought for" line (only when reasoning text exists) and the collapsed ToolBlock.
  */
-export const ThinkingGroupUI: FC<ThinkingGroupUIProps> = ({ message, parts, monologueTexts = [], isLastGroup }) => {
+export const ThinkingGroupUI: FC<ThinkingGroupUIProps> = ({
+  message,
+  parts,
+  monologueTexts = [],
+  isLastGroup,
+  defaultOpen,
+  showMascot,
+  onStop,
+}) => {
   const { t } = useTranslation()
-  const isSmallScreen = useIsSmallScreen()
+
+  // Entering live is immediate; leaving it while generating waits LEAVE_LIVE_MS, so a short narration between two
+  // tool calls never flashes the finished line and tool block. Once generation ends, settle at once.
+  const [holdLive, setHoldLive] = useState(isLastGroup)
+  const generating = Boolean(message.generating)
+  useEffect(() => {
+    if (isLastGroup) {
+      setHoldLive(true)
+      return
+    }
+    if (!generating) {
+      setHoldLive(false)
+      return
+    }
+    const timer = setTimeout(() => setHoldLive(false), LEAVE_LIVE_MS)
+    return () => clearTimeout(timer)
+  }, [isLastGroup, generating])
+  const live = isLastGroup || (generating && holdLive)
 
   const reasoningParts = useMemo(() => parts.filter((p) => p.type === 'reasoning') as MessageReasoningPart[], [parts])
-  const toolCallParts = useMemo(() => parts.filter((p) => p.type === 'tool-call') as MessageToolCallPart[], [parts])
-  const visibleToolCallParts = useMemo(
-    () => toolCallParts.filter((p) => !isTaskTrackingTool(p.toolName) && p.toolName !== 'memory_lookup'),
-    [toolCallParts]
-  )
-  const toolCount = visibleToolCallParts.length
-  const toolStatusCounts = useMemo(() => {
-    return visibleToolCallParts.reduce(
-      (counts, part) => {
-        if (part.state === 'error') {
-          counts.failed += 1
-          return counts
-        }
-        if (part.state === 'call') {
-          counts.running += 1
-          return counts
-        }
-        counts.succeeded += 1
-        return counts
-      },
-      { failed: 0, running: 0, succeeded: 0 }
-    )
-  }, [visibleToolCallParts])
-  // Live while parent says work is active OR any tool is still running OR generation
-  // has not finished yet with this work strip present. Never flash "Worked" mid-turn.
-  const isThinking = Boolean(message.generating && (isLastGroup || toolStatusCounts.running > 0))
-
-  // Product default: always collapsed during live generation (header-only).
-  // Expanding tools mid-stream is the main scrollbar thrash source — only open on user click
-  // or after the turn finishes with failures.
-  const [isExpanded, setIsExpanded] = useState(false)
-  const userToggledRef = useRef(false)
-
-  const hasReadableAnswer = useMemo(
-    () =>
-      (message.contentParts || []).some((part) => {
-        if (part.type === 'text' || part.type === 'info') return Boolean(part.text?.trim())
-        return part.type === 'image' || part.type === 'plan'
-      }),
-    [message.contentParts]
+  const toolParts = useMemo(() => parts.filter((p) => p.type === 'tool-call') as MessageToolCallPart[], [parts])
+  const text = useMemo(
+    () => [...reasoningParts.map((p) => p.text), ...monologueTexts].filter((s) => s?.trim()).join('\n\n'),
+    [reasoningParts, monologueTexts]
   )
 
-  useEffect(() => {
-    if (userToggledRef.current) return
-    if (message.generating) {
-      setIsExpanded(false)
+  const reasoningMs = reasoningParts.reduce((sum, p) => sum + (p.duration || 0), 0)
+  const workStart = reasoningParts[reasoningParts.length - 1]?.startTime || message.timestamp
+  // The turn's start, stable across remounts and persisted writes; another window (no live mark) falls back.
+  const liveOrigin = (generating ? getLiveGenerationStartedAt(message.id) : undefined) ?? message.timestamp ?? workStart
+
+  // Fallback duration when reasoning parts carry none: the work time measured when this mount saw it go live → done.
+  // A turn loaded from history never saw that transition, so it gets no number rather than "now - timestamp".
+  const sawLiveRef = useRef(live)
+  const originRef = useRef<number | undefined>(undefined)
+  if (live) {
+    sawLiveRef.current = true
+    originRef.current ??= liveOrigin
+  }
+  const [settledMs, setSettledMs] = useState<number | undefined>(undefined)
+  // Layout effect: the measured duration lands before paint, so the line never flashes a bare "Thought".
+  useLayoutEffect(() => {
+    if (live) {
+      setSettledMs(undefined)
       return
     }
-    // Finished with no answer: keep tools open so the turn is inspectable.
-    // Do not reset userToggledRef here — that snapped the chevron shut on click.
-    setIsExpanded(toolStatusCounts.failed > 0 || (toolCount > 0 && !hasReadableAnswer))
-  }, [message.generating, toolStatusCounts.failed, toolCount, hasReadableAnswer])
+    const origin = originRef.current ?? workStart
+    if (sawLiveRef.current && origin) setSettledMs(Date.now() - origin)
+  }, [live, workStart])
 
-  const totalDuration = useMemo(() => {
-    return reasoningParts.reduce((sum, p) => sum + (p.duration || 0), 0)
-  }, [reasoningParts])
-
-  const lastReasoningPart = reasoningParts[reasoningParts.length - 1]
-  const workStart = lastReasoningPart?.startTime || message.timestamp
-  const [settledMs, setSettledMs] = useState(0)
-  useEffect(() => {
-    if (message.generating) {
-      setSettledMs(0)
-      return
-    }
-    if (!workStart) return
-    setSettledMs(Date.now() - workStart)
-  }, [message.generating, workStart])
-
-  const displayTime = totalDuration > 0 ? totalDuration : settledMs
-
-  const allReasoningText = useMemo(() => {
-    const fromParts = reasoningParts.map((p) => p.text).filter(Boolean)
-    return [...fromParts, ...monologueTexts].join('\n\n')
-  }, [reasoningParts, monologueTexts])
-
-  const toggleExpanded = useCallback(() => {
-    userToggledRef.current = true
-    setIsExpanded((prev) => !prev)
-  }, [])
-
-  const onCopy = useCallback(
-    (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.stopPropagation()
-      if (allReasoningText) {
-        copyToClipboard(allReasoningText)
-        toastActions.add(t('copied to clipboard'), 2000)
-      }
-    },
-    [allReasoningText, t]
-  )
-
-  // One live phrase only. Swapping Thinking… ↔ Using tools… was the mid-turn jitter.
-  const headerLabel = useMemo(() => {
-    if (message.generating) return t('Thinking…')
-
-    const compact = displayTime > 0 ? formatWorkedDuration(displayTime) : null
-    if (compact) return t('Worked for {{duration}}', { duration: compact })
-    if (toolCount > 0) {
-      return toolCount === 1 ? t('Worked · 1 tool') : t('Worked · {{count}} tools', { count: toolCount })
-    }
-    return t('Worked')
-  }, [message.generating, displayTime, toolCount, t])
-
-  const [labelShown, setLabelShown] = useState(headerLabel)
-  const [labelLeaving, setLabelLeaving] = useState<string | null>(null)
-  useEffect(() => {
-    if (headerLabel === labelShown) return
-    setLabelLeaving(labelShown)
-    setLabelShown(headerLabel)
-    const swap = window.setTimeout(() => setLabelLeaving(null), 220)
-    return () => window.clearTimeout(swap)
-  }, [headerLabel, labelShown])
-
-  const hasExpandableBody = toolCount > 0 || allReasoningText.length > 0
-
-  // Hold is-live a beat after settle so pulse/color ease out instead of snapping.
-  const [liveChrome, setLiveChrome] = useState(Boolean(message.generating))
-  useEffect(() => {
-    if (message.generating) {
-      setLiveChrome(true)
-      return
-    }
-    const finish = window.setTimeout(() => setLiveChrome(false), 220)
-    return () => window.clearTimeout(finish)
-  }, [message.generating])
-
-  // One-shot enter animation on mount only — never reset when generation ends
-  // (resetting re-armed opacity/transform flash on the Thinking → Worked morph).
-  const [enterSettled, setEnterSettled] = useState(false)
-  useEffect(() => {
-    if (enterSettled) return
-    const t = window.setTimeout(() => setEnterSettled(true), 260)
-    return () => window.clearTimeout(t)
-  }, [enterSettled])
-
+  // One slot for the line in both states, so its open/closed choice carries from live to finished.
   return (
-    <div
-      className={clsx(
-        'msg-worked',
-        liveChrome && 'is-live',
-        liveChrome && enterSettled && 'is-settled',
-        isSmallScreen && 'mx-0.5'
-      )}
-    >
-      <div className="msg-worked-row">
-        {/* Live activity lives on the composer dock; thread strip stays Grok-plain text. */}
-        <button
-          type="button"
-          className="msg-worked-toggle"
-          onClick={hasExpandableBody ? toggleExpanded : undefined}
-          aria-expanded={isExpanded}
-          disabled={!hasExpandableBody}
-        >
-          <span className="msg-worked-label-stack">
-            {labelLeaving ? (
-              <span className="msg-worked-label is-leave" aria-hidden>
-                {labelLeaving}
-              </span>
-            ) : null}
-            <span className={clsx('msg-worked-label', labelLeaving && 'is-enter')}>{labelShown}</span>
-          </span>
-          {toolStatusCounts.failed > 0 && !message.generating && (
-            <Group gap={3} ml={4} wrap="nowrap" className="shrink-0">
-              <ScalableIcon icon={IconCircleXFilled} size={12} color="var(--chatbox-tint-error)" />
-              <Text size="xs" fw={500} className="tabular-nums" style={{ color: 'var(--chatbox-tint-error)' }}>
-                {toolStatusCounts.failed}
-              </Text>
-            </Group>
-          )}
-          <span
-            className={clsx('msg-worked-chevron', isExpanded && 'is-open', !hasExpandableBody && 'is-idle')}
-            aria-hidden
-          >
-            ›
-          </span>
-        </button>
-        {allReasoningText.length > 0 && !message.generating && (
-          <ActionIcon
-            variant="subtle"
-            color="chatbox-secondary"
-            size="sm"
-            className="msg-worked-copy"
-            onClick={onCopy}
-            aria-label={t('Copy reasoning content')}
-          >
-            <ScalableIcon icon={IconCopy} size={14} />
-          </ActionIcon>
-        )}
-      </div>
-
-      {/* Expanded body only — live detail is on the composer dock (no dual chrome). */}
-      <Collapse in={isExpanded && hasExpandableBody}>
-        <div className="msg-worked-body">
-          {(() => {
-            type RenderItem =
-              | { kind: 'reasoning'; index: number; part: MessageReasoningPart }
-              | { kind: 'tool'; part: MessageToolCallPart; runCount: number; key: string }
-
-            const items: RenderItem[] = []
-            for (let index = 0; index < parts.length; index++) {
-              const part = parts[index]
-              if (part.type === 'reasoning') {
-                items.push({ kind: 'reasoning', index, part: part as MessageReasoningPart })
-                continue
-              }
-              if (part.type !== 'tool-call' || isTaskTrackingTool(part.toolName)) continue
-              const toolPart = part as MessageToolCallPart
-              const sig = `${toolPart.toolName}::${JSON.stringify(toolPart.args ?? {})}`
-              const prev = items[items.length - 1]
-              if (
-                prev?.kind === 'tool' &&
-                prev.part.state !== 'call' &&
-                toolPart.state !== 'call' &&
-                prev.part.state === toolPart.state &&
-                `${prev.part.toolName}::${JSON.stringify(prev.part.args ?? {})}` === sig
-              ) {
-                prev.runCount += 1
-                continue
-              }
-              items.push({ kind: 'tool', part: toolPart, runCount: 1, key: toolPart.toolCallId })
-            }
-
-            return (
-              <>
-                {items.map((item) =>
-                  item.kind === 'reasoning' ? (
-                    <Box
-                      key={`group-reasoning-${item.index}`}
-                      className="reasoning-content msg-worked-reasoning"
-                      mb={toolCount > 0 ? 'xs' : 0}
-                    >
-                      <Markdown
-                        enableLaTeXRendering={false}
-                        enableMermaidRendering={false}
-                        hiddenCodeCopyButton={false}
-                        className={isSmallScreen ? 'text-[13px]' : 'text-sm'}
-                        generating={isThinking && item.index === parts.length - 1}
-                      >
-                        {item.part.text}
-                      </Markdown>
-                    </Box>
-                  ) : (
-                    <Box key={`group-tool-${item.key}`} className="tool-step-wrap">
-                      <ToolCallPartUI part={item.part} runCount={item.runCount} />
-                    </Box>
-                  )
-                )}
-                {monologueTexts.length > 0 && (
-                  <div className="msg-worked-monologue">
-                    {monologueTexts.map((text, i) => (
-                      <p key={`monologue-${i}`} className="msg-worked-monologue-line">
-                        {text}
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </>
-            )
-          })()}
-        </div>
-      </Collapse>
-    </div>
+    <>
+      {live || text ? (
+        <ThinkingLine
+          live={live}
+          startedAt={liveOrigin}
+          durationMs={reasoningMs > 0 ? reasoningMs : settledMs}
+          text={text}
+          toolHint={live ? liveToolHint(toolParts, t) : undefined}
+          defaultOpen={defaultOpen}
+          showMascot={showMascot}
+          onStop={onStop}
+        />
+      ) : null}
+      {live ? null : <ToolBlock parts={toolParts} />}
+    </>
   )
 }

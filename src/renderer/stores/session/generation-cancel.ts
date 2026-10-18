@@ -9,13 +9,22 @@ type CancelEntry = {
 }
 
 const bySession = new Map<string, CancelEntry>()
+/** `${sessionId}:${messageId}` → the abort function Stop fired for that message's run. */
+const cancelledRuns = new Map<string, () => void>()
+const runKey = (sessionId: string, messageId: string) => `${sessionId}:${messageId}`
 
 export function registerGenerationCancel(sessionId: string, messageId: string, cancel: () => void): void {
+  // A new run for this message clears an earlier Stop. The stream re-registers the same abort function on every
+  // update, including trailing ones after Stop, so only a different function counts as a new run.
+  const key = runKey(sessionId, messageId)
+  const fired = cancelledRuns.get(key)
+  if (fired && fired !== cancel) cancelledRuns.delete(key)
   // Replace any prior cancel for this session (one active gen per session)
   bySession.set(sessionId, {
     messageId,
     cancel: () => {
       try {
+        cancelledRuns.set(key, cancel)
         cancel()
       } finally {
         const cur = bySession.get(sessionId)
@@ -59,4 +68,14 @@ export function getActiveGenerationMessageId(sessionId: string): string | undefi
 /** True while an abort handle is registered for this session (stream in flight). */
 export function isSessionGenerationActive(sessionId: string): boolean {
   return bySession.has(sessionId)
+}
+
+/** True when Stop fired for this message's current run (until a new run registers for it). */
+export function wasGenerationCancelled(sessionId: string, messageId: string): boolean {
+  return cancelledRuns.has(runKey(sessionId, messageId))
+}
+
+/** Forget the Stop mark for this message; generate() calls it once its finish path has read the mark. */
+export function clearGenerationCancelled(sessionId: string, messageId: string): void {
+  cancelledRuns.delete(runKey(sessionId, messageId))
 }
