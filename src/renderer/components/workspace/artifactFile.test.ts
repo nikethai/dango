@@ -19,6 +19,26 @@ describe('artifactFileName', () => {
     expect(artifactFileName({ title: '***', kind: 'code', language: 'zig' })).toBe('artifact.txt')
   })
 
+  it('cuts at 60 characters without leaving a dash at the end', () => {
+    const name = artifactFileName({ title: `${'a'.repeat(59)} bcd`, kind: 'html' })
+    expect(name).toBe(`${'a'.repeat(59)}.html`)
+  })
+
+  it('keeps letters and digits of any script (M10)', () => {
+    expect(artifactFileName({ title: 'Bảng giá 2026', kind: 'html' })).toBe('bảng-giá-2026.html')
+    expect(artifactFileName({ title: '价格表', kind: 'markdown' })).toBe('价格表.md')
+    expect(artifactFileName({ title: 'Ценовая таблица', kind: 'svg' })).toBe('ценовая-таблица.svg')
+  })
+
+  it('never keeps filesystem-reserved characters', () => {
+    expect(artifactFileName({ title: 'a/b\\c:d*e?"f<g>h|i', kind: 'html' })).toBe('a-b-c-d-e-f-g-h-i.html')
+  })
+
+  it('counts the 60 characters as characters, not UTF-16 units', () => {
+    const name = artifactFileName({ title: '𠀀'.repeat(70), kind: 'html' })
+    expect(Array.from(name.replace('.html', ''))).toHaveLength(60)
+  })
+
   it('limits the base name to 60 characters', () => {
     const name = artifactFileName({ title: 'a'.repeat(90), kind: 'html' })
     expect(name).toBe(`${'a'.repeat(60)}.html`)

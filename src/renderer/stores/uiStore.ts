@@ -36,6 +36,10 @@ export type WorkspacePanelState = {
 
 // UI store for managing UI-related state
 // immer middleware，RefObject
+/** The artifact inspector's width range (roadmap: 380–460 px); the panel clamps on read, the setter on write. */
+export const WORKSPACE_MIN_WIDTH_PX = 380
+export const WORKSPACE_MAX_WIDTH_PX = 460
+
 export const uiStore = createStore(
   persist(
     combine(
@@ -77,7 +81,7 @@ export const uiStore = createStore(
          * html / markdown / svg / mermaid / code are first-class panel kinds.
          */
         workspacePanel: null as null | WorkspacePanelState,
-        workspaceWidthPx: 460 as number,
+        workspaceWidthPx: WORKSPACE_MAX_WIDTH_PX as number,
         workspaceExpanded: false as boolean,
         /** One-send explicit Project context draft, keyed by session id. */
         projectContextDrafts: {} as Record<string, import('@shared/types/workspace').WorkspaceContextDraftEntry[]>,
@@ -152,7 +156,10 @@ export const uiStore = createStore(
         },
 
         setWorkspaceWidthPx: (workspaceWidthPx: number) => {
-          const clamped = Math.min(460, Math.max(380, Math.round(workspaceWidthPx)))
+          const clamped = Math.min(
+            WORKSPACE_MAX_WIDTH_PX,
+            Math.max(WORKSPACE_MIN_WIDTH_PX, Math.round(workspaceWidthPx))
+          )
           set((state) => (state.workspaceWidthPx === clamped ? state : { workspaceWidthPx: clamped }))
         },
 

@@ -19,6 +19,8 @@ vi.mock('react-i18next', () => ({
   }),
 }))
 vi.mock('@/packages/navigator', () => ({ copyToClipboard: vi.fn() }))
+const addToast = vi.fn()
+vi.mock('@/stores/toastActions', () => ({ add: (...args: unknown[]) => addToast(...args) }))
 vi.mock('../layout/Toolbar', () => ({ default: () => null }))
 vi.mock('../layout/WindowControls', () => ({ default: () => null }))
 vi.mock('../Markdown', () => ({ default: () => null }))
@@ -59,6 +61,7 @@ async function setup() {
 
 beforeEach(() => {
   exportTextFile.mockClear()
+  addToast.mockClear()
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(0), 0))
   vi.stubGlobal(
     'matchMedia',
@@ -116,6 +119,23 @@ describe('WorkspacePanel', () => {
     expect(screen.getByText('v1')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Download' }))
     expect(exportTextFile).toHaveBeenLastCalledWith('pricing-table-v2.html', V1)
+  })
+
+  it('a failed download says so', async () => {
+    await setup()
+    exportTextFile.mockRejectedValueOnce(new Error('disk full'))
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }))
+    await act(async () => {})
+    expect(addToast).toHaveBeenCalledWith('Download failed')
+  })
+
+  it('the store and the panel share one width range', async () => {
+    const store = await import('@/stores/uiStore')
+    const panel = await import('./WorkspacePanel')
+    expect(store.WORKSPACE_MIN_WIDTH_PX).toBe(380)
+    expect(store.WORKSPACE_MAX_WIDTH_PX).toBe(460)
+    expect(panel.WORKSPACE_MIN_WIDTH_PX).toBe(store.WORKSPACE_MIN_WIDTH_PX)
+    expect(panel.WORKSPACE_MAX_WIDTH_PX).toBe(store.WORKSPACE_MAX_WIDTH_PX)
   })
 
   it('clamps the width to 380-460 on read and for the resizer', async () => {

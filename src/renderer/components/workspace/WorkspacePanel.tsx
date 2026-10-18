@@ -28,7 +28,13 @@ import { cn } from '@/lib/utils'
 import { copyToClipboard } from '@/packages/navigator'
 import platform from '@/platform'
 import * as toastActions from '@/stores/toastActions'
-import { useUIStore, type WorkspaceArtifactVersion, type WorkspacePanelState } from '@/stores/uiStore'
+import {
+  useUIStore,
+  WORKSPACE_MAX_WIDTH_PX,
+  WORKSPACE_MIN_WIDTH_PX,
+  type WorkspaceArtifactVersion,
+  type WorkspacePanelState,
+} from '@/stores/uiStore'
 import Toolbar from '../layout/Toolbar'
 import WindowControls from '../layout/WindowControls'
 import Markdown from '../Markdown'
@@ -38,8 +44,8 @@ import { HtmlWorkspaceView } from './HtmlWorkspaceView'
 import { WorkspaceCodeView } from './WorkspaceCodeView'
 
 const EXIT_MS = 260
-export const WORKSPACE_MIN_WIDTH_PX = 380
-export const WORKSPACE_MAX_WIDTH_PX = 460
+// One width range, owned by the store; re-exported here, where slice 6a first published it.
+export { WORKSPACE_MAX_WIDTH_PX, WORKSPACE_MIN_WIDTH_PX }
 const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
 
 type WorkspaceContent = NonNullable<WorkspacePanelState>

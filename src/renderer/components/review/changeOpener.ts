@@ -1,3 +1,4 @@
+import { t } from 'i18next'
 import { getDefaultStore } from 'jotai'
 import { registerReviewOpener, reviewRegistryStore } from '@/packages/review'
 import { router } from '@/router'
@@ -22,8 +23,15 @@ export function registerChangeOpener(): () => void {
   if (reviewRegistryStore.getState().openers.change) return () => {}
   return registerReviewOpener(
     'change',
-    (e) => {
+    async (e) => {
       if (!e.chatId) return
+      // canOpen reads a cache that may be stale: check the chat itself before navigating to it.
+      const { getSession } = await import('@/stores/chatStore')
+      if (!(await getSession(e.chatId))) {
+        const { add } = await import('@/stores/toastActions')
+        add(t('This chat was deleted.'))
+        return
+      }
       getDefaultStore().set(currentSessionIdAtom, e.chatId)
       void router.navigate({ to: '/session/$sessionId', params: { sessionId: e.chatId } })
     },
