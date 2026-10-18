@@ -17,12 +17,16 @@ function targetScopeOf(input: { kind: KnowledgeProposal['kind']; scopeId: string
   return input.kind === 'preference' ? EVERYWHERE_SCOPE_ID : input.scopeId
 }
 
-/** On the Don't suggest list (this scope or Everywhere), already approved there, or already proposed there. */
-function isKnownText(state: KnowledgeState, textKey: string, scopeId: string): boolean {
+/**
+ * On the Don't suggest list (this scope or Everywhere), already approved there, or already proposed there.
+ * `skipDontSuggest`: a user's own add ignores the list (preflight C8).
+ */
+function isKnownText(state: KnowledgeState, textKey: string, scopeId: string, skipDontSuggest = false): boolean {
   return (
-    state.dontSuggest.some(
-      (e) => e.textKey === textKey && (e.scopeId === scopeId || e.scopeId === EVERYWHERE_SCOPE_ID)
-    ) ||
+    (!skipDontSuggest &&
+      state.dontSuggest.some(
+        (e) => e.textKey === textKey && (e.scopeId === scopeId || e.scopeId === EVERYWHERE_SCOPE_ID)
+      )) ||
     state.items.some((i) => i.status === 'approved' && i.scopeId === scopeId && knowledgeTextKey(i.text) === textKey) ||
     state.proposals.some((p) => p.scopeId === scopeId && knowledgeTextKey(p.text) === textKey)
   )
@@ -37,11 +41,23 @@ function isKnownText(state: KnowledgeState, textKey: string, scopeId: string): b
 export async function proposeKnowledge(
   input: Omit<KnowledgeProposal, 'id' | 'createdAt'>
 ): Promise<KnowledgeProposal | null> {
+  return (await fileProposal(input))?.proposal ?? null
+}
+
+/**
+ * `proposeKnowledge`, plus the commit's `revert` (so `addKnowledge` can undo the proposal too).
+ * Internal: `skipDontSuggest` lets a user's own add past the Don't suggest list (preflight C8).
+ */
+export async function fileProposal(
+  input: Omit<KnowledgeProposal, 'id' | 'createdAt'>,
+  opts?: { skipDontSuggest?: boolean }
+): Promise<{ proposal: KnowledgeProposal; revert: () => Promise<void> } | null> {
+  const skip = opts?.skipDontSuggest === true
   const scopeId = targetScopeOf(input)
   const textKey = knowledgeTextKey(input.text)
   if (!textKey) return null
   await ensureKnowledgeLoaded({ fresh: true })
-  if (isKnownText(knowledgeStore.getState().state, textKey, scopeId)) return null
+  if (isKnownText(knowledgeStore.getState().state, textKey, scopeId, skip)) return null
 
   const check = await checkAgainstLayers({
     text: input.text,
@@ -63,9 +79,9 @@ export async function proposeKnowledge(
   }
 
   let stored = false
-  await commitKnowledge((d) => {
+  const result = await commitKnowledge((d) => {
     // The check took a while; another window may have filed or approved the same text meanwhile.
-    if (isKnownText(d, textKey, scopeId)) return
+    if (isKnownText(d, textKey, scopeId, skip)) return
     d.proposals.push(proposal)
     if (conflictsWith.length) {
       d.conflicts.push({
@@ -79,7 +95,7 @@ export async function proposeKnowledge(
     }
     stored = true
   })
-  return stored ? proposal : null
+  return stored ? { proposal, revert: result.revert } : null
 }
 
 /** Adds a Don't suggest entry unless one for this text and scope exists. Returns whether it added one. */

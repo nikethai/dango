@@ -1364,5 +1364,7 @@
   "Unknown scope": "Unknown scope",
   "Saved: \"{{old}}\"": "Saved: \"{{old}}\"",
   "Dismissed \"{{text}}\"": "Dismissed \"{{text}}\"",
+  "Approved \"{{text}}\" for {{scope}}": "Approved \"{{text}}\" for {{scope}}",
+  "Added \"{{text}}\" to {{scope}}": "Added \"{{text}}\" to {{scope}}",
   "Don't suggest this again": "Don't suggest this again"
 }

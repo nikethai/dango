@@ -1,3 +1,4 @@
+export { addKnowledge, approveProposal, KnowledgeConflictError } from './approve'
 export { type ContradictionChecker, checkAgainstLayers, selectCandidates } from './contradictions'
 export { initKnowledge } from './init'
 export {
