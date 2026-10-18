@@ -132,6 +132,10 @@ export default class TestPlatform implements Platform {
   /** Recorded system notifications for tests */
   public systemNotifications: SystemNotificationPayload[] = []
   public systemNotificationPermission: SystemNotificationPermission = 'granted'
+  /** Recorded quick window heights (setQuickWindowHeight) for tests */
+  public quickWindowHeights: number[] = []
+  /** Number of hideQuickWindow calls for tests */
+  public quickHidden = 0
   private systemNotificationClickHandlers = new Set<(payload: SystemNotificationClickPayload) => void>()
 
   constructor() {
@@ -406,6 +410,16 @@ export default class TestPlatform implements Platform {
 
   public getWindowLabel(): Promise<string> {
     return Promise.resolve('test')
+  }
+
+  public hideQuickWindow(): Promise<void> {
+    this.quickHidden += 1
+    return Promise.resolve()
+  }
+
+  public setQuickWindowHeight(px: number): Promise<void> {
+    this.quickWindowHeights.push(px)
+    return Promise.resolve()
   }
 
   public async getSystemNotificationPermission(): Promise<SystemNotificationPermission> {

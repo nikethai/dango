@@ -9,13 +9,18 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    AppHandle, Emitter, LogicalSize, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 const QUICK_LABEL: &str = "quick";
 const MAIN_LABEL: &str = "main";
 const TRAY_ID: &str = "dango-tray";
+/// Quick window: fixed width, height follows the panel within these bounds (logical px).
+const QUICK_WIDTH: f64 = 620.0;
+const QUICK_INITIAL_HEIGHT: f64 = 132.0;
+const QUICK_MIN_HEIGHT: f64 = 112.0;
+const QUICK_MAX_HEIGHT: f64 = 640.0;
 
 pub struct ShellState {
     pub keep_in_tray: Mutex<bool>,
@@ -91,12 +96,14 @@ pub fn ensure_quick_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .map(|s| *s.quick_always_on_top.lock().unwrap_or_else(|e| e.into_inner()))
         .unwrap_or(true);
 
-    // Sized like a real chat panel (matches full-session density in a floating frame)
+    // Frameless 620 px panel; the renderer grows it with shell:setQuickHeight
     let window = WebviewWindowBuilder::new(app, QUICK_LABEL, WebviewUrl::App("index.html".into()))
         .title("Dango Quick Chat")
-        .inner_size(520.0, 700.0)
-        .min_inner_size(400.0, 480.0)
-        .resizable(true)
+        .inner_size(QUICK_WIDTH, QUICK_INITIAL_HEIGHT)
+        .min_inner_size(QUICK_WIDTH, QUICK_MIN_HEIGHT)
+        .resizable(false)
+        .decorations(false)
+        .shadow(true)
         .visible(false)
         .always_on_top(always_on_top)
         .skip_taskbar(true)
@@ -124,6 +131,21 @@ pub fn show_quick(app: &AppHandle) -> Result<(), String> {
 pub fn hide_quick(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(QUICK_LABEL) {
         hide_window(&window);
+    }
+}
+
+/// Height requested by the renderer, clamped to the quick window bounds. Non-numbers are ignored.
+fn clamp_quick_height(raw: &Value) -> Option<f64> {
+    let height = raw.as_f64()?;
+    if !height.is_finite() {
+        return None;
+    }
+    Some(height.clamp(QUICK_MIN_HEIGHT, QUICK_MAX_HEIGHT))
+}
+
+fn set_quick_height(app: &AppHandle, height: f64) {
+    if let Some(window) = app.get_webview_window(QUICK_LABEL) {
+        let _ = window.set_size(LogicalSize::new(QUICK_WIDTH, height));
     }
 }
 
@@ -711,6 +733,12 @@ pub async fn handle_ipc(app: &AppHandle, channel: &str, args: &[Value]) -> Optio
             hide_quick(app);
             Some(Ok(Value::Null))
         }
+        "shell:setQuickHeight" => {
+            if let Some(height) = args.first().and_then(clamp_quick_height) {
+                set_quick_height(app, height);
+            }
+            Some(Ok(Value::Null))
+        }
         "shell:showMain" => {
             show_main(app);
             Some(Ok(Value::Null))
@@ -766,3 +794,27 @@ pub fn seed_from_store(app: &AppHandle, store: &std::collections::HashMap<String
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamp_quick_height_bounds() {
+        assert_eq!(clamp_quick_height(&json!(300)), Some(300.0));
+        assert_eq!(clamp_quick_height(&json!(300.5)), Some(300.5));
+        assert_eq!(clamp_quick_height(&json!(10)), Some(QUICK_MIN_HEIGHT));
+        assert_eq!(clamp_quick_height(&json!(-50)), Some(QUICK_MIN_HEIGHT));
+        assert_eq!(clamp_quick_height(&json!(5000)), Some(QUICK_MAX_HEIGHT));
+        assert_eq!(clamp_quick_height(&json!(112)), Some(112.0));
+        assert_eq!(clamp_quick_height(&json!(640)), Some(640.0));
+    }
+
+    #[test]
+    fn clamp_quick_height_ignores_non_numbers() {
+        assert_eq!(clamp_quick_height(&json!("300")), None);
+        assert_eq!(clamp_quick_height(&json!(null)), None);
+        assert_eq!(clamp_quick_height(&json!(true)), None);
+        assert_eq!(clamp_quick_height(&json!({ "h": 300 })), None);
+        assert_eq!(clamp_quick_height(&json!([300])), None);
+    }
+}

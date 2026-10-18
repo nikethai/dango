@@ -194,6 +194,10 @@ export interface Platform extends Storage {
   setKeepInTray?(enabled: boolean): Promise<void>
   setQuickWindowAlwaysOnTop?(enabled: boolean): Promise<void>
   showQuickWindow?(): Promise<void>
+  /** Hide the quick window (desktop shell only; absent on web/mobile). */
+  hideQuickWindow?(): Promise<void>
+  /** Resize the quick window to this height in logical px; the shell clamps to 112–640 and keeps the 620 px width. */
+  setQuickWindowHeight?(px: number): Promise<void>
   showMainWindow?(): Promise<void>
   openSessionInMain?(sessionId: string): Promise<void>
   captureScreenshotRegion?(): Promise<ScreenshotImagePayload | null>

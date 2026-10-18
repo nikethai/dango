@@ -645,6 +645,14 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.invoke('shell:showQuick')
   }
 
+  public hideQuickWindow(): Promise<void> {
+    return this.ipc.invoke('shell:hideQuick')
+  }
+
+  public setQuickWindowHeight(px: number): Promise<void> {
+    return this.ipc.invoke('shell:setQuickHeight', px)
+  }
+
   public async showMainWindow(): Promise<void> {
     return this.ipc.invoke('shell:showMain')
   }
