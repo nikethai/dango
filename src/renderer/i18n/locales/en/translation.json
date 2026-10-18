@@ -1367,6 +1367,8 @@
   "Unknown scope": "Unknown scope",
   "Saved: \"{{old}}\"": "Saved: \"{{old}}\"",
   "Dismissed \"{{text}}\"": "Dismissed \"{{text}}\"",
+  "Answer": "Answer",
+  "Done: \"{{text}}\"": "Done: \"{{text}}\"",
   "Approved \"{{text}}\" for {{scope}}": "Approved \"{{text}}\" for {{scope}}",
   "Added \"{{text}}\" to {{scope}}": "Added \"{{text}}\" to {{scope}}",
   "Saved the new wording": "Saved the new wording",
