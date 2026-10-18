@@ -105,8 +105,9 @@ describe('runScopeMigration', () => {
     const base = memoryStore({ myProjects: [{ id: 'everywhere', name: 'E', order: 0 }] })
     const store = {
       ...base,
-      removeData: async (key: string) => {
+      removeData: (key: string) => {
         delete base.data[key]
+        return Promise.resolve()
       },
     }
     await runScopeMigration(store)
