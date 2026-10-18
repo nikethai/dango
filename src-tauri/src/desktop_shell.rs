@@ -8,8 +8,8 @@ use std::sync::Mutex;
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, LogicalSize, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    tray::TrayIconBuilder,
+    AppHandle, Emitter, LogicalSize, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Wry,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
@@ -21,6 +21,38 @@ const QUICK_WIDTH: f64 = 620.0;
 const QUICK_INITIAL_HEIGHT: f64 = 132.0;
 const QUICK_MIN_HEIGHT: f64 = 112.0;
 const QUICK_MAX_HEIGHT: f64 = 640.0;
+/// Tray dropdown (MB1). English until the renderer's first `shell:setTrayStatus` push swaps in translations.
+const TRAY_STATUS_INITIAL: &str = "Nothing needs you";
+const TRAY_TOOLTIP_INITIAL: &str = "Dango · Nothing needs you";
+const TRAY_PAUSE_INITIAL: &str = "Pause background work";
+const TRAY_OPEN_REVIEW: &str = "Open Review";
+const TRAY_QUICK_CHAT: &str = "Quick Chat";
+const TRAY_OPEN_DANGO: &str = "Open Dango";
+const TRAY_QUIT: &str = "Quit";
+const OPEN_REVIEW_ACCELERATOR: &str = "CmdOrCtrl+1";
+/// Shown on the Quick Chat row until the stored shortcut config is applied.
+const QUICK_TOGGLE_DEFAULT_ACCELERATOR: &str = "CmdOrCtrl+Shift+Space";
+const REVIEW_PATH: &str = "/";
+
+/// Menu bar mood; the macOS template icon follows it, Windows/Linux keep the colour icon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrayMood {
+    Idle,
+    NeedsYou,
+    Paused,
+}
+
+/// Tray rows updated after creation (texts, accelerator) plus the mood the icon currently shows.
+#[derive(Clone)]
+pub struct TrayItems {
+    status: MenuItem<Wry>,
+    open_review: MenuItem<Wry>,
+    quick: MenuItem<Wry>,
+    pause: MenuItem<Wry>,
+    open_dango: MenuItem<Wry>,
+    quit: MenuItem<Wry>,
+    mood: TrayMood,
+}
 
 pub struct ShellState {
     pub keep_in_tray: Mutex<bool>,
@@ -32,6 +64,8 @@ pub struct ShellState {
     pub pending_screenshot_capture: Mutex<Option<Value>>,
     /// Whether the quick renderer has installed its shell event listeners.
     pub quick_renderer_ready: Mutex<bool>,
+    /// Set once the tray is built; `shell:setTrayStatus` and shortcut changes update these rows.
+    pub tray_items: Mutex<Option<TrayItems>>,
 }
 
 impl Default for ShellState {
@@ -43,6 +77,7 @@ impl Default for ShellState {
             pending_clipboard_capture: Mutex::new(None),
             pending_screenshot_capture: Mutex::new(None),
             quick_renderer_ready: Mutex::new(false),
+            tray_items: Mutex::new(None),
         }
     }
 }
@@ -203,6 +238,28 @@ fn normalize_accelerator(raw: &str) -> Option<String> {
     Some(mapped)
 }
 
+/// Accelerator shown on the tray's Quick Chat row: the configured `quickToggle`, or none when unset.
+fn quick_menu_accelerator(config: &Value) -> Option<String> {
+    config
+        .get("quickToggle")
+        .and_then(Value::as_str)
+        .and_then(normalize_accelerator)
+}
+
+fn set_quick_menu_accelerator(app: &AppHandle, accelerator: Option<String>) {
+    // Clone the row out so the lock is not held while muda dispatches to the main thread.
+    let quick = app.try_state::<ShellState>().and_then(|state| {
+        state
+            .tray_items
+            .lock()
+            .ok()
+            .and_then(|items| items.as_ref().map(|i| i.quick.clone()))
+    });
+    if let Some(quick) = quick {
+        let _ = quick.set_accelerator(accelerator);
+    }
+}
+
 pub fn apply_shortcut_config(app: &AppHandle, config_json: &str) -> Result<(), String> {
     let value: Value =
         serde_json::from_str(config_json).map_err(|err| format!("invalid shortcut config: {err}"))?;
@@ -324,6 +381,8 @@ pub fn apply_shortcut_config(app: &AppHandle, config_json: &str) -> Result<(), S
         }
     }
 
+    set_quick_menu_accelerator(app, quick_menu_accelerator(&value));
+
     Ok(())
 }
 
@@ -334,21 +393,37 @@ fn png_bytes_to_image(png: &[u8]) -> Result<Image<'static>, String> {
     Ok(Image::new_owned(rgba.into_raw(), w, h))
 }
 
-fn load_tray_icon() -> Result<(Image<'static>, bool), String> {
-    // macOS: monochrome cube outline template (matches dock app icon, adapts light/dark).
-    // Windows/Linux: full-color cube app icon.
+/// Maps the renderer's mood string (`TrayStatus.mood`) to a tray mood; anything unknown is idle.
+fn tray_mood(raw: &str) -> TrayMood {
+    match raw {
+        "needs-you" | "needs" => TrayMood::NeedsYou,
+        "paused" => TrayMood::Paused,
+        _ => TrayMood::Idle,
+    }
+}
+
+/// macOS menu bar template (black on transparent, 36 px drawn at 18 pt) for a mood.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn mood_template_png(mood: TrayMood) -> &'static [u8] {
+    match mood {
+        TrayMood::Idle => include_bytes!("../icons/tray/mascot-idle-template@2x.png"),
+        TrayMood::NeedsYou => include_bytes!("../icons/tray/mascot-needs-template@2x.png"),
+        TrayMood::Paused => include_bytes!("../icons/tray/mascot-paused-template@2x.png"),
+    }
+}
+
+fn load_tray_icon(mood: TrayMood) -> Result<(Image<'static>, bool), String> {
+    // macOS: monochrome mascot template for the mood (adapts to light/dark menu bars).
+    // Windows/Linux: full-colour app icon; the mood shows in the status row and tooltip only.
     #[cfg(target_os = "macos")]
     {
-        const CUBE_TMPL: &[u8] = include_bytes!("../icons/tray-cube-template-32.png");
-        // Prefer @2x-ish 64px if available for retina menubar
-        const CUBE_TMPL_2X: &[u8] = include_bytes!("../icons/tray-cube-template-64.png");
-        let img = png_bytes_to_image(CUBE_TMPL_2X)
-            .or_else(|_| png_bytes_to_image(CUBE_TMPL))
-            .map_err(|err| format!("tray cube template: {err}"))?;
+        let img = png_bytes_to_image(mood_template_png(mood))
+            .map_err(|err| format!("tray mascot template: {err}"))?;
         return Ok((img, true));
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = mood;
         const TRAY_COLOR: &[u8] = include_bytes!("../icons/tray-icon.png");
         const TRAY_32: &[u8] = include_bytes!("../icons/32x32.png");
         let img = png_bytes_to_image(TRAY_COLOR).or_else(|_| png_bytes_to_image(TRAY_32))?;
@@ -356,55 +431,146 @@ fn load_tray_icon() -> Result<(Image<'static>, bool), String> {
     }
 }
 
-/// Format accelerator for menu labels (show user-visible shortcuts).
-fn menu_accel_label(raw: &str) -> String {
-    if raw.is_empty() {
-        return String::new();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        return raw
-            .replace("CommandOrControl", "⌘")
-            .replace("CmdOrCtrl", "⌘")
-            .replace("Command", "⌘")
-            .replace("Control", "⌃")
-            .replace("Ctrl", "⌃")
-            .replace("Option", "⌥")
-            .replace("Alt", "⌥")
-            .replace("Shift", "⇧")
-            .replace('+', "");
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        raw.to_string()
+/// Menu text with `&` escaped, so muda does not read it as a mnemonic marker.
+fn menu_text(raw: &str) -> String {
+    raw.replace('&', "&&")
+}
+
+/// Labels for the translated rows; `None` keeps the current text.
+#[derive(Debug, Default, Clone, PartialEq)]
+struct TrayMenuLabels {
+    open_review: Option<String>,
+    quick_chat: Option<String>,
+    open_dango: Option<String>,
+    quit: Option<String>,
+}
+
+/// A `shell:setTrayStatus` payload, read field by field: missing, empty or mistyped fields are `None`.
+#[derive(Debug, Clone, PartialEq)]
+struct TrayStatusUpdate {
+    mood: TrayMood,
+    status_line: Option<String>,
+    pause_label: Option<String>,
+    tooltip: Option<String>,
+    menu: TrayMenuLabels,
+}
+
+fn non_empty_str(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_string)
+}
+
+/// Parses the renderer's `TrayStatus` JSON (`{ mood, statusLine, pauseLabel, tooltip, menu }`). Never fails.
+fn parse_tray_status(raw: &Value) -> TrayStatusUpdate {
+    let menu = raw.get("menu");
+    TrayStatusUpdate {
+        mood: tray_mood(raw.get("mood").and_then(Value::as_str).unwrap_or("")),
+        status_line: non_empty_str(raw.get("statusLine")),
+        pause_label: non_empty_str(raw.get("pauseLabel")),
+        tooltip: non_empty_str(raw.get("tooltip")),
+        menu: TrayMenuLabels {
+            open_review: non_empty_str(menu.and_then(|m| m.get("openReview"))),
+            quick_chat: non_empty_str(menu.and_then(|m| m.get("quickChat"))),
+            open_dango: non_empty_str(menu.and_then(|m| m.get("openDango"))),
+            quit: non_empty_str(menu.and_then(|m| m.get("quit"))),
+        },
     }
 }
 
+fn set_item_text(item: &MenuItem<Wry>, text: &Option<String>) {
+    if let Some(text) = text {
+        let _ = item.set_text(menu_text(text));
+    }
+}
+
+/// Applies a status push: row texts and tooltip everywhere, the mood icon on macOS (only when it changes).
+fn apply_tray_status(app: &AppHandle, update: &TrayStatusUpdate) {
+    let Some(state) = app.try_state::<ShellState>() else {
+        return;
+    };
+    // Hold the lock only to read and record the mood; muda setters dispatch to the main thread.
+    let (items, mood_changed) = {
+        let Ok(mut guard) = state.tray_items.lock() else {
+            return;
+        };
+        let Some(items) = guard.as_mut() else {
+            return;
+        };
+        let changed = items.mood != update.mood;
+        items.mood = update.mood;
+        (items.clone(), changed)
+    };
+
+    set_item_text(&items.status, &update.status_line);
+    set_item_text(&items.pause, &update.pause_label);
+    set_item_text(&items.open_review, &update.menu.open_review);
+    set_item_text(&items.quick, &update.menu.quick_chat);
+    set_item_text(&items.open_dango, &update.menu.open_dango);
+    set_item_text(&items.quit, &update.menu.quit);
+
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    if let Some(tooltip) = &update.tooltip {
+        let _ = tray.set_tooltip(Some(tooltip));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if mood_changed {
+            if let Ok((icon, _)) = load_tray_icon(update.mood) {
+                let _ = tray.set_icon(Some(icon));
+                // Re-assert the template flag for the new image (macOS)
+                let _ = tray.set_icon_as_template(true);
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = mood_changed;
+}
+
 pub fn setup_tray(app: &AppHandle) -> Result<(), String> {
-    // Read configured shortcuts if available for menu labels
-    // Menu labels show default accelerators (user can change in Settings → Hotkeys)
-    let (quick_acc, shot_acc) = (String::from("Alt+`"), String::from("Alt+Shift+S"));
+    let item = |id: &str, text: &str, enabled: bool, accelerator: Option<&str>| {
+        MenuItem::with_id(app, id, text, enabled, accelerator).map_err(|e| e.to_string())
+    };
+    let separator = || PredefinedMenuItem::separator(app).map_err(|e| e.to_string());
 
-    let quick_label = format!("Quick Chat\t{}", menu_accel_label(&quick_acc));
-    let shot_label = format!("Screenshot to Chat\t{}", menu_accel_label(&shot_acc));
+    let status_i = item("status", TRAY_STATUS_INITIAL, false, None)?;
+    let review_i = item(
+        "open_review",
+        TRAY_OPEN_REVIEW,
+        true,
+        Some(OPEN_REVIEW_ACCELERATOR),
+    )?;
+    let quick_i = item(
+        "show_quick",
+        TRAY_QUICK_CHAT,
+        true,
+        Some(QUICK_TOGGLE_DEFAULT_ACCELERATOR),
+    )?;
+    let pause_i = item("pause_toggle", TRAY_PAUSE_INITIAL, true, None)?;
+    let main_i = item("show_main", TRAY_OPEN_DANGO, true, None)?;
+    let quit_i = item("quit", TRAY_QUIT, true, None)?;
+    let (sep_status, sep_quick, sep_pause) = (separator()?, separator()?, separator()?);
 
-    let show_i = MenuItem::with_id(app, "show_main", "Open Full Window", true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let quick_i = MenuItem::with_id(app, "show_quick", &quick_label, true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let shot_i = MenuItem::with_id(app, "screenshot", &shot_label, true, None::<&str>)
-        .map_err(|e| e.to_string())?;
-    let clip_i =
-        MenuItem::with_id(app, "clipboard_image", "Attach Clipboard Image", true, None::<&str>)
-            .map_err(|e| e.to_string())?;
-    let sep = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
-    let quit_i =
-        MenuItem::with_id(app, "quit", "Quit Dango", true, None::<&str>).map_err(|e| e.to_string())?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &status_i,
+            &sep_status,
+            &review_i,
+            &quick_i,
+            &sep_quick,
+            &pause_i,
+            &sep_pause,
+            &main_i,
+            &quit_i,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
 
-    let menu = Menu::with_items(app, &[&quick_i, &show_i, &shot_i, &clip_i, &sep, &quit_i])
-        .map_err(|e| e.to_string())?;
-
-    let (icon, is_template) = load_tray_icon().or_else(|_| {
+    let (icon, is_template) = load_tray_icon(TrayMood::Idle).or_else(|_| {
         app.default_window_icon()
             .cloned()
             .map(|i| (i, false))
@@ -414,52 +580,23 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), String> {
     let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
         .menu(&menu)
-        .tooltip("Dango — Alt+` quick chat")
-        .show_menu_on_left_click(false)
+        .tooltip(TRAY_TOOLTIP_INITIAL)
+        // Left click opens the dropdown (MB1); Linux always shows the menu.
+        .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "show_main" => show_main(app),
+            "open_review" => {
+                show_main(app);
+                let _ = app.emit_to(MAIN_LABEL, "navigate-to", REVIEW_PATH);
+            }
             "show_quick" => {
                 let _ = show_quick(app);
             }
-            "screenshot" => {
-                let app2 = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    match capture_region_image().await {
-                        Ok(payload) => {
-                            let _ = show_quick(&app2);
-                            let _ = app2.emit("shell:screenshot-captured", payload);
-                        }
-                        Err(err) => {
-                            let _ = app2.emit("shell:screenshot-error", json!({ "message": err }));
-                            let _ = show_quick(&app2);
-                        }
-                    }
-                });
+            "pause_toggle" => {
+                let _ = app.emit_to(MAIN_LABEL, "shell:tray-pause-toggle", json!({}));
             }
-            "clipboard_image" => {
-                match read_clipboard_image_payload() {
-                    Ok(payload) => {
-                        let _ = show_quick(app);
-                        let _ = app.emit("shell:screenshot-captured", payload);
-                    }
-                    Err(err) => {
-                        let _ = app.emit("shell:screenshot-error", json!({ "message": err }));
-                    }
-                }
-            }
+            "show_main" => show_main(app),
             "quit" => quit_app(app),
             _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                let app = tray.app_handle();
-                let _ = toggle_quick(app);
-            }
         })
         .build(app)
         .map_err(|e| e.to_string())?;
@@ -473,8 +610,21 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), String> {
     {
         let _ = is_template;
     }
-
     let _ = tray;
+
+    if let Some(state) = app.try_state::<ShellState>() {
+        if let Ok(mut items) = state.tray_items.lock() {
+            *items = Some(TrayItems {
+                status: status_i,
+                open_review: review_i,
+                quick: quick_i,
+                pause: pause_i,
+                open_dango: main_i,
+                quit: quit_i,
+                mood: TrayMood::Idle,
+            });
+        }
+    }
     Ok(())
 }
 
@@ -743,6 +893,11 @@ pub async fn handle_ipc(app: &AppHandle, channel: &str, args: &[Value]) -> Optio
             show_main(app);
             Some(Ok(Value::Null))
         }
+        "shell:setTrayStatus" => {
+            let update = parse_tray_status(args.first().unwrap_or(&Value::Null));
+            apply_tray_status(app, &update);
+            Some(Ok(Value::Null))
+        }
         "shell:openSessionInMain" => {
             let session_id = args
                 .first()
@@ -816,5 +971,117 @@ mod tests {
         assert_eq!(clamp_quick_height(&json!(true)), None);
         assert_eq!(clamp_quick_height(&json!({ "h": 300 })), None);
         assert_eq!(clamp_quick_height(&json!([300])), None);
+    }
+
+    #[test]
+    fn tray_mood_maps_known_moods_and_defaults_to_idle() {
+        assert_eq!(tray_mood("idle"), TrayMood::Idle);
+        assert_eq!(tray_mood("needs-you"), TrayMood::NeedsYou);
+        assert_eq!(tray_mood("needs"), TrayMood::NeedsYou);
+        assert_eq!(tray_mood("paused"), TrayMood::Paused);
+        assert_eq!(tray_mood(""), TrayMood::Idle);
+        assert_eq!(tray_mood("Paused"), TrayMood::Idle);
+        assert_eq!(tray_mood("asleep"), TrayMood::Idle);
+    }
+
+    #[test]
+    fn parse_tray_status_reads_full_payload() {
+        let update = parse_tray_status(&json!({
+            "mood": "paused",
+            "statusLine": "Paused · 2 things need you",
+            "pauseLabel": "Resume background work",
+            "tooltip": "Dango · Paused · 2 things need you",
+            "menu": { "openReview": "Open Review", "quickChat": "Quick Chat", "openDango": "Open Dango", "quit": "Quit" }
+        }));
+        assert_eq!(update.mood, TrayMood::Paused);
+        assert_eq!(
+            update.status_line.as_deref(),
+            Some("Paused · 2 things need you")
+        );
+        assert_eq!(
+            update.pause_label.as_deref(),
+            Some("Resume background work")
+        );
+        assert_eq!(
+            update.tooltip.as_deref(),
+            Some("Dango · Paused · 2 things need you")
+        );
+        assert_eq!(update.menu.open_review.as_deref(), Some("Open Review"));
+        assert_eq!(update.menu.quick_chat.as_deref(), Some("Quick Chat"));
+        assert_eq!(update.menu.open_dango.as_deref(), Some("Open Dango"));
+        assert_eq!(update.menu.quit.as_deref(), Some("Quit"));
+    }
+
+    #[test]
+    fn parse_tray_status_tolerates_bad_json() {
+        for raw in [
+            json!(null),
+            json!("idle"),
+            json!(42),
+            json!([1, 2]),
+            json!({}),
+        ] {
+            let update = parse_tray_status(&raw);
+            assert_eq!(update.mood, TrayMood::Idle);
+            assert_eq!(update.status_line, None);
+            assert_eq!(update.pause_label, None);
+            assert_eq!(update.tooltip, None);
+            assert_eq!(update.menu, TrayMenuLabels::default());
+        }
+        let update = parse_tray_status(&json!({
+            "mood": 3,
+            "statusLine": "",
+            "pauseLabel": "  ",
+            "tooltip": false,
+            "menu": "Open Review"
+        }));
+        assert_eq!(update.mood, TrayMood::Idle);
+        assert_eq!(update.status_line, None);
+        assert_eq!(update.pause_label, None);
+        assert_eq!(update.tooltip, None);
+        assert_eq!(update.menu, TrayMenuLabels::default());
+        let partial = parse_tray_status(
+            &json!({ "mood": "needs-you", "menu": { "quit": "Beenden", "openDango": 1 } }),
+        );
+        assert_eq!(partial.mood, TrayMood::NeedsYou);
+        assert_eq!(partial.menu.quit.as_deref(), Some("Beenden"));
+        assert_eq!(partial.menu.open_dango, None);
+    }
+
+    #[test]
+    fn menu_text_escapes_mnemonic_marker() {
+        assert_eq!(menu_text("Nothing needs you"), "Nothing needs you");
+        assert_eq!(menu_text("Q&A needs you"), "Q&&A needs you");
+    }
+
+    #[test]
+    fn quick_menu_accelerator_follows_quick_toggle() {
+        assert_eq!(
+            quick_menu_accelerator(&json!({ "quickToggle": "CommandOrControl+Shift+Space" }))
+                .as_deref(),
+            Some("CmdOrCtrl+Shift+Space")
+        );
+        assert_eq!(
+            quick_menu_accelerator(&json!({ "quickToggle": "Alt+`" })).as_deref(),
+            Some("Alt+`")
+        );
+        assert_eq!(quick_menu_accelerator(&json!({ "quickToggle": "" })), None);
+        assert_eq!(
+            quick_menu_accelerator(&json!({ "quickToggle": null })),
+            None
+        );
+        assert_eq!(quick_menu_accelerator(&json!({})), None);
+    }
+
+    #[test]
+    fn mood_templates_decode_at_36_px() {
+        for mood in [TrayMood::Idle, TrayMood::NeedsYou, TrayMood::Paused] {
+            let image = png_bytes_to_image(mood_template_png(mood)).expect("template decodes");
+            assert_eq!((image.width(), image.height()), (36, 36));
+        }
+        assert_ne!(
+            mood_template_png(TrayMood::Idle),
+            mood_template_png(TrayMood::Paused)
+        );
     }
 }

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+  <!-- Menu bar template, needs you: filled Mascot BODY with the wide −7° eyes cut out (even-odd). Black on transparent only. -->
+  <path d="M2 21.67C2 10.33 9.33 3.67 18 3.67S34 10.33 34 21.67C34 29 28 32.33 18 32.33S2 29 2 21.67Z" fill="none" stroke="#000" stroke-width="3" stroke-linejoin="round"/>
+  <path fill="#000" fill-rule="evenodd" d="M2 21.67C2 10.33 9.33 3.67 18 3.67S34 10.33 34 21.67C34 29 28 32.33 18 32.33S2 29 2 21.67Z M13.55 16.66A2.5 3.7 -7 1 0 14.45 24A2.5 3.7 -7 1 0 13.55 16.66Z M22.22 16A2.5 3.7 -7 1 0 23.12 23.34A2.5 3.7 -7 1 0 22.22 16Z"/>
+</svg>
