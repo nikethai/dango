@@ -23,3 +23,14 @@
   flex: 1 0 100%;
   color: var(--dango-muted);
 }
+
+/* Finished line: the chevron follows the title text. */
+.dg-think__chevron {
+  margin-left: var(--dango-space-1);
+  vertical-align: text-bottom;
+}
+
+/* Reduced motion: the mascot's visible state word would repeat the title ("Thinking Thinking"). */
+.dg-think .dango-mascot__state {
+  display: none;
+}

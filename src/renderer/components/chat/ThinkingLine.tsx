@@ -1,5 +1,5 @@
 import { ChevronRight } from 'lucide-react'
-import { type JSX, type MouseEvent, useEffect, useRef, useState } from 'react'
+import { type JSX, type MouseEvent, type SyntheticEvent, useEffect, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Mascot } from '@/components/brand/Mascot'
 import Markdown from '@/components/Markdown'
@@ -23,7 +23,15 @@ export type ThinkingLineProps = {
   onStop?: () => void
 }
 
+/** Delay before the status region gets its first words: a region that exists empty first is announced reliably. */
+export const THINKING_STATUS_FILL_MS = 150
+
 const withEllipsis = (summary: string) => (summary.endsWith('…') ? summary : `${summary}…`)
+
+/** Renders text from a prop so Trans cannot replace or parse it. */
+function LiteralText({ text }: { text: string }) {
+  return <>{text}</>
+}
 
 /**
  * The thinking line: live ("Thinking · {summary}…", timer, Stop) while the model works, then a quiet
@@ -47,9 +55,21 @@ export function ThinkingLine({
     if (!userToggledRef.current) setOpen(defaultOpen)
   }, [defaultOpen])
 
-  const elapsed = useThinkingTimer(startedAt, live)
+  // The live origin is captured once: a persisted write can bump the message timestamp mid-wait.
+  const originRef = useRef<number | undefined>(undefined)
+  if (live && originRef.current === undefined && startedAt) originRef.current = startedAt
+  const elapsed = useThinkingTimer(originRef.current ?? startedAt, live)
   const summary = rollingSummary(text) || (live ? (toolHint?.trim() ?? '') : '')
-  const announced = useThrottledValue(live ? summary : '', THINKING_ANNOUNCE_MS)
+  const stage = live ? thinkingStage(elapsed) : null
+  const stageTitle = stage === 'thinking' ? t('Thinking') : t('Still thinking')
+
+  // Screen readers hear the summary (or the stage on a plain wait), at most every 5 s.
+  const announced = useThrottledValue(live ? summary || stageTitle : '', THINKING_ANNOUNCE_MS)
+  const [statusReady, setStatusReady] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setStatusReady(true), THINKING_STATUS_FILL_MS)
+    return () => clearTimeout(timer)
+  }, [])
 
   if (!live && !text.trim()) return null
 
@@ -59,21 +79,26 @@ export function ThinkingLine({
     setOpen((value) => !value)
   }
 
-  const stage = live ? thinkingStage(elapsed) : null
-  const stageTitle = stage === 'thinking' ? t('Thinking') : t('Still thinking')
+  // Native toggles (find-in-page auto-expand) change the element without a click; follow them.
+  const onToggle = (e: SyntheticEvent<HTMLDetailsElement>) => {
+    const nativeOpen = e.currentTarget.open
+    if (nativeOpen !== open) setOpen(nativeOpen)
+  }
 
   const details = (
-    <details className="dg-think" open={open}>
+    <details className="dg-think" open={open} onToggle={onToggle}>
       <summary onClick={onSummaryClick}>
         {live && showMascot ? <Mascot state="thinking" size={16} /> : null}
         {live ? (
           <>
             <span className="dg-think__title">
               {summary ? (
+                // Model text never passes through i18next: Trans would parse "<0>" and "a < b" as markup and
+                // re-interpolate "{{title}}". The <1> slot renders the summary from a prop, literally.
                 <Trans
-                  i18nKey="<0>{{title}}</0> · {{summary}}"
-                  values={{ title: stageTitle, summary: withEllipsis(summary) }}
-                  components={[<strong key="title" />]}
+                  i18nKey="<0>{{title}}</0> · <1>{{summary}}</1>"
+                  values={{ title: stageTitle, summary: '' }}
+                  components={[<strong key="title" />, <LiteralText key="summary" text={withEllipsis(summary)} />]}
                 />
               ) : (
                 <strong>{stageTitle}</strong>
@@ -87,14 +112,12 @@ export function ThinkingLine({
             ) : null}
           </>
         ) : (
-          <>
-            <span className="dg-think__title">
-              {durationMs && durationMs > 0
-                ? t('Thought for {{duration}}', { duration: formatDangoDuration(durationMs) })
-                : t('Thought')}
-            </span>
-            <ChevronRight size={15} strokeWidth={1.8} aria-hidden="true" />
-          </>
+          <span className="dg-think__title">
+            {durationMs && durationMs > 0
+              ? t('Thought for {{duration}}', { duration: formatDangoDuration(durationMs) })
+              : t('Thought')}
+            <ChevronRight className="dg-think__chevron" size={15} strokeWidth={1.8} aria-hidden="true" />
+          </span>
         )}
       </summary>
       {open && text.trim() ? (
@@ -117,7 +140,7 @@ export function ThinkingLine({
       ) : null}
       {live ? (
         <div role="status" className="sr-only">
-          {announced}
+          {statusReady ? announced : ''}
         </div>
       ) : null}
     </div>

@@ -297,9 +297,9 @@ const _Message: FC<Props> = (props) => {
   }, [messageText])
 
   const onStopGeneration = useCallback(() => {
-    void import('@/stores/session/stop-generation').then(({ stopSessionGeneration }) =>
-      stopSessionGeneration(sessionId, msg)
-    )
+    void import('@/stores/session/stop-generation')
+      .then(({ stopSessionGeneration }) => stopSessionGeneration(sessionId, msg))
+      .catch((error) => console.error('Failed to stop generation', error))
   }, [sessionId, msg])
 
   const onReport = useCallback(async () => {

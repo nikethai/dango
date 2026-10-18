@@ -30,7 +30,6 @@ import type { SearchResultItem } from '@/packages/web-search'
 import { ScalableIcon } from '../common/ScalableIcon'
 import { ImageInStorage } from '../Image'
 
-
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 const getSafeExternalHref = (raw: string): string | null => {
