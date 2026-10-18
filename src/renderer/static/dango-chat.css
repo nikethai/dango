@@ -34,3 +34,30 @@
 .dg-think .dango-mascot__state {
   display: none;
 }
+
+/* Tool block (Task 3): the finished thought line and the tool block stack with a small gap. */
+.dg-think-line + .dg-tool-block {
+  margin-top: var(--dango-space-2);
+}
+.dg-tool-block .dg-think__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-1);
+}
+/* Rows are buttons: drop the browser chrome, keep dg-tool's mono line. */
+button.dg-tool {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dg-tool__target {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

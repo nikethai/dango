@@ -720,15 +720,14 @@ const _Message: FC<Props> = (props) => {
                       <div key={`thinking-group-${msg.id}`} className="msg-thinking-slot">
                         <Suspense
                           fallback={
-                            // Quiet Grok line only — dock owns activity chrome.
-                            group.workActive || msg.generating ? (
-                              <div className="msg-worked is-live is-settled" aria-hidden>
-                                <div className="msg-worked-row">
-                                  <span className="msg-worked-toggle">
-                                    <span className="msg-worked-label">{t('Thinking…')}</span>
-                                  </span>
-                                </div>
-                              </div>
+                            group.workActive ? (
+                              <ThinkingLine
+                                live
+                                startedAt={msg.timestamp}
+                                text=""
+                                defaultOpen={thinkingDefaultOpen}
+                                onStop={onStopGeneration}
+                              />
                             ) : null
                           }
                         >
@@ -736,7 +735,10 @@ const _Message: FC<Props> = (props) => {
                             message={msg}
                             parts={group.parts}
                             monologueTexts={group.monologueTexts}
-                            isLastGroup={group.workActive || Boolean(msg.generating)}
+                            isLastGroup={group.workActive}
+                            defaultOpen={thinkingDefaultOpen}
+                            showMascot
+                            onStop={onStopGeneration}
                           />
                         </Suspense>
                       </div>
