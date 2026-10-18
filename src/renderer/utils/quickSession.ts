@@ -1,8 +1,9 @@
 export const QUICK_SESSION_REUSE_WINDOW_MS = 3 * 60 * 1000
 
 export type QuickSessionSnapshot = {
-  sessionId: string
+  sessionId: string | null
   lastOpenedAt: number
+  lastScopeId: string | null
 }
 
 export function resolveQuickSessionId(
@@ -35,11 +36,16 @@ export function readQuickSessionSnapshot(): QuickSessionSnapshot | null {
   try {
     const raw = localStorage.getItem(QUICK_SESSION_STORAGE_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<QuickSessionSnapshot>
-    if (typeof parsed.sessionId !== 'string' || typeof parsed.lastOpenedAt !== 'number') {
-      return null
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+    const record = parsed as Record<string, unknown>
+    // Tolerant reader: older snapshots lack lastScopeId; wrong types fall back to defaults.
+    return {
+      sessionId: typeof record.sessionId === 'string' && record.sessionId ? record.sessionId : null,
+      lastOpenedAt:
+        typeof record.lastOpenedAt === 'number' && Number.isFinite(record.lastOpenedAt) ? record.lastOpenedAt : 0,
+      lastScopeId: typeof record.lastScopeId === 'string' && record.lastScopeId ? record.lastScopeId : null,
     }
-    return { sessionId: parsed.sessionId, lastOpenedAt: parsed.lastOpenedAt }
   } catch {
     return null
   }

@@ -94,14 +94,14 @@ function QuickChatPage() {
       if (target) {
         setSessionId(target)
         setCachedSessionId(target)
-        writeQuickSessionSnapshot({ sessionId: target, lastOpenedAt: Date.now() })
+        writeQuickSessionSnapshot({ sessionId: target, lastOpenedAt: Date.now(), lastScopeId: snapshot?.lastScopeId ?? null })
         return
       }
 
       const created = await createSession({ ...initEmptyChatSession() })
       setSessionId(created.id)
       setCachedSessionId(created.id)
-      writeQuickSessionSnapshot({ sessionId: created.id, lastOpenedAt: Date.now() })
+      writeQuickSessionSnapshot({ sessionId: created.id, lastOpenedAt: Date.now(), lastScopeId: snapshot?.lastScopeId ?? null })
     })()
 
     loadingQuickSessionRef.current = loadPromise
