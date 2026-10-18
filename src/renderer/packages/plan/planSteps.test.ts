@@ -1,7 +1,7 @@
 import type { MessagePlanPart } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import type { Task } from '@/stores/taskStore'
-import { parsePlanSteps, planCardState, planStepViews, sortTasksForDisplay } from './planSteps'
+import { parsePlanSteps, planCardState, planRunTasks, planStepViews, sortTasksForDisplay } from './planSteps'
 
 function task(partial: Partial<Task> & Pick<Task, 'id' | 'status'>): Task {
   return {
@@ -85,6 +85,28 @@ describe('planStepViews', () => {
       { title: 'Find', status: 'pending' },
       { title: 'Update', status: 'pending' },
     ])
+  })
+})
+
+describe('planRunTasks', () => {
+  const tasks = [
+    task({ id: 'old', status: 'done', createdAt: 50 }),
+    task({ id: 'other', status: 'pending', createdAt: 150, sessionId: 's2' }),
+    task({ id: 'new', status: 'in-progress', createdAt: 150 }),
+  ]
+  it("keeps this session's tasks created since the run started", () => {
+    expect(planRunTasks(tasks, 's1', 100).map((t) => t.id)).toEqual(['new'])
+  })
+  it('a done task from before startedAt is excluded', () => {
+    expect(planRunTasks(tasks, 's1', 100).some((t) => t.id === 'old')).toBe(false)
+  })
+  it('without startedAt keeps every task of the session', () => {
+    expect(planRunTasks(tasks, 's1', undefined).map((t) => t.id)).toEqual(['old', 'new'])
+  })
+  it('a run that creates no tasks falls back to the parsed steps', () => {
+    const run = planRunTasks(tasks, 's1', 1_000)
+    expect(run).toEqual([])
+    expect(planStepViews('1. Find\n2. Log', run).map((v) => v.status)).toEqual(['pending', 'pending'])
   })
 })
 

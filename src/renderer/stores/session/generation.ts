@@ -69,7 +69,15 @@ import {
 } from './generation-cancel'
 import { messageQueueStore } from './messageQueue'
 import { insertMessageAfter, modifyMessage, submitNewUserMessage } from './messages'
-import { finishExecutedPlan, nextPlanVersion, recordFinishedPlan } from './plan-lifecycle'
+import {
+  canResumePlan,
+  finishExecutedPlan,
+  nextPlanVersion,
+  planResumePrompt,
+  recordFinishedPlan,
+  resumedRunParts,
+  withResumedParts,
+} from './plan-lifecycle'
 import { clearSessionGenerationLive, markSessionGenerationLive } from './session-live-generation'
 import { getSessionWebBrowsing } from './session-web-browsing'
 import { buildVisibleAnswerContinuePrompt, mergeContinuedContentParts } from './tool-only-continue'
@@ -164,6 +172,39 @@ export async function approveAndExecutePlan(sessionId: string, messageId: string
       throw new Error('The approved plan could not be resumed.')
     }
     await generate(sessionId, message, { operationType: 'send_message', prefetchedSession: session })
+  } finally {
+    planDecisionInFlight.delete(key)
+  }
+}
+
+/**
+ * Continue on a stopped plan: the same plan message runs again in the execution phase, keeping the stopped run's visible
+ * work, so the card goes running → finished (or stopped again) and the finish and Change rules apply to this plan.
+ */
+export async function resumeStoppedPlan(sessionId: string, messageId: string) {
+  const key = `${sessionId}:${messageId}`
+  if (planDecisionInFlight.has(key)) return
+  planDecisionInFlight.add(key)
+  try {
+    const session = await chatStore.getSession(sessionId)
+    const message = session ? getMessageFromSession(session, messageId) : null
+    if (!session || !message || message.generating || !canResumePlan(getPlanPart(message) ?? undefined)) {
+      throw new Error('This plan can no longer be continued.')
+    }
+    // The execution phase (and keeping the plan part) needs plan mode in an agent chat, as when the plan was approved.
+    const settings = await chatStore.getSessionSettings(sessionId)
+    if (!session.agentMode || !settings?.planMode) {
+      throw new Error('Turn on plan mode to continue this plan.')
+    }
+    await chatStore.updateSession(sessionId, { planPhase: 'executing' })
+    const fresh = (await chatStore.getSession(sessionId)) ?? session
+    const target = getMessageFromSession(fresh, messageId) ?? message
+    await generate(sessionId, target, {
+      operationType: 'send_message',
+      prefetchedSession: fresh,
+      prefetchedSettings: settings,
+      resumePlanRun: true,
+    })
   } finally {
     planDecisionInFlight.delete(key)
   }
@@ -551,6 +592,8 @@ export async function generate(
     participantDirectory?: string
     /** Skip processing message queue after this turn (intermediate multi-agent turns) */
     skipQueuedMessages?: boolean
+    /** Continue a stopped plan run in place: keep its visible work and tell the model where it stopped. */
+    resumePlanRun?: boolean
   }
 ) {
   // Process the send-queue unless multi-agent intermediate turns opt out, or plan mode
@@ -929,6 +972,15 @@ export async function generate(
           promptMsgs.unshift(planInjection)
         }
 
+        // Continue on a stopped plan: the stopped run's work stays on screen, and the model sees it and where it stopped.
+        const resumedParts =
+          options?.resumePlanRun && isExecutionPhase && canResumePlan(existingPlanPart)
+            ? resumedRunParts(targetMsg.contentParts)
+            : []
+        if (resumedParts.length > 0) {
+          promptMsgs.push({ ...targetMsg, contentParts: resumedParts }, createMessage('user', planResumePrompt()))
+        }
+
         const modifyMessageCache: OnResultChangeWithCancel = async (updated) => {
           if (updated.tokenSpeed !== undefined) {
             lastTokenSpeed = updated.tokenSpeed
@@ -1125,7 +1177,10 @@ export async function generate(
           knowledgeScopeId: getEffectiveProjectId(session) ?? null,
           messages: promptMsgs,
           sessionSettings: effectiveSettings,
-          onResultChangeWithCancel: modifyMessageCache,
+          onResultChangeWithCancel:
+            resumedParts.length > 0
+              ? (updated) => modifyMessageCache(withResumedParts(resumedParts, updated))
+              : modifyMessageCache,
           onStatusChange: (status) => {
             targetMsg = {
               ...targetMsg,

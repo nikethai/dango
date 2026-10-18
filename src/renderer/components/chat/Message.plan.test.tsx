@@ -54,6 +54,7 @@ vi.mock('@/stores/sessionActions', () => ({
   rejectPlan: vi.fn(),
   removeMessage: vi.fn(),
   requestPlanChanges: vi.fn(),
+  resumeStoppedPlan: vi.fn(),
   submitNewUserMessage: vi.fn(),
 }))
 vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))

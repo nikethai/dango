@@ -6,22 +6,29 @@ import { useTranslation } from 'react-i18next'
 import { Mascot } from '@/components/brand/Mascot'
 import Markdown from '@/components/Markdown'
 import { formatDangoDuration, useThinkingTimer } from '@/hooks/useThinkingTimer'
-import { continueActiveSessionTasks } from '@/stores/session/messages'
+import {
+  type PlanStepView,
+  parsePlanSteps,
+  planCardState,
+  planRunTasks,
+  planStepViews,
+} from '@/packages/plan/planSteps'
 import { type Task, taskStore, useTaskStore } from '@/stores/taskStore'
 import { isEditableTarget } from '@/utils/isEditableTarget'
-import { type PlanStepView, parsePlanSteps, planCardState, planStepViews } from './planSteps'
 
 export type PlanCardProps = {
   plan: MessagePlanPart
   sessionId: string
   generating: boolean
   touchesFiles: boolean
-  /** False for an older plan in the chat: its card never shows the session's (current run's) tasks. Default true. */
+  /** The chat's latest plan: only its card reads the session's tasks for progress. Default false (MessageList opts in). */
   latestPlan?: boolean
   onRun(): Promise<void>
   onRequestChanges(feedback: string): Promise<void>
   onReject(): Promise<void>
   onStop(): void
+  /** Continue a stopped run of this plan. */
+  onContinue(): Promise<void>
 }
 
 type Action = 'run' | 'request-changes' | 'reject' | 'continue'
@@ -123,7 +130,9 @@ function ProposedPlan({
       e.preventDefault()
       setShowForm(true)
     } else if (e.key === 'Escape') {
+      // Escape stays with the card: window-level Escape handlers (the workspace panel's) ignore defaultPrevented.
       e.preventDefault()
+      e.stopPropagation()
       if (showForm) closeForm()
       else reject()
     }
@@ -205,10 +214,10 @@ function LivePlan({
   plan,
   steps,
   running,
-  sessionId,
   touchesFiles,
   onStop,
-}: Pick<PlanCardProps, 'plan' | 'sessionId' | 'touchesFiles' | 'onStop'> & {
+  onContinue,
+}: Pick<PlanCardProps, 'plan' | 'touchesFiles' | 'onStop' | 'onContinue'> & {
   steps: PlanStepView[]
   running: boolean
 }) {
@@ -224,7 +233,11 @@ function LivePlan({
     ? total > 0
       ? t('Running plan · step {{current}} of {{total}}', { current, total })
       : t('Running plan')
-    : t('Plan stopped · {{done}} of {{total}} done', { done, total })
+    : total > 0
+      ? t('Plan stopped · {{done}} of {{total}} done', { done, total })
+      : t('Plan stopped')
+  // Every step done: nothing is left to continue.
+  const canContinue = !(total > 0 && done === total)
 
   return (
     <section className="dg-plan" aria-label={title}>
@@ -239,16 +252,16 @@ function LivePlan({
           <button type="button" className="dg-btn dg-btn--ghost" onClick={onStop}>
             {t('Stop')}
           </button>
-        ) : (
+        ) : canContinue ? (
           <button
             type="button"
             className="dg-btn"
             disabled={pending !== null}
-            onClick={() => void run('continue', () => continueActiveSessionTasks(sessionId))}
+            onClick={() => void run('continue', onContinue)}
           >
             {t('Continue')}
           </button>
-        )}
+        ) : null}
         {running && touchesFiles ? (
           <span className="dg-plan__note">{t('Edits are staged and arrive in Review as one Change.')}</span>
         ) : null}
@@ -287,11 +300,12 @@ export default function PlanCard({
   sessionId,
   generating,
   touchesFiles,
-  latestPlan = true,
+  latestPlan = false,
   onRun,
   onRequestChanges,
   onReject,
   onStop,
+  onContinue,
 }: PlanCardProps): JSX.Element {
   const { t } = useTranslation()
   const state = planCardState(plan, generating)
@@ -299,8 +313,8 @@ export default function PlanCard({
   const readsTasks = latestPlan && (state === 'running' || state === 'stopped')
   const allTasks = useTaskStore((s) => s.tasks)
   const tasks = useMemo(
-    () => (readsTasks ? allTasks.filter((task) => task.sessionId === sessionId) : NO_TASKS),
-    [readsTasks, allTasks, sessionId]
+    () => (readsTasks ? planRunTasks(allTasks, sessionId, plan.startedAt) : NO_TASKS),
+    [readsTasks, allTasks, sessionId, plan.startedAt]
   )
 
   useEffect(() => {
@@ -328,9 +342,9 @@ export default function PlanCard({
           plan={plan}
           steps={steps}
           running={state === 'running'}
-          sessionId={sessionId}
           touchesFiles={touchesFiles}
           onStop={onStop}
+          onContinue={onContinue}
         />
       )
     default:

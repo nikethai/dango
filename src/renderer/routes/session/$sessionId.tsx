@@ -334,12 +334,7 @@ function RouteComponent() {
 
           <div className="session-dock">
             <div className="session-dock-pad">
-              <ChatDockStack
-                key={currentSession.id}
-                sessionId={currentSession.id}
-                generating={isGenerating}
-                liveMessage={lastGeneratingMessage}
-              >
+              <ChatDockStack key={currentSession.id} generating={isGenerating} liveMessage={lastGeneratingMessage}>
                 <BrowserAgentPanel
                   sessionId={currentSession.id}
                   armed={Boolean(currentSession.browserArmed)}

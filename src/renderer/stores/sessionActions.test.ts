@@ -15,11 +15,20 @@ const { uuidQueue, uuidv4Mock } = vi.hoisted(() => {
   return { uuidQueue: queue, uuidv4Mock: mock }
 })
 
-const { updateSessionWithMessages, useSessionMock, getSessionMock, updateMessageMock } = vi.hoisted(() => ({
+const {
+  updateSessionWithMessages,
+  useSessionMock,
+  getSessionMock,
+  updateMessageMock,
+  updateSessionMock,
+  getSessionSettingsMock,
+} = vi.hoisted(() => ({
   updateSessionWithMessages: vi.fn(),
   useSessionMock: vi.fn(),
   getSessionMock: vi.fn(),
   updateMessageMock: vi.fn(),
+  updateSessionMock: vi.fn(),
+  getSessionSettingsMock: vi.fn(),
 }))
 
 vi.hoisted(() => {
@@ -51,14 +60,17 @@ vi.hoisted(() => {
   return {}
 })
 
+vi.mock('./session/session-web-browsing', () => ({ getSessionWebBrowsing: () => false }))
+
 vi.mock('uuid', () => ({
   v4: uuidv4Mock,
 }))
 
 vi.mock('./chatStore', () => ({
   updateSessionWithMessages,
-  updateSession: vi.fn(),
+  updateSession: updateSessionMock,
   updateMessage: updateMessageMock,
+  getSessionSettings: getSessionSettingsMock,
   getSession: getSessionMock,
   useSession: useSessionMock,
 }))
@@ -159,6 +171,8 @@ beforeEach(() => {
   useSessionMock.mockReset()
   getSessionMock.mockReset()
   updateMessageMock.mockReset()
+  updateSessionMock.mockReset()
+  getSessionSettingsMock.mockReset()
 })
 
 describe('fork actions', () => {
@@ -485,6 +499,47 @@ describe('plan lifecycle actions', () => {
     const plan = writtenPlan()
     expect(plan).toMatchObject({ type: 'plan', status: 'approved' })
     expect((plan as { startedAt?: number }).startedAt).toBeGreaterThanOrEqual(before)
+  })
+
+  const stoppedPlanSession = (plan: Record<string, unknown>): Session => ({
+    id: 'plan-session',
+    name: 'Plan',
+    agentMode: true,
+    messages: [
+      makeMessage('u1', 'user'),
+      {
+        ...makeMessage('a1', 'assistant'),
+        contentParts: [
+          { type: 'tool-call', toolCallId: 'c1', toolName: 'edit_file', state: 'result', args: {} },
+          { type: 'plan', planText: '1. Do it\n2. Check it', status: 'approved', ...plan },
+        ],
+      },
+    ],
+  })
+
+  test('resumeStoppedPlan re-enters execution for the same plan message', async () => {
+    getSessionMock.mockResolvedValue(stoppedPlanSession({ startedAt: 1 }))
+    getSessionSettingsMock.mockResolvedValue({ planMode: true })
+    await sessionActions.resumeStoppedPlan('plan-session', 'a1').catch(() => {})
+    expect(updateSessionMock).toHaveBeenCalledWith('plan-session', { planPhase: 'executing' })
+    // The stopped run's visible work is kept when the message starts generating again.
+    const firstWrite = updateMessageMock.mock.calls[0]?.[2] as Message | undefined
+    expect(firstWrite?.id).toBe('a1')
+    expect(firstWrite?.contentParts.some((p) => p.type === 'tool-call')).toBe(true)
+  })
+
+  test('resumeStoppedPlan refuses a finished plan', async () => {
+    getSessionMock.mockResolvedValue(stoppedPlanSession({ startedAt: 1, finishedAt: 2 }))
+    getSessionSettingsMock.mockResolvedValue({ planMode: true })
+    await expect(sessionActions.resumeStoppedPlan('plan-session', 'a1')).rejects.toThrow()
+    expect(updateSessionMock).not.toHaveBeenCalled()
+  })
+
+  test('resumeStoppedPlan refuses when plan mode is off', async () => {
+    getSessionMock.mockResolvedValue(stoppedPlanSession({ startedAt: 1 }))
+    getSessionSettingsMock.mockResolvedValue({ planMode: false })
+    await expect(sessionActions.resumeStoppedPlan('plan-session', 'a1')).rejects.toThrow()
+    expect(updateSessionMock).not.toHaveBeenCalled()
   })
 
   test('old plan payloads still parse', () => {

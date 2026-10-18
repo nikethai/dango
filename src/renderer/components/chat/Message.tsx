@@ -85,6 +85,7 @@ import {
   shouldShowAssistantPending,
 } from '@/utils/message-stream-ui'
 import '../../static/Block.css'
+import { planCardState } from '@/packages/plan/planSteps'
 import {
   approveAndExecutePlan,
   generateMore,
@@ -93,6 +94,7 @@ import {
   rejectPlan,
   removeMessage,
   requestPlanChanges,
+  resumeStoppedPlan,
   submitNewUserMessage,
 } from '@/stores/sessionActions'
 import * as toastActions from '@/stores/toastActions'
@@ -105,7 +107,6 @@ import {
   isContainRenderableCode,
 } from '../Artifact'
 import { ScalableIcon } from '../common/ScalableIcon'
-import { planCardState } from '../plan/planSteps'
 import { ThinkingLine } from './ThinkingLine'
 
 // Tool/thinking renderers are agent-only — lazy-load them and skip on Android.
@@ -151,7 +152,7 @@ interface Props {
   thinkingDefaultOpen?: boolean
   /** The chat's plans edit files (agent mode with a project or workspace), resolved by MessageList. */
   planTouchesFiles?: boolean
-  /** This message holds the chat's latest plan; only that plan's card reads the session's tasks. Default true. */
+  /** This message holds the chat's latest plan; only that plan's card reads the session's tasks. Default false. */
   latestPlan?: boolean
 }
 
@@ -169,7 +170,7 @@ const _Message: FC<Props> = (props) => {
     showFollowUpSuggestions = false,
     thinkingDefaultOpen = true,
     planTouchesFiles = false,
-    latestPlan = true,
+    latestPlan = false,
   } = props
 
   const { t } = useTranslation()
@@ -291,6 +292,8 @@ const _Message: FC<Props> = (props) => {
   )
 
   const onRejectPlan = useCallback(() => rejectPlan(sessionId, msg.id), [sessionId, msg.id])
+
+  const onContinuePlan = useCallback(() => resumeStoppedPlan(sessionId, msg.id), [sessionId, msg.id])
 
   const onCopyMsg = useCallback(() => {
     copyToClipboard(getMessageText(msg, true, false))
@@ -868,6 +871,7 @@ const _Message: FC<Props> = (props) => {
                           onRequestChanges={onRequestPlanChanges}
                           onReject={onRejectPlan}
                           onStop={onStopGeneration}
+                          onContinue={onContinuePlan}
                         />
                       </Suspense>
                     ) : null

@@ -3,9 +3,9 @@
  */
 import type { Message, MessagePlanPart, Session } from '@shared/types'
 import { t } from 'i18next'
-import { parsePlanSteps } from '@/components/plan/planSteps'
 import { scopeIdForSession } from '@/packages/chat-review'
 import { getStagedChangeSetId } from '@/packages/model-calls/toolsets/file'
+import { parsePlanSteps } from '@/packages/plan/planSteps'
 import { addReviewEntry } from '@/packages/review'
 
 const TITLE_MAX = 80
@@ -47,6 +47,33 @@ export function finishExecutedPlan(
   run: { stoppedDuringStream: boolean; stoppedDuringContinue: boolean; now: number }
 ): MessagePlanPart {
   return run.stoppedDuringStream || run.stoppedDuringContinue ? plan : { ...plan, finishedAt: run.now }
+}
+
+/** Continue applies to an approved plan whose run started and was stopped before it finished. */
+export function canResumePlan(plan: MessagePlanPart | undefined): boolean {
+  return plan?.status === 'approved' && plan.startedAt !== undefined && plan.finishedAt === undefined
+}
+
+/** The stopped run's visible work, kept in front of the resumed run's parts (the plan part is re-added by the run). */
+export function resumedRunParts(contentParts: Message['contentParts']): Message['contentParts'] {
+  return contentParts.filter((part) => part.type !== 'plan')
+}
+
+/** A stream update of the resumed run, painted after the stopped run's work. */
+export function withResumedParts<T extends { contentParts?: Message['contentParts'] }>(
+  resumed: Message['contentParts'],
+  update: T
+): T {
+  return update.contentParts ? { ...update, contentParts: [...resumed, ...update.contentParts] } : update
+}
+
+/** Model instruction for a resumed run (not interface copy). */
+export function planResumePrompt(): string {
+  return [
+    'The run of the approved plan was stopped before it finished. Your work so far is above.',
+    'Continue the plan from where it stopped: first inspect the current tasks, then resume the next unfinished step.',
+    'Do not redo finished steps. Update task statuses as you go.',
+  ].join('\n')
 }
 
 function madeEdits(message: Message | undefined): boolean {

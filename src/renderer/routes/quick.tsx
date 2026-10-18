@@ -322,7 +322,6 @@ function QuickChatPage() {
         <div className="session-dock-pad">
           <ChatDockStack
             key={session.id}
-            sessionId={session.id}
             generating={isGenerating}
             liveMessage={lastGenerating}
           >

@@ -9,7 +9,16 @@ const h = vi.hoisted(() => ({
 vi.mock('@/packages/review', () => ({ addReviewEntry: h.addReviewEntry }))
 vi.mock('@/packages/model-calls/toolsets/file', () => ({ getStagedChangeSetId: h.getStagedChangeSetId }))
 
-import { finishExecutedPlan, nextPlanVersion, planTitle, recordFinishedPlan } from './plan-lifecycle'
+import {
+  canResumePlan,
+  finishExecutedPlan,
+  nextPlanVersion,
+  planResumePrompt,
+  planTitle,
+  recordFinishedPlan,
+  resumedRunParts,
+  withResumedParts,
+} from './plan-lifecycle'
 
 beforeAll(async () => {
   await i18next.init({ lng: 'en', resources: {}, interpolation: { escapeValue: false } })
@@ -76,6 +85,38 @@ describe('planTitle', () => {
     const title = planTitle(`1. ${'a'.repeat(200)}`)
     expect(title.length).toBeLessThanOrEqual(80)
     expect(title.endsWith('…')).toBe(true)
+  })
+})
+
+describe('resuming a stopped plan', () => {
+  it('only a started, unfinished approved plan can resume', () => {
+    expect(canResumePlan(plan({ status: 'approved', startedAt: 1 }))).toBe(true)
+    expect(canResumePlan(plan({ status: 'approved', startedAt: 1, finishedAt: 2 }))).toBe(false)
+    expect(canResumePlan(plan({ status: 'approved' }))).toBe(false)
+    expect(canResumePlan(plan({ status: 'pending' }))).toBe(false)
+    expect(canResumePlan(undefined)).toBe(false)
+  })
+  it("keeps the stopped run's visible work, without the plan part", () => {
+    const tool = { type: 'tool-call', toolCallId: 'c1', toolName: 'edit_file', state: 'result', args: {} } as const
+    const parts: Message['contentParts'] = [
+      plan({ status: 'approved', startedAt: 1 }),
+      tool,
+      { type: 'text', text: 'Half way' },
+    ]
+    expect(resumedRunParts(parts)).toEqual([tool, { type: 'text', text: 'Half way' }])
+  })
+  it('the resumed run paints after the stopped work', () => {
+    const before: Message['contentParts'] = [{ type: 'text', text: 'Half way' }]
+    expect(withResumedParts(before, { contentParts: [{ type: 'text', text: 'Done' }] }).contentParts).toEqual([
+      { type: 'text', text: 'Half way' },
+      { type: 'text', text: 'Done' },
+    ])
+    const noParts: { contentParts?: Message['contentParts']; text: string } = { text: 'x' }
+    expect(withResumedParts(before, noParts)).toBe(noParts)
+  })
+  it('the resume prompt asks to continue from where the run stopped', () => {
+    expect(planResumePrompt()).toMatch(/stopped/i)
+    expect(planResumePrompt()).toMatch(/tasks/i)
   })
 })
 

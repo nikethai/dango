@@ -45,6 +45,16 @@ export function planCardState(plan: MessagePlanPart, generating: boolean): PlanC
   }
 }
 
+/**
+ * The tasks of one plan run: the session's tasks created since the run started (`startedAt`), so a stopped or finished
+ * earlier run's checklist never counts. Without `startedAt` (legacy) every task of the session counts.
+ */
+export function planRunTasks(tasks: Task[], sessionId: string, startedAt: number | undefined): Task[] {
+  return tasks.filter(
+    (task) => task.sessionId === sessionId && (startedAt === undefined || task.createdAt >= startedAt)
+  )
+}
+
 const TASK_STEP: Record<TaskStatus, PlanStepView['status']> = {
   done: 'done',
   'in-progress': 'current',

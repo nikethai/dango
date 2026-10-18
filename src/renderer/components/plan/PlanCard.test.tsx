@@ -14,15 +14,12 @@ import PlanCard, { type PlanCardProps } from './PlanCard'
 const h = vi.hoisted(() => ({
   tasks: [] as Task[],
   hydrate: vi.fn(async () => {}),
-  continueTasks: vi.fn(async () => {}),
 }))
 
 vi.mock('@/stores/taskStore', () => ({
   useTaskStore: (selector: (state: { tasks: Task[] }) => unknown) => selector({ tasks: h.tasks }),
   taskStore: { getState: () => ({ hydrateSessionTasks: h.hydrate }) },
 }))
-
-vi.mock('@/stores/session/messages', () => ({ continueActiveSessionTasks: h.continueTasks }))
 
 vi.mock('@/components/Markdown', () => ({
   default: ({ children }: { children: string }) => <div data-testid="markdown">{children}</div>,
@@ -37,7 +34,6 @@ beforeAll(async () => {
 beforeEach(() => {
   h.tasks = []
   h.hydrate.mockClear()
-  h.continueTasks.mockClear()
 })
 
 afterEach(() => {
@@ -66,6 +62,7 @@ function renderCard(plan: Partial<MessagePlanPart>, overrides: Partial<PlanCardP
     onRequestChanges: vi.fn(async () => {}),
     onReject: vi.fn(async () => {}),
     onStop: vi.fn(),
+    onContinue: vi.fn(async () => {}),
     ...overrides,
   }
   const view = render(<PlanCard {...props} />)
@@ -118,8 +115,13 @@ describe('PlanCard proposed', () => {
     expect(document.activeElement).toBe(field)
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    const windowEscape = vi.fn()
+    window.addEventListener('keydown', windowEscape)
     fireEvent.keyDown(card, { key: 'Escape' })
+    window.removeEventListener('keydown', windowEscape)
     await waitFor(() => expect(props.onReject).toHaveBeenCalledTimes(1))
+    // Escape stays with the card: window handlers (the workspace panel's) never see it.
+    expect(windowEscape).not.toHaveBeenCalled()
     expect(props.onRequestChanges).not.toHaveBeenCalled()
   })
 
@@ -157,14 +159,22 @@ describe('PlanCard running', () => {
   it('shows progress from tasks, the timer, Stop and the staging note', () => {
     vi.useFakeTimers()
     vi.setSystemTime(100_000)
-    h.tasks = [task('a', 'done', 1), task('b', 'in-progress', 2), task('c', 'pending', 3), task('d', 'pending', 4)]
+    h.tasks = [
+      task('old', 'done', 1),
+      task('a', 'done', 88_001),
+      task('b', 'in-progress', 88_002),
+      task('c', 'pending', 88_003),
+      task('d', 'pending', 88_004),
+    ]
     const { props, container } = renderCard(
       { planText: FOUR, status: 'approved', startedAt: 88_000 },
-      { generating: true, touchesFiles: true }
+      { generating: true, touchesFiles: true, latestPlan: true }
     )
     expect(container.querySelector('svg.dg-mascot[data-state="working"]')).toBeTruthy()
     expect(container.querySelector('svg.dg-mascot')?.getAttribute('width')).toBe('20')
     expect(screen.getByText('Running plan · step 2 of 4')).toBeTruthy()
+    // A task from before this run started is not part of it.
+    expect(screen.queryByText('Task old')).toBeNull()
     expect(screen.getByText('12 s')).toBeTruthy()
     expect(screen.getByText('Task a').closest('li')?.className).toContain('is-done')
     expect(screen.getByText('Task b').closest('li')?.className).toContain('is-current')
@@ -180,20 +190,21 @@ describe('PlanCard running', () => {
 
   it('marks failed steps', () => {
     h.tasks = [task('a', 'failed', 1), task('b', 'in-progress', 2)]
-    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { generating: true })
+    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { generating: true, latestPlan: true })
     expect(screen.getByText('Task a').closest('li')?.className).toContain('is-failed')
   })
 
   it('without tasks reads the parsed steps; no staging note when no files are touched', () => {
-    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { generating: true })
+    h.tasks = [task('old', 'done', 0)]
+    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { generating: true, latestPlan: true })
     expect(screen.getByText('Running plan · step 1 of 4')).toBeTruthy()
     expect(screen.getByText('Find the files')).toBeTruthy()
     expect(screen.queryByText('Edits are staged and arrive in Review as one Change.')).toBeNull()
   })
 
-  it('an older plan card ignores the session tasks (R13)', () => {
+  it('an older plan card ignores the session tasks (R13); latestPlan defaults to false', () => {
     h.tasks = [task('a', 'done', 1)]
-    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { latestPlan: false })
+    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 })
     expect(screen.queryByText('Task a')).toBeNull()
     expect(screen.getByText('Plan stopped · 0 of 4 done')).toBeTruthy()
   })
@@ -202,11 +213,24 @@ describe('PlanCard running', () => {
 describe('PlanCard stopped', () => {
   it('shows how far it got and Continue', async () => {
     h.tasks = [task('a', 'done', 1), task('b', 'pending', 2), task('c', 'pending', 3), task('d', 'pending', 4)]
-    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 })
+    const { props } = renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { latestPlan: true })
     expect(screen.getByText('Plan stopped · 1 of 4 done')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await waitFor(() => expect(h.continueTasks).toHaveBeenCalledWith('s1'))
+    await waitFor(() => expect(props.onContinue).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole('button', { name: 'Run plan' })).toBeNull()
+  })
+
+  it('with no steps reads "Plan stopped"', () => {
+    renderCard({ planText: 'Inspect the issue, then fix it.', status: 'approved', startedAt: 1 })
+    expect(screen.getByText('Plan stopped')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy()
+  })
+
+  it('hides Continue when every step is done', () => {
+    h.tasks = [task('a', 'done', 1), task('b', 'done', 2)]
+    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { latestPlan: true })
+    expect(screen.getByText('Plan stopped · 2 of 2 done')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
   })
 })
 

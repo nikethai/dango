@@ -1582,5 +1582,6 @@
   "Ran plan · {{count}} steps · {{duration}}_one": "Ran plan · {{count}} step · {{duration}}",
   "Ran plan · {{count}} steps · {{duration}}_other": "Ran plan · {{count}} steps · {{duration}}",
   "Rejected plan": "Rejected plan",
-  "Plan v{{version}}": "Plan v{{version}}"
+  "Plan v{{version}}": "Plan v{{version}}",
+  "Plan stopped": "Plan stopped"
 }
