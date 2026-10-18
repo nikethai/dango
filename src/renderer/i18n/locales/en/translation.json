@@ -1507,5 +1507,6 @@
   "Show agents in a new chat": "Show agents in a new chat",
   "Add one to your agents and open a chat.": "Add one to your agents and open a chat.",
   "No agents yet. Create one, or add a featured agent below.": "No agents yet. Create one, or add a featured agent below.",
-  "Saved agents: a name, a prompt, model settings, tool access, steps and hooks. Mention one with @ in the composer.": "Saved agents: a name, a prompt, model settings, tool access, steps and hooks. Mention one with @ in the composer."
+  "Saved agents: a name, a prompt, model settings, tool access, steps and hooks. Mention one with @ in the composer.": "Saved agents: a name, a prompt, model settings, tool access, steps and hooks. Mention one with @ in the composer.",
+  "Couldn't turn this back on. Try again.": "Couldn't turn this back on. Try again."
 }

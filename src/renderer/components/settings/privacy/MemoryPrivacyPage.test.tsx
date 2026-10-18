@@ -8,7 +8,13 @@ import { MantineProvider } from '@mantine/core'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const h = vi.hoisted(() => ({ navigateToSettings: vi.fn(), navigate: vi.fn() }))
+const h = vi.hoisted(() => ({
+  navigateToSettings: vi.fn(),
+  navigate: vi.fn(),
+  toast: vi.fn(),
+  failAllow: false,
+  names: {} as Record<string, string>,
+}))
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -21,9 +27,20 @@ vi.mock('@/packages/undo', () => ({ pushUndo: vi.fn(() => 'undo-1') }))
 vi.mock('@/modals/Settings', () => ({ navigateToSettings: h.navigateToSettings }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => h.navigate }))
 vi.mock('@/storage', async () => (await import('@/packages/knowledge/test-storage')).default)
+vi.mock('@/stores/toastActions', () => ({ add: h.toast }))
+vi.mock('@/packages/knowledge/proposals', async (orig) => {
+  const real = await orig<typeof import('@/packages/knowledge/proposals')>()
+  return {
+    ...real,
+    allowSuggestAgain: (id: string) => (h.failAllow ? Promise.reject(new Error('boom')) : real.allowSuggestAgain(id)),
+  }
+})
 vi.mock('@/packages/knowledge/scopes', () => ({
-  refreshScopes: async () => undefined,
-  scopeName: (id: string) => (id === 'everywhere' ? 'Everywhere' : id === 'acme' ? 'Acme' : 'Unknown scope'),
+  refreshScopes: () => {
+    h.names.acme = 'Acme'
+    return Promise.resolve()
+  },
+  scopeName: (id: string) => (id === 'everywhere' ? 'Everywhere' : (h.names[id] ?? 'Unknown scope')),
 }))
 
 vi.mock('@/stores/settingsStore', async () => {
@@ -70,6 +87,9 @@ function renderPage() {
 beforeEach(() => {
   h.navigateToSettings.mockClear()
   h.navigate.mockClear()
+  h.toast.mockClear()
+  h.failAllow = false
+  h.names = {}
   store.setState({ trustLevel: 'auto' })
   resetTestStorage()
   _resetKnowledgeForTests()
@@ -128,6 +148,23 @@ describe('MemoryPrivacyPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Suggest again' }))
     await waitFor(() => expect(screen.getByText('Nothing here yet.')).toBeTruthy())
     expect(screen.queryByText('Prefers short emails')).toBeNull()
+  })
+
+  it('a failed Suggest again toasts and keeps the row', async () => {
+    await seed()
+    h.failAllow = true
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Prefers short emails')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Suggest again' }))
+    await waitFor(() => expect(h.toast).toHaveBeenCalledWith("Couldn't turn this back on. Try again."))
+    expect(screen.getByText('Prefers short emails')).toBeTruthy()
+  })
+
+  it('shows the scope name once scopes have refreshed', async () => {
+    await seed()
+    renderPage()
+    await waitFor(() => expect(screen.getByText(/Acme/)).toBeTruthy())
+    expect(screen.queryByText(/Unknown scope/)).toBeNull()
   })
 
   it('shows the sections in order and the Trust row reads Auto', () => {
