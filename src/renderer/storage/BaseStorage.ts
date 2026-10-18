@@ -58,6 +58,20 @@ export default class BaseStorage {
     }
   }
 
+  /**
+   * The stored value, or `null`/`undefined` when there is none. Unlike `getItem`, it never writes a default,
+   * so a reader can tell a missing key from one that does not read (a listed key that reads `null` has a value
+   * the platform could not parse) without overwriting either.
+   */
+  public async readItem(key: string): Promise<unknown> {
+    try {
+      return await platform.getStoreValue(key)
+    } catch (error) {
+      log.error(`Failed to read from storage (key: ${key}):`, error)
+      throw error
+    }
+  }
+
   public async removeItem(key: string): Promise<void> {
     return platform.delStoreValue(key)
   }

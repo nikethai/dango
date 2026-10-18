@@ -25,6 +25,10 @@ vi.mock('react-i18next', () => ({
   }),
 }))
 
+vi.mock('@/components/knowledge/KnowledgeTab', () => ({
+  KnowledgeTab: ({ scopeId }: { scopeId: string }) => <div data-testid="knowledge-tab">{scopeId}</div>,
+}))
+
 afterEach(() => {
   cleanup()
   startNewChat.mockReset()
@@ -79,14 +83,12 @@ describe('ScopePageView', () => {
     expect(screen.getByText('No knowledge yet')).toBeTruthy()
   })
 
-  it('placeholders name what will appear', () => {
+  it('the knowledge tab mounts the Knowledge tab for the scope', () => {
     view({ tab: 'knowledge' })
-    expect(
-      screen.getByText(
-        'Facts, decisions and preferences you approve for Acme Co will appear here, each with its sources and history.'
-      )
-    ).toBeTruthy()
-    cleanup()
+    expect(screen.getByTestId('knowledge-tab').textContent).toBe('s1')
+  })
+
+  it('placeholders name what will appear', () => {
     view({ tab: 'sources' })
     expect(
       screen.getByText(

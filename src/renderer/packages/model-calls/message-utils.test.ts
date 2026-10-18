@@ -1,15 +1,16 @@
 import type { ModelDependencies } from '@shared/types/adapters'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/adapters', () => ({
   createModelDependencies: vi.fn(),
 }))
 
+const memorySettings = vi.hoisted(() => ({ enabled: false }))
 vi.mock('@/stores/memoryStore', () => ({
   memoryStore: {
     getState: () => ({
       ready: true,
-      settings: { enabled: false },
+      settings: memorySettings,
       globalBank: { scope: 'global', entries: [], profileSummary: '', version: 1 },
       agentBanks: {},
     }),
@@ -24,7 +25,12 @@ vi.mock('@/stores/settingsStore', () => ({
   },
 }))
 
-import { convertToModelMessages } from './message-utils'
+vi.mock('@/packages/memory/inject', () => ({
+  buildMemoryInjectBlock: () => '## Memory\n- Old bank note',
+}))
+
+import { knowledgeStore } from '@/packages/knowledge/store'
+import { convertToModelMessages, injectModelSystemPrompt } from './message-utils'
 
 const dependencies: ModelDependencies = {
   request: {
@@ -213,5 +219,36 @@ describe('convertToModelMessages', () => {
         ],
       },
     ])
+  })
+})
+
+describe('injectModelSystemPrompt', () => {
+  const messages = [
+    { id: 's', role: 'system' as const, contentParts: [{ type: 'text' as const, text: 'Be helpful.' }] },
+    { id: 'u', role: 'user' as const, contentParts: [{ type: 'text' as const, text: 'When is launch?' }] },
+  ]
+  const section = '\n## Approved knowledge: Acme\n- Launch is 6 Nov\n'
+  const systemText = (out: ReturnType<typeof injectModelSystemPrompt>) =>
+    out[0].contentParts.map((p) => (p.type === 'text' ? p.text : '')).join('')
+
+  // Reset even when an assertion fails, so later tests start from memory off and no move.
+  afterEach(() => {
+    memorySettings.enabled = false
+    knowledgeStore.setState({ migration: 'unknown' })
+  })
+
+  it('knowledge section is in the system prompt and memory section is not once migration is done', () => {
+    memorySettings.enabled = true
+    knowledgeStore.setState({ migration: 'unknown' })
+    const before = systemText(injectModelSystemPrompt('m', messages, 'info', 'system', undefined, section))
+    expect(before).toContain('Old bank note')
+    expect(before).toContain('Approved knowledge: Acme')
+    expect(before.indexOf('Approved knowledge: Acme')).toBeLessThan(before.indexOf('Old bank note'))
+
+    knowledgeStore.setState({ migration: 'done' })
+    const after = systemText(injectModelSystemPrompt('m', messages, 'info', 'system', undefined, section))
+    expect(after).toContain('## Approved knowledge: Acme\n- Launch is 6 Nov')
+    expect(after).not.toContain('Old bank note')
+    expect(after).toContain('Be helpful.')
   })
 })

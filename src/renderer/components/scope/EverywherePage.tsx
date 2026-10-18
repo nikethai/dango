@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { EverywhereKnowledge } from '@/components/knowledge/EverywhereKnowledge'
 import Page from '@/components/layout/Page'
 
 export function EverywherePage() {
@@ -12,16 +13,11 @@ export function EverywherePage() {
         </div>
         <section data-section="preferences" className="flex flex-col gap-2">
           <h3 className="dg-type-headline">{t('Preferences')}</h3>
-          <ul className="flex flex-col gap-1" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            <li className="flex items-center justify-between gap-3">
-              <span>{t('Never send email')}</span>
-              <span className="dg-chip">{t('Built in')}</span>
-            </li>
-          </ul>
+          <EverywhereKnowledge section="preferences" />
         </section>
         <section data-section="facts" className="flex flex-col gap-2">
           <h3 className="dg-type-headline">{t('Facts')}</h3>
-          <p style={{ margin: 0 }}>{t('Facts you apply to all scopes will appear here.')}</p>
+          <EverywhereKnowledge section="facts" />
         </section>
         <section data-section="documents" className="flex flex-col gap-2">
           <h3 className="dg-type-headline">{t('Documents')}</h3>

@@ -1,6 +1,7 @@
 import { Theme } from '@shared/types'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
+import { MemoryMigrationSheet } from '@/components/knowledge/MemoryMigrationSheet'
 import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
 import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
@@ -20,6 +21,7 @@ import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
 import { useSetAtom } from 'jotai'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { navigateToSettings } from '@/modals/Settings'
+import { initKnowledge } from '@/packages/knowledge'
 import { getOS } from '@/packages/navigator'
 import { UndoToast, useUndoHotkey } from '@/packages/undo'
 import PictureDialog from '@/pages/PictureDialog'
@@ -46,6 +48,10 @@ function Root() {
   const setRemoteConfig = useSetAtom(atoms.remoteConfigAtom)
 
   useDesktopShell()
+
+  useEffect(() => {
+    void initKnowledge()
+  }, [])
 
   useEffect(() => {
     void platform.getWindowLabel?.().then((label) => {
@@ -225,6 +231,8 @@ function Root() {
       {/* <ReportContentDialog /> */}
       {/* Search */}
       <SearchDialog />
+      {/* One-time move of old memory into knowledge (not in Quick Chat) */}
+      {isQuickRoute ? null : <MemoryMigrationSheet />}
       {/* Welcome when no model configured */}
       {/* <WelcomeDialog /> */}
       <Toasts /> {/* mui */}

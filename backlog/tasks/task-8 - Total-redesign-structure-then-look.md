@@ -4,7 +4,7 @@ title: 'Total redesign: structure, then look'
 status: Now
 assignee: []
 created_date: '2026-10-16 14:22'
-updated_date: '2026-10-18 00:41'
+updated_date: '2026-10-18 05:33'
 labels:
   - design
 dependencies: []
@@ -30,4 +30,6 @@ Maintainer asked on 2026-10-16 to redesign before building the shared core: does
 2026-10-17: slice 1b (shared foundations) built on feat/redesign-01b-shared-foundations: Sheet + focus rules, undo toast + ⌘Z, eight-state Mascot, Review entries store (Web Locks, loose schema) with openers/renderers/hooks, BackgroundJob types, new chat at /new with / redirecting. Suite 1979 pass, tsc 37 (= main), lint 9 errors (= main). Next: slice 03 scopes after this PR merges.
 
 2026-10-18: slice 03 (scopes) built on feat/redesign-03-scopes: Scope type and store (myProjects canonical, immediate writes), migration 17→18, one writer for a chat's scope, Scopes sidebar with Everywhere and client chips, scope page (Overview/Knowledge/Sources/Files/Chats/Settings, EM1), Everywhere page, scope pill in the composer, readScopes() for reads outside React. Suite green, tsc 37, lint 9 errors (= main). Next: slice 04 after merge.
+
+2026-10-18: slice 04 (knowledge) built on feat/redesign-04-knowledge: knowledge store with locked revertible commits, proposals with contradiction check (session model, 15 s timeout), approve/add/edit/remove/move with one undo each, conflicts (Keep this / Keep both), Review renderers, approved knowledge as the only chat context (1,500-token budget, framing sentence), chat proposer replacing memory auto-save, Knowledge tab + Everywhere lists, one-time move of old memory. Slice 2 note (C1): slice 2 must fill useDontSuggestEntries and add the Open Everywhere row on Memory and privacy itself, and hide the now-dead autoSaveFallbackPin / showMemoryUpdatedToast toggles. Slice 10 note: re-check entries use ref = use.ref and can merge with open draft entries.
 <!-- SECTION:NOTES:END -->

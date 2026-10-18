@@ -1,8 +1,16 @@
 import type { ReviewKind } from '@shared/types/review'
+import type { ReactNode, Ref } from 'react'
 
 export type { ReviewKind } from '@shared/types/review'
 
-export type ReviewAction = { label: string; onClick: () => void; variant?: 'primary' | 'secondary' | 'ghost' }
+export type ReviewAction = {
+  label: string
+  onClick: () => void
+  variant?: 'primary' | 'secondary' | 'ghost'
+  disabled?: boolean
+  /** For returning focus to this button (a proposal leaving edit mode). */
+  ref?: Ref<HTMLButtonElement>
+}
 
 export type ReviewItemProps = {
   kind: ReviewKind
@@ -13,6 +21,8 @@ export type ReviewItemProps = {
   /** At most three are rendered. */
   actions: ReviewAction[]
   focused?: boolean
+  /** Replaces the text line (a proposal being edited); the accessible name still uses `text`. */
+  children?: ReactNode
 }
 
 const MAX_ACTIONS = 3
@@ -38,7 +48,7 @@ const BUTTON_CLASS: Record<NonNullable<ReviewAction['variant']>, string> = {
   ghost: 'dg-btn dg-btn--ghost',
 }
 
-export function ReviewItem({ kind, scope, source, text, sub, actions, focused }: ReviewItemProps) {
+export function ReviewItem({ kind, scope, source, text, sub, actions, focused, children }: ReviewItemProps) {
   const meta = [KIND_LABEL[kind], scope, source].filter(Boolean).join(' · ')
   const className = ['dg', 'dg-item', KIND_CLASS[kind], focused ? 'is-focused' : ''].filter(Boolean).join(' ')
 
@@ -47,15 +57,17 @@ export function ReviewItem({ kind, scope, source, text, sub, actions, focused }:
       <div className="dg-item__mark" aria-hidden="true" />
       <div className="dg-item__text">
         <div className="dg-item__meta">{meta}</div>
-        <div>{text}</div>
+        {children ?? <div>{text}</div>}
         {sub ? <div className="dg-item__sub">{sub}</div> : null}
       </div>
       <div className="dg-item__actions">
         {actions.slice(0, MAX_ACTIONS).map((action) => (
           <button
             key={action.label}
+            ref={action.ref}
             type="button"
             className={BUTTON_CLASS[action.variant ?? 'secondary']}
+            disabled={action.disabled}
             onClick={action.onClick}
           >
             {action.label}

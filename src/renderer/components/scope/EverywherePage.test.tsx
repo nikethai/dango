@@ -4,7 +4,9 @@
 
 import { cleanup, render, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { _resetKnowledgeForTests } from '@/packages/knowledge/store'
+import { resetTestStorage } from '@/packages/knowledge/test-storage'
 import { EverywherePage } from './EverywherePage'
 
 vi.mock('@/components/layout/Page', () => ({
@@ -16,8 +18,23 @@ vi.mock('@/components/layout/Page', () => ({
   ),
 }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+vi.mock('@/storage', async () => (await import('@/packages/knowledge/test-storage')).default)
+vi.mock('@/packages/undo', () => ({ pushUndo: vi.fn(), undoEntry: vi.fn(), DEFAULT_UNDO_MS: 5000 }))
+vi.mock('@/hooks/useScopes', () => ({ useScopes: () => ({ scopes: [] }), readScopes: async () => [] }))
+vi.mock('@/packages/knowledge/scopes', () => ({
+  refreshScopes: async () => undefined,
+  watchScopes: () => () => undefined,
+  scopeExists: () => true,
+  getScopeReads: () => ({ facts: true, documents: false }),
+  scopeName: (id: string) => id,
+}))
 
 afterEach(cleanup)
+
+beforeEach(() => {
+  resetTestStorage()
+  _resetKnowledgeForTests()
+})
 
 describe('EverywherePage', () => {
   it('renders the title and the precedence line', () => {
@@ -32,8 +49,9 @@ describe('EverywherePage', () => {
     for (const h of screen.getAllByRole('heading', { level: 3 })) expect(h.className).toContain('dg-type-headline')
   })
 
-  it('renders the three sections in order', () => {
+  it('renders the three sections in order', async () => {
     const { container } = render(<EverywherePage />)
+    await screen.findByText('Never send email')
     const sections = Array.from(container.querySelectorAll('[data-section]'))
     expect(sections.map((s) => s.getAttribute('data-section'))).toEqual(['preferences', 'facts', 'documents'])
     expect(within(sections[1] as HTMLElement).getByText('Facts you apply to all scopes will appear here.')).toBeTruthy()
@@ -44,9 +62,9 @@ describe('EverywherePage', () => {
     ).toBeTruthy()
   })
 
-  it('shows the fixed built-in preference without actions', () => {
+  it('shows the fixed built-in preference without actions', async () => {
     render(<EverywherePage />)
-    const row = screen.getByText('Never send email').closest('li') as HTMLElement
+    const row = (await screen.findByText('Never send email')).closest('li') as HTMLElement
     expect(within(row).getByText('Built in')).toBeTruthy()
     expect(within(row).queryAllByRole('button')).toHaveLength(0)
   })

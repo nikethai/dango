@@ -40,6 +40,10 @@ export enum StorageKey {
   ImportedHistory = 'imported-history',
   /** Review feed entries (shared by main and Quick Chat windows; IndexedDB). */
   ReviewEntries = 'review-entries',
+  /** Approved knowledge per scope, proposals, conflicts and uses (one document; IndexedDB). */
+  Knowledge = 'knowledge',
+  /** Where the old memory banks were moved to knowledge: `{ state: 'done', at, counts }`. */
+  KnowledgeMigration = 'knowledge-migration',
 }
 
 export const StorageKeyGenerator = {
@@ -83,6 +87,8 @@ export default class StoreStorage extends BaseStorage {
     StorageKey.Integrations,
     StorageKey.ImportedHistory,
     StorageKey.ReviewEntries,
+    StorageKey.Knowledge,
+    StorageKey.KnowledgeMigration,
     // Scope lists hold a client scope's privacy switch (readsEverywhere); a debounced write can lose it on quit.
     StorageKey.MyProjects,
     StorageKey.MyFolders,

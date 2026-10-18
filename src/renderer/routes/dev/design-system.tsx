@@ -1,9 +1,11 @@
 import { Container, Stack, Text, Title } from '@mantine/core'
+import type { ReviewEntry } from '@shared/types/review'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Mascot, MASCOT_STATE_LABEL, type MascotState } from '@/components/brand/Mascot'
+import { MASCOT_STATE_LABEL, Mascot, type MascotState } from '@/components/brand/Mascot'
 import { ReviewItem, type ReviewItemProps } from '@/components/review'
 import { Sheet } from '@/components/ui/Sheet'
+import { useReviewEntries, useReviewRenderer } from '@/packages/review'
 import { pushUndo } from '@/packages/undo'
 import { useUIStore } from '@/stores/uiStore'
 import tokens from '../../../../design/dango/tokens.json'
@@ -87,6 +89,30 @@ const reviewItems: ReviewItemProps[] = [
     ],
   },
 ]
+
+function ReviewRendererEntry({ entry }: { entry: ReviewEntry }) {
+  const Renderer = useReviewRenderer(entry)
+  return Renderer ? <Renderer entry={entry} focused={false} /> : null
+}
+
+function ReviewRenderers() {
+  const entries = useReviewEntries().filter(
+    (e) => e.state === 'open' && (e.kind === 'proposal' || e.kind === 'conflict' || e.kind === 're-check')
+  )
+  return (
+    <section>
+      <Title order={3} mb="md">
+        Review renderers
+      </Title>
+      <Stack gap="sm">
+        {entries.length === 0 ? <Text size="sm">No open proposal, conflict or re-check entries.</Text> : null}
+        {entries.map((entry) => (
+          <ReviewRendererEntry key={entry.id} entry={entry} />
+        ))}
+      </Stack>
+    </section>
+  )
+}
 
 function RouteComponent() {
   const realTheme = useUIStore((state) => state.realTheme)
@@ -191,6 +217,8 @@ function RouteComponent() {
             ))}
           </Stack>
         </section>
+
+        {import.meta.env.DEV ? <ReviewRenderers /> : null}
 
         <section>
           <Title order={3} mb="md">

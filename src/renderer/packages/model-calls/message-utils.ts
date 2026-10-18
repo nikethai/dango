@@ -4,6 +4,7 @@ import type { FilePart, ImagePart, ModelMessage, ReasoningUIPart, TextPart } fro
 import dayjs from 'dayjs'
 import { compact } from 'lodash'
 import { createModelDependencies } from '@/adapters'
+import { isLegacyMemoryActive } from '@/packages/knowledge/for-turn'
 import { buildMemoryInjectBlock } from '@/packages/memory/inject'
 import { memoryStore } from '@/stores/memoryStore'
 import { settingsStore } from '@/stores/settingsStore'
@@ -274,8 +275,9 @@ function lastUserMessageText(messages: Message[]): string {
 }
 
 function buildMemorySection(memory: MemoryInjectContext | undefined, messages: Message[]): string {
+  // Once the old notes have moved to knowledge, approved knowledge is the only memory chat reads.
+  if (!isLegacyMemoryActive()) return ''
   const state = memoryStore.getState()
-  if (!state.settings.enabled) return ''
 
   const agentBank = memory?.agentId ? (state.agentBanks[memory.agentId] ?? null) : null
   const userQuery = memory?.userQuery ?? lastUserMessageText(messages)
@@ -291,20 +293,21 @@ function buildMemorySection(memory: MemoryInjectContext | undefined, messages: M
 }
 
 /**
- *  system prompt + long-term memory
+ *  system prompt + approved knowledge (`formatKnowledgeSection`) + legacy long-term memory
  */
 export function injectModelSystemPrompt(
   model: string,
   messages: Message[],
   additionalInfo: string,
   role: 'system' | 'user' = 'system',
-  memory?: MemoryInjectContext
+  memory?: MemoryInjectContext,
+  knowledgeSection?: string
 ) {
   const personalInfo = buildPersonalInfoSection()
   const memorySection = buildMemorySection(memory, messages)
   const metadataPrompt = `Current model: ${model}\nCurrent date: ${dayjs().format(
     'YYYY-MM-DD'
-  )}${personalInfo}${memorySection}\n Additional info for this conversation: ${additionalInfo}\n\n`
+  )}${personalInfo}${knowledgeSection ?? ''}${memorySection}\n Additional info for this conversation: ${additionalInfo}\n\n`
   let hasInjected = false
   return messages.map((m) => {
     if (m.role === role && !hasInjected) {

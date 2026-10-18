@@ -205,6 +205,7 @@ vi.mock('@/platform', () => ({
   default: {
     type: 'desktop',
     formFactor: 'desktop',
+    appLog: vi.fn(async () => undefined),
   },
 }))
 
