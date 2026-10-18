@@ -1593,5 +1593,15 @@
   "Artifact actions": "Artifact actions",
   "Full screen": "Full screen",
   "Exit full screen": "Exit full screen",
-  "Download failed": "Download failed"
+  "Download failed": "Download failed",
+  "Translate to": "Translate to",
+  "Use this": "Use this",
+  "Rewriting…": "Rewriting…",
+  "Text to rewrite": "Text to rewrite",
+  "Add some text to rewrite, up to 8,000 characters.": "Add some text to rewrite, up to 8,000 characters.",
+  "This model can't rewrite text.": "This model can't rewrite text.",
+  "The rewrite didn't go through. Your text is unchanged.": "The rewrite didn't go through. Your text is unchanged.",
+  "The model stopped before finishing.": "The model stopped before finishing.",
+  "The rewrite took over a minute and was stopped.": "The rewrite took over a minute and was stopped.",
+  "Enter a language name, such as Spanish.": "Enter a language name, such as Spanish."
 }
