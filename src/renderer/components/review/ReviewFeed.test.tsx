@@ -5,9 +5,9 @@ import type { ReviewEntry } from '@shared/types/review'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type ReviewRendererProps, registerReviewRenderer, reviewRegistryStore } from '@/packages/review/registry'
-import { reviewStore, setReviewEntryState, setReviewStorageForTests } from '@/packages/review/store'
+import { reviewStore, setReviewEntryState, setReviewStorageForTests, waitingCount } from '@/packages/review/store'
 import { setReviewApplierForTests } from '@/packages/review/trust'
-import { resetUndoForTests, undoStore } from '@/packages/undo'
+import { resetUndoForTests, undoEntry, undoStore } from '@/packages/undo'
 import { ReviewFeed } from './ReviewFeed'
 
 vi.mock('react-i18next', () => ({
@@ -200,6 +200,43 @@ describe('ReviewFeed', () => {
     await waitFor(() => expect(rowEl('a')).toBeNull())
     expect(undoStore.getState().toast?.message).toBe('Dismissed "Row a"')
     expect(document.activeElement).toBe(rowEl('b'))
+  })
+
+  const xThenUndo = async (id: string) => {
+    await act(() => rowEl(id).focus())
+    await press(rowEl(id), 'x')
+    await waitFor(() => expect(rowEl(id)).toBeNull())
+    const toast = undoStore.getState().toast
+    expect(toast?.message).toBe(`Dismissed "Row ${id}"`)
+    await act(async () => {
+      expect(await undoEntry(toast?.id ?? '')).toBe(true)
+    })
+    await waitFor(() => expect(rowEl(id)).not.toBeNull())
+  }
+
+  it('undoing X on a done knowledge row brings it back Done, with no Approve and nothing waiting (I1)', async () => {
+    const resolvedAt = Date.now() - 1000
+    const before = row('k', { state: 'done', resolvedAt })
+    await mountFeed([before])
+    await xThenUndo('k')
+    const after = reviewStore.getState().entries.find((e) => e.id === 'k')
+    expect(after).toMatchObject({ kind: 'proposal', state: 'done', resolvedAt })
+    expect(within(rowEl('k')).queryByTestId('fake-k')).toBeNull()
+    expect(within(rowEl('k')).queryByRole('button', { name: 'Approve' })).toBeNull()
+    expect(waitingCount(reviewStore.getState().entries)).toBe(0)
+  })
+
+  it('undoing X on a done default row restores its state, resolvedAt and undoUntil exactly (I1)', async () => {
+    const before = row('d', {
+      kind: 'done',
+      ref: { type: 'draft', id: 'd1' },
+      state: 'done',
+      resolvedAt: Date.now() - 1000,
+      undoUntil: Date.now() - 500,
+    })
+    await mountFeed([before])
+    await xThenUndo('d')
+    expect(reviewStore.getState().entries.find((e) => e.id === 'd')).toEqual(before)
   })
 
   it('a row removed through the store moves focus to the row below (Review Focus 4)', async () => {
