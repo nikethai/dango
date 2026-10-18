@@ -74,3 +74,8 @@ export function isSessionGenerationActive(sessionId: string): boolean {
 export function wasGenerationCancelled(sessionId: string, messageId: string): boolean {
   return cancelledRuns.has(runKey(sessionId, messageId))
 }
+
+/** Forget the Stop mark for this message; generate() calls it once its finish path has read the mark. */
+export function clearGenerationCancelled(sessionId: string, messageId: string): void {
+  cancelledRuns.delete(runKey(sessionId, messageId))
+}

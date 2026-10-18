@@ -44,7 +44,10 @@ export function useReviewRenderer(
   return useStore(reviewRegistryStore, (s) => lookupReviewRenderer(s.renderers, entry))
 }
 
-/** Whether an opener is registered for `refType`; re-renders when one registers later (the default 'question' opener, slice 10). */
+/**
+ * Whether an opener is registered for `refType`; re-renders when one registers later (the default 'question' opener, slice 10).
+ * @deprecated Ignores an opener's `canOpen`; use `useCanOpenReviewEntry(entry)`. No callers remain.
+ */
 export function useHasReviewOpener(refType: ReviewRefType): boolean {
   return useStore(reviewRegistryStore, (s) => Boolean(s.openers[refType]))
 }

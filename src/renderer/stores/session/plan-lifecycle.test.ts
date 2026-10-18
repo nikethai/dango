@@ -80,14 +80,21 @@ describe('planTitle', () => {
 })
 
 describe('finishExecutedPlan', () => {
-  it('stamps finishedAt when the run ended on its own', () => {
-    expect(finishExecutedPlan(plan({ status: 'approved', startedAt: 1 }), { stopped: false, now: 5 })).toEqual(
+  const running = plan({ status: 'approved', startedAt: 1 })
+  it('no stop: stamps finishedAt', () => {
+    expect(finishExecutedPlan(running, { stoppedDuringStream: false, stoppedDuringContinue: false, now: 5 })).toEqual(
       plan({ status: 'approved', startedAt: 1, finishedAt: 5 })
     )
   })
-  it('stopped run: no finishedAt', () => {
-    const p = plan({ status: 'approved', startedAt: 1 })
-    expect(finishExecutedPlan(p, { stopped: true, now: 5 }).finishedAt).toBeUndefined()
+  it('stop during the main stream: no finishedAt', () => {
+    expect(
+      finishExecutedPlan(running, { stoppedDuringStream: true, stoppedDuringContinue: false, now: 5 }).finishedAt
+    ).toBeUndefined()
+  })
+  it('stop during the closing answer (continue stream): no finishedAt', () => {
+    expect(
+      finishExecutedPlan(running, { stoppedDuringStream: false, stoppedDuringContinue: true, now: 5 }).finishedAt
+    ).toBeUndefined()
   })
 })
 
@@ -137,6 +144,18 @@ describe('recordFinishedPlan', () => {
     })
     await recordFinishedPlan(s, 'a1', { ...finished })
     expect(h.addReviewEntry).toHaveBeenCalledTimes(1)
+  })
+
+  it('a failed write can be retried', async () => {
+    h.getStagedChangeSetId.mockReturnValue('cs-3')
+    const p = plan({ status: 'approved', finishedAt: 4_000 })
+    const s: Session = { id: 's3', name: 'Retry', messages: [msg('a3', [editCall('result'), p])] }
+    h.addReviewEntry.mockRejectedValueOnce(new Error('disk full'))
+    await expect(recordFinishedPlan(s, 'a3', p)).rejects.toThrow('disk full')
+    await recordFinishedPlan(s, 'a3', p)
+    expect(h.addReviewEntry).toHaveBeenCalledTimes(2)
+    await recordFinishedPlan(s, 'a3', p)
+    expect(h.addReviewEntry).toHaveBeenCalledTimes(2)
   })
 
   it('files under Everywhere for a chat with no scope, and keeps external text literal', async () => {

@@ -61,7 +61,12 @@ import * as chatStore from '../chatStore'
 import { settingsStore } from '../settingsStore'
 import { uiStore } from '../uiStore'
 import { createNewFork, findMessageLocation } from './forks'
-import { clearGenerationCancel, registerGenerationCancel, wasGenerationCancelled } from './generation-cancel'
+import {
+  clearGenerationCancel,
+  clearGenerationCancelled,
+  registerGenerationCancel,
+  wasGenerationCancelled,
+} from './generation-cancel'
 import { messageQueueStore } from './messageQueue'
 import { insertMessageAfter, modifyMessage, submitNewUserMessage } from './messages'
 import { finishExecutedPlan, nextPlanVersion, recordFinishedPlan } from './plan-lifecycle'
@@ -1225,7 +1230,8 @@ export async function generate(
               }
             : undefined,
         })
-        // Read now: a visible-answer continue below registers a new abort function, which clears the Stop mark.
+        // Read now: a visible-answer continue below registers a new abort function, which clears the Stop mark;
+        // the continue stream's own Stop is read after it (finishExecutedPlan takes both).
         const stoppedDuringStream = wasGenerationCancelled(sessionId, targetMsg.id)
 
         // The approved knowledge this answer was given with: kept on the message and recorded as a use.
@@ -1271,12 +1277,9 @@ export async function generate(
         // If we're in execution phase with no existing plan, no plan part needed
         let finalPlanPart: MessagePlanPart | undefined
         if (isPlanMode) {
-          if (isExecutionPhase && existingPlanPart) {
-            // Keep the approved plan; it is finished only when the run was not stopped.
-            finalPlanPart = finishExecutedPlan(existingPlanPart, {
-              stopped: stoppedDuringStream || wasGenerationCancelled(sessionId, targetMsg.id),
-              now: Date.now(),
-            })
+          if (isExecutionPhase) {
+            // Keep the approved plan; finishedAt is decided after the closing-answer stream below.
+            finalPlanPart = existingPlanPart
           } else if (!isPendingPlan) {
             // New pending plan from this generation
             finalPlanPart = {
@@ -1364,11 +1367,22 @@ export async function generate(
           }
         }
 
+        // The run is over (main and closing-answer streams): a finished plan gets finishedAt, a stopped one none.
+        if (isPlanMode && isExecutionPhase && existingPlanPart) {
+          finalPlanPart = finishExecutedPlan(existingPlanPart, {
+            stoppedDuringStream,
+            stoppedDuringContinue: wasGenerationCancelled(sessionId, targetMsg.id),
+            now: Date.now(),
+          })
+          finalContentParts = withPlanPart(finalContentParts, finalPlanPart)
+        }
+
         // Thought-only / dropped SSE still errors. Model tool-calls are visible work, not empty.
         const emptyCompletionError = buildEmptyCompletionError(finalContentParts, streamResult.finishReason)
 
         // Paint answer + generating=false first — never block the "done" state on image-flow I/O.
         clearGenerationCancel(sessionId, targetMsg.id)
+        clearGenerationCancelled(sessionId, targetMsg.id)
         clearSessionGenerationLive(sessionId, targetMsg.id)
         // Release browser run mutex so the next turn can use tools (keep host/process warm).
         void import('@/packages/browser/lock')
@@ -1534,6 +1548,7 @@ export async function generate(
           }
         )
         clearGenerationCancel(sessionId, targetMsg.id)
+        clearGenerationCancelled(sessionId, targetMsg.id)
         clearSessionGenerationLive(sessionId, targetMsg.id)
         targetMsg = {
           ...targetMsg,
@@ -1580,6 +1595,7 @@ export async function generate(
     const ocrError = error instanceof OCRError ? error : undefined
     const causeError = ocrError?.cause
     clearGenerationCancel(sessionId, targetMsg.id)
+    clearGenerationCancelled(sessionId, targetMsg.id)
     clearSessionGenerationLive(sessionId, targetMsg.id)
     void import('@/packages/browser/lock')
       .then(({ releaseBrowserLock }) => releaseBrowserLock(sessionId, targetMsg.id))

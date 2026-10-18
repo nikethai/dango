@@ -1,7 +1,13 @@
 import type { ReviewEntry } from '@shared/types/review'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const h = vi.hoisted(() => ({ navigate: vi.fn(), setAtom: vi.fn() }))
+const h = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  setAtom: vi.fn(),
+  sessionList: undefined as { id: string }[] | undefined,
+}))
+vi.mock('@/stores/queryClient', () => ({ default: { getQueryData: () => h.sessionList } }))
+vi.mock('@/stores/chatStore', () => ({ ChatQueryKeys: { ChatSessionsList: ['chat-sessions-list'] } }))
 vi.mock('@/router', () => ({ router: { navigate: h.navigate } }))
 vi.mock('@/stores/atoms', () => ({ currentSessionIdAtom: 'currentSessionIdAtom' }))
 vi.mock('jotai', () => ({ getDefaultStore: () => ({ set: h.setAtom }) }))
@@ -24,6 +30,7 @@ const change = (extra: Partial<ReviewEntry> = {}) =>
 beforeEach(() => {
   h.navigate.mockClear()
   h.setAtom.mockClear()
+  h.sessionList = undefined
   reviewRegistryStore.setState({ openers: {} })
 })
 
@@ -41,6 +48,14 @@ describe('change opener (R15: a Change entry opens its chat)', () => {
     expect(hasReviewOpener(change())).toBe(false)
     expect(await openReviewEntry(change())).toBe(false)
     expect(h.navigate).not.toHaveBeenCalled()
+  })
+
+  it('a Change entry whose chat was deleted has no Open', () => {
+    registerChangeOpener()
+    h.sessionList = [{ id: 's2' }]
+    expect(hasReviewOpener(change({ chatId: 's1' }))).toBe(false)
+    h.sessionList = [{ id: 's1' }]
+    expect(hasReviewOpener(change({ chatId: 's1' }))).toBe(true)
   })
 
   it('leaves an existing opener alone, and its cleanup removes only its own', () => {

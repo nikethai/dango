@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   cancelSessionGeneration,
   clearGenerationCancel,
+  clearGenerationCancelled,
   registerGenerationCancel,
   wasGenerationCancelled,
 } from './generation-cancel'
@@ -37,5 +38,14 @@ describe('wasGenerationCancelled', () => {
     expect(wasGenerationCancelled('s3', 'm1')).toBe(true)
     registerGenerationCancel('s3', 'm1', vi.fn())
     expect(wasGenerationCancelled('s3', 'm1')).toBe(false)
+  })
+
+  it('is cleared at the end of the run', () => {
+    const cancel = vi.fn()
+    registerGenerationCancel('s4', 'm1', cancel)
+    cancelSessionGeneration('s4')
+    expect(wasGenerationCancelled('s4', 'm1')).toBe(true)
+    clearGenerationCancelled('s4', 'm1')
+    expect(wasGenerationCancelled('s4', 'm1')).toBe(false)
   })
 })

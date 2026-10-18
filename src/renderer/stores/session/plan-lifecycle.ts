@@ -36,9 +36,15 @@ export function planTitle(planText: string): string {
   return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1).trimEnd()}…` : title
 }
 
-/** The approved plan as kept when its run ends: `finishedAt` only when the run ended on its own, never after Stop. */
-export function finishExecutedPlan(plan: MessagePlanPart, run: { stopped: boolean; now: number }): MessagePlanPart {
-  return run.stopped ? plan : { ...plan, finishedAt: run.now }
+/**
+ * The approved plan as kept when its run ends: `finishedAt` only when the run ended on its own. Stop counts during the
+ * main stream and during the closing-answer (continue) stream, which registers its own abort and is read separately.
+ */
+export function finishExecutedPlan(
+  plan: MessagePlanPart,
+  run: { stoppedDuringStream: boolean; stoppedDuringContinue: boolean; now: number }
+): MessagePlanPart {
+  return run.stoppedDuringStream || run.stoppedDuringContinue ? plan : { ...plan, finishedAt: run.now }
 }
 
 function madeEdits(message: Message | undefined): boolean {
@@ -71,12 +77,17 @@ export async function recordFinishedPlan(session: Session, messageId: string, pl
   recordedPlans.add(key)
   // External text (plan, chat name) is substituted once and stored as plain text; nothing re-parses it.
   const literal = { interpolation: { escapeValue: false } }
-  await addReviewEntry({
-    kind: 'change',
-    ref: { type: 'change', id: changeSetId },
-    text: t('Plan finished: {{title}}', { ...literal, title: planTitle(plan.planText) }),
-    sub: t('From the chat "{{name}}"', { ...literal, name: session.name }),
-    scopeId: scopeIdForSession(session),
-    chatId: session.id,
-  })
+  try {
+    await addReviewEntry({
+      kind: 'change',
+      ref: { type: 'change', id: changeSetId },
+      text: t('Plan finished: {{title}}', { ...literal, title: planTitle(plan.planText) }),
+      sub: t('From the chat "{{chat}}"', { ...literal, chat: session.name }),
+      scopeId: scopeIdForSession(session),
+      chatId: session.id,
+    })
+  } catch (error) {
+    recordedPlans.delete(key) // a failed write may be retried
+    throw error
+  }
 }
