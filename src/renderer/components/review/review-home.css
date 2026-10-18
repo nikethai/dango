@@ -1,0 +1,101 @@
+/* Review home feed (slice 05). Only --dango-* tokens. */
+.dango-review-feed {
+  padding: 0 var(--dango-space-7);
+}
+
+.dango-review-feed__day {
+  margin: var(--dango-space-5) 0 var(--dango-space-2);
+  color: var(--dango-muted);
+}
+
+.dango-review-feed__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-2);
+}
+
+/* The row's renderer draws the focus ring from its `focused` prop (.dg-item.is-focused). */
+.dango-review-feed__row:focus,
+.dango-review-feed__empty:focus {
+  outline: none;
+}
+
+/* Toolbar */
+.dango-review-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--dango-space-2);
+  padding: var(--dango-space-4) var(--dango-space-7);
+}
+
+.dango-review-toolbar__scope {
+  position: relative;
+}
+
+.dango-review-toolbar__menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: var(--dango-space-1);
+  z-index: 10;
+}
+
+.dango-review-toolbar__new {
+  margin-left: auto;
+}
+
+/* Empty states RV5 / EM2 */
+.dango-review-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--dango-space-3);
+  padding: var(--dango-space-8) var(--dango-space-4);
+  text-align: center;
+}
+
+.dango-review-empty__title,
+.dango-review-empty__line {
+  margin: 0;
+}
+
+.dango-review-empty__line {
+  max-width: 32rem;
+  color: var(--dango-muted);
+}
+
+.dango-review-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--dango-space-2);
+}
+
+/* Phone width: the row's actions drop under its text instead of squeezing it into a narrow column. */
+@media (max-width: 640px) {
+  .dango-review-feed {
+    padding: 0 var(--dango-space-4);
+  }
+
+  .dango-review-toolbar {
+    flex-wrap: wrap;
+    padding: var(--dango-space-3) var(--dango-space-4);
+  }
+
+  /* No hardware keyboard to press it with. */
+  .dango-review-toolbar__new .dg-kbd {
+    display: none;
+  }
+
+  .dango-review-feed__row .dg-item {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .dango-review-feed__row .dg-item__actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}

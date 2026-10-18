@@ -3,6 +3,7 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
 import { MemoryMigrationSheet } from '@/components/knowledge/MemoryMigrationSheet'
 import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
+import { registerDefaultQuestionOpener } from '@/components/review/questionOpener'
 import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
 import { useDesktopShell } from '@/hooks/useDesktopShell'
@@ -52,6 +53,8 @@ function Root() {
   useEffect(() => {
     void initKnowledge()
   }, [])
+  // Review's default 'question' opener, app-wide (slice 10 may replace it).
+  useEffect(() => registerDefaultQuestionOpener(), [])
 
   useEffect(() => {
     void platform.getWindowLabel?.().then((label) => {

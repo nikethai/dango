@@ -4,7 +4,7 @@ title: 'Total redesign: structure, then look'
 status: Now
 assignee: []
 created_date: '2026-10-16 14:22'
-updated_date: '2026-10-18 07:17'
+updated_date: '2026-10-18 10:17'
 labels:
   - design
 dependencies: []
@@ -34,4 +34,6 @@ Maintainer asked on 2026-10-16 to redesign before building the shared core: does
 2026-10-18: slice 04 (knowledge) built on feat/redesign-04-knowledge: knowledge store with locked revertible commits, proposals with contradiction check (session model, 15 s timeout), approve/add/edit/remove/move with one undo each, conflicts (Keep this / Keep both), Review renderers, approved knowledge as the only chat context (1,500-token budget, framing sentence), chat proposer replacing memory auto-save, Knowledge tab + Everywhere lists, one-time move of old memory. Slice 2 note (C1): slice 2 must fill useDontSuggestEntries and add the Open Everywhere row on Memory and privacy itself, and hide the now-dead autoSaveFallbackPin / showMemoryUpdatedToast toggles. Slice 10 note: re-check entries use ref = use.ref and can merge with open draft entries.
 
 2026-10-18: slice 02 (settings) built on feat/redesign-02-settings: five sections plus Advanced (nav model settingsNavModel.ts), section tabs, Sources and Memory and privacy pages (real Don't-suggest list from slice 4, Open Everywhere, dead memory toggles removed), Trust sheet (useTrustSheet; Auto never approves knowledge), Agents replaces Copilots (redirects kept), Image studio under Advanced, cost heads-up and thinking display controls; new settings fields trustLevel/costWarningUsd/showThinking/backgroundPaused with readX() normalisers. Next: slice 05 and 06a after merge.
+
+Slice 05 (Review home) built on feat/redesign-05-review-home. Follow-ups: for slice 10 (first real Auto applier) — (a) the Undo button on an Auto-arrived Done row may render before the arrival map is set and miss a re-render; (b) when an Auto arrival loses a cross-window race, addReviewEntry returns the open input entry instead of the stored Done row. For 1b's UndoToast — at 390 px the toast is narrow and covers a row. Minor: getOS() matches Mac before iPhone and Linux before Android, so the New chat shortcut hint's phone check never fires (CSS hides it under 640 px).
 <!-- SECTION:NOTES:END -->
