@@ -14,11 +14,11 @@ import { useMyCopilots, useRemoteCopilots } from '@/hooks/useCopilots'
 import { useProviders } from '@/hooks/useProviders'
 import { useScopes } from '@/hooks/useScopes'
 import {
-  applyDraftScope,
+  type DraftSeed,
   isNewPrefill,
   type NewChatSearch,
   NewChatSearchSchema,
-  seedNewChatSession,
+  seedDraftFromLink,
 } from '@/lib/newChatSearch'
 import { resolveDraftScopeId } from '@/projects/scope-navigation'
 import { createSession as createSessionStore } from '@/stores/chatStore'
@@ -138,21 +138,18 @@ function Index() {
 
   const routerState = useRouterState()
   const { scopes } = useScopes()
-  // Seed once per link, and again only if the link's scope resolves differently once scopes load from storage,
-  // so a later scope list change never undoes what the user picked. An unknown or deleted scope starts unscoped.
-  const seeded = useRef<{ search?: NewChatSearch; scopeId?: string }>({})
+  // Seed once per link, and again only if the link's scope resolves differently once scopes load from storage
+  // (or the scope is deleted) while the draft still holds the earlier resolution, so a pill choice is never undone.
+  // An unknown or deleted scope starts unscoped.
+  const seeded = useRef<DraftSeed>({})
   useEffect(() => {
     const search = routerState.location.search as NewChatSearch
     const scopeId = resolveDraftScopeId(search.scopeId, scopes)
-    if (seeded.current.search === search && seeded.current.scopeId === scopeId) return
+    const previous = seeded.current
+    if (previous.search === search && previous.scopeId === scopeId) return
     seeded.current = { search, scopeId }
     const scope = scopes.find((item) => item.id === scopeId)
-    setSession((old) => {
-      const next = seedNewChatSession(old, { ...search, scopeId })
-      return search.scopeId === undefined
-        ? next
-        : applyDraftScope(next, scope, { agentInSearch: Boolean(search.copilotId) })
-    })
+    setSession((old) => seedDraftFromLink(old, { search, scopeId, scope }, previous))
   }, [routerState.location.search, scopes])
 
   // A new prefill while /new is already open: show it by remounting the composer with the draft.

@@ -1,7 +1,13 @@
 import { toSessionAgentFieldsFromSelection } from '@shared/new-chat-agents'
 import type { Session } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { applyDraftScope, isNewPrefill, NewChatSearchSchema, seedNewChatSession } from './newChatSearch'
+import {
+  applyDraftScope,
+  isNewPrefill,
+  NewChatSearchSchema,
+  seedDraftFromLink,
+  seedNewChatSession,
+} from './newChatSearch'
 
 const base = { id: 'new', name: 'Untitled', type: 'chat', messages: [] } as unknown as Session
 
@@ -69,5 +75,62 @@ describe('isNewPrefill', () => {
     expect(isNewPrefill('typed over', undefined)).toBe(false)
     expect(isNewPrefill(undefined, undefined)).toBe(false)
     expect(isNewPrefill(undefined, '')).toBe(false)
+  })
+})
+
+describe('seedDraftFromLink', () => {
+  const acme = { id: 'acme', defaultAgentId: undefined }
+  const search = { scopeId: 'acme' }
+
+  it('seeds the draft the first time a link is seen', () => {
+    expect(seedDraftFromLink(base, { search, scopeId: 'acme', scope: acme }, {}).projectId).toBe('acme')
+  })
+
+  it('applies a late scope load when the draft still holds the earlier resolution', () => {
+    // Scopes not loaded yet: the link resolved to no scope, and the draft has none.
+    const first = seedDraftFromLink(base, { search, scopeId: undefined, scope: undefined }, {})
+    expect(first.projectId).toBeUndefined()
+    const late = seedDraftFromLink(first, { search, scopeId: 'acme', scope: acme }, { search, scopeId: undefined })
+    expect(late.projectId).toBe('acme')
+  })
+
+  it('a re-resolve of the same link does not overwrite a pill choice', () => {
+    const seeded = seedDraftFromLink(base, { search, scopeId: 'acme', scope: acme }, {})
+    const picked = { ...seeded, projectId: 'other' } as Session
+    // The link's scope was deleted while /new is open: it now resolves to no scope.
+    expect(
+      seedDraftFromLink(picked, { search, scopeId: undefined, scope: undefined }, { search, scopeId: 'acme' })
+    ).toBe(picked)
+    // A late load resolving the link differently also leaves the pill alone.
+    const unscopedPick = { ...base, projectId: 'other' } as Session
+    expect(
+      seedDraftFromLink(unscopedPick, { search, scopeId: 'acme', scope: acme }, { search, scopeId: undefined })
+    ).toBe(unscopedPick)
+  })
+
+  it('a deleted link scope clears the draft when the user had not changed it', () => {
+    const seeded = seedDraftFromLink(base, { search, scopeId: 'acme', scope: acme }, {})
+    const next = seedDraftFromLink(
+      seeded,
+      { search, scopeId: undefined, scope: undefined },
+      { search, scopeId: 'acme' }
+    )
+    expect(next.projectId).toBeUndefined()
+  })
+
+  it('a new link seeds again even after a pill choice', () => {
+    const picked = { ...base, projectId: 'other' } as Session
+    const nextSearch = { scopeId: 'acme' }
+    expect(
+      seedDraftFromLink(picked, { search: nextSearch, scopeId: 'acme', scope: acme }, { search, scopeId: 'acme' })
+        .projectId
+    ).toBe('acme')
+  })
+
+  it('the same link resolving the same way changes nothing', () => {
+    const picked = { ...base, projectId: 'other' } as Session
+    expect(seedDraftFromLink(picked, { search, scopeId: 'acme', scope: acme }, { search, scopeId: 'acme' })).toBe(
+      picked
+    )
   })
 })
