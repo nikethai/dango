@@ -2,7 +2,7 @@ import type { KnowledgeProposal, KnowledgeState } from '@shared/types/knowledge'
 import type { ReviewEntry } from '@shared/types/review'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { addReviewEntry, reviewStore, setReviewStorageForTests } from '@/packages/review'
+import { addReviewEntry, reviewStore, setReviewEntryState, setReviewStorageForTests } from '@/packages/review'
 import { pushUndo, type UndoInput } from '@/packages/undo'
 import {
   editKnowledge,
@@ -16,7 +16,7 @@ import {
 import { startReviewSync } from './review-sync'
 import { _resetScopesForTests, _setScopeReaderForTests } from './scopes'
 import { _resetKnowledgeForTests, commitKnowledge } from './store'
-import { getRaw, type MakeItemInput, makeItem, resetTestStorage } from './test-storage'
+import { getRaw, type MakeItemInput, makeItem, putRaw, resetTestStorage, testStorage } from './test-storage'
 import { contentHash } from './text'
 import { recordKnowledgeUse } from './uses'
 
@@ -275,5 +275,97 @@ describe('re-approve and re-check', () => {
     expect(reviewEntries().filter((e) => e.kind === 're-check')).toMatchObject([
       { text: 'Update the plan', sub: 'It used "Launch is 4 Nov", which you removed.' },
     ])
+  })
+})
+
+describe('fix round 1', () => {
+  it('a preference cannot leave Everywhere', async () => {
+    await seed({ id: 'e1', scopeId: EVERYWHERE_SCOPE_ID, kind: 'preference', text: 'Keep it short' })
+    const before = stored()
+    const writes = testStorage.setItemNow.mock.calls.length
+    await expect(moveKnowledge('e1', 'acme')).rejects.toThrow('preference')
+    expect(stored()).toEqual(before)
+    expect(testStorage.setItemNow.mock.calls.length).toBe(writes)
+    expect(pushUndo).not.toHaveBeenCalled()
+  })
+
+  it('move to an unknown scope is refused as missing', async () => {
+    await seed({ id: 'k1' })
+    await expect(moveKnowledge('k1', 'no-such-scope')).rejects.toThrow('missing')
+    expect(stored().items[0].scopeId).toBe('acme')
+    expect(pushUndo).not.toHaveBeenCalled()
+  })
+
+  it('same-scope move and same-text edit change nothing', async () => {
+    await seed({ id: 'k1', text: 'Launch is 6 Nov' })
+    const before = stored()
+    const writes = testStorage.setItemNow.mock.calls.length
+    expect((await moveKnowledge('k1', 'acme')).id).toBe('k1')
+    expect((await editKnowledge('k1', ' Launch is 6 Nov ')).approvedRevisionId).toBe('r1')
+    expect(stored()).toEqual(before)
+    expect(testStorage.setItemNow.mock.calls.length).toBe(writes)
+    expect(pushUndo).not.toHaveBeenCalled()
+  })
+
+  it('reapprove closes the open health entry and its undo reopens it', async () => {
+    await seed({ id: 'k1', text: 'Launch is 6 Nov', staleAfter: '2020-01-01T00:00:00Z' })
+    await addReviewEntry({ kind: 're-check', scopeId: 'acme', text: 'Due', ref: { type: 'knowledge', id: 'k1' } })
+    await reapproveKnowledge('k1')
+    expect(reviewEntries().map((e) => e.state)).toEqual(['done'])
+
+    await lastUndo().undo()
+    expect(reviewEntries().map((e) => e.state)).toEqual(['open'])
+    expect(stored().items[0]).toMatchObject({ approvedRevisionId: 'r1', staleAfter: '2020-01-01T00:00:00Z' })
+  })
+
+  it('reapprove leaves a dismissed health entry alone, also on undo', async () => {
+    await seed({ id: 'k1', text: 'Launch is 6 Nov' })
+    const entry = await addReviewEntry({
+      kind: 're-check',
+      scopeId: 'acme',
+      text: 'Due',
+      ref: { type: 'knowledge', id: 'k1' },
+    })
+    await setReviewEntryState({ id: entry.id }, 'dismissed')
+    await reapproveKnowledge('k1')
+    expect(reviewEntries().map((e) => e.state)).toEqual(['dismissed'])
+    await lastUndo().undo()
+    expect(reviewEntries().map((e) => e.state)).toEqual(['dismissed'])
+  })
+
+  it('an edit retries when another window changes the item between read and commit', async () => {
+    await seed({ id: 'k1', text: 'Launch is 6 Nov', sources: [{ id: 's1', kind: 'file', label: 'a', sourceId: 'x' }] })
+    const digest = crypto.subtle.digest.bind(crypto.subtle)
+    const spy = vi.spyOn(crypto.subtle, 'digest').mockImplementationOnce((alg, data) => {
+      // Another window marks the source removed while this edit is hashing.
+      const other = stored()
+      other.items[0].sources[0].removed = true
+      putRaw('knowledge', other)
+      return digest(alg, data)
+    })
+    const item = await editKnowledge('k1', 'Launch is 4 Nov')
+    spy.mockRestore()
+
+    expect(item.text).toBe('Launch is 4 Nov')
+    expect(stored().items[0]).toMatchObject({ text: 'Launch is 4 Nov', approvedRevisionId: 'r2' })
+    expect(stored().items[0].sources[0].removed).toBe(true)
+    expect(pushUndo).toHaveBeenCalledTimes(1)
+  })
+
+  it('an edit gives up with changed after three concurrent changes', async () => {
+    await seed({ id: 'k1', text: 'Launch is 6 Nov' })
+    const digest = crypto.subtle.digest.bind(crypto.subtle)
+    let bump = 0
+    const spy = vi.spyOn(crypto.subtle, 'digest').mockImplementation((alg, data) => {
+      const other = stored()
+      other.items[0].updatedAt = 50_000 + ++bump
+      putRaw('knowledge', other)
+      return digest(alg, data)
+    })
+    await expect(editKnowledge('k1', 'Launch is 4 Nov')).rejects.toThrow('changed')
+    spy.mockRestore()
+    expect(bump).toBe(3)
+    expect(stored().items[0]).toMatchObject({ text: 'Launch is 6 Nov', approvedRevisionId: 'r1' })
+    expect(pushUndo).not.toHaveBeenCalled()
   })
 })

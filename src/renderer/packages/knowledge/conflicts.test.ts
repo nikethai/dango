@@ -1,5 +1,6 @@
 import type { KnowledgeConflict, KnowledgeProposal, KnowledgeState } from '@shared/types/knowledge'
 import type { ReviewEntry } from '@shared/types/review'
+import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reviewStore, setReviewStorageForTests } from '@/packages/review'
 import { pushUndo, type UndoInput } from '@/packages/undo'
@@ -250,5 +251,44 @@ describe('review sync keeps one entry per proposal', () => {
     expect(stored().proposals[0].scopeId).toBe('other')
     expect(entriesFor('proposal', 'p-1').map((e) => [e.state, e.scopeId])).toEqual([['open', 'other']])
     expect(entriesFor('conflict', 'c-1').map((e) => e.state)).toEqual(['dismissed'])
+  })
+})
+
+describe('Everywhere items in a conflict', () => {
+  async function seedWithEverywhere() {
+    const old = await makeItem({ id: 'k1', scopeId: 'acme', text: 'Launch is 4 Nov' })
+    const everywhere = await makeItem({ id: 'e1', scopeId: EVERYWHERE_SCOPE_ID, text: 'Launches are in November' })
+    await commitKnowledge((d) => {
+      d.items.push(old, everywhere)
+      d.proposals.push(proposal({ conflictsWith: ['k1', 'e1'] }))
+      d.conflicts.push(conflict({ itemIds: ['k1', 'e1'] }))
+    })
+    await recordKnowledgeUse(['e1'], { type: 'draft', id: 'd2', label: 'Newsletter' })
+  }
+
+  it('keeping the new statement supersedes the scope item and overrides the Everywhere one', async () => {
+    await seedWithEverywhere()
+    await resolveConflict('c-1', { keep: 'p-1' })
+
+    const s = stored()
+    const kept = s.items.find((i) => i.proposalId === 'p-1')
+    expect(s.items.find((i) => i.id === 'k1')?.status).toBe('superseded')
+    expect(s.items.find((i) => i.id === 'e1')).toMatchObject({ status: 'approved' })
+    expect(s.items.find((i) => i.id === 'e1')?.supersededBy).toBeUndefined()
+    expect(kept?.overrides).toEqual(['e1'])
+    expect(reviewEntries().filter((e) => e.kind === 're-check')).toEqual([])
+  })
+
+  it('keeping the scope item makes it override the Everywhere one', async () => {
+    await seedWithEverywhere()
+    await resolveConflict('c-1', { keep: 'k1' })
+
+    const s = stored()
+    expect(s.items.find((i) => i.id === 'k1')).toMatchObject({ status: 'approved', overrides: ['e1'] })
+    expect(s.items.find((i) => i.id === 'e1')?.status).toBe('approved')
+    expect(s.items.find((i) => i.proposalId === 'p-1')?.status).toBe('superseded')
+
+    await lastUndo().undo()
+    expect(stored().items.find((i) => i.id === 'k1')?.overrides).toBeUndefined()
   })
 })

@@ -5,6 +5,7 @@ import type {
   KnowledgeRevision,
   KnowledgeState,
 } from '@shared/types/knowledge'
+import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { t } from 'i18next'
 import { v4 as uuidv4 } from 'uuid'
 import { getLogger } from '@/lib/utils'
@@ -62,11 +63,31 @@ async function recheckReplaced(losers: KnowledgeItem[]): Promise<string[]> {
   }
 }
 
+/**
+ * What losing means for each of the conflict's items other than the winner: one in the conflict's own scope
+ * is superseded; an Everywhere item stays and the (scope) winner overrides it. Items of other scopes stay.
+ */
+function losersOf(read: Read, winner: Pick<KnowledgeItem, 'id' | 'scopeId'>) {
+  const others = read.items.filter((i) => i.id !== winner.id)
+  const superseded = others.filter((i) => i.scopeId === read.conflict.scopeId)
+  const overridden =
+    winner.scopeId === EVERYWHERE_SCOPE_ID
+      ? []
+      : others.filter((i) => i.scopeId === EVERYWHERE_SCOPE_ID && i.scopeId !== read.conflict.scopeId)
+  return { superseded, overridden: overridden.map((i) => i.id) }
+}
+
+const unique = (ids: string[]) => [...new Set(ids)]
+
 type Outcome = { message: string; revert: () => Promise<void>; rechecks: string[] }
 
-/** Keep the new statement: the proposal is approved (as in `approveProposal`) and supersedes the items. */
+/**
+ * Keep the new statement: the proposal is approved (as in `approveProposal`) and supersedes the conflict's
+ * items in its scope; Everywhere items in the conflict go into its `overrides`.
+ */
 async function keepProposal(conflictId: string): Promise<Outcome> {
   const read = await readConflict(conflictId)
+  let superseded: KnowledgeItem[] = []
   const { item, revert } = await approve(read.proposal.id, {
     recheck: false,
     resolving: {
@@ -74,17 +95,20 @@ async function keepProposal(conflictId: string): Promise<Outcome> {
       apply: (d, winner) => {
         const now = Date.now()
         settle(d, read, now)
-        for (const loser of read.items) supersede(d, loser, winner.id, now)
+        const losers = losersOf(read, winner)
+        superseded = losers.superseded
+        for (const loser of losers.superseded) supersede(d, loser, winner.id, now)
+        if (losers.overridden.length) winner.overrides = unique([...(winner.overrides ?? []), ...losers.overridden])
       },
     },
   })
-  const rechecks = await recheckReplaced(read.items)
+  const rechecks = await recheckReplaced(superseded)
   return { message: t('Kept "{{text}}"', { text: quote(item.text) }), revert, rechecks }
 }
 
 /**
  * Keep a saved statement: the proposal is stored as a superseded item with one unapproved revision
- * (history `proposed`, `superseded`); the conflict's other items are superseded too.
+ * (history `proposed`, `superseded`); the conflict's other items lose as in `losersOf`.
  */
 async function keepItem(conflictId: string, winnerId: string): Promise<Outcome> {
   const read = await readConflict(conflictId)
@@ -94,7 +118,7 @@ async function keepItem(conflictId: string, winnerId: string): Promise<Outcome> 
   const by = originBy(p.origin)
   const empty = { kind: p.kind, revisions: [] as KnowledgeRevision[], approvedRevisionId: '' }
   const revision = await newRevision(empty, { text: p.text, by })
-  const losers = read.items.filter((i) => i.id !== winnerId)
+  const losers = losersOf(read, winner)
 
   const result = await commitKnowledge((d) => {
     const now = Date.now()
@@ -119,9 +143,13 @@ async function keepItem(conflictId: string, winnerId: string): Promise<Outcome> 
       // Lets review-sync close the proposal's entry as done (preflight C7).
       proposalId: p.id,
     })
-    for (const loser of losers) supersede(d, loser, winnerId, now)
+    for (const loser of losers.superseded) supersede(d, loser, winnerId, now)
+    if (losers.overridden.length) {
+      const draft = d.items.find((i) => i.id === winnerId)
+      if (draft) draft.overrides = unique([...(draft.overrides ?? []), ...losers.overridden])
+    }
   })
-  const rechecks = await recheckReplaced(losers)
+  const rechecks = await recheckReplaced(losers.superseded)
   return { message: t('Kept "{{text}}"', { text: quote(winner.text) }), revert: result.revert, rechecks }
 }
 

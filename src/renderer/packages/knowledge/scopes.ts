@@ -48,6 +48,11 @@ function findScope(scopeId: string): Scope | undefined {
   return snapshot.find((s) => s.id === scopeId)
 }
 
+/** Everywhere, or a scope in the snapshot. */
+export function scopeExists(scopeId: string): boolean {
+  return scopeId === EVERYWHERE_SCOPE_ID || findScope(scopeId) !== undefined
+}
+
 /** `Everywhere`, the scope's name, or `Unknown scope`. */
 export function scopeName(scopeId: string): string {
   if (scopeId === EVERYWHERE_SCOPE_ID) return t('Everywhere')

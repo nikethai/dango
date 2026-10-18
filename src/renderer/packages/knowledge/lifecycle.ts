@@ -4,8 +4,8 @@ import { t } from 'i18next'
 import { current } from 'immer'
 import isEqual from 'lodash/isEqual'
 import { getLogger } from '@/lib/utils'
-import { setReviewEntryState } from '@/packages/review'
-import { scopeName } from './scopes'
+import { listReviewEntries, loadReviewEntries, setReviewEntryState } from '@/packages/review'
+import { scopeExists, scopeName } from './scopes'
 import { commitKnowledge, ensureKnowledgeLoaded, knowledgeStore } from './store'
 import { newRevision, quote } from './text'
 import { pushKnowledgeUndo } from './undo'
@@ -105,7 +105,7 @@ type Changed = { item: KnowledgeItem; before: KnowledgeItem; revert: () => Promi
  */
 function changeItem<P>(
   id: string,
-  prepare: (item: KnowledgeItem) => Promise<P>,
+  prepare: (item: KnowledgeItem) => P | Promise<P>,
   apply: (draft: KnowledgeItem, prepared: P, now: number) => void
 ): Promise<Changed> {
   refuseBuiltIn(id)
@@ -181,16 +181,23 @@ export async function removeKnowledge(id: string): Promise<void> {
 /**
  * Moves the item to another scope, with a `moved` event `from {old scope}`; what it overrode no longer
  * applies there. Pushes `Moved "{text}" to {scope}`. Moving to its own scope changes nothing.
- * Throws `built-in` or `missing`.
+ * Throws `built-in`, `missing` (no such item, or an unknown target scope) or `preference` (ADR 0013:
+ * preferences live in Everywhere).
  */
 export async function moveKnowledge(id: string, toScopeId: string): Promise<KnowledgeItem> {
   refuseBuiltIn(id)
   await ensureKnowledgeLoaded({ fresh: true })
   const seen = knowledgeStore.getState().state.items.find((i) => i.id === id && i.status === 'approved')
-  if (seen?.scopeId === toScopeId) return seen
+  if (!seen) throw new Error('missing')
+  if (seen.scopeId === toScopeId) return seen
+  if (!scopeExists(toScopeId)) throw new Error('missing')
   const { item, revert } = await changeItem(
     id,
-    async (before) => t('from {{scope}}', { scope: scopeName(before.scopeId) }),
+    (before) => {
+      // Checked on the read the commit is guarded by, so a retry checks again.
+      if (before.kind === 'preference' && toScopeId !== EVERYWHERE_SCOPE_ID) throw new Error('preference')
+      return t('from {{scope}}', { scope: scopeName(before.scopeId) })
+    },
     (draft, note, now) => {
       draft.scopeId = toScopeId
       draft.history.push({ at: now, by: 'user', action: 'moved', note })
@@ -238,20 +245,30 @@ export async function reapproveKnowledge(id: string): Promise<KnowledgeItem> {
       draft.updatedAt = now
     }
   )
-  const ref = { type: 'knowledge' as const, id }
-  try {
-    await setReviewEntryState({ ref }, 'done')
-  } catch (error) {
-    log.error('Knowledge re-check close failed:', error)
-  }
+  const closed = await closeHealthEntry(id)
   pushKnowledgeUndo(
     t('Approved "{{text}}" for {{scope}}', { text: quote(item.text), scope: scopeName(item.scopeId) }),
     revert,
     {
       onUndo: async () => {
-        await setReviewEntryState({ ref }, 'open')
+        if (closed) await setReviewEntryState({ id: closed }, 'open')
       },
     }
   )
   return item
+}
+
+/** Closes the item's newest health re-check entry if it is open; returns its id (for undo) or undefined. */
+async function closeHealthEntry(itemId: string): Promise<string | undefined> {
+  try {
+    await loadReviewEntries()
+    // Newest first.
+    const newest = listReviewEntries().find((e) => e.ref.type === 'knowledge' && e.ref.id === itemId)
+    if (newest?.state !== 'open') return undefined
+    await setReviewEntryState({ id: newest.id }, 'done')
+    return newest.id
+  } catch (error) {
+    log.error('Knowledge re-check close failed:', error)
+    return undefined
+  }
 }
