@@ -5,7 +5,6 @@
 import { createMessage, type Message } from '@shared/types'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { createInstance } from 'i18next'
-import type { ReactNode } from 'react'
 import { initReactI18next } from 'react-i18next'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import en from '@/i18n/locales/en/translation.json'
@@ -15,7 +14,8 @@ vi.mock('@/platform', () => ({ default: { openLink: h.openLink } }))
 vi.mock('@/modals/Settings', () => ({ navigateToSettings: vi.fn() }))
 vi.mock('@/packages/writing/runtime', () => ({ requestWritingRewrite: vi.fn() }))
 vi.mock('@/components/Markdown', () => ({
-  default: ({ children }: { children: ReactNode }) => <div data-testid="markdown">{children}</div>,
+  // Stands in for rendering: emphasis markers do not reach the DOM.
+  default: ({ children }: { children: string }) => <div data-testid="markdown">{children.replace(/\*\*/g, '')}</div>,
 }))
 
 import { QuickChatPanel, type QuickChatPanelProps, usedKnowledgeCount } from './index'
@@ -248,7 +248,9 @@ describe('QuickChatPanel', () => {
 
   it('before the first token: one live thinking line with the only mascot', () => {
     const { container } = render(
-      <QuickChatPanel {...props({ view: 'answered', generating: true, answer: answer(''), question: 'Why?' })} />
+      <QuickChatPanel
+        {...props({ view: 'answered', generating: true, answer: answer(''), askedQuestion: 'Why?', question: '' })}
+      />
     )
     expect(container.querySelectorAll('svg.dg-mascot')).toHaveLength(1)
     expect(container.querySelector('.dg-think__title')?.textContent).toBe('Thinking')
@@ -280,5 +282,109 @@ describe('QuickChatPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Rewrite' }))
     expect(root.contains(screen.getByRole('menu'))).toBe(true)
     expect(root.dataset.menuOpen).toBe('true')
+  })
+  it('IME composition never submits or closes', () => {
+    const p = props({ question: 'Hi' })
+    render(<QuickChatPanel {...p} />)
+    const input = screen.getByRole('textbox', { name: 'Ask anything' })
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 })
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    expect(p.onSubmit).not.toHaveBeenCalled()
+    fireEvent.keyDown(input, { key: 'Escape', keyCode: 229 })
+    fireEvent.keyDown(input, { key: 'Escape', isComposing: true })
+    expect(p.onEsc).not.toHaveBeenCalled()
+  })
+
+  it('Enter on a blank question is ignored', () => {
+    const p = props({ question: '   ' })
+    render(<QuickChatPanel {...p} />)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Ask anything' }), { key: 'Enter' })
+    expect(p.onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('the asked question comes from the prop, else the last submit, never the live input', () => {
+    const p = props({ view: 'answered', answer: answer('A'), question: 'typing a follow-up' })
+    const { container, rerender } = render(<QuickChatPanel {...p} />)
+    const asked = () => container.querySelector('.dg-qc__body p')?.textContent ?? null
+    expect(asked()).toBeNull()
+    rerender(<QuickChatPanel {...p} question="First question" />)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Ask anything' }), { key: 'Enter' })
+    rerender(<QuickChatPanel {...p} question="" />)
+    expect(asked()).toBe('First question')
+    rerender(<QuickChatPanel {...p} question="" askedQuestion="From the session" />)
+    expect(asked()).toBe('From the session')
+  })
+
+  it('announces plain text, and the error for an errored answer', () => {
+    const p = props({ view: 'answered', generating: true, answer: answer('', { id: 'a2' }), question: 'q' })
+    const { rerender, container } = render(<QuickChatPanel {...p} />)
+    const live = () => container.querySelector('[data-quick-answer-live]')?.textContent ?? ''
+    act(() => rerender(<QuickChatPanel {...p} generating={false} answer={answer('It is **bold**.', { id: 'a2' })} />))
+    expect(live()).toBe('It is bold.')
+    act(() => rerender(<QuickChatPanel {...p} answer={answer('', { id: 'a3' })} />))
+    act(() =>
+      rerender(<QuickChatPanel {...p} generating={false} answer={answer('', { id: 'a3', error: 'Rate limited' })} />)
+    )
+    expect(live()).toBe('Rate limited')
+  })
+
+  it('Rewrite is disabled in the rewrite view', () => {
+    render(<QuickChatPanel {...props({ view: 'rewrite', rewrite: { option: null, text: 'draft' } })} />)
+    expect((screen.getByRole('button', { name: 'Rewrite' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('menu keys: Home, End, Tab and a click outside', () => {
+    render(<QuickChatPanel {...props()} />)
+    const rewrite = screen.getByRole('button', { name: 'Rewrite' })
+    fireEvent.click(rewrite)
+    let items = screen.getAllByRole('menuitem')
+    fireEvent.keyDown(items[0], { key: 'End' })
+    expect(document.activeElement).toBe(items[4])
+    fireEvent.keyDown(items[4], { key: 'Home' })
+    expect(document.activeElement).toBe(items[0])
+    fireEvent.keyDown(items[0], { key: 'Tab' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.click(rewrite)
+    items = screen.getAllByRole('menuitem')
+    fireEvent.pointerDown(screen.getByRole('textbox', { name: 'Ask anything' }))
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('re-measures the open menu when the panel content moves', () => {
+    const observers: Array<() => void> = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          observers.push(callback)
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    )
+    let menuBottom = 300
+    const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 0, width: 0, height: 0 }) as DOMRect
+    const original = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      if (this.getAttribute('role') === 'menu') return rect(menuBottom - 200, menuBottom)
+      if (this.classList.contains('dg-qc')) return rect(100, 250)
+      return original.call(this)
+    }
+    try {
+      const { container } = render(<QuickChatPanel {...props()} />)
+      const root = container.querySelector('.dg-qc') as HTMLElement
+      fireEvent.click(screen.getByRole('button', { name: 'Rewrite' }))
+      expect(root.style.minHeight).toBe('208px')
+      menuBottom = 400
+      act(() => {
+        for (const callback of observers) callback()
+      })
+      expect(root.style.minHeight).toBe('308px')
+      fireEvent.keyDown(screen.getAllByRole('menuitem')[0], { key: 'Escape' })
+      expect(root.style.minHeight).toBe('')
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = original
+    }
   })
 })

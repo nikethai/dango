@@ -28,6 +28,8 @@ export type QuickChatPanelProps = {
   scopeId: string | null
   onScopeChange: (id: string | null) => void
   question: string
+  /** The question the shown answer replies to (the chat's last user message). Never the live input. */
+  askedQuestion?: string
   onQuestionChange: (v: string) => void
   onSubmit: () => void
   answer?: Message
@@ -66,6 +68,7 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
     scopeId,
     onScopeChange,
     question,
+    askedQuestion,
     onQuestionChange,
     onSubmit,
     answer,
@@ -86,6 +89,7 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
   const rootRef = useRef<HTMLDivElement | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const answerRef = useRef<HTMLDivElement>(null)
   const rewriteTriggerRef = useRef<HTMLButtonElement>(null)
   const rewriteTriggerId = useId()
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
@@ -102,7 +106,10 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
     [ref]
   )
 
-  // The window measures the root, so the root has to reach the bottom of an open menu.
+  // The window measures the root, so the root has to reach the bottom of an open menu. Content that moves while the
+  // menu is open (a streaming answer, a longer question) moves the menu too, so it is re-measured.
+  const answerText = answer ? getMessageText(answer, false, false) : ''
+  // biome-ignore lint/correctness/useExhaustiveDependencies: view, question and answer text move the open menu
   useLayoutEffect(() => {
     const root = rootRef.current
     const menu = openMenu ? root?.querySelector<HTMLElement>('[role="menu"]') : null
@@ -110,16 +117,24 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
       setMenuMinHeight(undefined)
       return
     }
-    const bottom = menu.getBoundingClientRect().bottom - root.getBoundingClientRect().top + MENU_BOTTOM_GAP
-    setMenuMinHeight(Math.ceil(bottom))
-  }, [openMenu])
+    const measure = () => {
+      const bottom = menu.getBoundingClientRect().bottom - root.getBoundingClientRect().top + MENU_BOTTOM_GAP
+      setMenuMinHeight(Math.ceil(bottom))
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(menu)
+    for (const child of Array.from(root.children)) observer.observe(child)
+    return () => observer.disconnect()
+  }, [openMenu, view, question, answerText])
 
   // One Esc is one step: an open menu closes first; an Esc another handler took (RewritePanel) is skipped.
   const escState = useRef({ openMenu, onEsc })
   escState.current = { openMenu, onEsc }
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return
       event.preventDefault()
       if (escState.current.openMenu) {
         const menu = rootRef.current?.querySelector('[role="menu"]')
@@ -156,8 +171,9 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
     }
     if (streamingId.current !== answer.id) return
     streamingId.current = null
-    const text = getMessageText(answer, false, false).trim()
-    if (text && !answer.error) setAnnouncement(text)
+    // Plain text as rendered (no Markdown syntax); an errored answer announces its error line.
+    const text = (answer.error ? answer.error : (answerRef.current?.textContent ?? '')).trim()
+    if (text) setAnnouncement(text)
   }, [answer, generating])
 
   /** Rewrite takes the text selected in the body, else what is in the input. */
@@ -198,7 +214,9 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
   }
 
   const onInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
+      return
+    }
     event.preventDefault()
     submit()
   }
@@ -218,9 +236,8 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
     )
   }
 
-  const answerText = answer ? getMessageText(answer, false, false) : ''
   const waitingForFirstToken = generating && !answerText.trim()
-  const shownQuestion = asked || question
+  const shownQuestion = askedQuestion !== undefined ? askedQuestion : asked
 
   return (
     <div ref={setRootRef} className={rootClass} style={rootStyle} data-menu-open={openMenu ? 'true' : undefined}>
@@ -281,9 +298,11 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
                 <ThinkingLine live text="" defaultOpen={false} showMascot startedAt={answer?.timestamp} />
               ) : null}
               {answerText.trim() ? (
-                <Markdown generating={generating} citations={answer?.citations}>
-                  {answerText}
-                </Markdown>
+                <div ref={answerRef}>
+                  <Markdown generating={generating} citations={answer?.citations}>
+                    {answerText}
+                  </Markdown>
+                </div>
               ) : null}
               {answer?.error && !generating ? (
                 <>
@@ -311,6 +330,7 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
             className="dg-btn dg-btn--ghost"
             aria-haspopup="menu"
             aria-expanded={openMenu === 'rewrite'}
+            disabled={view === 'rewrite'}
             onPointerDown={() => {
               if (openMenu !== 'rewrite') rewriteText.current = readRewriteText()
             }}
