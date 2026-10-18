@@ -2,6 +2,7 @@ import type { KnowledgeItem } from '@shared/types/knowledge'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  CHECK_TIMEOUT_MS,
   checkAgainstLayers,
   defaultContradictionChecker,
   selectCandidates,
@@ -20,6 +21,8 @@ vi.mock('@/packages/model-calls', () => ({ generateText: (...args: unknown[]) =>
 vi.mock('@shared/models', () => ({ getModel: (...args: unknown[]) => getModel(...args) }))
 vi.mock('@/adapters', () => ({ createModelDependencies: vi.fn(async () => ({})) }))
 vi.mock('@/platform', () => ({ default: { getConfig: vi.fn(async () => ({})), appLog: vi.fn(async () => undefined) } }))
+const getSession = vi.fn(async (_id: string): Promise<unknown> => null)
+vi.mock('@/stores/chatStore', () => ({ getSession: (id: string) => getSession(id) }))
 vi.mock('@/stores/settingsStore', () => ({
   settingsStore: {
     getState: () => ({
@@ -44,6 +47,7 @@ beforeEach(() => {
   setContradictionCheckerForTests(null)
   generateText.mockReset()
   getModel.mockClear()
+  getSession.mockClear()
 })
 
 describe('selectCandidates', () => {
@@ -94,6 +98,30 @@ describe('default checker', () => {
     expect(messages[0].contentParts[0].text).toBe(
       'You compare a new statement with saved statements. Return only JSON {"contradicts": [ids]} listing the saved statements that cannot be true at the same time as the new one. A statement that adds detail or is about something else does not contradict.'
     )
+  })
+
+  it("uses the session's model when there is a session", async () => {
+    getSession.mockResolvedValueOnce({ id: 's1', settings: { provider: 'claude', modelId: 'sonnet' } })
+    generateText.mockResolvedValue(reply('{"contradicts":[]}'))
+    const candidates = [await makeItem({ id: 'a', text: 'Launch is 6 Nov' })]
+    expect(await defaultContradictionChecker({ text: 'Launch is 13 Nov', candidates, sessionId: 's1' })).toEqual([])
+    expect(getSession).toHaveBeenCalledWith('s1')
+    expect(getModel.mock.calls[0][0]).toMatchObject({ provider: 'claude', modelId: 'sonnet' })
+    expect(getModel.mock.calls[0][1]).toMatchObject({ provider: 'openai', modelId: 'gpt' })
+  })
+
+  it('a model call slower than 15 s fails', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      generateText.mockReturnValue(new Promise(() => undefined))
+      const candidates = [await makeItem({ id: 'a', text: 'Launch is 6 Nov' })]
+      const run = defaultContradictionChecker({ text: 'Launch is 13 Nov', candidates })
+      const settled = expect(run).rejects.toThrow('timed out')
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS)
+      await settled
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reads JSON inside a code fence and after a think block', async () => {
@@ -157,6 +185,27 @@ describe('checkAgainstLayers', () => {
       overrides: [],
       ok: false,
     })
+  })
+
+  it('a timed-out check is no conflict', async () => {
+    await seed()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      generateText.mockReturnValue(new Promise(() => undefined))
+      const run = checkAgainstLayers({ text: 'Launch is 13 Nov', targetScopeId: 'acme', sessionId: 's9' })
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS)
+      expect(await run).toEqual({ conflictsWith: [], overrides: [], ok: false })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('passes the session on to the checker', async () => {
+    await seed()
+    const checker = vi.fn(async () => [])
+    setContradictionCheckerForTests(checker)
+    await checkAgainstLayers({ text: 'Launch is 13 Nov', targetScopeId: 'acme', sessionId: 's1' })
+    expect(checker).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1' }))
   })
 
   it('no model configured is no conflict either', async () => {

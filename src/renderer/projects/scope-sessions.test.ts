@@ -8,6 +8,9 @@ vi.mock('@/packages/knowledge/proposals', () => ({
   moveProposalsForSession: (...args: unknown[]) => moveProposalsForSession(...args),
 }))
 
+const logError = vi.fn()
+vi.mock('@/lib/utils', () => ({ getLogger: () => ({ error: (...args: unknown[]) => logError(...args) }) }))
+
 import { moveSessionToScope, unassignScopeSessions } from './scope-sessions'
 
 const meta = (id: string, extra: Partial<SessionMeta> = {}) => ({ id, name: id, ...extra }) as SessionMeta
@@ -24,6 +27,13 @@ describe('moveSessionToScope', () => {
     expect(updateSession.mock.invocationCallOrder[0]).toBeLessThan(moveProposalsForSession.mock.invocationCallOrder[0])
     await moveSessionToScope('s1', undefined)
     expect(moveProposalsForSession).toHaveBeenLastCalledWith('s1', 'everywhere')
+  })
+
+  it('a failed proposal move is logged and the chat still counts as moved', async () => {
+    moveProposalsForSession.mockRejectedValueOnce(new Error('locked'))
+    expect(await moveSessionToScope('s1', 'b')).toBe(true)
+    expect(updateSession).toHaveBeenCalledWith('s1', { projectId: 'b', folderId: 'b' })
+    expect(logError).toHaveBeenCalledWith('Moving knowledge proposals failed:', expect.any(Error))
   })
 
   it('a failed session write moves no proposals', async () => {

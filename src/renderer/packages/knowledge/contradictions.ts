@@ -1,3 +1,4 @@
+import type { Settings } from '@shared/types'
 import type { KnowledgeItem } from '@shared/types/knowledge'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { getLogger } from '@/lib/utils'
@@ -6,7 +7,15 @@ import { ensureKnowledgeLoaded, knowledgeStore } from './store'
 
 const log = getLogger('knowledge')
 
-export type ContradictionChecker = (input: { text: string; candidates: KnowledgeItem[] }) => Promise<string[]>
+/** `sessionId`: the chat the statement came from; its model answers. Without one, the default chat model. */
+export type ContradictionChecker = (input: {
+  text: string
+  candidates: KnowledgeItem[]
+  sessionId?: string
+}) => Promise<string[]>
+
+/** A checker call that takes longer than this fails (no conflict, `ok: false`). */
+export const CHECK_TIMEOUT_MS = 15_000
 
 const DEFAULT_LIMIT = 8
 
@@ -51,11 +60,24 @@ function parseContradicts(raw: string): string[] {
   return parsed.contradicts.filter((id): id is string => typeof id === 'string')
 }
 
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Contradiction check timed out after ${ms} ms`)), ms)
+  })
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer))
+}
+
 /**
- * Asks the default chat model (the one a new chat gets, resolved like `extractFactsFromTranscript`).
- * Ids that are not among the candidates are dropped. Throws when there is no model or the call fails.
+ * Asks a model, resolved like `extractFactsFromTranscript`: the global settings overlaid with the
+ * session's settings when there is a session, otherwise with the default chat model (the one a new chat
+ * gets). Ids that are not among the candidates are dropped. Throws when there is no model, the call
+ * fails or it takes longer than `CHECK_TIMEOUT_MS`.
  */
-export const defaultContradictionChecker: ContradictionChecker = async ({ text, candidates }) => {
+export const defaultContradictionChecker: ContradictionChecker = ({ text, candidates, sessionId }) =>
+  withTimeout(askModel(text, candidates, sessionId), CHECK_TIMEOUT_MS)
+
+async function askModel(text: string, candidates: KnowledgeItem[], sessionId?: string): Promise<string[]> {
   // Lazy: the model stack is heavy and reaches the platform.
   const [{ getModel }, { createMessage }, { createModelDependencies }, { generateText }, platform, { settingsStore }] =
     await Promise.all([
@@ -67,12 +89,15 @@ export const defaultContradictionChecker: ContradictionChecker = async ({ text, 
       import('@/stores/settingsStore'),
     ])
   const global = settingsStore.getState().getSettings()
-  const settings = {
-    ...global,
-    ...(global.defaultChatModel
-      ? { provider: global.defaultChatModel.provider, modelId: global.defaultChatModel.model }
-      : {}),
-  }
+  const session = sessionId ? await (await import('@/stores/chatStore')).getSession(sessionId) : null
+  const settings = session
+    ? ({ ...global, ...session.settings } as Settings)
+    : {
+        ...global,
+        ...(global.defaultChatModel
+          ? { provider: global.defaultChatModel.provider, modelId: global.defaultChatModel.model }
+          : {}),
+      }
   const dependencies = await createModelDependencies()
   const configs = await platform.getConfig()
   const model = getModel(settings, global, configs, dependencies)
@@ -104,6 +129,7 @@ export function setContradictionCheckerForTests(fn: ContradictionChecker | null)
 export async function checkAgainstLayers(input: {
   text: string
   targetScopeId: string
+  sessionId?: string
 }): Promise<{ conflictsWith: string[]; overrides: string[]; ok: boolean }> {
   await ensureKnowledgeLoaded()
   const { targetScopeId } = input
@@ -121,7 +147,11 @@ export async function checkAgainstLayers(input: {
 
   let found: string[]
   try {
-    found = await (checkerOverride ?? defaultContradictionChecker)({ text: input.text, candidates })
+    found = await (checkerOverride ?? defaultContradictionChecker)({
+      text: input.text,
+      candidates,
+      ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+    })
   } catch (error) {
     log.log('warn', 'Knowledge contradiction check failed:', error instanceof Error ? error.message : String(error))
     return { conflictsWith: [], overrides: [], ok: false }

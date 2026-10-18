@@ -43,7 +43,11 @@ export async function proposeKnowledge(
   await ensureKnowledgeLoaded({ fresh: true })
   if (isKnownText(knowledgeStore.getState().state, textKey, scopeId)) return null
 
-  const check = await checkAgainstLayers({ text: input.text, targetScopeId: scopeId })
+  const check = await checkAgainstLayers({
+    text: input.text,
+    targetScopeId: scopeId,
+    ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+  })
   const conflictsWith = unique([...(input.conflictsWith ?? []), ...check.conflictsWith])
   const overrides = unique([...(input.overrides ?? []), ...check.overrides])
   const now = Date.now()
@@ -128,9 +132,9 @@ export async function dismissProposal(
     }
     dismissed = { ...p }
     const textKey = knowledgeTextKey(p.text)
-    offerDontSuggest = d.dismissals.some(
-      (x) => x.textKey === textKey && x.scopeId === p.scopeId && now - x.at < DONT_SUGGEST_WINDOW_MS
-    )
+    // Dismissals older than the window can never offer anything again: prune them.
+    d.dismissals = d.dismissals.filter((x) => now - x.at < DONT_SUGGEST_WINDOW_MS)
+    offerDontSuggest = d.dismissals.some((x) => x.textKey === textKey && x.scopeId === p.scopeId)
     d.proposals = d.proposals.filter((x) => x.id !== id)
     d.dismissals.push({ textKey, scopeId: p.scopeId, at: now })
     for (const c of d.conflicts) {
@@ -191,13 +195,22 @@ export function getConflict(id: string): KnowledgeConflict | undefined {
 /**
  * A chat moved scope: its proposals follow (preferences stay in Everywhere). A moved proposal loses the
  * old scope's check (conflicts dismissed, `conflictsWith`, `overrides` and `checkedAt` cleared), so
- * approving it checks it against the new scope. Returns how many moved.
+ * approving it checks it against the new scope. One whose text the target scope already knows (approved,
+ * proposed or on the Don't suggest list) is dropped instead. Returns how many moved.
  */
 export async function moveProposalsForSession(sessionId: string, toScopeId: string): Promise<number> {
   let moved = 0
   await commitKnowledge((d) => {
+    const dropped = new Set<string>()
     for (const p of d.proposals) {
       if (p.sessionId !== sessionId || p.kind === 'preference' || p.scopeId === toScopeId) continue
+      if (isKnownText(d, knowledgeTextKey(p.text), toScopeId)) {
+        dropped.add(p.id)
+        for (const c of d.conflicts) {
+          if (c.proposalId === p.id && c.state === 'open') c.state = 'dismissed'
+        }
+        continue
+      }
       p.scopeId = toScopeId
       delete p.conflictsWith
       delete p.overrides
@@ -207,6 +220,7 @@ export async function moveProposalsForSession(sessionId: string, toScopeId: stri
       }
       moved += 1
     }
+    if (dropped.size) d.proposals = d.proposals.filter((p) => !dropped.has(p.id))
   })
   return moved
 }

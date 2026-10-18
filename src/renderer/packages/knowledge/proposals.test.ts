@@ -199,6 +199,20 @@ describe('dismissProposal', () => {
     expect(lastUndo().extra).toBeUndefined()
   })
 
+  it('dismiss prunes dismissals older than the window', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    const old = (await proposeKnowledge(input({ text: 'Old fact here' }))) as KnowledgeProposal
+    await dismissProposal(old.id)
+    const recent = (await proposeKnowledge(input({ text: 'Recent fact here' }))) as KnowledgeProposal
+    vi.setSystemTime(Date.now() + 20 * DAY)
+    await dismissProposal(recent.id)
+    vi.setSystemTime(Date.now() + 15 * DAY)
+    const now = (await proposeKnowledge(input())) as KnowledgeProposal
+    await dismissProposal(now.id)
+    expect(stored().dismissals.map((x) => x.textKey)).toEqual(['recent fact here', 'launch is 13 nov'])
+  })
+
   it('undoing a dismiss removes its dismissal, so the next dismiss does not offer it', async () => {
     const first = (await proposeKnowledge(input())) as KnowledgeProposal
     await dismissProposal(first.id)
@@ -284,6 +298,24 @@ describe('moveProposalsForSession', () => {
     // A preference stays in Everywhere.
     expect(byId.get(pref.id)?.scopeId).toBe(EVERYWHERE_SCOPE_ID)
     expect(await moveProposalsForSession('s1', 'beta')).toBe(0)
+  })
+
+  it('a moved proposal the target scope already knows is dropped', async () => {
+    const approved = await makeItem({ id: 'b1', scopeId: 'beta', text: 'Launch is 13 Nov' })
+    await commitKnowledge((d) => {
+      d.items.push(approved)
+    })
+    await proposeKnowledge(input({ text: 'Budget is 10k', scopeId: 'beta' }))
+    const dupItem = (await proposeKnowledge(input({ sessionId: 's1' }))) as KnowledgeProposal
+    const dupOpen = (await proposeKnowledge(input({ text: 'budget is 10k.', sessionId: 's1' }))) as KnowledgeProposal
+    const fresh = (await proposeKnowledge(input({ text: 'Venue is Hall B', sessionId: 's1' }))) as KnowledgeProposal
+    vi.mocked(setReviewEntryState).mockClear()
+    expect(await moveProposalsForSession('s1', 'beta')).toBe(1)
+    const ids = stored().proposals.map((p) => p.id)
+    expect(ids).not.toContain(dupItem.id)
+    expect(ids).not.toContain(dupOpen.id)
+    expect(stored().proposals.find((p) => p.id === fresh.id)?.scopeId).toBe('beta')
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'proposal', id: dupItem.id } }, 'dismissed')
   })
 
   it('a moved proposal drops its old-scope conflict and is checked again on approve', async () => {
