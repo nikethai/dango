@@ -51,6 +51,7 @@ export async function applyReviewEntry(
   entry: ReviewEntry,
   opts: { silent: boolean; message?: string; now?: number }
 ): Promise<boolean> {
+  if (NEVER_AUTO.includes(entry.ref.type)) return false
   const applier = appliers.get(entry.ref.type)
   if (!applier) return false
   if (inFlight.has(entry.id)) return false

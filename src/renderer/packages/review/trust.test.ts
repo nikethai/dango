@@ -93,6 +93,16 @@ describe('Trust arrival', () => {
     }
   })
 
+  it('applyReviewEntry refuses proposal, conflict and knowledge refs on its own', async () => {
+    for (const t of ['proposal', 'conflict', 'knowledge'] as const) {
+      setReviewApplierForTests(t, applier)
+      const e: ReviewEntry = { ...draft(), id: 'y', state: 'open', createdAt: 1, ref: { type: t, id: 'a' } }
+      expect(await applyReviewEntry(e, { silent: false })).toBe(false)
+      setReviewApplierForTests(t, undefined)
+    }
+    expect(applier.apply).not.toHaveBeenCalled()
+  })
+
   it('arrive refuses proposal, conflict and knowledge refs', async () => {
     for (const t of ['proposal', 'conflict', 'knowledge'] as const) {
       setReviewApplierForTests(t, applier)
