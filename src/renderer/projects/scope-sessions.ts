@@ -1,4 +1,5 @@
-import { isEverywhere, type SessionMeta } from '@shared/types'
+import { EVERYWHERE_SCOPE_ID, isEverywhere, type SessionMeta } from '@shared/types'
+import { moveProposalsForSession } from '@/packages/knowledge/proposals'
 import { getEffectiveProjectId } from '@/projects/project-context'
 import { updateSession } from '@/stores/chatStore'
 
@@ -11,6 +12,8 @@ export async function moveSessionToScope(sessionId: string, scopeId: string | un
     return false
   }
   await updateSession(sessionId, { projectId: scopeId, folderId: scopeId })
+  // Its knowledge proposals follow the chat.
+  await moveProposalsForSession(sessionId, scopeId ?? EVERYWHERE_SCOPE_ID)
   return true
 }
 

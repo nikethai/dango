@@ -1362,5 +1362,7 @@
   "Scope: {{name}}": "Scope: {{name}}",
   "Scope: None": "Scope: None",
   "Unknown scope": "Unknown scope",
-  "Saved: \"{{old}}\"": "Saved: \"{{old}}\""
+  "Saved: \"{{old}}\"": "Saved: \"{{old}}\"",
+  "Dismissed \"{{text}}\"": "Dismissed \"{{text}}\"",
+  "Don't suggest this again": "Don't suggest this again"
 }

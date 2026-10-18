@@ -3,13 +3,34 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const updateSession = vi.fn(async () => undefined)
 vi.mock('@/stores/chatStore', () => ({ updateSession: (...args: unknown[]) => updateSession(...(args as [])) }))
+const moveProposalsForSession = vi.fn(async (..._args: unknown[]) => 0)
+vi.mock('@/packages/knowledge/proposals', () => ({
+  moveProposalsForSession: (...args: unknown[]) => moveProposalsForSession(...args),
+}))
 
 import { moveSessionToScope, unassignScopeSessions } from './scope-sessions'
 
 const meta = (id: string, extra: Partial<SessionMeta> = {}) => ({ id, name: id, ...extra }) as SessionMeta
 
 describe('moveSessionToScope', () => {
-  beforeEach(() => updateSession.mockClear())
+  beforeEach(() => {
+    updateSession.mockClear()
+    moveProposalsForSession.mockClear()
+  })
+
+  it("moves the chat's knowledge proposals after the session write", async () => {
+    await moveSessionToScope('s1', 'b')
+    expect(moveProposalsForSession).toHaveBeenCalledWith('s1', 'b')
+    expect(updateSession.mock.invocationCallOrder[0]).toBeLessThan(moveProposalsForSession.mock.invocationCallOrder[0])
+    await moveSessionToScope('s1', undefined)
+    expect(moveProposalsForSession).toHaveBeenLastCalledWith('s1', 'everywhere')
+  })
+
+  it('a failed session write moves no proposals', async () => {
+    updateSession.mockRejectedValueOnce(new Error('disk full'))
+    await expect(moveSessionToScope('s1', 'b')).rejects.toThrow('disk full')
+    expect(moveProposalsForSession).not.toHaveBeenCalled()
+  })
 
   it('writes projectId and folderId together', async () => {
     expect(await moveSessionToScope('s1', 'b')).toBe(true)
@@ -21,11 +42,15 @@ describe('moveSessionToScope', () => {
   it('refuses Everywhere', async () => {
     expect(await moveSessionToScope('s1', 'everywhere')).toBe(false)
     expect(updateSession).not.toHaveBeenCalled()
+    expect(moveProposalsForSession).not.toHaveBeenCalled()
   })
 })
 
 describe('unassignScopeSessions', () => {
-  beforeEach(() => updateSession.mockClear())
+  beforeEach(() => {
+    updateSession.mockClear()
+    moveProposalsForSession.mockClear()
+  })
 
   it('moves only sessions whose effective id is the scope, including legacy folderId', async () => {
     const count = await unassignScopeSessions('a', [
@@ -38,5 +63,6 @@ describe('unassignScopeSessions', () => {
     expect(updateSession).toHaveBeenCalledTimes(2)
     expect(updateSession).toHaveBeenCalledWith('1', { projectId: undefined, folderId: undefined })
     expect(updateSession).toHaveBeenCalledWith('2', { projectId: undefined, folderId: undefined })
+    expect(moveProposalsForSession).toHaveBeenCalledWith('2', 'everywhere')
   })
 })
