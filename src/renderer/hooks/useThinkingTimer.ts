@@ -120,7 +120,7 @@ export function formatWorkedDuration(milliseconds: number): string {
  * Units are not translated, matching formatWorkedDuration.
  */
 export function formatDangoDuration(milliseconds: number): string {
-  const totalSeconds = Math.max(1, Math.round(milliseconds / 1000))
+  const totalSeconds = Number.isFinite(milliseconds) ? Math.max(1, Math.round(milliseconds / 1000)) : 1
 
   if (totalSeconds < 60) {
     return `${totalSeconds} s`

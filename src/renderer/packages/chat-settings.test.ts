@@ -6,6 +6,7 @@ describe('chat settings accessors', () => {
     expect(getShowThinking({})).toBe('auto')
     expect(getShowThinking({ showThinking: 'loud' })).toBe('auto')
     expect(getShowThinking({ showThinking: 'closed' })).toBe('closed')
+    expect(getShowThinking(null)).toBe('auto')
   })
   it('getCostWarningUsd defaults to 0.5', () => {
     expect(getCostWarningUsd({})).toBe(0.5)
@@ -17,5 +18,6 @@ describe('chat settings accessors', () => {
     expect(scopeKindOf({ kind: 'client' })).toBe('client')
     expect(scopeKindOf({})).toBe('project')
     expect(scopeKindOf(undefined)).toBe('project')
+    expect(scopeKindOf(null)).toBe('project')
   })
 })
