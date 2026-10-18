@@ -142,6 +142,7 @@ vi.mock('@/i18n/locales', () => ({
 }))
 
 vi.mock('@/packages/apple_app_store', () => ({ tickAfterMessageGenerated: vi.fn() }))
+vi.mock('@/packages/notifications', () => ({ notifySystemEvent: vi.fn(async () => false) }))
 
 vi.mock('@/stores/settingsStore', () => ({
   settingsStore: {
