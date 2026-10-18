@@ -1525,5 +1525,8 @@
   "Nothing needs you": "Nothing needs you",
   "Connect a source to get started": "Connect a source to get started",
   "Dango reads a folder, Gmail or Asana and tells you here what needs you.": "Dango reads a folder, Gmail or Asana and tells you here what needs you.",
-  "Connect a source": "Connect a source"
+  "Connect a source": "Connect a source",
+  "Proposal": "Proposal",
+  "Re-check": "Re-check",
+  "{{kind}}: {{text}}": "{{kind}}: {{text}}"
 }

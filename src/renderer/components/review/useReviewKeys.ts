@@ -44,6 +44,11 @@ function findPrimary(row: HTMLElement): HTMLButtonElement | undefined {
 /**
  * Keys for the focused Review row. They press the row's own buttons, so a slice that owns a row
  * keeps its own logic and undo record. ⌘Z is 1b's global hotkey.
+ *
+ * A and the buttons are found by their translated text (`Approve`, `Edit`, `Dismiss`, `Open`, `Keep this`). The E and
+ * X fallbacks (open through the opener, dismiss through the feed) act only on rows the feed renders itself
+ * (`data-feed-default`). A registered renderer owns its row: for E and X to work there it must render its own `Edit`
+ * and `Dismiss` buttons with those labels (slice 10's draft renderer included).
  */
 export function useReviewKeys(o: ReviewKeysOptions): { onKeyDown: KeyboardEventHandler<HTMLElement> } {
   const { t } = useTranslation()

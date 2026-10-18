@@ -289,10 +289,12 @@ describe('ReviewFeed', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep this: "first"' }))
   })
 
-  it('names each row by its text and marks default-rendered rows', async () => {
+  it('names each row by its kind and text and marks default-rendered rows', async () => {
     const now = Date.now()
     await mountFeed([row('a', { createdAt: now }), row('d', { ref: { type: 'job', id: 'j' }, createdAt: now - 1 })])
-    expect(screen.getByRole('listitem', { name: 'Row a' })).toBe(rowEl('a'))
+    // The kind leads the name (T4), translated: the row's own text alone hid kind on every focus.
+    expect(screen.getByRole('listitem', { name: 'Proposal: Row a' })).toBe(rowEl('a'))
+    expect(screen.getByRole('listitem', { name: 'Proposal: Row d' })).toBe(rowEl('d'))
     expect(rowEl('a').hasAttribute('data-feed-default')).toBe(false)
     expect(rowEl('d').hasAttribute('data-feed-default')).toBe(true)
   })
@@ -374,6 +376,46 @@ describe('ReviewFeed', () => {
       await setReviewEntryState({ id: 'a' }, 'done')
     })
     expect(rowEl('a')).not.toBeNull()
+    expect(document.activeElement).toBe(rowEl('a'))
+  })
+
+  it('a row that changes in place never pulls focus from an outside input (T8)', async () => {
+    const now = Date.now()
+    seed([row('a', { createdAt: now }), row('b', { createdAt: now - 1000 })])
+    render(
+      <>
+        <input aria-label="Outside" />
+        <ReviewFeed />
+      </>
+    )
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    await act(() => rowEl('a').focus())
+    const input = screen.getByLabelText('Outside')
+    await act(() => input.focus())
+    await act(async () => {
+      await setReviewEntryState({ id: 'a' }, 'done')
+    })
+    expect(rowEl('a')).not.toBeNull()
+    expect(document.activeElement).toBe(input)
+  })
+
+  it('a first row that arrives long after an empty load does not take focus (M8)', async () => {
+    await mountFeed([])
+    expect(document.activeElement).toBe(document.body)
+    act(() => {
+      const entries = [row('late')]
+      data['review-entries'] = { entries }
+      reviewStore.setState({ entries })
+    })
+    expect(rowEl('late')).not.toBeNull()
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('focuses the first row once the store finishes loading after mount (M8)', async () => {
+    data['review-entries'] = { entries: [row('a')] }
+    reviewStore.setState({ entries: [], lastCheckedAt: undefined, loaded: false })
+    render(<ReviewFeed caughtUp={<p>Nothing needs you</p>} />)
+    await waitFor(() => expect(rowEl('a')).not.toBeNull())
     expect(document.activeElement).toBe(rowEl('a'))
   })
 })

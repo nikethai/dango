@@ -13,10 +13,12 @@ import {
   useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useStore } from 'zustand'
 import { reviewStore, useReviewEntries, useReviewRenderer, waitingCount } from '@/packages/review'
 import { DefaultReviewRenderer } from './DefaultReviewRenderer'
 import { dismissReviewEntry } from './dismissEntry'
 import { clip, displayKind, groupByDay, nextFocusAfterRemoval, visibleEntries } from './feedSelectors'
+import { KIND_LABEL } from './ReviewItem'
 import { useReviewKeys } from './useReviewKeys'
 import './review-home.css'
 
@@ -35,15 +37,17 @@ type FeedRowProps = {
 }
 
 function FeedRow({ entry, focused, rowsRef, onFocus, onKeyDown }: FeedRowProps) {
+  const { t } = useTranslation()
+  const kind = displayKind(entry)
   // A resolved row renders as Done, so a done knowledge row never gets slice 4's live Approve.
-  const Registered = useReviewRenderer({ kind: displayKind(entry), ref: entry.ref })
+  const Registered = useReviewRenderer({ kind, ref: entry.ref })
   const Renderer = Registered ?? DefaultReviewRenderer
   return (
     <li
       tabIndex={0}
       data-entry-id={entry.id}
       data-feed-default={Registered ? undefined : ''}
-      aria-label={entry.text}
+      aria-label={t('{{kind}}: {{text}}', { kind: t(KIND_LABEL[kind]), text: entry.text })}
       aria-keyshortcuts={KEYS}
       className="dango-review-feed__row"
       ref={(el) => {
@@ -116,17 +120,22 @@ export function ReviewFeed({ scopeId, caughtUp }: ReviewFeedProps) {
   // When the focused row leaves (by key, by click, from another window), focus the row below, else above,
   // else the caught-up block. DOM focus moves only when it was in the feed (or fell to the body with the row).
   const prevIdsRef = useRef<string[]>([])
+  // Initial focus is armed once, for the first render after the store has loaded: a first row that arrives
+  // minutes later (a background job) must not pull focus and scroll.
   const didInitialFocus = useRef(false)
+  const loaded = useStore(reviewStore, (s) => s.loaded)
   useLayoutEffect(() => {
     const prev = prevIdsRef.current
     prevIdsRef.current = ids
     const active = document.activeElement
     const focusIsOurs = !active || active === document.body || !!rootRef.current?.contains(active)
 
-    if (!didInitialFocus.current && ids.length > 0) {
+    if (!didInitialFocus.current && loaded) {
       didInitialFocus.current = true
-      if (!active || active === document.body) rowsRef.current.get(ids[0])?.focus()
-      return
+      if (ids.length > 0) {
+        if (!active || active === document.body) rowsRef.current.get(ids[0])?.focus()
+        return
+      }
     }
 
     const last = lastFocusedRef.current
@@ -138,11 +147,12 @@ export function ReviewFeed({ scopeId, caughtUp }: ReviewFeedProps) {
     setFocusedId(next)
     if (next) rowsRef.current.get(next)?.focus()
     else emptyRef.current?.focus()
-  }, [ids])
+  }, [ids, loaded])
 
   // A row that changes in place (Approve from its Edit field, an undo) can take the focused control with it, which
   // drops DOM focus to the body while the feed still shows the ring. Put focus back on the row so the keys keep working.
-  // Clicking away clears `focusedId` first, so this never pulls focus back from outside. It runs after every render because the loss has no event of its own.
+  // Clicking away clears `focusedId` first, so this never pulls focus back from outside.
+  // It runs after every render because the loss has no event of its own.
   useLayoutEffect(() => {
     const id = focusedRef.current
     const row = id ? rowsRef.current.get(id) : undefined

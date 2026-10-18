@@ -63,7 +63,7 @@ describe('SidebarReviewRow', () => {
     expect(document.querySelector('.dg-badge')).toBeNull()
   })
 
-  it('counts open proposals, needs-you, conflicts and changes but not done rows', async () => {
+  it('counts open proposals, needs-you and conflicts, but not changes or done rows', async () => {
     seed([
       row(1, { kind: 'proposal', ref: { type: 'proposal', id: 'p1' } }),
       row(2, { kind: 'proposal', ref: { type: 'proposal', id: 'p2' } }),
