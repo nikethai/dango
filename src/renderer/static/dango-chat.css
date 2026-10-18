@@ -1,0 +1,25 @@
+/* Chat thread additions (slice 06a). Only what dango-components.css lacks; tokens only. */
+
+/* Thinking line: Stop sits beside the <details>, aligned to its summary row (never inside <summary>). */
+.dg-think-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dango-space-2);
+  min-width: 0;
+}
+.dg-think-line > .dg-think {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dg-think-line__stop {
+  flex: 0 0 auto;
+}
+
+/* The 30 s reassurance note: its own row under the summary row. */
+.dg-think summary {
+  flex-wrap: wrap;
+}
+.dg-think__note {
+  flex: 1 0 100%;
+  color: var(--dango-muted);
+}

@@ -1,6 +1,7 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Flex, Stack, Text } from '@mantine/core'
 import type { Session, SessionThreadBrief } from '@shared/types'
+import { isEverywhere } from '@shared/types/scope'
 import {
   IconAlignRight,
   IconArrowDown,
@@ -28,8 +29,11 @@ import {
 import { useTranslation } from 'react-i18next'
 import { type StateSnapshot, Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { platformTypeAtom } from '@/hooks/useNeedRoomForWinControls'
+import { useScopes } from '@/hooks/useScopes'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
+import { getShowThinking, scopeKindOf } from '@/packages/chat-settings'
+import { thinkingOpenByDefault } from '@/packages/thinking/thinking'
 import * as atoms from '@/stores/atoms'
 import {
   deleteFork,
@@ -41,7 +45,7 @@ import {
   switchThread,
 } from '@/stores/sessionActions'
 import { getAllMessageList, getCurrentThreadHistoryHash } from '@/stores/sessionHelpers'
-import { settingsStore } from '@/stores/settingsStore'
+import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import { isThreadVisuallyEmpty } from '@/utils/chat-starters'
 import ActionMenu from '../ActionMenu'
@@ -105,6 +109,14 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
     () => currentSession.messages?.some((m) => m.generating) === true,
     [currentSession.messages]
   )
+
+  // Finished thinking text starts open or closed per the Show thinking setting and the scope kind
+  // (client scopes default closed under 'auto'). Everywhere / no scope → null.
+  const showThinking = useSettingsStore((state) => getShowThinking(state))
+  const { getScope } = useScopes()
+  const scopeId = currentSession.projectId ?? currentSession.folderId
+  const scope = isEverywhere(scopeId) ? undefined : getScope(scopeId)
+  const thinkingDefaultOpen = thinkingOpenByDefault(showThinking, scope ? scopeKindOf(scope) : null)
 
   const currentThreadHash = useMemo(
     () => currentSession && getCurrentThreadHistoryHash(currentSession),
@@ -290,6 +302,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                           sessionPicUrl={currentSession.picUrl}
                           discussionGroupStart={discussionGroupStart}
                           showFollowUpSuggestions={msg.id === latestAssistantMessageId}
+                          thinkingDefaultOpen={thinkingDefaultOpen}
                         />
                       )}
                     </ErrorBoundary>

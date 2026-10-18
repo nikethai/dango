@@ -30,7 +30,6 @@ import type { SearchResultItem } from '@/packages/web-search'
 import { ScalableIcon } from '../common/ScalableIcon'
 import { ImageInStorage } from '../Image'
 
-export { ReasoningContentUI } from './ReasoningContentUI'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 

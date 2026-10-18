@@ -105,8 +105,7 @@ import {
   isContainRenderableCode,
 } from '../Artifact'
 import { ScalableIcon } from '../common/ScalableIcon'
-import { ReasoningContentUI } from '../message-parts/ReasoningContentUI'
-import AssistantPending from './AssistantPending'
+import { ThinkingLine } from './ThinkingLine'
 
 // Tool/thinking renderers are agent-only — lazy-load them and skip on Android.
 // CHATBOX_BUILD_PLATFORM is a Vite-defined compile-time constant so the
@@ -149,6 +148,8 @@ interface Props {
   discussionGroupStart?: boolean
   /** When false, suppress follow-up suggestions (only the latest assistant message should show them). */
   showFollowUpSuggestions?: boolean
+  /** Whether finished thinking text starts open (settings + scope kind, resolved by MessageList). */
+  thinkingDefaultOpen?: boolean
 }
 
 const _Message: FC<Props> = (props) => {
@@ -163,6 +164,7 @@ const _Message: FC<Props> = (props) => {
     sessionPicUrl: _sessionPicUrl,
     discussionGroupStart,
     showFollowUpSuggestions = false,
+    thinkingDefaultOpen = true,
   } = props
 
   const { t } = useTranslation()
@@ -294,16 +296,11 @@ const _Message: FC<Props> = (props) => {
     void router.navigate({ to: '/image-creator', search: { prompt: messageText } })
   }, [messageText])
 
-  // reasoning
-  const onCopyReasoningContent =
-    (content: string): MouseEventHandler<HTMLButtonElement> =>
-    (e) => {
-      e.stopPropagation()
-      if (content) {
-        copyToClipboard(content)
-        toastActions.add(t('copied to clipboard'))
-      }
-    }
+  const onStopGeneration = useCallback(() => {
+    void import('@/stores/session/stop-generation').then(({ stopSessionGeneration }) =>
+      stopSessionGeneration(sessionId, msg)
+    )
+  }, [sessionId, msg])
 
   const onReport = useCallback(async () => {
     await NiceModal.show('report-content', { contentId: getMessageText(msg) || msg.id })
@@ -713,7 +710,7 @@ const _Message: FC<Props> = (props) => {
             onMouseUp={handleSelectionMouseUp}
           >
             {msg.reasoningContent && !groupedParts.some((g) => g.type === 'thinking-group') && (
-              <ReasoningContentUI message={msg} onCopyReasoningContent={onCopyReasoningContent} />
+              <ThinkingLine live={false} text={msg.reasoningContent} defaultOpen={thinkingDefaultOpen} />
             )}
             {groupedParts.length > 0 && (
               <div>
@@ -746,10 +743,13 @@ const _Message: FC<Props> = (props) => {
                     ) : null
                   ) : group.part.type === 'reasoning' ? (
                     <div key={`reasoning-${msg.id}-${group.index}`} className="msg-thinking-slot">
-                      <ReasoningContentUI
-                        message={msg}
-                        part={group.part}
-                        onCopyReasoningContent={onCopyReasoningContent}
+                      <ThinkingLine
+                        live={Boolean(msg.generating) && contentParts[contentParts.length - 1] === group.part}
+                        startedAt={group.part.startTime}
+                        durationMs={group.part.duration}
+                        text={group.part.text}
+                        defaultOpen={thinkingDefaultOpen}
+                        onStop={onStopGeneration}
                       />
                     </div>
                   ) : group.part.type === 'text' ? (
@@ -910,7 +910,17 @@ const _Message: FC<Props> = (props) => {
             message: msg,
             contentParts,
             workStripAvailable: Boolean(ThinkingGroupUI),
-          }) && <AssistantPending className="mt-0.5" />}
+          }) && (
+            <div className="mt-0.5">
+              <ThinkingLine
+                live
+                startedAt={msg.timestamp}
+                text=""
+                defaultOpen={thinkingDefaultOpen}
+                onStop={onStopGeneration}
+              />
+            </div>
+          )}
 
           {!msg.generating && settledReady && tips.length > 0 && (
             <Text size="xs" c="chatbox-tertiary" className="mt-1 opacity-80">
