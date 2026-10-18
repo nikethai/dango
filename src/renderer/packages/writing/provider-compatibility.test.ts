@@ -85,7 +85,7 @@ function configure(provider: string, modelId: string, overrides: ProviderSetting
       ...overrides,
     },
   }
-  return { draft: 'PRIVATE_DRAFT_SENTINEL', style: 'grammar', model: { provider, modelId } }
+  return { draft: 'PRIVATE_DRAFT_SENTINEL', style: 'clearer', model: { provider, modelId } }
 }
 
 async function expectIsolatedAdapterCall(request: WritingRequest) {

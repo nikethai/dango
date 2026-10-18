@@ -37,7 +37,7 @@ export default function WritingAssistant({
   const { providers } = useProviders()
   const options = useMemo(() => getWritingModelOptions(providers), [providers])
   const [draft, setDraft] = useState(initialDraft)
-  const [style, setStyle] = useState<WritingStyle>('grammar')
+  const [style, setStyle] = useState<WritingStyle>('clearer')
   const [selectedValue, setSelectedValue] = useState<string | null>(() => {
     const model = initialModel || lastUsedModelStore.getState().chat
     return model ? JSON.stringify({ provider: model.provider, modelId: model.modelId }) : null
@@ -151,11 +151,10 @@ export default function WritingAssistant({
         value={style}
         allowDeselect={false}
         data={[
-          { value: 'grammar', label: t('Fix grammar') },
-          { value: 'natural', label: t('More natural') },
+          { value: 'clearer', label: t('Clearer') },
+          { value: 'friendlier', label: t('Friendlier') },
           { value: 'shorter', label: t('Shorter') },
-          { value: 'professional', label: t('More professional') },
-          { value: 'casual', label: t('More casual') },
+          { value: 'formal', label: t('Formal') },
         ]}
         onChange={(value) => {
           if (!value) return

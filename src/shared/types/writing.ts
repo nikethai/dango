@@ -3,8 +3,11 @@ import { z } from 'zod'
 export const MAX_WRITING_INPUT_CHARS = 8_000
 export const MAX_WRITING_OUTPUT_CHARS = 16_000
 
-export const WritingStyleSchema = z.enum(['grammar', 'natural', 'shorter', 'professional', 'casual'])
+export const WritingStyleSchema = z.enum(['clearer', 'friendlier', 'shorter', 'formal', 'translate'])
 export type WritingStyle = z.infer<typeof WritingStyleSchema>
+
+/** A language name only: letters, spaces, parentheses, apostrophes, hyphens. Never instructions. */
+export const TARGET_LANGUAGE_RE = /^\p{L}[\p{L} ()'-]{1,39}$/u
 
 export const WritingModelSchema = z.object({
   provider: z.string().min(1),
@@ -20,9 +23,11 @@ export const WritingRequestSchema = z
       .max(MAX_WRITING_INPUT_CHARS)
       .refine((draft) => draft.trim().length > 0),
     style: WritingStyleSchema,
+    targetLanguage: z.string().regex(TARGET_LANGUAGE_RE).optional(),
     model: WritingModelSchema.strict(),
   })
   .strict()
+  .refine((request) => (request.style === 'translate') === (request.targetLanguage !== undefined))
 export type WritingRequest = z.infer<typeof WritingRequestSchema>
 
 export type WritingErrorCode = 'invalid_input' | 'unsupported_model' | 'request_failed' | 'incomplete' | 'timeout'

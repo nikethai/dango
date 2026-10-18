@@ -100,7 +100,7 @@ describe('writing assistant', () => {
     expect(requestWritingRewrite).toHaveBeenCalledWith(
       {
         draft: 'I cannot found the root cause.',
-        style: 'grammar',
+        style: 'clearer',
         model: { provider: 'gemini', modelId: 'test-text' },
       },
       expect.objectContaining({ signal: expect.any(AbortSignal) })
