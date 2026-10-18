@@ -16,7 +16,7 @@ import {
   proposeKnowledge,
 } from './proposals'
 import { startReviewSync } from './review-sync'
-import { _resetScopesForTests, _setScopeReaderForTests } from './scopes'
+import { _resetScopesForTests, _setScopeReaderForTests, refreshScopes } from './scopes'
 import { _resetKnowledgeForTests, commitKnowledge, knowledgeStore } from './store'
 import { getRaw, makeItem, resetTestStorage } from './test-storage'
 
@@ -130,6 +130,21 @@ describe('proposeKnowledge', () => {
     expect(await proposeKnowledge(input({ text: 'launch is 6 nov.' }))).toBeNull()
     expect(stored().proposals).toEqual([])
     expect(checker).not.toHaveBeenCalled()
+  })
+
+  it('text already approved in Everywhere is known in a scope that reads Everywhere facts, not in one that does not', async () => {
+    _setScopeReaderForTests(
+      async () =>
+        [
+          { id: 'acme', name: 'Acme', kind: 'client' },
+          { id: 'quiet', name: 'Quiet', kind: 'client', readsEverywhere: { facts: false, documents: false } },
+        ] as never
+    )
+    await refreshScopes()
+    await seedItems()
+    expect(await proposeKnowledge(input({ text: 'Launch reviews are on Fridays' }))).toBeNull()
+    expect(await proposeKnowledge(input({ scopeId: 'quiet', text: 'Launch reviews are on Fridays' }))).not.toBeNull()
+    expect(stored().proposals.map((p) => p.scopeId)).toEqual(['quiet'])
   })
 
   it('duplicate of an open proposal is dropped', async () => {

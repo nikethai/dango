@@ -3,6 +3,7 @@ import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { t } from 'i18next'
 import { v4 as uuidv4 } from 'uuid'
 import { checkAgainstLayers } from './contradictions'
+import { getScopeReads } from './scopes'
 import { commitKnowledge, ensureKnowledgeLoaded, knowledgeStore } from './store'
 import { knowledgeTextKey, quote } from './text'
 import { pushKnowledgeUndo } from './undo'
@@ -18,16 +19,23 @@ function targetScopeOf(input: { kind: KnowledgeProposal['kind']; scopeId: string
 }
 
 /**
- * On the Don't suggest list (this scope or Everywhere), already approved there, or already proposed there.
+ * On the Don't suggest list (this scope or Everywhere), already approved there (or in Everywhere, when it
+ * applies to the scope), or already proposed there.
  * `skipDontSuggest`: a user's own add ignores the list (preflight C8).
  */
 function isKnownText(state: KnowledgeState, textKey: string, scopeId: string, skipDontSuggest = false): boolean {
+  // What the scope already answers from: its own items, and (except for a user's own add) the Everywhere
+  // preferences, plus Everywhere facts and decisions when it reads them.
+  const readsFacts = scopeId !== EVERYWHERE_SCOPE_ID && getScopeReads(scopeId).facts
+  const applies = (i: KnowledgeState['items'][number]) =>
+    i.scopeId === scopeId ||
+    (!skipDontSuggest && i.scopeId === EVERYWHERE_SCOPE_ID && (i.kind === 'preference' || readsFacts))
   return (
     (!skipDontSuggest &&
       state.dontSuggest.some(
         (e) => e.textKey === textKey && (e.scopeId === scopeId || e.scopeId === EVERYWHERE_SCOPE_ID)
       )) ||
-    state.items.some((i) => i.status === 'approved' && i.scopeId === scopeId && knowledgeTextKey(i.text) === textKey) ||
+    state.items.some((i) => i.status === 'approved' && applies(i) && knowledgeTextKey(i.text) === textKey) ||
     state.proposals.some((p) => p.scopeId === scopeId && knowledgeTextKey(p.text) === textKey)
   )
 }

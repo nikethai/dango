@@ -28,12 +28,13 @@ const newestFirst = (a: KnowledgeItem, b: KnowledgeItem) => b.updatedAt - a.upda
 
 /**
  * Items worth comparing with `text`: ranked by shared tokens, dropping items that share none. When the
- * text has fewer than 2 tokens, or letters the tokenizer can't see (preflight C5), the `limit` most
- * recently updated items instead.
+ * text has fewer than 2 tokens, or it or any item has letters the tokenizer can't see (preflight C5), the
+ * `limit` most recently updated items instead.
  */
 export function selectCandidates(text: string, items: KnowledgeItem[], limit = DEFAULT_LIMIT): KnowledgeItem[] {
   const tokens = tokenizeForIndex(text)
-  if (tokens.length < 2 || DROPPED_LETTER.test(text.toLowerCase())) {
+  const unseen = (s: string) => DROPPED_LETTER.test(s.toLowerCase())
+  if (tokens.length < 2 || unseen(text) || items.some((i) => unseen(i.text))) {
     return [...items].sort(newestFirst).slice(0, limit)
   }
   const wanted = new Set(tokens)

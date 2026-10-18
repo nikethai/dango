@@ -63,6 +63,11 @@ describe('selectCandidates', () => {
     expect(selectCandidates('发布日期 launch date', list, 2).map((i) => i.id)).toEqual(['k2', 'k1'])
   })
 
+  it('saved items in a script the tokenizer drops also fall back to the most recent items', async () => {
+    const list = await items(3, (i) => ({ text: i === 0 ? 'Ngày ra mắt là 6/11' : `Budget line ${i}` }))
+    expect(selectCandidates('launch date moved', list, 3).map((i) => i.id)).toEqual(['k2', 'k1', 'k0'])
+  })
+
   it('fewer than 2 tokens falls back to the most recent items', async () => {
     const list = await items(3, (i) => ({ text: `Budget line ${i}` }))
     expect(selectCandidates('launch', list, 2).map((i) => i.id)).toEqual(['k2', 'k1'])
