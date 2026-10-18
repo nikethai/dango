@@ -169,6 +169,18 @@ describe('knowledge store', () => {
     expect(s?.dontSuggest).toEqual([])
   })
 
+  it('an expression-bodied recipe commits correctly', async () => {
+    const item = await makeItem()
+    await commitKnowledge((d) => d.items.push(item))
+    expect(stored()?.items).toEqual([item])
+    expect(knowledgeStore.getState().state.items).toEqual([item])
+  })
+
+  it('an async recipe is rejected and writes nothing', async () => {
+    await expect(commitKnowledge(async (d) => void d.proposals.push(proposal()))).rejects.toThrow('synchronous')
+    expect(testStorage.setItemNow).not.toHaveBeenCalled()
+  })
+
   it('a failed mutate writes nothing and does not block the next commit', async () => {
     await expect(
       commitKnowledge(() => {

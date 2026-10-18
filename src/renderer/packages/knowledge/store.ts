@@ -150,9 +150,13 @@ export async function commitKnowledge(mutate: (draft: KnowledgeState) => void): 
   const { pre, after } = await enqueue(async () => {
     const storage = await getStorage()
     const before = await readState(storage)
-    const next = produce(before, mutate as (d: Draft<KnowledgeState>) => void)
-    // immer would resolve an async recipe later; the write below must see the finished document.
-    if (next instanceof Promise) throw new Error('commitKnowledge: mutate must be synchronous')
+    // The recipe's return value never reaches immer: `(d) => d.items.push(x)` returns a number, and an
+    // async recipe returns a Promise; immer would treat either as a replacement document.
+    let returned: unknown
+    const next = produce(before, (d: Draft<KnowledgeState>) => {
+      returned = mutate(d as KnowledgeState)
+    })
+    if (returned instanceof Promise) throw new Error('commitKnowledge: mutate must be synchronous')
     const changes = diff(before, next)
     await storage.setItemNow(KEY, next)
     knowledgeStore.setState({ state: next })
