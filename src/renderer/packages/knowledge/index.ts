@@ -2,7 +2,7 @@ export { addKnowledge, approveProposal, KnowledgeConflictError } from './approve
 export { resolveConflict } from './conflicts'
 export { type ContradictionChecker, checkAgainstLayers, selectCandidates } from './contradictions'
 export { formatKnowledgeSection, isLegacyMemoryActive, knowledgeForTurn } from './for-turn'
-export { useKnowledgeList, useKnowledgeUses, useProposalsForMessage } from './hooks'
+export { useKnowledgeList, useKnowledgeUses, useProposalConflictText, useProposalsForMessage } from './hooks'
 export { initKnowledge } from './init'
 export {
   editKnowledge,

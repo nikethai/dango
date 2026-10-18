@@ -1,0 +1,1 @@
+export { KnowledgeProposalCard } from './KnowledgeProposalCard'

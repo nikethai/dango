@@ -1227,18 +1227,19 @@ export async function generate(
             .catch((error) => console.error('Failed to record knowledge use:', error))
         }
 
-        // Auto-save memory (non-blocking)
-        try {
-          const { maybeAutoSaveMemory } = await import('@/packages/memory/auto-save')
-          void maybeAutoSaveMemory({
-            sessionId,
-            messages: [...messages.slice(0, targetMsgIx + 1), targetMsg],
-            agentId: speakerAgentId,
-            sessionSettings: effectiveSettings,
-          })
-        } catch {
-          // non-fatal
-        }
+        // Knowledge proposals from this turn (non-blocking): they wait under the answer and in Review.
+        void import('@/packages/knowledge/chat-proposer')
+          .then(({ proposeFromChatTurn }) =>
+            proposeFromChatTurn({
+              sessionId,
+              sessionName: session.name,
+              messageId: targetMsg.id,
+              scopeId: getEffectiveProjectId(session) ?? null,
+              messages: [...messages.slice(0, targetMsgIx + 1), targetMsg],
+              sessionSettings: effectiveSettings,
+            })
+          )
+          .catch((error) => console.error('Failed to propose knowledge from chat:', error))
 
         if (firstHandoff && session.continuationLineage) {
           const consumed = markHandoffConsumed({ ...session.continuationLineage, pendingExcerpts: undefined })

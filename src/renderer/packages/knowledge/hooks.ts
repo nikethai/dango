@@ -49,3 +49,13 @@ export function useKnowledgeUses(itemId: string): KnowledgeUse[] {
   const state = useKnowledgeState()
   return useMemo(() => selectKnowledgeUses(state, itemId), [state, itemId])
 }
+
+/** The text of the first item an open conflict on this proposal names, if it has one. */
+export function useProposalConflictText(proposalId: string): string | undefined {
+  const state = useKnowledgeState()
+  return useMemo(() => {
+    const conflict = state.conflicts.find((c) => c.proposalId === proposalId && c.state === 'open')
+    if (!conflict) return undefined
+    return state.items.find((i) => i.id === conflict.itemIds[0])?.text
+  }, [state, proposalId])
+}

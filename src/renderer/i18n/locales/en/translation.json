@@ -1391,5 +1391,12 @@
   "Approve again": "Approve again",
   "Conflict": "Conflict",
   "Couldn't save that. Try again.": "Couldn't save that. Try again.",
-  "Keep this: {{text}}": "Keep this: {{text}}"
+  "Keep this: {{text}}": "Keep this: {{text}}",
+  "Save as knowledge": "Save as knowledge",
+  "Already saved": "Already saved",
+  "Nothing to save": "Nothing to save",
+  "Save to {{scope}}?": "Save to {{scope}}?",
+  "{{n}} more in Review": "{{n}} more in Review",
+  "Not now": "Not now",
+  "Knowledge proposals": "Knowledge proposals"
 }

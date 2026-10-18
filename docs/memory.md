@@ -44,7 +44,7 @@ Default is **hybrid** so chats do not pay for the full fact list every turn.
 - Settings → **Memory**: manage global/agent banks, retrieval mode, budgets, auto-save, export/import
 - Message menu → **Save to memory** (always pins to **Global**)
 - Settings **Add memory** on Global / Agent tabs
-- AI **auto-save** (default on): every **3** completed turns by default; LLM extract only (raw fallback optional)
+- AI **auto-save** (default on): every **3** completed turns by default, the chat's model extracts facts and files them as knowledge proposals (`src/renderer/packages/knowledge/chat-proposer.ts`). Proposals wait for approval under the answer and in Review; the old memory banks are not written.
 - Model tools: `memory_retain`, `memory_recall`, `memory_list`, `memory_forget`, `memory_update`, `memory_reflect`
 
 Legacy **User Personal Info** is migrated into the global bank; `/settings/user-personal-info` redirects to Memory.
@@ -119,7 +119,7 @@ src/renderer/packages/memory/
   repository.ts     # MemoryRepository (LocalFtsMemoryRepository)
   metrics.ts        # S0 diagnostics
   session-policy.ts # per-chat auto-save / tool-retain gates
-  inject.ts / tools.ts / auto-save.ts / persistence.ts
+  inject.ts / tools.ts / persistence.ts
 src/renderer/stores/memoryStore.ts
 src/renderer/routes/settings/memory.tsx
 src/renderer/components/settings/memory/

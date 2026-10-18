@@ -61,6 +61,7 @@ import { Gallery, Item as GalleryItem } from 'react-photoswipe-gallery'
 import AgentSpeakerHeader from '@/components/chat/AgentSpeakerHeader'
 import InlineMentionsText from '@/components/chat/InlineMentionsText'
 import SkillActivationsBar from '@/components/chat/SkillActivationsBar'
+import { KnowledgeProposalCard } from '@/components/knowledge'
 import Markdown from '@/components/Markdown'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
@@ -315,20 +316,10 @@ const _Message: FC<Props> = (props) => {
     await NiceModal.show('message-edit', { sessionId, msg: msg })
   }, [msg, sessionId])
 
-  const onSaveToMemory = useCallback(async () => {
-    const { saveMessageToGlobalMemory } = await import('@/packages/memory/save-from-message')
-    const result = await saveMessageToGlobalMemory(msg, sessionId)
-    if (result.ok) {
-      toastActions.add(t('Saved to Global memory'))
-      return
-    }
-    if (result.reason === 'empty') {
-      toastActions.add(t('Nothing to save'))
-      return
-    }
-    console.error('Save to memory failed', result.error)
-    toastActions.add(t('Failed to save memory'))
-  }, [msg, sessionId, t])
+  const onSaveAsKnowledge = useCallback(async () => {
+    const { saveMessageAsKnowledge } = await import('@/packages/knowledge/save-message')
+    await saveMessageAsKnowledge(msg, sessionId)
+  }, [msg, sessionId])
 
   const clearSelectionToolbar = useCallback(() => {
     setSelectionToolbar(null)
@@ -601,13 +592,13 @@ const _Message: FC<Props> = (props) => {
         icon: IconQuoteFilled,
         onClick: quoteMsg,
       },
-      // Mobile: Save to memory lives in ⋯ menu (desktop has toolbar icon)
+      // Mobile: Save as knowledge lives in ⋯ menu (desktop has toolbar icon)
       ...(isSamllScreen && !msg.generating && (msg.role === 'user' || msg.role === 'assistant')
         ? [
             {
-              text: t('Save to memory'),
+              text: t('Save as knowledge'),
               icon: IconBrain,
-              onClick: () => void onSaveToMemory(),
+              onClick: () => void onSaveAsKnowledge(),
             } satisfies ActionMenuItemProps,
           ]
         : []),
@@ -641,7 +632,7 @@ const _Message: FC<Props> = (props) => {
       onGenerateMore,
       onEditClick,
       onCopyMsg,
-      onSaveToMemory,
+      onSaveAsKnowledge,
       msg.model,
       props.sessionType,
     ]
@@ -908,6 +899,9 @@ const _Message: FC<Props> = (props) => {
           <MessageErrTips msg={msg} />
           {needCollapse && !isCollapsed && CollapseButton}
           {msg.citations?.length ? <SourceCardList citations={msg.citations} /> : null}
+          {msg.role === 'assistant' && !msg.generating ? (
+            <KnowledgeProposalCard sessionId={sessionId} messageId={msg.id} />
+          ) : null}
 
           {/*
             Waiting chrome while generating with nothing the user can read yet.
@@ -1009,15 +1003,15 @@ const _Message: FC<Props> = (props) => {
                         )
                     }
 
-                    {/* Save to memory — toolbar (same row as copy / edit / more) */}
+                    {/* Save as knowledge — toolbar (same row as copy / edit / more) */}
                     {!isSamllScreen &&
                       !msg.generating &&
                       (msg.role === 'user' || msg.role === 'assistant') &&
                       !(props.sessionType === 'picture' && msg.role === 'assistant') && (
                         <MessageActionIcon
                           icon={IconBrain}
-                          tooltip={t('Save to memory')}
-                          onClick={() => void onSaveToMemory()}
+                          tooltip={t('Save as knowledge')}
+                          onClick={() => void onSaveAsKnowledge()}
                         />
                       )}
 
