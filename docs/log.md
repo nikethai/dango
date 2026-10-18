@@ -3,6 +3,7 @@
 Newest first. Add a line when you create, accept, supersede or move a decision, spec or research note.
 
 ## 2026-10-18
+* **Implementation**: [slice 06a chat thread](specs/2026-10-17-slice-06a-chat-thread.md) built on `feat/redesign-06a-chat-thread` — thinking live line with Stop, tool calls fold to one line, plan card with versions, progress, Continue and a Change entry in Review, artifact inspector download and 380–460 px width.
 * **Update**: [roadmap](specs/2026-10-17-redesign-roadmap.md) contract register — `ReviewEntry` gains optional `chatId?` (the chat a Change entry came from) and `registerReviewOpener` an optional `canOpen` predicate; slice 6a files one Change per finished plan with staged edits, and its opener opens that chat.
 * **Implementation**: [slice 05 review home](specs/2026-10-17-slice-05-review-home.md) built on `feat/redesign-05-review-home` — Review is home at /, the feed with keys, default renderer, Trust arrival for safe non-knowledge actions, empty states, sidebar badge.
 * **Implementation**: [slice 02 settings](specs/2026-10-17-slice-02-settings.md) built on `feat/redesign-02-settings` — five sections plus Advanced, Sources and Memory and privacy pages, Trust sheet, Agents replaces Copilots, Image studio moves to Advanced, cost and thinking controls.
