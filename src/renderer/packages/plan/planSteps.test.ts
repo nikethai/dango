@@ -1,7 +1,14 @@
 import type { MessagePlanPart } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import type { Task } from '@/stores/taskStore'
-import { parsePlanSteps, planCardState, planRunTasks, planStepViews, sortTasksForDisplay } from './planSteps'
+import {
+  parsePlanSteps,
+  planCardState,
+  planContinueState,
+  planRunTasks,
+  planStepViews,
+  sortTasksForDisplay,
+} from './planSteps'
 
 function task(partial: Partial<Task> & Pick<Task, 'id' | 'status'>): Task {
   return {
@@ -107,6 +114,21 @@ describe('planRunTasks', () => {
     const run = planRunTasks(tasks, 's1', 1_000)
     expect(run).toEqual([])
     expect(planStepViews('1. Find\n2. Log', run).map((v) => v.status)).toEqual(['pending', 'pending'])
+  })
+})
+
+describe('planContinueState', () => {
+  const ok = { latestPlan: true, isTail: true, generationActive: false, planModeOn: true }
+  it('ready only for the latest plan at the tail with nothing generating', () => {
+    expect(planContinueState(ok)).toBe('ready')
+  })
+  it('hidden for an older plan, a plan with later messages, or while anything generates', () => {
+    expect(planContinueState({ ...ok, latestPlan: false })).toBe('hidden')
+    expect(planContinueState({ ...ok, isTail: false })).toBe('hidden')
+    expect(planContinueState({ ...ok, generationActive: true })).toBe('hidden')
+  })
+  it('blocked when plan mode is off', () => {
+    expect(planContinueState({ ...ok, planModeOn: false })).toBe('blocked')
   })
 })
 

@@ -22,6 +22,7 @@ const {
   updateMessageMock,
   updateSessionMock,
   getSessionSettingsMock,
+  updateMessageCacheMock,
 } = vi.hoisted(() => ({
   updateSessionWithMessages: vi.fn(),
   useSessionMock: vi.fn(),
@@ -29,6 +30,7 @@ const {
   updateMessageMock: vi.fn(),
   updateSessionMock: vi.fn(),
   getSessionSettingsMock: vi.fn(),
+  updateMessageCacheMock: vi.fn(),
 }))
 
 vi.hoisted(() => {
@@ -60,6 +62,18 @@ vi.hoisted(() => {
   return {}
 })
 
+vi.mock('@shared/models', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@shared/models')>()),
+  getModel: () => ({
+    name: 'test',
+    modelId: 'test',
+    isSupportToolUse: () => false,
+    isSupportVision: () => false,
+    isSupportReasoning: () => false,
+    isSupportSystemMessage: () => true,
+  }),
+}))
+
 vi.mock('./session/session-web-browsing', () => ({ getSessionWebBrowsing: () => false }))
 
 vi.mock('uuid', () => ({
@@ -70,6 +84,7 @@ vi.mock('./chatStore', () => ({
   updateSessionWithMessages,
   updateSession: updateSessionMock,
   updateMessage: updateMessageMock,
+  updateMessageCache: updateMessageCacheMock,
   getSessionSettings: getSessionSettingsMock,
   getSession: getSessionMock,
   useSession: useSessionMock,
@@ -79,7 +94,11 @@ vi.mock('../platform', () => ({
   default: {
     type: 'web',
     getConfig: async () => ({}),
+    appLog: vi.fn(async () => {}),
+    setStoreValue: vi.fn(async () => {}),
+    getStoreValue: vi.fn(async () => undefined),
   },
+  platformCapabilities: {},
 }))
 
 vi.mock('@/adapters', () => ({
@@ -122,7 +141,7 @@ vi.mock('@/i18n/locales', () => ({
   languageNameMap: {},
 }))
 
-vi.mock('@/packages/apple_app_store', () => ({}))
+vi.mock('@/packages/apple_app_store', () => ({ tickAfterMessageGenerated: vi.fn() }))
 
 vi.mock('@/stores/settingsStore', () => ({
   settingsStore: {
@@ -139,6 +158,7 @@ vi.mock('@/stores/uiStore', () => ({
       sidebarLayout: 'expanded',
       messageScrolling: null,
       setMessageListElement: vi.fn(),
+      sessionKnowledgeBaseMap: {},
     }),
   },
   useUIStore: vi.fn(),
@@ -173,6 +193,7 @@ beforeEach(() => {
   updateMessageMock.mockReset()
   updateSessionMock.mockReset()
   getSessionSettingsMock.mockReset()
+  updateMessageCacheMock.mockReset()
 })
 
 describe('fork actions', () => {
@@ -528,10 +549,89 @@ describe('plan lifecycle actions', () => {
     expect(firstWrite?.contentParts.some((p) => p.type === 'tool-call')).toBe(true)
   })
 
+  const toolC1 = (m: Message) => m.contentParts.some((p) => p.type === 'tool-call' && p.toolCallId === 'c1')
+  const textOf = (m: Message) => m.contentParts.map((p) => (p.type === 'text' ? p.text : '')).join('')
+  async function resumeWithStream(answer: Message['contentParts']) {
+    const { streamText } = await import('@/packages/model-calls')
+    const calls: Array<{ messages: Message[]; knowledgeQuery?: string; memory?: { userQuery?: string } }> = []
+    vi.mocked(streamText).mockImplementation(async (_model, opts) => {
+      calls.push(opts as never)
+      const parts = calls.length === 1 ? answer : [{ type: 'text' as const, text: 'Closing answer' }]
+      await opts.onResultChangeWithCancel?.({ contentParts: parts })
+      const text = parts.map((p) => (p.type === 'text' ? p.text : '')).join('')
+      const finishReason = parts.some((p) => p.type === 'text') ? 'stop' : 'tool-calls'
+      return { result: { contentParts: parts, text, finishReason }, knowledgeIds: [] } as never
+    })
+    uuidQueue.push(...Array.from({ length: 50 }, (_, i) => `uuid-${i}`))
+    const session = stoppedPlanSession({ startedAt: 1 })
+    session.messages[0] = { ...session.messages[0], contentParts: [{ type: 'text', text: 'Tidy the docs' }] }
+    getSessionMock.mockResolvedValue(session)
+    getSessionSettingsMock.mockResolvedValue({
+      planMode: true,
+      provider: 'openai',
+      modelId: 'gpt',
+      maxContextMessageCount: 20,
+    })
+    await sessionActions.resumeStoppedPlan('plan-session', 'a1')
+    return calls
+  }
+
+  test('a resumed run sends the kept work once, then the note, and paints after it', async () => {
+    const calls = await resumeWithStream([{ type: 'text', text: 'Checked it' }])
+    expect(calls).toHaveLength(1)
+    const sent = calls[0].messages
+    expect(sent.filter(toolC1)).toHaveLength(1)
+    const keptIx = sent.findIndex(toolC1)
+    expect(sent[keptIx + 1]?.role).toBe('user')
+    expect(textOf(sent[keptIx + 1])).toMatch(/stopped/i)
+    expect(keptIx + 2).toBe(sent.length)
+    // Knowledge and memory rank against the person's own turn, not the resume note.
+    expect(calls[0].knowledgeQuery).toBe('Tidy the docs')
+    expect(calls[0].memory?.userQuery).toBe('Tidy the docs')
+
+    const paints = updateMessageCacheMock.mock.calls.map((c) => c[2] as Message)
+    const painted = paints.find((m) => textOf(m).includes('Checked it'))
+    expect(painted?.contentParts.map((p) => p.type)).toEqual(['tool-call', 'text', 'plan'])
+
+    const saved = updateMessageMock.mock.calls.at(-1)?.[2] as Message
+    expect(saved.contentParts.map((p) => p.type)).toEqual(['tool-call', 'text', 'plan'])
+    expect(textOf(saved)).not.toMatch(/stopped/i)
+    expect(saved.contentParts.find((p) => p.type === 'plan')).toMatchObject({ status: 'approved', startedAt: 1 })
+    expect((saved.contentParts.find((p) => p.type === 'plan') as { finishedAt?: number }).finishedAt).toBeDefined()
+  })
+
+  test('a tool-only resumed run starts no closing-answer stream (the plan part reads as the answer)', async () => {
+    // So the closing-answer prompt can never repeat the kept work; generate() still builds it without the resume turns.
+    const calls = await resumeWithStream([
+      { type: 'tool-call', toolCallId: 'c2', toolName: 'read_file', state: 'result', args: {}, result: 'ok' },
+    ])
+    expect(calls).toHaveLength(1)
+    expect(calls[0].messages.filter(toolC1)).toHaveLength(1)
+  })
+
   test('resumeStoppedPlan refuses a finished plan', async () => {
     getSessionMock.mockResolvedValue(stoppedPlanSession({ startedAt: 1, finishedAt: 2 }))
     getSessionSettingsMock.mockResolvedValue({ planMode: true })
     await expect(sessionActions.resumeStoppedPlan('plan-session', 'a1')).rejects.toThrow()
+    expect(updateSessionMock).not.toHaveBeenCalled()
+  })
+
+  test('resumeStoppedPlan refuses while another generation runs in the chat', async () => {
+    const { registerGenerationCancel, clearGenerationCancel } = await import('./session/generation-cancel')
+    registerGenerationCancel('plan-session', 'other', () => {})
+    getSessionMock.mockResolvedValue(stoppedPlanSession({ startedAt: 1 }))
+    getSessionSettingsMock.mockResolvedValue({ planMode: true })
+    await expect(sessionActions.resumeStoppedPlan('plan-session', 'a1')).rejects.toThrow(/current reply/)
+    clearGenerationCancel('plan-session', 'other')
+    expect(updateSessionMock).not.toHaveBeenCalled()
+  })
+
+  test('resumeStoppedPlan refuses a plan that is not the last message', async () => {
+    const session = stoppedPlanSession({ startedAt: 1 })
+    session.messages.push(makeMessage('u2', 'user'))
+    getSessionMock.mockResolvedValue(session)
+    getSessionSettingsMock.mockResolvedValue({ planMode: true })
+    await expect(sessionActions.resumeStoppedPlan('plan-session', 'a1')).rejects.toThrow(/latest plan/)
     expect(updateSessionMock).not.toHaveBeenCalled()
   })
 
@@ -540,6 +640,14 @@ describe('plan lifecycle actions', () => {
     getSessionSettingsMock.mockResolvedValue({ planMode: false })
     await expect(sessionActions.resumeStoppedPlan('plan-session', 'a1')).rejects.toThrow()
     expect(updateSessionMock).not.toHaveBeenCalled()
+  })
+
+  test('an execution run that returns early does not leave the session executing', async () => {
+    getSessionMock.mockResolvedValueOnce(pendingPlanSession()).mockResolvedValue(stoppedPlanSession({ startedAt: 1 })) // as stored once approved
+    getSessionSettingsMock.mockResolvedValue(undefined) // generate() returns before streaming
+    await sessionActions.approveAndExecutePlan('plan-session', 'a1')
+    expect(updateSessionMock).toHaveBeenCalledWith('plan-session', { planPhase: 'executing' })
+    expect(updateSessionMock.mock.calls.at(-1)).toEqual(['plan-session', { planPhase: undefined }])
   })
 
   test('old plan payloads still parse', () => {

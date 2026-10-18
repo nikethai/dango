@@ -213,7 +213,10 @@ describe('PlanCard running', () => {
 describe('PlanCard stopped', () => {
   it('shows how far it got and Continue', async () => {
     h.tasks = [task('a', 'done', 1), task('b', 'pending', 2), task('c', 'pending', 3), task('d', 'pending', 4)]
-    const { props } = renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { latestPlan: true })
+    const { props } = renderCard(
+      { planText: FOUR, status: 'approved', startedAt: 1 },
+      { latestPlan: true, continueState: 'ready' }
+    )
     expect(screen.getByText('Plan stopped · 1 of 4 done')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     await waitFor(() => expect(props.onContinue).toHaveBeenCalledTimes(1))
@@ -221,16 +224,35 @@ describe('PlanCard stopped', () => {
   })
 
   it('with no steps reads "Plan stopped"', () => {
-    renderCard({ planText: 'Inspect the issue, then fix it.', status: 'approved', startedAt: 1 })
+    renderCard(
+      { planText: 'Inspect the issue, then fix it.', status: 'approved', startedAt: 1 },
+      { continueState: 'ready' }
+    )
     expect(screen.getByText('Plan stopped')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy()
   })
 
   it('hides Continue when every step is done', () => {
     h.tasks = [task('a', 'done', 1), task('b', 'done', 2)]
-    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { latestPlan: true })
+    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { latestPlan: true, continueState: 'ready' })
     expect(screen.getByText('Plan stopped · 2 of 2 done')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
+  })
+
+  it('offers no Continue unless the chat says it can resume (older plan, later messages, a reply running)', () => {
+    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 })
+    expect(screen.getByText('Plan stopped · 0 of 4 done')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
+  })
+
+  it('with plan mode off, Continue is disabled and says why', () => {
+    const { props } = renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { continueState: 'blocked' })
+    const button = screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    expect(screen.getByText('Turn on plan mode to continue this plan.')).toBeTruthy()
+    expect(button.getAttribute('aria-describedby')).toBeTruthy()
+    fireEvent.click(button)
+    expect(props.onContinue).not.toHaveBeenCalled()
   })
 })
 

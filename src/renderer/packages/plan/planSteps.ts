@@ -55,6 +55,23 @@ export function planRunTasks(tasks: Task[], sessionId: string, startedAt: number
   )
 }
 
+/** Whether a stopped plan's card offers Continue: ready, disabled (plan mode off), or not at all. */
+export type PlanContinueState = 'ready' | 'blocked' | 'hidden'
+
+/**
+ * Continue resumes only the chat's latest plan while it is still the last message and nothing else generates; with
+ * plan mode off it shows disabled (the run would lose its plan).
+ */
+export function planContinueState(chat: {
+  latestPlan: boolean
+  isTail: boolean
+  generationActive: boolean
+  planModeOn: boolean
+}): PlanContinueState {
+  if (!chat.latestPlan || !chat.isTail || chat.generationActive) return 'hidden'
+  return chat.planModeOn ? 'ready' : 'blocked'
+}
+
 const TASK_STEP: Record<TaskStatus, PlanStepView['status']> = {
   done: 'done',
   'in-progress': 'current',

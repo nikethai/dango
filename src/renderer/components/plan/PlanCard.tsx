@@ -1,12 +1,13 @@
 import type { MessagePlanPart } from '@shared/types'
 import type { TFunction } from 'i18next'
 import { ChevronRight } from 'lucide-react'
-import { type JSX, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type JSX, type KeyboardEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Mascot } from '@/components/brand/Mascot'
 import Markdown from '@/components/Markdown'
 import { formatDangoDuration, useThinkingTimer } from '@/hooks/useThinkingTimer'
 import {
+  type PlanContinueState,
   type PlanStepView,
   parsePlanSteps,
   planCardState,
@@ -29,6 +30,8 @@ export type PlanCardProps = {
   onStop(): void
   /** Continue a stopped run of this plan. */
   onContinue(): Promise<void>
+  /** Whether a stopped card offers Continue (see planContinueState). Default hidden. */
+  continueState?: PlanContinueState
 }
 
 type Action = 'run' | 'request-changes' | 'reject' | 'continue'
@@ -217,7 +220,9 @@ function LivePlan({
   touchesFiles,
   onStop,
   onContinue,
+  continueState,
 }: Pick<PlanCardProps, 'plan' | 'touchesFiles' | 'onStop' | 'onContinue'> & {
+  continueState: PlanContinueState
   steps: PlanStepView[]
   running: boolean
 }) {
@@ -237,7 +242,8 @@ function LivePlan({
       ? t('Plan stopped · {{done}} of {{total}} done', { done, total })
       : t('Plan stopped')
   // Every step done: nothing is left to continue.
-  const canContinue = !(total > 0 && done === total)
+  const showContinue = continueState !== 'hidden' && !(total > 0 && done === total)
+  const blockedHintId = useId()
 
   return (
     <section className="dg-plan" aria-label={title}>
@@ -252,15 +258,21 @@ function LivePlan({
           <button type="button" className="dg-btn dg-btn--ghost" onClick={onStop}>
             {t('Stop')}
           </button>
-        ) : canContinue ? (
+        ) : showContinue ? (
           <button
             type="button"
             className="dg-btn"
-            disabled={pending !== null}
+            disabled={pending !== null || continueState === 'blocked'}
+            aria-describedby={continueState === 'blocked' ? blockedHintId : undefined}
             onClick={() => void run('continue', onContinue)}
           >
             {t('Continue')}
           </button>
+        ) : null}
+        {!running && showContinue && continueState === 'blocked' ? (
+          <span id={blockedHintId} className="dg-plan__note">
+            {t('Turn on plan mode to continue this plan.')}
+          </span>
         ) : null}
         {running && touchesFiles ? (
           <span className="dg-plan__note">{t('Edits are staged and arrive in Review as one Change.')}</span>
@@ -306,6 +318,7 @@ export default function PlanCard({
   onReject,
   onStop,
   onContinue,
+  continueState = 'hidden',
 }: PlanCardProps): JSX.Element {
   const { t } = useTranslation()
   const state = planCardState(plan, generating)
@@ -345,6 +358,7 @@ export default function PlanCard({
           touchesFiles={touchesFiles}
           onStop={onStop}
           onContinue={onContinue}
+          continueState={continueState}
         />
       )
     default:

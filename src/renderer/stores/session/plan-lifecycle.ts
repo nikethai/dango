@@ -54,6 +54,25 @@ export function canResumePlan(plan: MessagePlanPart | undefined): boolean {
   return plan?.status === 'approved' && plan.startedAt !== undefined && plan.finishedAt === undefined
 }
 
+/**
+ * Why Continue cannot resume this plan now, translated, or null when it can: the message must be the chat's last
+ * message holding a resumable plan, nothing else may be generating, and plan mode must be on.
+ */
+export function planResumeRefusal(
+  session: Session,
+  messageId: string,
+  chat: { generationActive: boolean; planModeOn: boolean }
+): string | null {
+  const message = findMessage(session, messageId)
+  if (!message || message.generating || !canResumePlan(planOf(message))) {
+    return t('This plan can no longer be continued.')
+  }
+  if (session.messages.at(-1)?.id !== messageId) return t('Only the latest plan can be continued.')
+  if (chat.generationActive) return t('Wait for the current reply to finish, then continue the plan.')
+  if (!chat.planModeOn) return t('Turn on plan mode to continue this plan.')
+  return null
+}
+
 /** The stopped run's visible work, kept in front of the resumed run's parts (the plan part is re-added by the run). */
 export function resumedRunParts(contentParts: Message['contentParts']): Message['contentParts'] {
   return contentParts.filter((part) => part.type !== 'plan')

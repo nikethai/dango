@@ -33,6 +33,7 @@ import { useScopes } from '@/hooks/useScopes'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
 import { getShowThinking, scopeKindOf } from '@/packages/chat-settings'
+import { planContinueState } from '@/packages/plan/planSteps'
 import { thinkingOpenByDefault } from '@/packages/thinking/thinking'
 import * as atoms from '@/stores/atoms'
 import {
@@ -161,6 +162,16 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const planTouchesFiles = Boolean(
     currentSession.agentMode && (currentSession.projectId || currentSession.workspaceRoot)
   )
+  // Continue on a stopped plan: only the latest plan, while it is the chat's last message and nothing generates.
+  const lastMessageId = currentMessageList.at(-1)?.id
+  const planModeOn = Boolean(currentSession.agentMode && currentSession.settings?.planMode)
+  const planContinueFor = (messageId: string) =>
+    planContinueState({
+      latestPlan: messageId === latestPlanMessageId,
+      isTail: messageId === lastMessageId,
+      generationActive: isStreaming,
+      planModeOn,
+    })
 
   const virtuoso = useRef<VirtuosoHandle>(null)
   const messageListRef = useRef<HTMLDivElement>(null)
@@ -319,6 +330,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                           thinkingDefaultOpen={thinkingDefaultOpen}
                           planTouchesFiles={planTouchesFiles}
                           latestPlan={msg.id === latestPlanMessageId}
+                          planContinue={planContinueFor(msg.id)}
                         />
                       )}
                     </ErrorBoundary>

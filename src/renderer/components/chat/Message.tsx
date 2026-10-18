@@ -85,7 +85,7 @@ import {
   shouldShowAssistantPending,
 } from '@/utils/message-stream-ui'
 import '../../static/Block.css'
-import { planCardState } from '@/packages/plan/planSteps'
+import { type PlanContinueState, planCardState } from '@/packages/plan/planSteps'
 import {
   approveAndExecutePlan,
   generateMore,
@@ -154,6 +154,8 @@ interface Props {
   planTouchesFiles?: boolean
   /** This message holds the chat's latest plan; only that plan's card reads the session's tasks. Default false. */
   latestPlan?: boolean
+  /** Whether this message's stopped plan offers Continue, resolved by MessageList. Default hidden. */
+  planContinue?: PlanContinueState
 }
 
 const _Message: FC<Props> = (props) => {
@@ -171,6 +173,7 @@ const _Message: FC<Props> = (props) => {
     thinkingDefaultOpen = true,
     planTouchesFiles = false,
     latestPlan = false,
+    planContinue = 'hidden',
   } = props
 
   const { t } = useTranslation()
@@ -872,6 +875,7 @@ const _Message: FC<Props> = (props) => {
                           onReject={onRejectPlan}
                           onStop={onStopGeneration}
                           onContinue={onContinuePlan}
+                          continueState={planContinue}
                         />
                       </Suspense>
                     ) : null

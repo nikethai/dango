@@ -22,6 +22,7 @@ import {
 } from '@shared/types'
 import { cloneMessage, getMessageText, mergeMessages } from '@shared/utils/message'
 import type { ToolSet } from 'ai'
+import i18next from 'i18next'
 import { getDefaultStore } from 'jotai'
 import { createModelDependencies } from '@/adapters'
 import { getLogger } from '@/lib/utils'
@@ -64,6 +65,7 @@ import { createNewFork, findMessageLocation } from './forks'
 import {
   clearGenerationCancel,
   clearGenerationCancelled,
+  isSessionGenerationActive,
   registerGenerationCancel,
   wasGenerationCancelled,
 } from './generation-cancel'
@@ -74,6 +76,7 @@ import {
   finishExecutedPlan,
   nextPlanVersion,
   planResumePrompt,
+  planResumeRefusal,
   recordFinishedPlan,
   resumedRunParts,
   withResumedParts,
@@ -187,15 +190,15 @@ export async function resumeStoppedPlan(sessionId: string, messageId: string) {
   planDecisionInFlight.add(key)
   try {
     const session = await chatStore.getSession(sessionId)
-    const message = session ? getMessageFromSession(session, messageId) : null
-    if (!session || !message || message.generating || !canResumePlan(getPlanPart(message) ?? undefined)) {
-      throw new Error('This plan can no longer be continued.')
-    }
+    if (!session) throw new Error(i18next.t('This plan can no longer be continued.'))
+    const message = getMessageFromSession(session, messageId)
     // The execution phase (and keeping the plan part) needs plan mode in an agent chat, as when the plan was approved.
     const settings = await chatStore.getSessionSettings(sessionId)
-    if (!session.agentMode || !settings?.planMode) {
-      throw new Error('Turn on plan mode to continue this plan.')
-    }
+    const refusal = planResumeRefusal(session, messageId, {
+      generationActive: isSessionGenerationActive(sessionId),
+      planModeOn: Boolean(session.agentMode && settings?.planMode),
+    })
+    if (refusal || !message) throw new Error(refusal ?? i18next.t('This plan can no longer be continued.'))
     await chatStore.updateSession(sessionId, { planPhase: 'executing' })
     const fresh = (await chatStore.getSession(sessionId)) ?? session
     const target = getMessageFromSession(fresh, messageId) ?? message
@@ -600,13 +603,24 @@ export async function generate(
   // is waiting for user approval. Use finally so early exits still drain.
   let shouldProcessQueuedMessages = !options?.skipQueuedMessages
   let activeExecutionPlan: MessagePlanPart | undefined
-  let managesPlanPhase = false
+  // An execution run (approve or Continue set planPhase 'executing') clears the phase however it ends.
+  const executionRun = getPlanPart(targetMsg)?.status === 'approved'
+  let managesPlanPhase = executionRun
+  const releaseExecutionPhase = async () => {
+    if (!executionRun) return
+    try {
+      await chatStore.updateSession(sessionId, { planPhase: undefined })
+    } catch {
+      // non-fatal: the session may be gone
+    }
+  }
   // Get dependent data — use pre-fetched values when available to avoid redundant async lookups
   const session = options?.prefetchedSession ?? (await chatStore.getSession(sessionId))
   const settings = options?.prefetchedSettings ?? (await chatStore.getSessionSettings(sessionId))
   const globalSettings = settingsStore.getState().getSettings()
   const configs = await platform.getConfig()
   if (!session || !settings) {
+    await releaseExecutionPhase()
     return
   }
 
@@ -649,6 +663,7 @@ export async function generate(
           status: [],
         }
         await modifyMessage(sessionId, targetMsg, true)
+        await releaseExecutionPhase()
         await processSessionMessageQueue(sessionId, shouldProcessQueuedMessages)
         return
       }
@@ -711,6 +726,7 @@ export async function generate(
         error: 'Failed to locate assistant message in session',
       }
       await modifyMessage(sessionId, targetMsg, true)
+      await releaseExecutionPhase()
       await processSessionMessageQueue(sessionId, shouldProcessQueuedMessages)
       return
     }
@@ -977,9 +993,15 @@ export async function generate(
           options?.resumePlanRun && isExecutionPhase && canResumePlan(existingPlanPart)
             ? resumedRunParts(targetMsg.contentParts)
             : []
-        if (resumedParts.length > 0) {
-          promptMsgs.push({ ...targetMsg, contentParts: resumedParts }, createMessage('user', planResumePrompt()))
-        }
+        // Only the main stream gets the resume turns; the closing-answer stream already sends the message's parts.
+        const mainPromptMsgs =
+          resumedParts.length > 0
+            ? [...promptMsgs, { ...targetMsg, contentParts: resumedParts }, createMessage('user', planResumePrompt())]
+            : promptMsgs
+        // Knowledge and memory rank against the person's last turn, not the resume note.
+        const lastUserTurn = [...promptMsgs].reverse().find((m) => m.role === 'user')
+        const resumeQuery =
+          resumedParts.length > 0 && lastUserTurn ? getMessageText(lastUserTurn, false, false).trim() : undefined
 
         const modifyMessageCache: OnResultChangeWithCancel = async (updated) => {
           if (updated.tokenSpeed !== undefined) {
@@ -1025,7 +1047,7 @@ export async function generate(
         const roomTaskToolsOnly = Boolean(roomMulti && roomRoleAllowsTaskToolsOnly(roomRoleForTools, roomModeForTools))
         const isPlanMode = Boolean(!roomMulti && isAgentEnabled && session.agentMode && effectiveSettings.planMode)
         const isPendingPlan = existingPlanPart?.status === 'pending'
-        managesPlanPhase = isPlanMode
+        managesPlanPhase = isPlanMode || executionRun
 
         // Determine which tools to use based on phase
         let toolsToUse: ToolSet | undefined
@@ -1175,7 +1197,8 @@ export async function generate(
         const { result, knowledgeIds } = await streamText(model, {
           sessionId: session.id,
           knowledgeScopeId: getEffectiveProjectId(session) ?? null,
-          messages: promptMsgs,
+          knowledgeQuery: resumeQuery,
+          messages: mainPromptMsgs,
           sessionSettings: effectiveSettings,
           onResultChangeWithCancel:
             resumedParts.length > 0
@@ -1282,8 +1305,11 @@ export async function generate(
             ? {
                 agentId: speakerAgentId,
                 agentName: getAgentDetailById(speakerAgentId)?.name || targetMsg.name || speakerAgentId,
+                userQuery: resumeQuery,
               }
-            : undefined,
+            : resumeQuery
+              ? { userQuery: resumeQuery }
+              : undefined,
         })
         // Read now: a visible-answer continue below registers a new abort function, which clears the Stop mark;
         // the continue stream's own Stop is read after it (finishExecutedPlan takes both).

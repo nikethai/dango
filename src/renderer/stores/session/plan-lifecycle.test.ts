@@ -14,6 +14,7 @@ import {
   finishExecutedPlan,
   nextPlanVersion,
   planResumePrompt,
+  planResumeRefusal,
   planTitle,
   recordFinishedPlan,
   resumedRunParts,
@@ -117,6 +118,40 @@ describe('resuming a stopped plan', () => {
   it('the resume prompt asks to continue from where the run stopped', () => {
     expect(planResumePrompt()).toMatch(/stopped/i)
     expect(planResumePrompt()).toMatch(/tasks/i)
+  })
+})
+
+describe('planResumeRefusal', () => {
+  const stopped = (fields: Partial<MessagePlanPart> = {}): Message =>
+    ({
+      id: 'a1',
+      role: 'assistant',
+      contentParts: [plan({ status: 'approved', startedAt: 1, ...fields })],
+    }) as Message
+  const sessionWith = (...messages: Message[]): Session => ({ id: 's1', name: 'Chat', messages }) as Session
+  const ok = { generationActive: false, planModeOn: true }
+  it('none for the latest stopped plan at the tail', () => {
+    expect(planResumeRefusal(sessionWith(stopped()), 'a1', ok)).toBeNull()
+  })
+  it('refuses a plan that is not the tail of the chat', () => {
+    const later = { id: 'u2', role: 'user', contentParts: [] } as unknown as Message
+    expect(planResumeRefusal(sessionWith(stopped(), later), 'a1', ok)).toBe('Only the latest plan can be continued.')
+  })
+  it('refuses while a generation is active in the chat', () => {
+    expect(planResumeRefusal(sessionWith(stopped()), 'a1', { ...ok, generationActive: true })).toBe(
+      'Wait for the current reply to finish, then continue the plan.'
+    )
+  })
+  it('refuses a finished plan and a missing message', () => {
+    expect(planResumeRefusal(sessionWith(stopped({ finishedAt: 2 })), 'a1', ok)).toBe(
+      'This plan can no longer be continued.'
+    )
+    expect(planResumeRefusal(sessionWith(), 'a1', ok)).toBe('This plan can no longer be continued.')
+  })
+  it('refuses when plan mode is off', () => {
+    expect(planResumeRefusal(sessionWith(stopped()), 'a1', { ...ok, planModeOn: false })).toBe(
+      'Turn on plan mode to continue this plan.'
+    )
   })
 })
 

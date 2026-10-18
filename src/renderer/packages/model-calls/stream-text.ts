@@ -334,6 +334,8 @@ export async function streamText(
     }
     /** The session's scope for approved knowledge; null or omitted means Everywhere. */
     knowledgeScopeId?: string | null
+    /** What knowledge is ranked against; omitted means the last user message (a resumed plan run passes the person's turn). */
+    knowledgeQuery?: string
   },
   signal?: AbortSignal
 ): Promise<{ result: StreamTextResult; coreMessages: ModelMessage[]; knowledgeIds: string[] }> {
@@ -517,7 +519,7 @@ export async function streamText(
   // Within the token budget, Everywhere facts ranked against the question; knowledgeIds is what was injected.
   const lastUserMessage = [...params.messages].reverse().find((m) => m.role === 'user')
   const knowledgeItems = fitKnowledgeToBudget(knowledgeScope, knowledgeForTurn(knowledgeScope), {
-    query: lastUserMessage ? getMessageText(lastUserMessage, false, false) : '',
+    query: params.knowledgeQuery ?? (lastUserMessage ? getMessageText(lastUserMessage, false, false) : ''),
   })
   const knowledgeIds = knowledgeItems.filter((i) => i.id !== NEVER_SEND_EMAIL.id).map((i) => i.id)
   const legacyMemoryActive = isLegacyMemoryActive()
