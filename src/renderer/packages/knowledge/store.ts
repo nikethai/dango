@@ -205,7 +205,36 @@ export function commitKnowledge(mutate: (draft: KnowledgeState) => void): Promis
   return runCommit(mutate, false)
 }
 
-async function runCommit(mutate: (draft: KnowledgeState) => void, reverted: boolean): Promise<CommitResult> {
+/** Each commit's pre-images, by its `revert`, so `revertCommits` can undo several commits as one. */
+const preImagesOf = new WeakMap<() => Promise<void>, PreImages>()
+
+/**
+ * Reverts several commits in one commit: pass their `revert`s in the order the commits ran. The newest is
+ * restored first, so an older commit's pre-image wins for a record both touched. The commit reports every
+ * record the reverted commits touched, so listeners settle records that came and went between them too.
+ */
+export async function revertCommits(reverts: Array<() => Promise<void>>): Promise<void> {
+  const pres = reverts.map((r) => {
+    const pre = preImagesOf.get(r)
+    if (!pre) throw new Error('revertCommits: not a commit revert')
+    return pre
+  })
+  await runCommit(
+    (draft) => {
+      for (const pre of [...pres].reverse()) {
+        for (const c of COLLECTIONS) restoreCollection(c, draft, pre[c] as Map<string, never>)
+      }
+    },
+    true,
+    pres
+  )
+}
+
+async function runCommit(
+  mutate: (draft: KnowledgeState) => void,
+  reverted: boolean,
+  alsoTouched: PreImages[] = []
+): Promise<CommitResult> {
   const { pre, after, before } = await enqueue(async () => {
     const storage = await getStorage()
     const before = await readState(storage)
@@ -223,12 +252,11 @@ async function runCommit(mutate: (draft: KnowledgeState) => void, reverted: bool
     return { pre: changes, after: next, before }
   })
 
+  const keysOf = (c: 'items' | 'proposals' | 'conflicts') => [
+    ...new Set([...pre[c].keys(), ...alsoTouched.flatMap((p) => [...p[c].keys()])]),
+  ]
   const result: CommitResult = {
-    touched: {
-      items: [...pre.items.keys()],
-      proposals: [...pre.proposals.keys()],
-      conflicts: [...pre.conflicts.keys()],
-    },
+    touched: { items: keysOf('items'), proposals: keysOf('proposals'), conflicts: keysOf('conflicts') },
     reverted,
     revert: async () => {
       await runCommit((draft) => {
@@ -236,6 +264,7 @@ async function runCommit(mutate: (draft: KnowledgeState) => void, reverted: bool
       }, true)
     },
   }
+  preImagesOf.set(result.revert, pre)
 
   for (const listener of [...listeners]) {
     try {

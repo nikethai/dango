@@ -9,7 +9,7 @@ import { proposeKnowledge } from './proposals'
 import { startReviewSync } from './review-sync'
 import { _resetScopesForTests, _setScopeReaderForTests } from './scopes'
 import { _resetKnowledgeForTests, commitKnowledge } from './store'
-import { getRaw, makeItem, resetTestStorage } from './test-storage'
+import { getRaw, makeItem, resetTestStorage, testStorage } from './test-storage'
 import { contentHash } from './text'
 
 vi.mock('@/storage', async () => (await import('./test-storage')).default)
@@ -116,10 +116,35 @@ describe('approveProposal', () => {
   })
 
   it('preference approved for acme lands in Everywhere', async () => {
-    const p = await propose({ kind: 'preference', text: 'Keep answers short' })
+    // Seeded directly in acme, so the approve itself does the mapping (ADR 0013).
+    const p: KnowledgeProposal = {
+      id: 'p-pref',
+      scopeId: 'acme',
+      kind: 'preference',
+      text: 'Keep answers short',
+      sources: [{ kind: 'chat', label: 'Launch planning' }],
+      origin: 'chat',
+      createdAt: 1,
+    }
+    await commitKnowledge((d) => {
+      d.proposals.push(p)
+    })
     const item = await approveProposal(p.id)
     expect(item.scopeId).toBe(EVERYWHERE_SCOPE_ID)
+    expect(stored().items.map((i) => [i.id, i.scopeId])).toEqual([[item.id, EVERYWHERE_SCOPE_ID]])
+    expect(stored().proposals).toEqual([])
     expect(lastUndo().message).toBe('Approved "Keep answers short" for Everywhere')
+  })
+
+  it('a second approve of the same proposal throws missing and saves one item', async () => {
+    const p = await propose()
+    const [first, second] = await Promise.allSettled([approveProposal(p.id), approveProposal(p.id)])
+    expect(first.status).toBe('fulfilled')
+    expect(second).toMatchObject({ status: 'rejected', reason: new Error('missing') })
+    expect(stored().items).toHaveLength(1)
+    expect(vi.mocked(pushUndo)).toHaveBeenCalledTimes(1)
+    await expect(approveProposal(p.id)).rejects.toThrow('missing')
+    expect(stored().items).toHaveLength(1)
   })
 
   it('throws missing for an unknown id', async () => {
@@ -254,6 +279,28 @@ describe('addKnowledge', () => {
       { ref: { type: 'proposal', id: item.proposalId } },
       'dismissed'
     )
+  })
+
+  it('undo of add is one commit', async () => {
+    await addKnowledge({ scopeId: 'acme', kind: 'fact', text: 'Launch is 13 Nov' })
+    testStorage.setItemNow.mockClear()
+    await lastUndo().undo()
+    expect(testStorage.setItemNow.mock.calls.filter(([k]) => k === 'knowledge')).toHaveLength(1)
+    expect(stored().items).toEqual([])
+    expect(stored().proposals).toEqual([])
+  })
+
+  it('a failed undo of add leaves the item in place', async () => {
+    const item = await addKnowledge({ scopeId: 'acme', kind: 'fact', text: 'Launch is 13 Nov' })
+    testStorage.setItemNow.mockRejectedValueOnce(new Error('disk full'))
+    await expect(lastUndo().undo()).rejects.toThrow('disk full')
+    expect(stored().items.map((i) => i.id)).toEqual([item.id])
+    expect(stored().proposals).toEqual([])
+  })
+
+  it('blank text throws empty', async () => {
+    await expect(addKnowledge({ scopeId: 'acme', kind: 'fact', text: '   ' })).rejects.toThrow('empty')
+    expect(vi.mocked(pushUndo)).not.toHaveBeenCalled()
   })
 
   it('a known text throws duplicate', async () => {

@@ -13,7 +13,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { checkAgainstLayers } from './contradictions'
 import { fileProposal } from './proposals'
 import { scopeName } from './scopes'
-import { commitKnowledge, ensureKnowledgeLoaded, knowledgeStore } from './store'
+import { commitKnowledge, ensureKnowledgeLoaded, knowledgeStore, revertCommits } from './store'
 import { assignSourceIds, newRevision, quote } from './text'
 import { pushKnowledgeUndo } from './undo'
 
@@ -220,7 +220,8 @@ export async function approveProposal(id: string, opts?: { text?: string }): Pro
 
 /**
  * The user adds knowledge by hand: filed as their proposal (past the Don't suggest list), then approved,
- * with one undo `Added "{text}" to {scope}` that takes back both. Throws `Error('duplicate')` when the
+ * with one undo `Added "{text}" to {scope}` that takes back both in one commit. Throws `Error('empty')` for
+ * blank text, `Error('duplicate')` when the
  * scope already has it approved or proposed, and `KnowledgeConflictError` on a contradiction (the
  * Conflict entry is then in Review).
  */
@@ -229,6 +230,7 @@ export async function addKnowledge(input: {
   kind: KnowledgeKind
   text: string
 }): Promise<KnowledgeItem> {
+  if (!input.text.trim()) throw new Error('empty')
   const filed = await fileProposal(
     {
       scopeId: input.scopeId,
@@ -242,12 +244,10 @@ export async function addKnowledge(input: {
   if (!filed) throw new Error('duplicate')
   // The filing just ran the check; a failed one (no model) is not repeated.
   const { item, revert } = await approve(filed.proposal.id, { recheck: false })
+  // One undo, one commit: the approve and the filing are reverted together, so a failure leaves both in place.
   pushKnowledgeUndo(
     t('Added "{{text}}" to {{scope}}', { text: quote(item.text), scope: scopeName(item.scopeId) }),
-    revert,
-    {
-      onUndo: filed.revert,
-    }
+    () => revertCommits([filed.revert, revert])
   )
   return item
 }
