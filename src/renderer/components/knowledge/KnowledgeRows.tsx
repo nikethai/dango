@@ -98,6 +98,7 @@ function KnowledgeRow({ item, onNoneLeft }: { item: KnowledgeItem; onNoneLeft?: 
         {superseded && replacement ? (
           <div className="dg-item__sub">{t('Replaced by "{{text}}"', { text: quote(replacement.text) })}</div>
         ) : null}
+        {item.status === 'removed' ? <div className="dg-item__sub">{t('Removed')}</div> : null}
         {open && !editing ? <KnowledgeItemDetail item={item} /> : null}
       </div>
       <div className="dg-item__actions">

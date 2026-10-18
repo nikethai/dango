@@ -4,6 +4,7 @@ import { ReviewItem } from '@/components/review'
 import type { ReviewRendererProps } from '@/packages/review'
 import { approveProposal, KnowledgeConflictError } from '../approve'
 import { dismissProposal } from '../proposals'
+import { scopeName } from '../scopes'
 import { quote } from '../text'
 import { useGuarded } from './useGuarded'
 
@@ -47,7 +48,7 @@ export function ProposalRenderer({ entry, focused }: ReviewRendererProps) {
 
   const base = {
     kind: entry.kind,
-    scope: entry.scopeId,
+    scope: scopeName(entry.scopeId),
     text: entry.text,
     focused,
     ...(entry.source !== undefined ? { source: entry.source } : {}),

@@ -98,6 +98,7 @@ describe('KnowledgeTab', () => {
     expect(screen.queryByText('Launch is 4 Nov')).toBeNull()
     const row = screen.getByText('Launch is 6 Nov').closest('li') as HTMLElement
     expect(within(row).queryAllByRole('button', { name: /Edit|Remove|Move to/ })).toHaveLength(0)
+    expect(within(row).getByText('Removed')).toBeTruthy()
   })
 
   it('a superseded item shows what replaced it, with no actions', async () => {

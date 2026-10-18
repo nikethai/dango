@@ -2,6 +2,7 @@ import { t } from 'i18next'
 import { type ReviewAction, ReviewItem } from '@/components/review'
 import { openReviewEntry, type ReviewRendererProps, setReviewEntryState } from '@/packages/review'
 import { reapproveKnowledge } from '../lifecycle'
+import { scopeName } from '../scopes'
 import { useGuarded } from './useGuarded'
 
 /** A re-check: something an answer relied on changed. A knowledge entry offers only Approve again and Open. */
@@ -29,7 +30,7 @@ export function RecheckRenderer({ entry, focused }: ReviewRendererProps) {
   return (
     <ReviewItem
       kind={entry.kind}
-      scope={entry.scopeId}
+      scope={scopeName(entry.scopeId)}
       text={entry.text}
       focused={focused}
       actions={actions}

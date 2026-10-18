@@ -1366,6 +1366,7 @@
   "Approved \"{{text}}\" for {{scope}}": "Approved \"{{text}}\" for {{scope}}",
   "Added \"{{text}}\" to {{scope}}": "Added \"{{text}}\" to {{scope}}",
   "Saved the new wording": "Saved the new wording",
+  "Removed": "Removed",
   "Removed \"{{text}}\"": "Removed \"{{text}}\"",
   "Moved \"{{text}}\" to {{scope}}": "Moved \"{{text}}\" to {{scope}}",
   "from {{scope}}": "from {{scope}}",

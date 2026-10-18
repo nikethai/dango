@@ -12,6 +12,7 @@ import { approveProposal, KnowledgeConflictError } from '../approve'
 import { resolveConflict } from '../conflicts'
 import { reapproveKnowledge } from '../lifecycle'
 import { dismissProposal } from '../proposals'
+import { _setScopeReaderForTests, refreshScopes } from '../scopes'
 import { knowledgeStore } from '../store'
 import { makeItem } from '../test-storage'
 import { ConflictRenderer } from './ConflictRenderer'
@@ -59,6 +60,25 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 afterEach(cleanup)
+
+describe('scope names on Review entries', () => {
+  beforeEach(async () => {
+    _setScopeReaderForTests(async () => [{ id: 'acme', name: 'Acme Co', order: 0, kind: 'client' }])
+    await refreshScopes()
+  })
+  afterEach(() => _setScopeReaderForTests(null))
+
+  it('a proposal and a re-check name their scope, not its id', () => {
+    render(<ProposalRenderer entry={entry({})} focused={false} />)
+    expect(screen.getByText(/Acme Co/)).toBeTruthy()
+    expect(screen.queryByText(/\bacme\b/)).toBeNull()
+    cleanup()
+    render(
+      <RecheckRenderer entry={entry({ kind: 're-check', ref: { type: 'knowledge', id: 'k1' } })} focused={false} />
+    )
+    expect(screen.getByText(/Acme Co/)).toBeTruthy()
+  })
+})
 
 describe('ProposalRenderer', () => {
   it('Edit then Cmd+Enter approves the edited text', () => {
