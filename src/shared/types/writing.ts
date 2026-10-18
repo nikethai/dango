@@ -6,8 +6,8 @@ export const MAX_WRITING_OUTPUT_CHARS = 16_000
 export const WritingStyleSchema = z.enum(['clearer', 'friendlier', 'shorter', 'formal', 'translate'])
 export type WritingStyle = z.infer<typeof WritingStyleSchema>
 
-/** A language name only: letters, spaces, parentheses, apostrophes, hyphens. Never instructions. */
-export const TARGET_LANGUAGE_RE = /^\p{L}[\p{L} ()'-]{1,39}$/u
+/** A language name only: letters, combining marks, spaces, parentheses, apostrophes, hyphens. Never instructions. */
+export const TARGET_LANGUAGE_RE = /^\p{L}[\p{L}\p{M} ()'-]{1,39}$/u
 
 export const WritingModelSchema = z.object({
   provider: z.string().min(1),
