@@ -46,3 +46,30 @@
 .dango-review-toolbar__new {
   margin-left: auto;
 }
+
+/* Empty states RV5 / EM2 */
+.dango-review-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--dango-space-3);
+  padding: var(--dango-space-8) var(--dango-space-4);
+  text-align: center;
+}
+
+.dango-review-empty__title,
+.dango-review-empty__line {
+  margin: 0;
+}
+
+.dango-review-empty__line {
+  max-width: 32rem;
+  color: var(--dango-muted);
+}
+
+.dango-review-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--dango-space-2);
+}

@@ -4,14 +4,16 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { useScopes } from '@/hooks/useScopes'
 import { startNewChat } from '@/lib/startNewChat'
-import { hasReviewOpener, registerReviewOpener } from '@/packages/review'
+import { hasReviewOpener, registerReviewOpener, useLastCheckedAt, useReviewEntries } from '@/packages/review'
+import { hasSources } from './feedSelectors'
+import { ReviewEmpty } from './ReviewEmpty'
 import { ReviewFeed } from './ReviewFeed'
 import { ReviewToolbar } from './ReviewToolbar'
 import './review-home.css'
 
 export type ReviewHomeProps = { sourceCount?: number }
 
-export function ReviewHome(_props: ReviewHomeProps) {
+export function ReviewHome({ sourceCount }: ReviewHomeProps) {
   const { scope: requested } = useSearch({ from: '/' })
   const { scopes } = useScopes()
   // A stale `?scope=` (a deleted scope) falls back to All scopes without rewriting the URL. An empty list
@@ -21,6 +23,9 @@ export function ReviewHome(_props: ReviewHomeProps) {
       ? requested
       : undefined
   const navigate = useNavigate({ from: '/' })
+  const entries = useReviewEntries()
+  const lastCheckedAt = useLastCheckedAt()
+  const sourced = hasSources({ sourceCount, entries, lastCheckedAt })
 
   // Default opener for a question row: a chat with the question prefilled. Slice 10 may replace it.
   useEffect(() => {
@@ -34,8 +39,11 @@ export function ReviewHome(_props: ReviewHomeProps) {
         scopeId={scope}
         onScopeChange={(id) => void navigate({ search: (prev) => ({ ...prev, scope: id }), replace: true })}
       />
-      {/* Task 6: pass `caughtUp` and the empty states here. */}
-      <ReviewFeed scopeId={scope} />
+      {sourced ? (
+        <ReviewFeed scopeId={scope} caughtUp={<ReviewEmpty variant="caught-up" lastCheckedAt={lastCheckedAt} />} />
+      ) : (
+        <ReviewEmpty variant="no-sources" />
+      )}
     </div>
   )
 }

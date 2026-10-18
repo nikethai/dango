@@ -1520,5 +1520,9 @@
   "Cost limit in US dollars": "Cost limit in US dollars",
   "Show thinking": "Show thinking",
   "Auto opens it in project scopes and chats without a scope, and keeps it closed in client scopes.": "Auto opens it in project scopes and chats without a scope, and keeps it closed in client scopes.",
-  "Closed": "Closed"
+  "Closed": "Closed",
+  "Nothing needs you": "Nothing needs you",
+  "Connect a source to get started": "Connect a source to get started",
+  "Dango reads a folder, Gmail or Asana and tells you here what needs you.": "Dango reads a folder, Gmail or Asana and tells you here what needs you.",
+  "Connect a source": "Connect a source"
 }

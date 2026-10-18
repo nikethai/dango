@@ -19,6 +19,9 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 vi.mock('@/hooks/useScopes', () => ({ useScopes: () => ({ scopes: h.scopes }) }))
 vi.mock('@/lib/startNewChat', () => ({ startNewChat: h.startNewChat }))
+// ReviewEmpty pulls these in; they import the router, which this test does not need.
+vi.mock('@/modals/Settings', () => ({ navigateToSettings: vi.fn() }))
+vi.mock('@/platform', () => ({ default: {} }))
 vi.mock('./ReviewFeed', () => ({
   ReviewFeed: (p: { scopeId?: string }) => {
     h.feedScope(p.scopeId)
@@ -53,25 +56,26 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+// sourceCount={1}: the feed (not EM2) renders, so the scope it receives can be observed.
 describe('ReviewHome scope filter', () => {
   it('drops a stale scope id once scopes have loaded', () => {
     h.search = { scope: 'gone' }
     h.scopes = [{ id: 'p1', name: 'Acme' }]
-    render(<ReviewHome />)
+    render(<ReviewHome sourceCount={1} />)
     expect(h.feedScope).toHaveBeenLastCalledWith(undefined)
     expect(h.toolbarScope).toHaveBeenLastCalledWith(undefined)
   })
   it('keeps the id while scopes are still loading, and for a known scope or Everywhere', () => {
     h.search = { scope: 'p1' }
-    render(<ReviewHome />)
+    render(<ReviewHome sourceCount={1} />)
     expect(h.feedScope).toHaveBeenLastCalledWith('p1')
     cleanup()
     h.scopes = [{ id: 'p1', name: 'Acme' }]
-    render(<ReviewHome />)
+    render(<ReviewHome sourceCount={1} />)
     expect(h.feedScope).toHaveBeenLastCalledWith('p1')
     cleanup()
     h.search = { scope: 'everywhere' }
-    render(<ReviewHome />)
+    render(<ReviewHome sourceCount={1} />)
     expect(h.feedScope).toHaveBeenLastCalledWith('everywhere')
   })
 })
