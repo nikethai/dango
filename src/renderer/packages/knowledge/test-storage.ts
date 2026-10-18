@@ -19,6 +19,8 @@ export const testStorage = {
     <T>(key: string, initialValue: T): Promise<T> =>
       Promise.resolve(memory.has(key) ? (clone(memory.get(key)) as T) : initialValue)
   ),
+  /** Like `StoreStorage.readItem`: the stored value or `null`, never a default write. */
+  readItem: vi.fn((key: string): Promise<unknown> => Promise.resolve(memory.has(key) ? clone(memory.get(key)) : null)),
   setItem: vi.fn((key: string, value: unknown): Promise<void> => {
     memory.set(key, clone(value))
     return Promise.resolve()

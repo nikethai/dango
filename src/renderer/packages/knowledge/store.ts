@@ -39,8 +39,18 @@ export type KnowledgeCommitListener = (
 ) => void | Promise<void>
 
 type KnowledgeStorage = {
-  getItem<T>(key: string, fallback: T): Promise<T>
+  /** The stored value or `null`; never writes a default (see `BaseStorage.readItem`). */
+  readItem(key: string): Promise<unknown>
+  getAllKeys(): Promise<string[]>
   setItemNow(key: string, value: unknown): Promise<void>
+}
+
+/** The stored document is there but does not read as one: loads keep the last state and commits refuse to run. */
+export class KnowledgeUnreadableError extends Error {
+  constructor(detail: string) {
+    super(`Stored knowledge is unreadable (${detail}); nothing is written until it reads again`)
+    this.name = 'KnowledgeUnreadableError'
+  }
 }
 
 // Tests mock `@/storage` with `./test-storage` (see there). Lazy so importing this module stays platform-free.
@@ -52,13 +62,24 @@ async function getStorage(): Promise<KnowledgeStorage> {
 // One commit at a time, across windows (Web Lock) and within this one (queue).
 const enqueue = createLockedQueue('dango:knowledge')
 
+/**
+ * The stored document, read without a default write. A missing key is an empty document. A value that is not
+ * an object, or a listed key that reads `null` (the platform could not parse it), throws
+ * `KnowledgeUnreadableError`: a load then keeps the last state, and a commit (which reads first) writes nothing,
+ * so a corrupt document is never replaced by an empty one.
+ */
 async function readState(storage: KnowledgeStorage): Promise<KnowledgeState> {
-  const raw = await storage.getItem<unknown>(KEY, null)
-  return raw && typeof raw === 'object' ? KnowledgeStateSchema.parse(raw) : emptyKnowledgeState()
+  const raw = await storage.readItem(KEY)
+  if (raw === null || raw === undefined) {
+    if ((await storage.getAllKeys()).includes(KEY)) throw new KnowledgeUnreadableError('stored value does not parse')
+    return emptyKnowledgeState()
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new KnowledgeUnreadableError('not an object')
+  return KnowledgeStateSchema.parse(raw)
 }
 
 async function readMigration(storage: KnowledgeStorage): Promise<'pending' | 'done' | undefined> {
-  const raw = await storage.getItem<{ state?: unknown } | null>(MIGRATION_KEY, null)
+  const raw = (await storage.readItem(MIGRATION_KEY)) as { state?: unknown } | null | undefined
   const s = raw?.state
   return s === 'done' || s === 'pending' ? s : undefined
 }

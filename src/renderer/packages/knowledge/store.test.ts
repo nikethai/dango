@@ -5,6 +5,7 @@ import {
   _resetKnowledgeForTests,
   commitKnowledge,
   ensureKnowledgeLoaded,
+  KnowledgeUnreadableError,
   knowledgeStore,
   onKnowledgeCommit,
 } from './store'
@@ -54,6 +55,38 @@ describe('knowledge store', () => {
       dontSuggest: [],
       dismissals: [],
     })
+  })
+
+  it('a load of a missing key writes nothing', async () => {
+    await ensureKnowledgeLoaded()
+    expect(testStorage.setItemNow).not.toHaveBeenCalled()
+    expect(testStorage.setItem).not.toHaveBeenCalled()
+    expect(getRaw(KEY)).toBeUndefined()
+    expect(getRaw('knowledge-migration')).toBeUndefined()
+    // Reads go through readItem: getItem would store its default for a missing key.
+    const reads = testStorage.getItem.mock.calls.map((c) => c[0])
+    expect(reads.filter((k) => k.startsWith('knowledge'))).toEqual([])
+  })
+
+  it.each([
+    ['a value that is not an object', 'oops'],
+    ['a listed key that reads null', null],
+  ])('%s is unreadable: the load keeps the state and commits write nothing until it reads again', async (_, bad) => {
+    putRaw(KEY, { items: [await makeItem({ id: 'k1' })] })
+    await ensureKnowledgeLoaded()
+    putRaw(KEY, bad)
+
+    await expect(ensureKnowledgeLoaded({ fresh: true })).rejects.toBeInstanceOf(KnowledgeUnreadableError)
+    expect(knowledgeStore.getState().state.items.map((i) => i.id)).toEqual(['k1'])
+    testStorage.setItemNow.mockClear()
+    await expect(commitKnowledge((d) => d.proposals.push(proposal()))).rejects.toBeInstanceOf(KnowledgeUnreadableError)
+    expect(testStorage.setItemNow).not.toHaveBeenCalled()
+    expect(getRaw(KEY)).toEqual(bad)
+
+    putRaw(KEY, { items: [await makeItem({ id: 'k2' })] })
+    await commitKnowledge((d) => d.proposals.push(proposal()))
+    expect(stored()?.items.map((i) => i.id)).toEqual(['k2'])
+    expect(stored()?.proposals).toHaveLength(1)
   })
 
   it('drops one bad record, keeps the rest', async () => {
