@@ -1613,5 +1613,20 @@
   "From approved knowledge": "From approved knowledge",
   "{{count}} images_one": "{{count}} image",
   "{{count}} images_other": "{{count}} images",
-  "+{{n}}": "+{{n}}"
+  "+{{n}}": "+{{n}}",
+  "{{count}} things need you_one": "{{count}} thing needs you",
+  "{{count}} things need you_other": "{{count}} things need you",
+  "{{status}} · checked {{ago}}": "{{status}} · checked {{ago}}",
+  "{{status}} · {{checked}}": "{{status}} · {{checked}}",
+  "Paused · {{status}}": "Paused · {{status}}",
+  "checked just now": "checked just now",
+  "{{count}} min ago": "{{count}} min ago",
+  "{{count}} h ago": "{{count}} h ago",
+  "Dango · {{status}}": "Dango · {{status}}",
+  "Pause background work": "Pause background work",
+  "Resume background work": "Resume background work",
+  "Open Review": "Open Review",
+  "Quick chat": "Quick chat",
+  "Open Dango": "Open Dango",
+  "Quit Dango": "Quit Dango"
 }

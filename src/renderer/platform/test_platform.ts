@@ -134,6 +134,8 @@ export default class TestPlatform implements Platform {
   public systemNotificationPermission: SystemNotificationPermission = 'granted'
   /** Recorded quick window heights (setQuickWindowHeight) for tests */
   public quickWindowHeights: number[] = []
+  /** Recorded tray statuses (setTrayStatus) for tests */
+  public trayStatuses: import('@/packages/menu-bar/tray-status').TrayStatus[] = []
   /** Number of hideQuickWindow calls for tests */
   public quickHidden = 0
   private systemNotificationClickHandlers = new Set<(payload: SystemNotificationClickPayload) => void>()
@@ -414,6 +416,11 @@ export default class TestPlatform implements Platform {
 
   public hideQuickWindow(): Promise<void> {
     this.quickHidden += 1
+    return Promise.resolve()
+  }
+
+  public setTrayStatus(status: import('@/packages/menu-bar/tray-status').TrayStatus): Promise<void> {
+    this.trayStatuses.push(status)
     return Promise.resolve()
   }
 

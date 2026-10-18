@@ -730,6 +730,14 @@ export default class DesktopPlatform implements Platform {
     return listenShellEvent('shell:hidden-to-tray', () => callback())
   }
 
+  public async setTrayStatus(status: import('@/packages/menu-bar/tray-status').TrayStatus): Promise<void> {
+    await this.ipc.invoke('shell:setTrayStatus', status)
+  }
+
+  public onTrayPauseToggle(callback: () => void): () => void {
+    return listenShellEvent('shell:tray-pause-toggle', () => callback())
+  }
+
   // --- Agent browser (isolated Chromium) ---
 
   public async browserSessionStart(opts: import('./interfaces').BrowserSessionStartPayload) {

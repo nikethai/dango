@@ -211,6 +211,10 @@ export interface Platform extends Storage {
   onClipboardCaptured?(callback: (payload: ClipboardCapturePayload) => void): () => void
   onScreenshotError?(callback: (message: string) => void): () => void
   onHiddenToTray?(callback: () => void): () => void
+  /** Push the menu bar / tray status to the native shell (desktop shell only; absent elsewhere). */
+  setTrayStatus?(status: import('@/packages/menu-bar/tray-status').TrayStatus): Promise<void>
+  /** The tray's Pause / Resume row was clicked (`shell:tray-pause-toggle`). */
+  onTrayPauseToggle?(callback: () => void): () => void
 
   // Terminal command execution (Desktop only)
   executeCommand?(
