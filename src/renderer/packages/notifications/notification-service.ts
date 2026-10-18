@@ -108,6 +108,11 @@ export class NotificationService {
   private gapRemaining(now: number): number {
     const last = this.deps.getLastShownAt()
     if (last === null || !Number.isFinite(last)) return 0
+    if (last > now) {
+      // A time in the future (clock change, bad write) counts as now and is stored as now, so it blocks one gap at most.
+      this.deps.setLastShownAt(now)
+      return NOTIFY_MIN_GAP_MS
+    }
     return Math.max(0, last + NOTIFY_MIN_GAP_MS - now)
   }
 
@@ -127,6 +132,9 @@ export class NotificationService {
     if (event.kind === 'long_run_done' && now - event.startedAt < LONG_RUN_MS) return 'skipped'
     const key = dedupeKey(event)
     if (this.isDuplicate(key, now)) return 'skipped'
+    if (event.kind === 'needs_you' && this.deps.claimNeedsYou && !this.deps.claimNeedsYou(event.entryId)) {
+      return 'skipped'
+    }
     if (!this.queue.some((e) => dedupeKey(e) === key)) this.queue.push(event)
 
     if (this.flushing) return 'queued'

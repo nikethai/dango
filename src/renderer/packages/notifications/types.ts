@@ -30,6 +30,8 @@ export type NotificationServiceDeps = {
   /** When any window last showed a notification (shared across windows). */
   getLastShownAt: () => number | null
   setLastShownAt: (t: number) => void
+  /** Shared across tabs: false when another tab or window already notified this Needs you entry. */
+  claimNeedsYou?: (entryId: string) => boolean
 }
 
 /** A run must last at least this long before its finish is worth a notification. */

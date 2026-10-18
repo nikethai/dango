@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { NotificationService, routeNotificationClick } from './notification-service'
+import { createSeenEntriesLedger } from './seen-entries'
 import { LONG_RUN_MS, NOTIFY_MIN_GAP_MS, type NotificationServiceDeps, type NotifyEvent } from './types'
 
 const MIN = 60_000
@@ -205,6 +206,67 @@ describe('NotificationService', () => {
     expect(await service.notify(longRun('s1', started))).toBe('skipped')
     await vi.advanceTimersByTimeAsync(31_000)
     expect(await service.notify(needsYou('a'))).toBe('queued')
+  })
+})
+
+describe('fix round 1', () => {
+  test('a last-shown time in the future counts as now', async () => {
+    const { service, show } = createService({}, { lastShownAt: Date.now() + 24 * 60 * MIN })
+    expect(await service.notify(needsYou('a'))).toBe('queued')
+    await vi.advanceTimersByTimeAsync(NOTIFY_MIN_GAP_MS)
+    expect(show).toHaveBeenCalledTimes(1)
+  })
+
+  test('two tabs sharing the seen-entries ledger notify a Needs you entry once', async () => {
+    const map = new Map<string, string>()
+    const storage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+    }
+    const ledger = createSeenEntriesLedger({ storage: () => storage, now: () => Date.now() })
+    const claimNeedsYou = (id: string) => ledger.claim(id)
+    const tabA = createService({ claimNeedsYou })
+    const tabB = createService({ claimNeedsYou })
+    expect(await tabA.service.notify(needsYou('a'))).toBe('shown')
+    expect(await tabB.service.notify(needsYou('a'))).toBe('skipped')
+    expect(tabB.show).not.toHaveBeenCalled()
+    expect(await tabB.service.notify(needsYou('b'))).toBe('shown')
+  })
+})
+
+describe('createSeenEntriesLedger', () => {
+  test('caps the list and forgets old ids', () => {
+    const map = new Map<string, string>()
+    const storage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+    }
+    let now = 1_000_000
+    const ledger = createSeenEntriesLedger({ storage: () => storage, now: () => now, max: 3, ttlMs: 1_000 })
+    expect(ledger.claim('a')).toBe(true)
+    expect(ledger.claim('a')).toBe(false)
+    ledger.claim('b')
+    ledger.claim('c')
+    ledger.claim('d')
+    // 'a' was dropped by the cap
+    expect(ledger.claim('a')).toBe(true)
+    now += 1_001
+    expect(ledger.claim('d')).toBe(true)
+  })
+
+  test('blocked or garbage storage still lets the entry through', () => {
+    const throwing = createSeenEntriesLedger({
+      storage: () => {
+        throw new Error('blocked')
+      },
+      now: () => 1,
+    })
+    expect(throwing.claim('a')).toBe(true)
+    const garbage = createSeenEntriesLedger({
+      storage: () => ({ getItem: () => '{oops', setItem: () => undefined }),
+      now: () => 1,
+    })
+    expect(garbage.claim('a')).toBe(true)
   })
 })
 

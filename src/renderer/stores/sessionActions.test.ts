@@ -745,6 +745,45 @@ describe('plan lifecycle actions', () => {
     expect(addReviewEntryMock).not.toHaveBeenCalled()
   })
 
+  test('a long run is timed from the run, not the message: an old message re-run for seconds is not long', async () => {
+    const { notifySystemEvent } = await import('@/packages/notifications')
+    vi.mocked(notifySystemEvent).mockClear()
+    const { streamText } = await import('@/packages/model-calls')
+    vi.mocked(streamText).mockImplementation(async (_model, streamOpts) => {
+      const parts = [{ type: 'text' as const, text: 'Done' }]
+      await streamOpts.onResultChangeWithCancel?.({ contentParts: parts, cancel: () => {} })
+      // The run takes 5 s; every persisted write re-stamps the message, so its timestamp is no run start.
+      vi.setSystemTime(Date.now() + 5_000)
+      return { result: { contentParts: parts, text: 'Done', finishReason: 'stop' }, knowledgeIds: [] } as never
+    })
+    uuidQueue.push(...Array.from({ length: 50 }, (_, i) => `uuid-${i}`))
+    const session = stoppedPlanSession({ startedAt: 1 })
+    // The plan message was written an hour ago; this run (resume) takes a moment.
+    session.messages[1] = { ...session.messages[1], timestamp: Date.now() - 3_600_000 }
+    session.messages[0] = { ...session.messages[0], contentParts: [{ type: 'text', text: 'Tidy the docs' }] }
+    getSessionMock.mockResolvedValue(session)
+    getSessionSettingsMock.mockResolvedValue({
+      planMode: true,
+      provider: 'openai',
+      modelId: 'gpt',
+      maxContextMessageCount: 20,
+    })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const before = Date.now()
+      await sessionActions.resumeStoppedPlan('plan-session', 'a1')
+      expect(notifySystemEvent).toHaveBeenCalledTimes(1)
+      const event = vi.mocked(notifySystemEvent).mock.calls[0][0] as { kind: string; startedAt: number }
+      expect(event.kind).toBe('long_run_done')
+      // From the run's start: not the hour-old message, not the last write's re-stamp.
+      expect(event.startedAt).toBeGreaterThanOrEqual(before)
+      expect(event.startedAt).toBeLessThan(before + 5_000)
+      expect(Date.now() - event.startedAt).toBeLessThan(60_000)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('a finished execution run files exactly one Change entry', async () => {
     await resumeWithStream([{ type: 'text', text: 'Checked it' }])
     expect(savedPlan()?.finishedAt).toBeDefined()

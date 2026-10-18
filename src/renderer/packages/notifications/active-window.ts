@@ -15,7 +15,7 @@ type Flag = { id: string; at: number }
 
 export type ActiveWindowTracker = {
   setFocused(focused: boolean): void
-  /** Refreshes this window's flag while it is focused; call every ACTIVE_HEARTBEAT_MS. */
+  /** Re-checks focus (when a probe is given) and refreshes this window's flag while focused; call every ACTIVE_HEARTBEAT_MS. */
   heartbeat(): void
   isActive(): boolean
 }
@@ -36,6 +36,8 @@ export function createActiveWindowTracker(opts: {
   id: string
   storage: () => FlagStorage | null
   now: () => number
+  /** This window's real focus, re-read on each heartbeat in case a blur event was missed. */
+  probeFocus?: () => boolean
 }): ActiveWindowTracker {
   let focused = false
 
@@ -48,7 +50,7 @@ export function createActiveWindowTracker(opts: {
   }
   const storage = opts.storage
 
-  return {
+  const tracker: ActiveWindowTracker = {
     setFocused(next) {
       focused = next
       if (next) {
@@ -64,6 +66,16 @@ export function createActiveWindowTracker(opts: {
       }
     },
     heartbeat() {
+      if (opts.probeFocus) {
+        let next = focused
+        try {
+          next = opts.probeFocus()
+        } catch {
+          // keep the last known focus
+        }
+        if (next !== focused || next) tracker.setFocused(next)
+        return
+      }
       if (focused) write()
     },
     isActive() {
@@ -74,4 +86,5 @@ export function createActiveWindowTracker(opts: {
       return age >= -ACTIVE_STALE_MS && age < ACTIVE_STALE_MS
     },
   }
+  return tracker
 }

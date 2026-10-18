@@ -79,4 +79,26 @@ describe('createActiveWindowTracker', () => {
     throwing.setFocused(false)
     expect(throwing.isActive()).toBe(false)
   })
+
+  test('heartbeat re-checks focus: a window that lost focus without a blur stops counting', () => {
+    const storage = memoryStorage()
+    const now = 1_000_000
+    let hasFocus = true
+    const quick = createActiveWindowTracker({
+      id: 'quick',
+      storage: () => storage,
+      now: () => now,
+      probeFocus: () => hasFocus,
+    })
+    const main = createActiveWindowTracker({ id: 'main', storage: () => storage, now: () => now })
+    quick.setFocused(true)
+    expect(main.isActive()).toBe(true)
+    hasFocus = false
+    quick.heartbeat()
+    expect(main.isActive()).toBe(false)
+    expect(quick.isActive()).toBe(false)
+    hasFocus = true
+    quick.heartbeat()
+    expect(main.isActive()).toBe(true)
+  })
 })

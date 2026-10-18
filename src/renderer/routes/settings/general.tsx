@@ -167,7 +167,7 @@ export function RouteComponent() {
       <SettingsSection
         title={t('System Notifications')}
         description={t(
-          'Local OS alerts when a reply finishes while the app is in the background. Never includes message content. Not remote push.'
+          'Alerts on this device when something needs you or a long run finishes while Dango is in the background. Never includes message content.'
         )}
       >
         <SystemNotificationsSection />

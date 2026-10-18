@@ -1227,7 +1227,7 @@
   "Debug issue": "Debug issue",
   "Plan a feature": "Plan a feature",
   "System Notifications": "System notifications",
-  "Local OS alerts when a reply finishes while the app is in the background. Never includes message content. Not remote push.": "Local OS alerts when a reply finishes while the app is in the background. Never includes message content. Not remote push.",
+  "Alerts on this device when something needs you or a long run finishes while Dango is in the background. Never includes message content.": "Alerts on this device when something needs you or a long run finishes while Dango is in the background. Never includes message content.",
   "Enable system notifications": "Enable system notifications",
   "Only for things that need you and long runs that finish while Dango is in the background. At most one every 10 minutes.": "Only for things that need you and long runs that finish while Dango is in the background. At most one every 10 minutes.",
   "Permission": "Permission",

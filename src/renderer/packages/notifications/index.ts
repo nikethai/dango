@@ -3,6 +3,7 @@ import platform, { isCapacitorMobile } from '@/platform'
 import { settingsStore } from '@/stores/settingsStore'
 import { ACTIVE_HEARTBEAT_MS, createActiveWindowTracker } from './active-window'
 import { NotificationService, routeNotificationClick } from './notification-service'
+import { createSeenEntriesLedger } from './seen-entries'
 import { DEFAULT_NOTIFICATIONS_CONFIG, type NotifyEvent, type NotifyResult } from './types'
 
 export { NotificationService, routeNotificationClick } from './notification-service'
@@ -29,11 +30,34 @@ function localStore(): Storage | null {
   }
 }
 
+/** This window's real focus. On mobile, document.hasFocus() is unreliable; visibility is enough. */
+function probeFocus(): boolean {
+  if (typeof document === 'undefined') return false
+  const visible = document.visibilityState === 'visible'
+  return isCapacitorMobile ? visible : visible && document.hasFocus()
+}
+
 const activeWindow = createActiveWindowTracker({
   id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
   storage: localStore,
   now: () => Date.now(),
+  probeFocus,
 })
+
+const seenEntries = createSeenEntriesLedger({ storage: localStore, now: () => Date.now() })
+
+let heartbeat: ReturnType<typeof setInterval> | undefined
+
+/** The focus heartbeat runs only while notifications are enabled; nothing reads the flag otherwise. */
+function syncHeartbeat(enabled: boolean) {
+  if (enabled && !heartbeat) {
+    activeWindow.heartbeat()
+    heartbeat = setInterval(() => activeWindow.heartbeat(), ACTIVE_HEARTBEAT_MS)
+  } else if (!enabled && heartbeat) {
+    clearInterval(heartbeat)
+    heartbeat = undefined
+  }
+}
 
 function wireI18n() {
   if (i18nWired) return
@@ -54,17 +78,14 @@ function wireFocusTracking() {
   if (focusWired || typeof window === 'undefined' || typeof document === 'undefined') return
   focusWired = true
 
-  const refresh = () => {
-    // On mobile, document.hasFocus() is unreliable; visibility is enough
-    const visible = document.visibilityState === 'visible'
-    activeWindow.setFocused(isCapacitorMobile ? visible : visible && document.hasFocus())
-  }
+  const refresh = () => activeWindow.setFocused(probeFocus())
   document.addEventListener('visibilitychange', refresh)
   window.addEventListener('focus', () => activeWindow.setFocused(true))
   window.addEventListener('blur', () => activeWindow.setFocused(false))
   window.addEventListener('pagehide', () => activeWindow.setFocused(false))
-  setInterval(() => activeWindow.heartbeat(), ACTIVE_HEARTBEAT_MS)
   refresh()
+  syncHeartbeat(getNotificationsConfig().enabled === true)
+  settingsStore.subscribe((state) => syncHeartbeat(state.extension?.notifications?.enabled === true))
 
   // Desktop Tauri emits this to every window; re-read this window's own focus.
   try {
@@ -141,6 +162,7 @@ export const notificationService = new NotificationService({
   },
   getLastShownAt: readLastShownAt,
   setLastShownAt: writeLastShownAt,
+  claimNeedsYou: (entryId) => seenEntries.claim(entryId),
 })
 
 /**

@@ -648,6 +648,8 @@ export async function generate(
     resumePlanRun?: boolean
   }
 ) {
+  // Long-run notifications time the run itself (send, regenerate, plan run, resume), not the message's age.
+  const runStartedAt = Date.now()
   // Process the send-queue unless multi-agent intermediate turns opt out, or plan mode
   // is waiting for user approval. Use finally so early exits still drain.
   let shouldProcessQueuedMessages = !options?.skipQueuedMessages
@@ -1593,14 +1595,12 @@ export async function generate(
             try {
               const { notifySystemEvent } = await import('@/packages/notifications')
               const sessionName = (await chatStore.getSession(sessionId))?.name || session.name || undefined
-              if (typeof targetMsg.timestamp === 'number') {
-                void notifySystemEvent({
-                  kind: 'long_run_done',
-                  sessionId,
-                  sessionName,
-                  startedAt: targetMsg.timestamp,
-                })
-              }
+              void notifySystemEvent({
+                kind: 'long_run_done',
+                sessionId,
+                sessionName,
+                startedAt: runStartedAt,
+              })
             } catch {
               // non-fatal
             }
@@ -1712,14 +1712,12 @@ export async function generate(
         await modifyMessage(sessionId, targetMsg, true)
         try {
           const { notifySystemEvent } = await import('@/packages/notifications')
-          if (typeof targetMsg.timestamp === 'number') {
-            void notifySystemEvent({
-              kind: 'long_run_done',
-              sessionId,
-              sessionName: session.name || undefined,
-              startedAt: targetMsg.timestamp,
-            })
-          }
+          void notifySystemEvent({
+            kind: 'long_run_done',
+            sessionId,
+            sessionName: session.name || undefined,
+            startedAt: runStartedAt,
+          })
         } catch {
           // non-fatal
         }
