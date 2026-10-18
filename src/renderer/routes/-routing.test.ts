@@ -29,6 +29,16 @@ describe('/ is Review', () => {
       replace: true,
     })
   })
+  it('validateSearch is lenient', () => {
+    const validate = Route.options.validateSearch as unknown as { parse?: unknown } | ((s: unknown) => unknown)
+    const run = (s: unknown) =>
+      (typeof validate === 'function' ? validate(s) : (validate as { parse: (x: unknown) => unknown }).parse(s)) as {
+        scope?: string
+        copilotId?: string
+      }
+    expect(run({ scope: 5 }).scope).toBe('5')
+    expect(run({ scope: { a: 1 }, copilotId: [1] })).toEqual({})
+  })
   it('does not redirect without copilotId', () => {
     expect(() => beforeLoad({ search: {} })).not.toThrow()
   })

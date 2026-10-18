@@ -1,6 +1,8 @@
 import type { ReviewEntry } from '@shared/types/review'
+import { isEverywhere } from '@shared/types/scope'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect } from 'react'
+import { useScopes } from '@/hooks/useScopes'
 import { startNewChat } from '@/lib/startNewChat'
 import { hasReviewOpener, registerReviewOpener } from '@/packages/review'
 import { ReviewFeed } from './ReviewFeed'
@@ -10,7 +12,14 @@ import './review-home.css'
 export type ReviewHomeProps = { sourceCount?: number }
 
 export function ReviewHome(_props: ReviewHomeProps) {
-  const { scope } = useSearch({ from: '/' })
+  const { scope: requested } = useSearch({ from: '/' })
+  const { scopes } = useScopes()
+  // A stale `?scope=` (a deleted scope) falls back to All scopes without rewriting the URL. An empty list
+  // means scopes have not loaded yet, so keep the id rather than flash the wrong state.
+  const scope =
+    requested === undefined || isEverywhere(requested) || scopes.length === 0 || scopes.some((s) => s.id === requested)
+      ? requested
+      : undefined
   const navigate = useNavigate({ from: '/' })
 
   // Default opener for a question row: a chat with the question prefilled. Slice 10 may replace it.

@@ -5,8 +5,14 @@ import { z } from 'zod'
 import Page from '@/components/layout/Page'
 import { ReviewHome } from '@/components/review/ReviewHome'
 
+// Hand-edited URLs: numbers become strings, anything else is dropped instead of throwing.
+const lenientId = z
+  .union([z.string(), z.number().transform(String)])
+  .optional()
+  .catch(undefined)
+
 export const Route = createFileRoute('/')({
-  validateSearch: zodValidator(z.object({ scope: z.string().optional(), copilotId: z.string().optional() })),
+  validateSearch: zodValidator(z.object({ scope: lenientId, copilotId: lenientId })),
   beforeLoad: ({ search }) => {
     // Old links (`/?copilotId=`) keep landing on /new.
     if (search.copilotId) throw redirect({ to: '/new', search: { copilotId: search.copilotId }, replace: true })

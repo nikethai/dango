@@ -1,7 +1,7 @@
 import { isEverywhere } from '@shared/types/scope'
 import { readTrustLevel } from '@shared/types/settings'
 import { ChevronDown } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TRUST_LABELS } from '@/components/settings/TrustSheet'
 import { useTrustSheet } from '@/components/settings/useTrustSheet'
@@ -11,6 +11,9 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import './review-home.css'
 
 export type ReviewToolbarProps = { scopeId?: string; onScopeChange(id: string | undefined): void }
+
+const queryItems = (root: HTMLElement | null) =>
+  Array.from(root?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
 
 export function ReviewToolbar({ scopeId, onScopeChange }: ReviewToolbarProps) {
   const { t } = useTranslation()
@@ -29,6 +32,40 @@ export function ReviewToolbar({ scopeId, onScopeChange }: ReviewToolbarProps) {
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [menuOpen])
+
+  const items = () => queryItems(wrap.current)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const all = queryItems(wrap.current)
+    const current = all.find((el) => el.classList.contains('is-current')) ?? all[0]
+    current?.focus()
+  }, [menuOpen])
+
+  const onWrapKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape' && menuOpen) {
+      e.preventDefault()
+      setMenuOpen(false)
+      trigger.current?.focus()
+      return
+    }
+    if (!menuOpen || !(e.target as HTMLElement).matches('[role="menuitem"]')) return
+    const all = items()
+    const i = all.indexOf(e.target as HTMLElement)
+    const next =
+      e.key === 'ArrowDown'
+        ? all[(i + 1) % all.length]
+        : e.key === 'ArrowUp'
+          ? all[(i - 1 + all.length) % all.length]
+          : e.key === 'Home'
+            ? all[0]
+            : e.key === 'End'
+              ? all[all.length - 1]
+              : undefined
+    if (!next) return
+    e.preventDefault()
+    next.focus()
+  }
 
   const choose = (id: string | undefined) => {
     setMenuOpen(false)
@@ -50,7 +87,7 @@ export function ReviewToolbar({ scopeId, onScopeChange }: ReviewToolbarProps) {
 
   return (
     <div className="dango-review-toolbar">
-      <div className="dango-review-toolbar__scope" ref={wrap}>
+      <div className="dango-review-toolbar__scope" ref={wrap} onKeyDown={onWrapKeyDown}>
         <button
           type="button"
           ref={trigger}
@@ -63,16 +100,7 @@ export function ReviewToolbar({ scopeId, onScopeChange }: ReviewToolbarProps) {
           <ChevronDown size={16} strokeWidth={1.8} aria-hidden="true" />
         </button>
         {menuOpen && (
-          <div
-            className="dg-menu dango-review-toolbar__menu"
-            role="menu"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setMenuOpen(false)
-                trigger.current?.focus()
-              }
-            }}
-          >
+          <div className="dg-menu dango-review-toolbar__menu" role="menu">
             {options.map((o) => (
               <button
                 key={o.id ?? 'all'}
