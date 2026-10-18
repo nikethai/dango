@@ -59,3 +59,9 @@ export function useProposalConflictText(proposalId: string): string | undefined 
     return state.items.find((i) => i.id === conflict.itemIds[0])?.text
   }, [state, proposalId])
 }
+
+/** One item by id, whatever its status, kept current. */
+export function useKnowledgeItem(id: string | undefined): KnowledgeItem | undefined {
+  const state = useKnowledgeState()
+  return useMemo(() => (id === undefined ? undefined : state.items.find((i) => i.id === id)), [state, id])
+}
