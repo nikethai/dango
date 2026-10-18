@@ -1378,5 +1378,16 @@
   "Don't suggest this again": "Don't suggest this again",
   "Can't verify: {{text}}": "Can't verify: {{text}}",
   "Due for review: {{text}}": "Due for review: {{text}}",
-  "It changed outside Dango, so answers leave it out until you approve it again.": "It changed outside Dango, so answers leave it out until you approve it again."
+  "It changed outside Dango, so answers leave it out until you approve it again.": "It changed outside Dango, so answers leave it out until you approve it again.",
+  "Waiting in Review: it contradicts \"{{old}}\"": "Waiting in Review: it contradicts \"{{old}}\"",
+  "Approve": "Approve",
+  "Edit proposal": "Edit proposal",
+  "Keep both, with a condition": "Keep both, with a condition",
+  "Keep both, with a condition…": "Keep both, with a condition…",
+  "Keep both": "Keep both",
+  "Keep this": "Keep this",
+  "Condition": "Condition",
+  "When does each one apply? For example: for the EU launch": "When does each one apply? For example: for the EU launch",
+  "Approve again": "Approve again",
+  "Conflict": "Conflict"
 }

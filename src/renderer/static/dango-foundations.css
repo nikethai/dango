@@ -173,3 +173,22 @@
   font-size: var(--dango-type-caption-size);
   line-height: var(--dango-type-caption-line);
 }
+
+/* Text fields inside Review items and sheets (knowledge renderers). */
+.dango-field {
+  width: 100%;
+  padding: var(--dango-space-2) 10px;
+  border: 1px solid var(--dango-line);
+  border-radius: var(--dango-radius-md);
+  background: var(--dango-raised);
+  color: var(--dango-ink);
+  font: inherit;
+  resize: vertical;
+}
+
+.dango-conflict__statement {
+  display: flex;
+  gap: var(--dango-space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+}

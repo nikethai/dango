@@ -20,6 +20,7 @@ vi.mock('@/storage', async () => (await import('./test-storage')).default)
 vi.mock('i18next', () => ({
   t: (key: string, vars?: Record<string, string>) => key.replace(/\{\{(\w+)\}\}/g, (_, k) => vars?.[k] ?? ''),
 }))
+vi.mock('./review/register', () => ({ registerKnowledgeRenderers: () => () => undefined }))
 vi.mock('@/packages/review', () => ({
   addReviewEntry: vi.fn(async () => undefined),
   setReviewEntryState: vi.fn(async () => undefined),
