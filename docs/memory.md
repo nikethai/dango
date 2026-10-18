@@ -42,7 +42,7 @@ Default is **hybrid** so chats do not pay for the full fact list every turn.
 ## User features
 
 - Settings → **Memory**: manage global/agent banks, retrieval mode, budgets, auto-save, export/import
-- Message menu → **Save to memory** (always pins to **Global**)
+- Message toolbar (brain icon; mobile ⋯ menu) → **Save as knowledge**: saves to the chat's scope (Everywhere when the chat has none); preferences always go to Everywhere
 - Settings **Add memory** on Global / Agent tabs
 - AI **auto-save** (default on): every **3** completed turns by default, the chat's model extracts facts and files them as knowledge proposals (`src/renderer/packages/knowledge/chat-proposer.ts`). Proposals wait for approval under the answer and in Review; the old memory banks are not written.
 - Model tools: `memory_retain`, `memory_recall`, `memory_list`, `memory_forget`, `memory_update`, `memory_reflect`
@@ -63,9 +63,9 @@ Legacy **User Personal Info** is migrated into the global bank; `/settings/user-
   - Also in Session options → **Auto-save memories from this chat**
   - **Off** (`session.settings.memoryAutoSave === false`): no post-turn auto-extract and no model `memory_retain` for this chat
   - **Inject / host pre-search / recall tools** stay on when global Memory is enabled
-  - **Manual Save to memory** (toolbar / composer) still works — explicit user intent
+  - **Save as knowledge** (message toolbar) and **Save memory from draft** (composer) still work — explicit user intent
   - Statusline shows `on · N · auto-save off` when Memory inject is on but this chat opted out
-- **Save to memory**: message action toolbar (brain icon), next to edit / more
+- **Save as knowledge**: message action toolbar (brain icon), next to edit / more; on mobile in the ⋯ menu
 - **Settings → Memory** tabs: **Global** | **Agents** | **Advanced**
   - Header: master **Enabled** / **Auto-save** + status strip (`On · N facts · ~T tokens`)
   - Bank workspace: profile card, search, primary **Add memory**, ⋯ menu (export / import / rebuild / clear)
@@ -78,14 +78,14 @@ Legacy **User Personal Info** is migrated into the global bank; `/settings/user-
 |--------|-------------------|------------------------|------------------|
 | Auto-extract after N turns | blocked | blocked | allowed if global Auto-save on |
 | Model `memory_retain` | blocked | blocked | allowed when tools available |
-| Manual Save to memory | blocked | **allowed** | allowed |
+| Save as knowledge (message toolbar) | allowed | **allowed** | allowed |
 | Inject / pre-search / recall | off | **on** | on |
 
 ## Troubleshooting empty bank
 
 1. Confirm **Global** tab (not empty Agents with no agent selected).
 2. Use **Add memory** on Global and type a fact — you should see “Saved to Global memory”.
-3. Message toolbar **brain** icon (or mobile ⋯ → Save to memory).
+3. The message toolbar **brain** icon (mobile ⋯ → Save as knowledge) saves to knowledge (the Knowledge tab), not to a memory bank.
 4. Open **Inject preview** under Memory → Advanced to confirm the model prompt block.
 5. In hybrid, **pin** facts that must always appear; unpinned facts need search / pre-search.
 6. Auto-save needs chat generation to finish; toast shows update count or “no durable facts”.

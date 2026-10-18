@@ -131,6 +131,7 @@ import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageErrTips from './MessageErrTips'
 import MessageStatuses from './MessageLoading'
 import MessageQuoteBar from './MessageQuoteBar'
+import { saveAsKnowledgeFromMessage } from './save-as-knowledge'
 import TextSelectionToolbar from './TextSelectionToolbar'
 
 interface Props {
@@ -316,10 +317,7 @@ const _Message: FC<Props> = (props) => {
     await NiceModal.show('message-edit', { sessionId, msg: msg })
   }, [msg, sessionId])
 
-  const onSaveAsKnowledge = useCallback(async () => {
-    const { saveMessageAsKnowledge } = await import('@/packages/knowledge/save-message')
-    await saveMessageAsKnowledge(msg, sessionId)
-  }, [msg, sessionId])
+  const onSaveAsKnowledge = useCallback(() => saveAsKnowledgeFromMessage(msg, sessionId), [msg, sessionId])
 
   const clearSelectionToolbar = useCallback(() => {
     setSelectionToolbar(null)

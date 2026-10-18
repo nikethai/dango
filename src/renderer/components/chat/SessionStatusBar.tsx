@@ -134,9 +134,7 @@ const SessionStatusBar: FC<SessionStatusBarProps> = ({
             tokens: stats.injectTokens,
           })
         : t('Memory enabled but empty — add facts in Settings')
-    const autoSaveNote = sessionAutoSaveOff
-      ? t('Auto-save is off for this chat. Manual Save to memory still works.')
-      : ''
+    const autoSaveNote = sessionAutoSaveOff ? t('Auto-save is off for this chat. Save as knowledge still works.') : ''
     return {
       // Short label for the chip value (icon carries meaning)
       label: sessionAutoSaveOff
