@@ -1,0 +1,353 @@
+import type { Message } from '@shared/types'
+import type { WritingModel, WritingStyle } from '@shared/types/writing'
+import { getMessageText } from '@shared/utils/message'
+import { ChevronDown } from 'lucide-react'
+import {
+  type ForwardedRef,
+  forwardRef,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
+import { useTranslation } from 'react-i18next'
+import { ThinkingLine } from '@/components/chat/ThinkingLine'
+import Markdown from '@/components/Markdown'
+import { REWRITE_OPTIONS, RewritePanel } from '@/components/rewrite'
+import { QuickMenu } from './QuickMenu'
+import { type QuickScope, QuickScopePill } from './QuickScopePill'
+import { QuickSourceChips } from './QuickSourceChips'
+import type { QuickView } from './quickChatState'
+
+export type QuickChatPanelProps = {
+  view: QuickView
+  scopes: QuickScope[]
+  scopeId: string | null
+  onScopeChange: (id: string | null) => void
+  question: string
+  onQuestionChange: (v: string) => void
+  onSubmit: () => void
+  answer?: Message
+  generating: boolean
+  modelName: string
+  pictureCount: number
+  rewrite: { option: WritingStyle | null; text: string } | null
+  onRewrite: (option: WritingStyle, text: string) => void
+  onRewriteBack: () => void
+  onEsc: () => void
+  onRetry: () => void
+  onContinue: () => void
+  /** "Sign in to a model" and RewritePanel's "Choose a model". The panel never navigates by itself. */
+  onSignIn: () => void
+  model?: WritingModel
+  windowed: boolean
+}
+
+type OpenMenu = 'scope' | 'rewrite' | null
+
+/** Room left under an open menu, so its shadow is not cut by the window edge. */
+const MENU_BOTTOM_GAP = 8
+const INPUT_MAX_HEIGHT = 160
+
+/**
+ * The Quick Chat panel. The forwarded ref is the `.dg-qc` root: while a menu is open the root's min-height grows to
+ * the menu's bottom, so a ResizeObserver on it reports max(panel height, menu bottom) for the quick window.
+ */
+export const QuickChatPanel = forwardRef(function QuickChatPanel(
+  props: QuickChatPanelProps,
+  ref: ForwardedRef<HTMLDivElement>
+) {
+  const {
+    view,
+    scopes,
+    scopeId,
+    onScopeChange,
+    question,
+    onQuestionChange,
+    onSubmit,
+    answer,
+    generating,
+    modelName,
+    pictureCount,
+    rewrite,
+    onRewrite,
+    onRewriteBack,
+    onEsc,
+    onRetry,
+    onContinue,
+    onSignIn,
+    model,
+    windowed,
+  } = props
+  const { t } = useTranslation()
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const rewriteTriggerRef = useRef<HTMLButtonElement>(null)
+  const rewriteTriggerId = useId()
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
+  const [menuMinHeight, setMenuMinHeight] = useState<number | undefined>(undefined)
+  const [asked, setAsked] = useState('')
+  const rewriteText = useRef<string | null>(null)
+
+  const setRootRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      rootRef.current = node
+      if (typeof ref === 'function') ref(node)
+      else if (ref) ref.current = node
+    },
+    [ref]
+  )
+
+  // The window measures the root, so the root has to reach the bottom of an open menu.
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    const menu = openMenu ? root?.querySelector<HTMLElement>('[role="menu"]') : null
+    if (!root || !menu) {
+      setMenuMinHeight(undefined)
+      return
+    }
+    const bottom = menu.getBoundingClientRect().bottom - root.getBoundingClientRect().top + MENU_BOTTOM_GAP
+    setMenuMinHeight(Math.ceil(bottom))
+  }, [openMenu])
+
+  // One Esc is one step: an open menu closes first; an Esc another handler took (RewritePanel) is skipped.
+  const escState = useRef({ openMenu, onEsc })
+  escState.current = { openMenu, onEsc }
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
+      event.preventDefault()
+      if (escState.current.openMenu) {
+        const menu = rootRef.current?.querySelector('[role="menu"]')
+        const triggerId = menu?.getAttribute('aria-labelledby')
+        setOpenMenu(null)
+        rewriteText.current = null
+        if (triggerId) document.getElementById(triggerId)?.focus()
+        return
+      }
+      escState.current.onEsc()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  // Grow the one-row textarea with Shift+Enter lines, up to a cap.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measure when the text changes
+  useLayoutEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    input.style.height = 'auto'
+    if (input.scrollHeight > 0) input.style.height = `${Math.min(input.scrollHeight, INPUT_MAX_HEIGHT)}px`
+  }, [question])
+
+  // The finished answer is announced once, never token by token.
+  const [announcement, setAnnouncement] = useState('')
+  const streamingId = useRef<string | null>(null)
+  useEffect(() => {
+    if (!answer) return
+    if (generating) {
+      if (streamingId.current !== answer.id) setAnnouncement('')
+      streamingId.current = answer.id
+      return
+    }
+    if (streamingId.current !== answer.id) return
+    streamingId.current = null
+    const text = getMessageText(answer, false, false).trim()
+    if (text && !answer.error) setAnnouncement(text)
+  }, [answer, generating])
+
+  /** Rewrite takes the text selected in the body, else what is in the input. */
+  const readRewriteText = () => {
+    const selection = window.getSelection()
+    const body = bodyRef.current
+    if (selection && body && !selection.isCollapsed && selection.rangeCount > 0) {
+      const inside = body.contains(selection.anchorNode) && body.contains(selection.focusNode)
+      const text = selection.toString()
+      if (inside && text.trim()) return text
+    }
+    return question
+  }
+
+  const toggleRewriteMenu = () => {
+    if (openMenu === 'rewrite') {
+      setOpenMenu(null)
+      rewriteText.current = null
+      return
+    }
+    if (rewriteText.current === null) rewriteText.current = readRewriteText()
+    setOpenMenu('rewrite')
+  }
+
+  const onRewriteTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'ArrowDown') return
+    if (openMenu !== 'rewrite') rewriteText.current = readRewriteText()
+    if (event.key === 'ArrowDown' && openMenu !== 'rewrite') {
+      event.preventDefault()
+      setOpenMenu('rewrite')
+    }
+  }
+
+  const submit = () => {
+    if (!question.trim()) return
+    setAsked(question)
+    onSubmit()
+  }
+
+  const onInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+    event.preventDefault()
+    submit()
+  }
+
+  const rootClass = `dg dg-qc${windowed ? ' dg-qc--window' : ''}`
+  const rootStyle = { position: 'relative' as const, minHeight: menuMinHeight }
+
+  if (view === 'no-model') {
+    return (
+      <div ref={setRootRef} className={rootClass} style={rootStyle}>
+        <div className="dg-qc__body" data-tauri-drag-region style={{ alignItems: 'center' }}>
+          <button type="button" className="dg-btn dg-btn--primary" onClick={onSignIn}>
+            {t('Sign in to a model')}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const answerText = answer ? getMessageText(answer, false, false) : ''
+  const waitingForFirstToken = generating && !answerText.trim()
+  const shownQuestion = asked || question
+
+  return (
+    <div ref={setRootRef} className={rootClass} style={rootStyle} data-menu-open={openMenu ? 'true' : undefined}>
+      <div className="dg-qc__bar">
+        <QuickScopePill
+          scopes={scopes}
+          value={scopeId}
+          onChange={onScopeChange}
+          open={openMenu === 'scope'}
+          onOpenChange={(open) => setOpenMenu(open ? 'scope' : null)}
+        />
+        <textarea
+          ref={inputRef}
+          rows={1}
+          aria-label={t('Ask anything')}
+          placeholder={t('Ask anything')}
+          value={question}
+          onChange={(event) => onQuestionChange(event.target.value)}
+          onKeyDown={onInputKeyDown}
+        />
+        {pictureCount > 0 ? <span className="dg-chip">{t('{{count}} images', { count: pictureCount })}</span> : null}
+      </div>
+
+      {view === 'empty' ? null : (
+        <div ref={bodyRef} className="dg-qc__body">
+          {view === 'offline' ? (
+            <>
+              <p style={{ margin: 0 }}>
+                {t("You're offline. {{model}} needs a connection to answer.", { model: modelName })}
+              </p>
+              <div>
+                <button type="button" className="dg-btn" onClick={onRetry}>
+                  {t('Retry')}
+                </button>
+              </div>
+            </>
+          ) : null}
+
+          {view === 'rewrite' && rewrite ? (
+            <RewritePanel
+              key={`${rewrite.option ?? ''}:${rewrite.text}`}
+              text={rewrite.text}
+              option={rewrite.option}
+              model={model}
+              onBack={onRewriteBack}
+              onChooseModel={onSignIn}
+            />
+          ) : null}
+
+          {view === 'answered' ? (
+            <>
+              {shownQuestion ? (
+                <p className="dg-type-callout" style={{ margin: 0, color: 'var(--dango-muted)' }}>
+                  {shownQuestion}
+                </p>
+              ) : null}
+              {waitingForFirstToken ? (
+                <ThinkingLine live text="" defaultOpen={false} showMascot startedAt={answer?.timestamp} />
+              ) : null}
+              {answerText.trim() ? (
+                <Markdown generating={generating} citations={answer?.citations}>
+                  {answerText}
+                </Markdown>
+              ) : null}
+              {answer?.error && !generating ? (
+                <>
+                  <p style={{ margin: 0, color: 'var(--dango-muted)' }}>{answer.error}</p>
+                  <div>
+                    <button type="button" className="dg-btn" onClick={onRetry}>
+                      {t('Retry')}
+                    </button>
+                  </div>
+                </>
+              ) : null}
+              {answer ? <QuickSourceChips message={answer} /> : null}
+            </>
+          ) : null}
+        </div>
+      )}
+
+      <div className="dg-qc__foot" data-tauri-drag-region>
+        <kbd className="dg-kbd">{t('Esc')}</kbd>
+        <span style={{ position: 'relative', display: 'inline-flex' }}>
+          <button
+            ref={rewriteTriggerRef}
+            id={rewriteTriggerId}
+            type="button"
+            className="dg-btn dg-btn--ghost"
+            aria-haspopup="menu"
+            aria-expanded={openMenu === 'rewrite'}
+            onPointerDown={() => {
+              if (openMenu !== 'rewrite') rewriteText.current = readRewriteText()
+            }}
+            onMouseDown={() => {
+              if (openMenu !== 'rewrite') rewriteText.current = readRewriteText()
+            }}
+            onKeyDown={onRewriteTriggerKeyDown}
+            onClick={toggleRewriteMenu}
+          >
+            {t('Rewrite')}
+            <ChevronDown size={14} aria-hidden="true" />
+          </button>
+          {openMenu === 'rewrite' ? (
+            <QuickMenu
+              anchorRef={rewriteTriggerRef}
+              labelledBy={rewriteTriggerId}
+              onClose={() => {
+                setOpenMenu(null)
+                rewriteText.current = null
+              }}
+              items={REWRITE_OPTIONS.map((option) => ({
+                key: option.value,
+                label: t(option.label),
+                onSelect: () => onRewrite(option.value, rewriteText.current ?? question),
+              }))}
+            />
+          ) : null}
+        </span>
+        <span style={{ flexGrow: 1, alignSelf: 'stretch' }} data-tauri-drag-region />
+        <button type="button" className="dg-btn dg-btn--ghost" disabled={!answer} onClick={onContinue}>
+          {t('Continue in Chat')}
+        </button>
+      </div>
+
+      <div role="status" aria-live="polite" className="sr-only" data-quick-answer-live>
+        {announcement}
+      </div>
+    </div>
+  )
+})

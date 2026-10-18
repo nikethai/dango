@@ -1,0 +1,284 @@
+/**
+ * @vitest-environment jsdom
+ */
+
+import { createMessage, type Message } from '@shared/types'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { createInstance } from 'i18next'
+import type { ReactNode } from 'react'
+import { initReactI18next } from 'react-i18next'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import en from '@/i18n/locales/en/translation.json'
+
+const h = vi.hoisted(() => ({ openLink: vi.fn(() => Promise.resolve()) }))
+vi.mock('@/platform', () => ({ default: { openLink: h.openLink } }))
+vi.mock('@/modals/Settings', () => ({ navigateToSettings: vi.fn() }))
+vi.mock('@/packages/writing/runtime', () => ({ requestWritingRewrite: vi.fn() }))
+vi.mock('@/components/Markdown', () => ({
+  default: ({ children }: { children: ReactNode }) => <div data-testid="markdown">{children}</div>,
+}))
+
+import { QuickChatPanel, type QuickChatPanelProps, usedKnowledgeCount } from './index'
+
+beforeAll(async () => {
+  await createInstance()
+    .use(initReactI18next)
+    .init({ lng: 'en', resources: { en: { translation: en } }, interpolation: { escapeValue: false } })
+})
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn(() => ({
+      matches: false,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+  )
+})
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  window.getSelection()?.removeAllRanges()
+})
+
+const scopes = [
+  { id: 'acme', name: 'Acme Co', kind: 'client' as const },
+  { id: 'dango', name: 'Dango app' },
+  { id: 'everywhere', name: 'Everywhere' },
+]
+
+function props(overrides: Partial<QuickChatPanelProps> = {}): QuickChatPanelProps {
+  return {
+    view: 'empty',
+    scopes,
+    scopeId: 'acme',
+    onScopeChange: vi.fn(),
+    question: '',
+    onQuestionChange: vi.fn(),
+    onSubmit: vi.fn(),
+    answer: undefined,
+    generating: false,
+    modelName: 'GPT-5',
+    pictureCount: 0,
+    rewrite: null,
+    onRewrite: vi.fn(),
+    onRewriteBack: vi.fn(),
+    onEsc: vi.fn(),
+    onRetry: vi.fn(),
+    onContinue: vi.fn(),
+    onSignIn: vi.fn(),
+    windowed: true,
+    ...overrides,
+  }
+}
+
+function answer(text: string, extra: Partial<Message> = {}): Message {
+  return { ...createMessage('assistant', text), ...extra }
+}
+
+function citations(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    index: i + 1,
+    url: `https://example.com/${i + 1}`,
+    title: `Source ${i + 1}`,
+    source: 'builtin' as const,
+    accessedAt: 0,
+  }))
+}
+
+describe('QuickChatPanel', () => {
+  it('QC1: empty view shows the input, the scope and the foot', () => {
+    const { container } = render(<QuickChatPanel {...props()} />)
+    const input = screen.getByRole('textbox', { name: 'Ask anything' })
+    expect(input.tagName).toBe('TEXTAREA')
+    expect(input.getAttribute('placeholder')).toBe('Ask anything')
+    expect(screen.getByRole('button', { name: 'Scope: Acme Co' }).textContent).toContain('Acme Co')
+    const foot = container.querySelector('.dg-qc__foot') as HTMLElement
+    expect(foot.hasAttribute('data-tauri-drag-region')).toBe(true)
+    expect(within(foot).getByText('Esc').className).toContain('dg-kbd')
+    expect(within(foot).getByRole('button', { name: 'Rewrite' })).toBeTruthy()
+    const cont = within(foot).getByRole('button', { name: 'Continue in Chat' }) as HTMLButtonElement
+    expect(cont.disabled).toBe(true)
+    expect(container.querySelector('.dg.dg-qc.dg-qc--window')).toBeTruthy()
+  })
+
+  it('answered with chips', () => {
+    const msg = answer('The answer', { citations: citations(5), knowledgeIds: ['k1'] })
+    expect(usedKnowledgeCount(msg)).toBe(1)
+    expect(usedKnowledgeCount(answer('x'))).toBe(0)
+    render(<QuickChatPanel {...props({ view: 'answered', answer: msg, question: 'What now?' })} />)
+    for (const n of [1, 2, 3, 4]) expect(screen.getByRole('button', { name: `Source ${n}` })).toBeTruthy()
+    expect(screen.queryByText('Source 5')).toBeNull()
+    expect(screen.getByText('+1')).toBeTruthy()
+    expect(screen.getByText('From approved knowledge').className).toContain('dg-chip--green')
+    fireEvent.click(screen.getByRole('button', { name: 'Source 2' }))
+    expect(h.openLink).toHaveBeenCalledWith('https://example.com/2')
+    expect((screen.getByRole('button', { name: 'Continue in Chat' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('citation chips only open http(s) links', () => {
+    const bad = [{ ...citations(1)[0], url: 'javascript:alert(1)', title: 'Bad' }]
+    render(<QuickChatPanel {...props({ view: 'answered', answer: answer('x', { citations: bad }) })} />)
+    expect(screen.queryByRole('button', { name: 'Bad' })).toBeNull()
+    fireEvent.click(screen.getByText('Bad'))
+    expect(h.openLink).not.toHaveBeenCalled()
+  })
+
+  it('QC2: offline view', () => {
+    const p = props({ view: 'offline', modelName: 'GPT-5' })
+    render(<QuickChatPanel {...p} />)
+    expect(screen.getByText("You're offline. GPT-5 needs a connection to answer.")).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(p.onRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it('no model shows only sign in', () => {
+    const p = props({ view: 'no-model' })
+    render(<QuickChatPanel {...p} />)
+    const buttons = screen.getAllByRole('button')
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0].textContent).toBe('Sign in to a model')
+    expect(buttons[0].className).toContain('dg-btn--primary')
+    expect(screen.queryByRole('textbox')).toBeNull()
+    fireEvent.click(buttons[0])
+    expect(p.onSignIn).toHaveBeenCalledTimes(1)
+  })
+
+  it('Rewrite uses the selection', () => {
+    const p = props({ view: 'answered', answer: answer('Selected answer text'), question: 'pasted text' })
+    const { rerender } = render(<QuickChatPanel {...p} />)
+    const range = document.createRange()
+    range.selectNodeContents(screen.getByText('Selected answer text'))
+    window.getSelection()?.removeAllRanges()
+    window.getSelection()?.addRange(range)
+    const rewrite = screen.getByRole('button', { name: 'Rewrite' })
+    fireEvent.pointerDown(rewrite)
+    fireEvent.mouseDown(rewrite)
+    window.getSelection()?.removeAllRanges() // a click on a button can clear the selection
+    fireEvent.click(rewrite)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Formal' }))
+    expect(p.onRewrite).toHaveBeenCalledWith('formal', 'Selected answer text')
+
+    rerender(<QuickChatPanel {...p} />)
+    fireEvent.pointerDown(rewrite)
+    fireEvent.mouseDown(rewrite)
+    fireEvent.click(rewrite)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Formal' }))
+    expect(p.onRewrite).toHaveBeenLastCalledWith('formal', 'pasted text')
+  })
+
+  it('Rewrite reads the selection on keyboard activation', () => {
+    const p = props({ view: 'answered', answer: answer('Keyboard text'), question: 'q' })
+    render(<QuickChatPanel {...p} />)
+    const range = document.createRange()
+    range.selectNodeContents(screen.getByText('Keyboard text'))
+    window.getSelection()?.addRange(range)
+    const rewrite = screen.getByRole('button', { name: 'Rewrite' })
+    fireEvent.keyDown(rewrite, { key: 'ArrowDown' })
+    const items = screen.getAllByRole('menuitem')
+    expect(items.map((item) => item.textContent)).toEqual(['Clearer', 'Friendlier', 'Shorter', 'Formal', 'Translate'])
+    expect(document.activeElement).toBe(items[0])
+    fireEvent.keyDown(items[0], { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(items[4])
+    fireEvent.click(items[1])
+    expect(p.onRewrite).toHaveBeenCalledWith('friendlier', 'Keyboard text')
+    expect(document.activeElement).toBe(rewrite)
+  })
+
+  it('Escape', () => {
+    const p = props()
+    render(<QuickChatPanel {...p} />)
+    const rewrite = screen.getByRole('button', { name: 'Rewrite' })
+    fireEvent.click(rewrite)
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.keyDown(screen.getAllByRole('menuitem')[0], { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(p.onEsc).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(rewrite)
+    fireEvent.keyDown(rewrite, { key: 'Escape' })
+    expect(p.onEsc).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips an Escape another handler already took', () => {
+    const p = props()
+    render(<QuickChatPanel {...p} />)
+    const input = screen.getByRole('textbox', { name: 'Ask anything' })
+    input.addEventListener('keydown', (event) => event.preventDefault())
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(p.onEsc).not.toHaveBeenCalled()
+  })
+
+  it('Enter submits, Shift+Enter does not', () => {
+    const p = props({ question: 'Hi' })
+    render(<QuickChatPanel {...p} />)
+    const input = screen.getByRole('textbox', { name: 'Ask anything' })
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+    expect(p.onSubmit).not.toHaveBeenCalled()
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(p.onSubmit).toHaveBeenCalledTimes(1)
+    fireEvent.change(input, { target: { value: 'Hi there' } })
+    expect(p.onQuestionChange).toHaveBeenCalledWith('Hi there')
+  })
+
+  it('shows the picture count', () => {
+    render(<QuickChatPanel {...props({ pictureCount: 2 })} />)
+    expect(screen.getByText('2 images')).toBeTruthy()
+    cleanup()
+    render(<QuickChatPanel {...props({ pictureCount: 1 })} />)
+    expect(screen.getByText('1 image')).toBeTruthy()
+  })
+
+  it('scope menu: None first, Everywhere hidden, client chip', () => {
+    const p = props({ scopeId: null })
+    render(<QuickChatPanel {...p} />)
+    const pill = screen.getByRole('button', { name: 'Scope: None' })
+    expect(pill.textContent).toBe('No scope')
+    fireEvent.click(pill)
+    const items = screen.getAllByRole('menuitem')
+    expect(items.map((item) => item.textContent)).toEqual(['None', 'Acme Coclient', 'Dango app'])
+    fireEvent.click(items[1])
+    expect(p.onScopeChange).toHaveBeenCalledWith('acme')
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('before the first token: one live thinking line with the only mascot', () => {
+    const { container } = render(
+      <QuickChatPanel {...props({ view: 'answered', generating: true, answer: answer(''), question: 'Why?' })} />
+    )
+    expect(container.querySelectorAll('svg.dg-mascot')).toHaveLength(1)
+    expect(container.querySelector('.dg-think__title')?.textContent).toBe('Thinking')
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+    expect(container.querySelector('.dg-qc__body p')?.textContent).toBe('Why?')
+  })
+
+  it('announces the finished answer once', () => {
+    const p = props({ view: 'answered', generating: true, answer: answer('Part', { id: 'a1' }), question: 'q' })
+    const { rerender, container } = render(<QuickChatPanel {...p} />)
+    const live = () => container.querySelector('[data-quick-answer-live]')?.textContent ?? ''
+    expect(live()).toBe('')
+    rerender(<QuickChatPanel {...p} answer={answer('Part and more', { id: 'a1' })} />)
+    expect(live()).toBe('')
+    const done = answer('Part and more, done.', { id: 'a1' })
+    act(() => rerender(<QuickChatPanel {...p} generating={false} answer={done} />))
+    expect(live()).toBe('Part and more, done.')
+  })
+
+  it('rewrite view hosts the RewritePanel', () => {
+    const p = props({ view: 'rewrite', rewrite: { option: null, text: 'draft' } })
+    render(<QuickChatPanel {...p} />)
+    expect((screen.getByRole('textbox', { name: 'Text to rewrite' }) as HTMLTextAreaElement).value).toBe('draft')
+  })
+
+  it('reports the open menu through the measured root', () => {
+    const { container } = render(<QuickChatPanel {...props()} />)
+    const root = container.querySelector('.dg-qc') as HTMLElement
+    fireEvent.click(screen.getByRole('button', { name: 'Rewrite' }))
+    expect(root.contains(screen.getByRole('menu'))).toBe(true)
+    expect(root.dataset.menuOpen).toBe('true')
+  })
+})

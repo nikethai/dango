@@ -1605,5 +1605,13 @@
   "The model stopped before finishing.": "The model stopped before finishing.",
   "The rewrite took over a minute and was stopped.": "The rewrite took over a minute and was stopped.",
   "Enter a language name, such as Spanish.": "Enter a language name, such as Spanish.",
-  "Use up to 8,000 characters.": "Use up to 8,000 characters."
+  "Use up to 8,000 characters.": "Use up to 8,000 characters.",
+  "Esc": "Esc",
+  "Continue in Chat": "Continue in Chat",
+  "Sign in to a model": "Sign in to a model",
+  "You're offline. {{model}} needs a connection to answer.": "You're offline. {{model}} needs a connection to answer.",
+  "From approved knowledge": "From approved knowledge",
+  "{{count}} images_one": "{{count}} image",
+  "{{count}} images_other": "{{count}} images",
+  "+{{n}}": "+{{n}}"
 }
