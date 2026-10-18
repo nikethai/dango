@@ -249,6 +249,28 @@ describe('applyMemoryMigration', () => {
     expect(copilots()).toEqual(prompts)
   })
 
+  it('a prompt row whose agent is gone when prompts are written goes to Everywhere', async () => {
+    const rows = await sampleRows()
+    const write = testStorage.setItemNow.getMockImplementation()
+    testStorage.setItemNow.mockImplementation(async (key: string, value: unknown) => {
+      await write?.(key, value)
+      // Another window deletes Planner while the items are being written.
+      if (key === 'knowledge') putRaw('myCopilots', [])
+    })
+    try {
+      expect(await applyMemoryMigration(rows)).toEqual({ everywhere: 4, prompts: 0, leftOut: 1 })
+    } finally {
+      testStorage.setItemNow.mockImplementation(write as never)
+    }
+    expect(
+      knowledge()
+        .items.map((i) => i.text)
+        .sort()
+    ).toEqual(['Lives in Hanoi', 'No red-eyes', 'Prefers metric units', 'Window seats'])
+    expect(copilots()).toEqual([])
+    expect(getRaw('knowledge-migration')).toMatchObject({ state: 'done' })
+  })
+
   it('state is written after the items', async () => {
     const rows = await sampleRows()
     testStorage.setItemNow.mockClear()
@@ -339,14 +361,14 @@ describe('loadMigrationState', () => {
   it('a read that throws stores nothing and leaves old memory on', async () => {
     saveBanks()
     putRaw('memory:agent:planner', bank([entry('a1', 'Window seats')], 'planner'))
-    const read = testStorage.getItem.getMockImplementation()
-    testStorage.getItem.mockImplementation(((key: string, fallback: unknown) =>
-      key === 'memory:agent:planner' ? Promise.reject(new Error('disk')) : read?.(key, fallback)) as never)
+    const read = testStorage.readItem.getMockImplementation()
+    testStorage.readItem.mockImplementation(((key: string) =>
+      key === 'memory:agent:planner' ? Promise.reject(new Error('disk')) : read?.(key)) as never)
     try {
       expect(await loadMigrationState()).toBe('pending')
       await expect(loadMigrationRows()).rejects.toThrow()
     } finally {
-      testStorage.getItem.mockImplementation(read as never)
+      testStorage.readItem.mockImplementation(read as never)
     }
     expect(getRaw('knowledge-migration')).toBeUndefined()
     expect(knowledgeStore.getState().migration).not.toBe('done')
@@ -358,6 +380,19 @@ describe('loadMigrationState', () => {
     expect(await loadMigrationState()).toBe('pending')
     expect(getRaw('knowledge-migration')).toBeUndefined()
     expect(isLegacyMemoryActive()).toBe(true)
+  })
+
+  it('a listed bank that reads null is a failed read, and no memory key gets a default written', async () => {
+    putRaw(MEMORY_GLOBAL, null)
+    banks.agents = [{ agentId: 'planner', bank: bank([], 'planner') }]
+    saveBanks()
+    expect(await loadMigrationState()).toBe('pending')
+    await expect(loadMigrationRows()).rejects.toThrow('Unreadable memory bank: memory-bank-global')
+    expect(getRaw('knowledge-migration')).toBeUndefined()
+    expect(isLegacyMemoryActive()).toBe(true)
+    const writes = [...testStorage.setItemNow.mock.calls, ...testStorage.setItem.mock.calls].map((c) => c[0])
+    expect(writes.filter((k) => k.startsWith('memory'))).toEqual([])
+    expect(testStorage.getItem.mock.calls.map((c) => c[0]).filter((k) => k.startsWith('memory'))).toEqual([])
   })
 
   it('live entries mean pending, and a stored done wins', async () => {

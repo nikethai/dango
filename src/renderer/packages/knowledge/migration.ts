@@ -76,6 +76,7 @@ export function planMemoryMigration(input: {
 
 type Storage = {
   getItem<T>(key: string, fallback: T): Promise<T>
+  readItem(key: string): Promise<unknown>
   setItemNow(key: string, value: unknown): Promise<void>
   getAllKeys(): Promise<string[]>
 }
@@ -105,18 +106,23 @@ type Banks = { global: MemoryBank; agents: { agentId: string; bank: MemoryBank }
 
 /**
  * Reads the old banks' raw values. Unlike the memory package's loaders, a read error or a bank that does not
- * parse throws here, so an unreadable bank is never mistaken for an empty one. Only keys that exist are read
- * (a read of a missing key would store the default).
+ * parse throws here, so an unreadable bank is never mistaken for an empty one. Only listed keys are read, with
+ * `readItem`, which never writes a default; a listed key that reads `null` (a value the platform could not
+ * parse) is a failed read too.
  */
 async function readBanks(): Promise<Banks> {
   const { normalizeBank } = await import('@/packages/memory/clone')
   const { storage, memoryGlobalKey } = await getStorage()
   const keys = await storage.getAllKeys()
   const read = async (key: string, scope: 'global' | 'agent', agentId?: string): Promise<MemoryBank> => {
-    const raw = await storage.getItem<unknown>(key, null)
-    if (raw === null || raw === undefined) return emptyMemoryBank(scope, agentId)
-    const rawEntries = (raw as { entries?: unknown }).entries
-    if (typeof raw !== 'object' || (rawEntries !== undefined && !Array.isArray(rawEntries))) {
+    const raw = await storage.readItem(key)
+    const rawEntries = (raw as { entries?: unknown } | null | undefined)?.entries
+    if (
+      raw === null ||
+      raw === undefined ||
+      typeof raw !== 'object' ||
+      (rawEntries !== undefined && !Array.isArray(rawEntries))
+    ) {
       throw new Error(`Unreadable memory bank: ${key}`)
     }
     const bank = normalizeBank(raw, scope, agentId)
@@ -295,11 +301,36 @@ export function appendStandingNotes(prompt: string, texts: string[]): { prompt: 
   return { prompt: next, added: lines.length }
 }
 
+/** Adds the rows as approved Everywhere items in one commit, skipping text Everywhere already has. */
+async function addToEverywhere(rows: MigrationRow[]): Promise<number> {
+  if (!rows.length) return 0
+  const now = Date.now()
+  const candidates = await Promise.all(rows.map((row) => migratedItem(row, now)))
+  let added = 0
+  await commitKnowledge((d) => {
+    added = 0
+    const present = new Set(
+      d.items
+        .filter((i) => i.scopeId === EVERYWHERE_SCOPE_ID && i.status === 'approved')
+        .map((i) => knowledgeTextKey(i.text))
+    )
+    for (const item of candidates) {
+      const key = knowledgeTextKey(item.text)
+      if (present.has(key)) continue
+      present.add(key)
+      d.items.push(item)
+      added += 1
+    }
+  })
+  return added
+}
+
 /**
  * Writes the move in a crash-safe order: Everywhere items, then agent prompts, then the `done` state. Each step
  * skips what is already there, so a second run (after a crash, or Later then Move) adds nothing. The rows are
  * re-planned from a fresh bank read first (see `mergeMigrationRows`). A row for an agent that cannot take prompt
- * text goes to Everywhere. Counts are what was actually written. Pushes no undo: the old banks stay as they were.
+ * text goes to Everywhere, and so does one whose agent is gone by the time prompts are written (after the
+ * prompts, still before `done`). Counts are what was actually written. Pushes no undo: the old banks stay as they were.
  */
 export async function applyMemoryMigration(chosen: MigrationRow[]): Promise<MigrationCounts> {
   const { getBuiltInCopilotById, myCopilotsAtom } = await import('@/hooks/useCopilots')
@@ -313,6 +344,7 @@ export async function applyMemoryMigration(chosen: MigrationRow[]): Promise<Migr
 
   const everywhere: MigrationRow[] = []
   const prompts = new Map<string, string[]>()
+  const promptRows = new Map<string, MigrationRow[]>()
   let leftOut = 0
   for (const row of rows) {
     if (row.choice === 'leave-out') {
@@ -323,40 +355,26 @@ export async function applyMemoryMigration(chosen: MigrationRow[]): Promise<Migr
       row.choice === 'agent-prompt' && row.group.scope === 'agent'
         ? isEditable(row.group.agentId, agents, getBuiltInCopilotById)
         : undefined
-    if (agent) prompts.set(agent.id, [...(prompts.get(agent.id) ?? []), row.text])
-    else everywhere.push(row)
+    if (agent) {
+      prompts.set(agent.id, [...(prompts.get(agent.id) ?? []), row.text])
+      promptRows.set(agent.id, [...(promptRows.get(agent.id) ?? []), row])
+    } else everywhere.push(row)
   }
 
   // 1. Everywhere items (one commit), skipping text that Everywhere already has.
-  const now = Date.now()
-  const candidates = await Promise.all(everywhere.map((row) => migratedItem(row, now)))
-  let itemsAdded = 0
-  if (candidates.length) {
-    await commitKnowledge((d) => {
-      itemsAdded = 0
-      const present = new Set(
-        d.items
-          .filter((i) => i.scopeId === EVERYWHERE_SCOPE_ID && i.status === 'approved')
-          .map((i) => knowledgeTextKey(i.text))
-      )
-      for (const item of candidates) {
-        const key = knowledgeTextKey(item.text)
-        if (present.has(key)) continue
-        present.add(key)
-        d.items.push(item)
-        itemsAdded += 1
-      }
-    })
-  }
+  let itemsAdded = await addToEverywhere(everywhere)
 
-  // 2. Agent prompts (one immediate write), on a fresh read so another window's agent edits survive. An agent
-  // removed since routing gets nothing; editability is checked again on this list.
+  // 2. Agent prompts (one immediate write), on a fresh read so another window's agent edits survive.
+  // Editability is checked again on this list; a row whose agent is gone (or no longer takes prompt text)
+  // goes to Everywhere instead of being dropped.
   let linesAdded = 0
   if (prompts.size) {
     const latest = await readLocalAgents()
+    const placed = new Set<string>()
     const next = latest.map((c) => {
       const texts = prompts.get(c.id)
       if (!texts || !isEditable(c.id, latest, getBuiltInCopilotById)) return c
+      placed.add(c.id)
       const { prompt, added } = appendStandingNotes(c.prompt ?? '', texts)
       linesAdded += added
       return added ? { ...c, prompt } : c
@@ -371,6 +389,10 @@ export async function applyMemoryMigration(chosen: MigrationRow[]): Promise<Migr
         log.error('Could not refresh agents after the memory move:', error)
       }
     }
+    const homeless = [...prompts.entries()]
+      .filter(([agentId]) => !placed.has(agentId))
+      .flatMap(([agentId]) => promptRows.get(agentId) ?? [])
+    if (homeless.length) itemsAdded += await addToEverywhere(homeless)
   }
 
   // 3. Done, last: a crash before this reopens the sheet, and the steps above skip what they already wrote.
