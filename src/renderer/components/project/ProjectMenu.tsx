@@ -1,13 +1,9 @@
 import type { ActionMenuItemProps } from '@/components/ActionMenu'
-import { IconFolder, IconFolderOff, IconLink, IconTrash } from '@tabler/icons-react'
+import { IconFolder, IconFolderOff, IconLink } from '@tabler/icons-react'
 import platform, { platformCapabilities } from '@/platform'
 import { listSessionsMeta, updateSession } from '@/stores/chatStore'
 
-export function projectFolderActions(opts: {
-  projectId: string
-  t: (key: string) => string
-  onRemoveProject?: () => void
-}): ActionMenuItemProps[] {
+export function projectFolderActions(opts: { projectId: string; t: (key: string) => string }): ActionMenuItemProps[] {
   if (!platformCapabilities.supportsProjectWorkspace) {
     return []
   }
@@ -53,16 +49,5 @@ export function projectFolderActions(opts: {
         }
       },
     },
-    ...(opts.onRemoveProject
-      ? [
-          {
-            text: opts.t('Delete Project'),
-            icon: IconTrash,
-            color: 'chatbox-error' as const,
-            doubleCheck: true,
-            onClick: opts.onRemoveProject,
-          },
-        ]
-      : []),
   ]
 }

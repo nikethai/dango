@@ -157,7 +157,7 @@ export function ProjectContextPanel({
   return (
     <aside aria-label={t('Project Files')} className="project-explorer">
       <header className="project-explorer-header">
-        <span className="project-explorer-kicker">{t('Project Files')}</span>
+        <span className="project-explorer-kicker">{t('Files')}</span>
         {ready ? (
           <Tooltip label={t('Refresh files')}>
             <ActionIcon variant="subtle" size={22} onClick={() => void loadRoot()} aria-label={t('Refresh files')}>
@@ -174,7 +174,7 @@ export function ProjectContextPanel({
           </div>
           <div className="project-explorer-tabs" role="tablist">
             <button type="button" role="tab" aria-selected={tab === 'files'} onClick={() => setTab('files')}>
-              {t('Project Files')}
+              {t('Files')}
             </button>
             <button type="button" role="tab" aria-selected={tab === 'scm'} onClick={() => setTab('scm')}>
               {t('Source Control')}

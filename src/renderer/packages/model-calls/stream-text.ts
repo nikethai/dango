@@ -554,7 +554,7 @@ ${computerUiSpaceLockInstructions({
 
 You do NOT currently have filesystem write or terminal tools for this session.
 ${platform.type !== 'desktop' ? '- Coding tools require the desktop app.' : ''}
-${!capabilityId ? '- No native Project folder is bound. Ask the user to Open Folder from the Projects rail. Pasted absolute paths cannot authorize access. Generic project shell is unavailable.' : ''}
+${!capabilityId ? '- No native Project folder is bound. Ask the user to Open Folder from the Scopes rail. Pasted absolute paths cannot authorize access. Generic project shell is unavailable.' : ''}
 - You may still use task checklist tools and answer with code in chat when local write/terminal is unavailable.
 `
   }

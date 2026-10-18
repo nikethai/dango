@@ -19,7 +19,9 @@ import WorkspacePanel, { useWorkspaceChromeActive } from '@/components/workspace
 import { useProjectWorkspace } from '@/hooks/useProjectWorkspace'
 import { useProviders } from '@/hooks/useProviders'
 import platform from '@/platform'
+import { getEffectiveProjectId } from '@/projects/project-context'
 import { commitProjectContextDraft } from '@/projects/project-context-draft'
+import { moveSessionToScopeOrToast } from '@/projects/scope-feedback'
 import { updateSessionWithMessages as updateSessionStore, useSession } from '@/stores/chatStore'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as scrollActions from '@/stores/scrollActions'
@@ -382,6 +384,8 @@ function RouteComponent() {
                     generating={isGenerating}
                     onSubmit={onSubmit}
                     onStopGenerating={onStopGenerating}
+                    scopeId={getEffectiveProjectId(currentSession)}
+                    onScopeChange={(id) => void moveSessionToScopeOrToast(currentSessionId, id)}
                   />
                 </ErrorBoundary>
               </ChatDockStack>

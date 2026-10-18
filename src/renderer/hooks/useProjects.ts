@@ -1,8 +1,8 @@
-import { useFolders, myProjectsAtom } from './useFolders'
+import { myProjectsAtom, useFolders } from './useFolders'
 
 export { myProjectsAtom }
 
-/** Compatibility adapter: Project writes dual-write Folder metadata. */
+/** Compatibility adapter: Project-shaped (Folder fields) view over scopes. */
 export function useProjects() {
   const { folders, addFolder, updateFolder, removeFolder } = useFolders()
   return {

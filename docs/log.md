@@ -2,6 +2,9 @@
 
 Newest first. Add a line when you create, accept, supersede or move a decision, spec or research note.
 
+## 2026-10-18
+* **Implementation**: [slice 03 scopes](specs/2026-10-17-slice-03-scopes.md) built on `feat/redesign-03-scopes` — projects become scopes (migration 17→18), Everywhere and client scopes, scope page with Overview/Knowledge/Sources/Files/Chats/Settings, scope pill in the composer, one writer for a chat's scope.
+
 ## 2026-10-17
 * **Implementation**: [slice 1b](specs/2026-10-17-slice-01b-shared-foundations.md) built on `feat/redesign-01b-shared-foundations` — Sheet with focus rules, undo toast and ⌘Z, eight-state Mascot, Review entries store with openers and renderers, BackgroundJob types, new chat at /new.
 * **Decision**: relicensing runs after the redesign — [roadmap](specs/2026-10-17-redesign-roadmap.md) says the slices are not bound by the clean-room rule or provenance gate; the relicensing plan cleans what is left afterwards.

@@ -17,6 +17,8 @@ import { memo, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useFolders } from '@/hooks/useFolders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
+import { getEffectiveProjectId } from '@/projects/project-context'
+import { moveSessionToScopeOrToast } from '@/projects/scope-feedback'
 import { router } from '@/router'
 import {
   deleteSession as deleteSessionStore,
@@ -49,17 +51,18 @@ function SessionItem(props: Props) {
     }
   }
 
+  const currentScopeId = getEffectiveProjectId(session)
   const [menuOpened, setMenuOpened] = useState(false)
   const [folderModalOpened, setFolderModalOpened] = useState(false)
   const [renameModalOpened, setRenameModalOpened] = useState(false)
   const [renameValue, setRenameValue] = useState(session.name)
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(session.folderId ?? null)
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(currentScopeId ?? null)
 
   const timeLabel = useMemo(() => formatRailRelativeTime(session.updatedAt), [session.updatedAt])
 
   useEffect(() => {
-    setSelectedFolderId(session.folderId ?? null)
-  }, [session.folderId])
+    setSelectedFolderId(currentScopeId ?? null)
+  }, [currentScopeId])
 
   useEffect(() => {
     if (!renameModalOpened) {
@@ -107,7 +110,7 @@ function SessionItem(props: Props) {
         },
       },
       {
-        text: t('Move to Project'),
+        text: t('Move to scope'),
         icon: IconFolder,
         onClick: () => {
           setFolderModalOpened(true)
@@ -148,7 +151,7 @@ function SessionItem(props: Props) {
 
   const folderOptions = useMemo(
     () => [
-      { value: '', label: t('Recents') },
+      { value: '', label: t('None') },
       ...folders.map((folder) => ({
         value: folder.id,
         label: folder.name,
@@ -158,15 +161,7 @@ function SessionItem(props: Props) {
   )
 
   const handleSaveFolder = async () => {
-    await updateSessionStore(session.id, (s) => {
-      if (!s) {
-        throw new Error(`Session ${session.id} not found`)
-      }
-      return {
-        ...s,
-        folderId: selectedFolderId || undefined,
-      }
-    })
+    await moveSessionToScopeOrToast(session.id, selectedFolderId || undefined)
     setFolderModalOpened(false)
   }
 
@@ -282,14 +277,14 @@ function SessionItem(props: Props) {
       <AdaptiveModal
         opened={folderModalOpened}
         onClose={() => setFolderModalOpened(false)}
-        title={t('Move to Project')}
+        title={t('Move to scope')}
         centered
       >
         <Select
           data={folderOptions}
           value={selectedFolderId ?? ''}
           onChange={(value) => setSelectedFolderId(value || null)}
-          label={t('Project')}
+          label={t('Scope')}
           comboboxProps={{ withinPortal: true }}
         />
 

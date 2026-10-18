@@ -685,12 +685,27 @@ describe('theme mapping onto Dango', () => {
     }
   })
 
-  test('the Sidebar folder dialog input uses the raised fill and the control border', () => {
-    const source = readSource('src/renderer/Sidebar.tsx')
+  test('the new scope sheet input uses the raised fill and the control border', () => {
+    const source = readSource('src/renderer/components/scope/NewScopeSheet.tsx')
     expect(source).not.toContain("background: 'var(--chatbox-background-primary)'")
     expect(source).not.toContain("borderColor: 'var(--chatbox-border-secondary)'")
     expect(source).toContain("background: 'var(--dango-raised)'")
     expect(source).toContain("borderColor: 'var(--dango-control-border)'")
+  })
+
+  test('the scope pill sits after the tools menu and before team mode in the composer', () => {
+    const source = readSource('src/renderer/components/InputBox/InputBox.tsx')
+    const pill = source.indexOf('<ScopePill')
+    expect(pill).toBeGreaterThan(source.indexOf('<ComposerToolsMenu'))
+    expect(pill).toBeLessThan(source.indexOf('<TeamModeSelect'))
+  })
+
+  test('the composer scope pill truncates at 160px', () => {
+    const rules = rootRules('.composer-scope-pill')
+    expect(rules.length).toBe(1)
+    const decls = declsOf(rules[0])
+    expect(decls.get('max-width')).toBe('160px')
+    expect(decls.get('text-overflow')).toBe('ellipsis')
   })
 
   test('the global focus ring is 2px solid --dango-focus with a 2px offset', () => {

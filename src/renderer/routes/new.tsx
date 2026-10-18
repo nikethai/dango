@@ -12,7 +12,15 @@ import Page from '@/components/layout/Page'
 import NewChatAgentBar from '@/components/new-chat/NewChatAgentBar'
 import { useMyCopilots, useRemoteCopilots } from '@/hooks/useCopilots'
 import { useProviders } from '@/hooks/useProviders'
-import { isNewPrefill, type NewChatSearch, NewChatSearchSchema, seedNewChatSession } from '@/lib/newChatSearch'
+import { useScopes } from '@/hooks/useScopes'
+import {
+  type DraftSeed,
+  isNewPrefill,
+  type NewChatSearch,
+  NewChatSearchSchema,
+  seedDraftFromLink,
+} from '@/lib/newChatSearch'
+import { resolveDraftScopeId } from '@/projects/scope-navigation'
 import { createSession as createSessionStore } from '@/stores/chatStore'
 import { submitNewUserMessage, switchCurrentSession } from '@/stores/sessionActions'
 import { initEmptyChatSession } from '@/stores/sessionHelpers'
@@ -129,10 +137,20 @@ function Index() {
   ])
 
   const routerState = useRouterState()
+  const { scopes } = useScopes()
+  // Seed once per link, and again only if the link's scope resolves differently once scopes load from storage
+  // (or the scope is deleted) while the draft still holds the earlier resolution, so a pill choice is never undone.
+  // An unknown or deleted scope starts unscoped.
+  const seeded = useRef<DraftSeed>({})
   useEffect(() => {
     const search = routerState.location.search as NewChatSearch
-    setSession((old) => seedNewChatSession(old, search))
-  }, [routerState.location.search])
+    const scopeId = resolveDraftScopeId(search.scopeId, scopes)
+    const previous = seeded.current
+    if (previous.search === search && previous.scopeId === scopeId) return
+    seeded.current = { search, scopeId }
+    const scope = scopes.find((item) => item.id === scopeId)
+    setSession((old) => seedDraftFromLink(old, { search, scopeId, scope }, previous))
+  }, [routerState.location.search, scopes])
 
   // A new prefill while /new is already open: show it by remounting the composer with the draft.
   const prefill = (routerState.location.search as NewChatSearch).prefill
@@ -187,6 +205,7 @@ function Index() {
           roomMode: session.roomMode,
           roomLeadId: agentIds?.[0],
           projectId: session.projectId,
+          folderId: session.projectId,
           agentMode: session.agentMode,
           workspaceRoot: session.workspaceRoot,
           settings: session.settings,
@@ -323,6 +342,8 @@ function Index() {
                 onComputerArmedChange={(computerArmed) => setSession((old) => ({ ...old, computerArmed }))}
                 onClickSessionSettings={onClickSessionSettings}
                 onSubmit={handleSubmit}
+                scopeId={session.projectId}
+                onScopeChange={(projectId) => setSession((old) => ({ ...old, projectId }))}
               />
             </div>
           </div>

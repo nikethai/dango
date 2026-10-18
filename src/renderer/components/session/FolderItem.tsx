@@ -1,11 +1,11 @@
 import { ActionIcon, Flex, Text, Tooltip } from '@mantine/core'
+import type { ScopeKind } from '@shared/types'
 import {
   IconChevronDown,
   IconChevronRight,
   IconDots,
-  IconEdit,
-  IconMessageChatbot,
   IconPlus,
+  IconSettings,
   IconStack2,
   IconTrash,
 } from '@tabler/icons-react'
@@ -19,32 +19,36 @@ import { ProjectBadge } from '../project/ProjectBadge'
 import { projectFolderActions } from '../project/ProjectMenu'
 
 export interface FolderItemProps {
+  active: boolean
   count: number
-  /** @deprecated emoji ignored in UI — projects use a shared outline mark */
+  /** @deprecated emoji ignored in UI — scopes use a shared outline mark */
   emoji?: string
   expanded: boolean
   implicit?: boolean
+  kind: ScopeKind
   name: string
   projectId?: string
   workspaceStatus?: import('@shared/types/workspace').WorkspaceStatus
   onCreateChat?(): void
   onDelete?(): void
-  onRename?(): void
-  onSetDefaultCopilot?(): void
+  onOpen(): void
+  onOpenSettings(): void
   onToggle(): void
 }
 
 function FolderItem({
+  active,
   count,
   expanded,
   implicit = false,
+  kind,
   name,
   projectId,
   workspaceStatus,
   onCreateChat,
   onDelete,
-  onRename,
-  onSetDefaultCopilot,
+  onOpen,
+  onOpenSettings,
   onToggle,
 }: FolderItemProps) {
   const { t } = useTranslation()
@@ -57,38 +61,29 @@ function FolderItem({
         ? []
         : [
             {
-              text: t('New Chat'),
+              text: t('New chat'),
               icon: IconPlus,
               onClick: () => onCreateChat?.(),
             },
             {
-              text: t('Rename Project'),
-              icon: IconEdit,
-              onClick: () => onRename?.(),
-            },
-            {
-              text: t('Set Default Copilot'),
-              icon: IconMessageChatbot,
-              onClick: () => onSetDefaultCopilot?.(),
+              text: t('Scope settings'),
+              icon: IconSettings,
+              onClick: () => onOpenSettings(),
             },
             { divider: true },
-            ...(projectId
-              ? projectFolderActions({
-                  projectId,
-                  t,
-                  onRemoveProject: onDelete,
-                })
-              : [
+            ...(projectId ? projectFolderActions({ projectId, t }) : []),
+            ...(onDelete
+              ? [
                   {
-                    text: t('Delete Project'),
+                    text: t('Delete scope'),
                     icon: IconTrash,
                     color: 'chatbox-error' as const,
-                    doubleCheck: true,
-                    onClick: () => onDelete?.(),
+                    onClick: () => onDelete(),
                   },
-                ]),
+                ]
+              : []),
           ],
-    [implicit, onCreateChat, onDelete, onRename, onSetDefaultCopilot, projectId, t]
+    [implicit, onCreateChat, onDelete, onOpenSettings, projectId, t]
   )
 
   return (
@@ -100,16 +95,21 @@ function FolderItem({
       py={5}
       className={clsx(
         'group/folder-item project-folder-row',
-        !implicit && 'hover:bg-[var(--chatbox-background-tertiary-hover)] cursor-pointer'
+        !implicit && 'hover:bg-[var(--chatbox-background-tertiary-hover)]',
+        active && 'studio-rail-row-active'
       )}
-      onClick={onToggle}
     >
       <ActionIcon
         variant="transparent"
         size={28}
         color="chatbox-tertiary"
-        aria-hidden
+        aria-label={t('Toggle chats')}
+        aria-expanded={expanded}
         className="shrink-0 active:scale-[0.96] transition-transform"
+        onClick={(event) => {
+          event.stopPropagation()
+          onToggle()
+        }}
       >
         <ScalableIcon
           icon={expanded ? IconChevronDown : IconChevronRight}
@@ -125,11 +125,21 @@ function FolderItem({
         size="xs"
         c="chatbox-tertiary"
         fw={550}
-        className="tracking-tight truncate project-folder-name"
+        role="button"
+        tabIndex={0}
+        className="tracking-tight truncate project-folder-name cursor-pointer"
         style={{ fontSize: '0.8125rem', letterSpacing: '-0.01em' }}
+        onClick={onOpen}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onOpen()
+          }
+        }}
       >
         {name}
       </Text>
+      {kind === 'client' ? <span className="dg-chip">{t('client')}</span> : null}
       {workspaceStatus ? <ProjectBadge status={workspaceStatus} /> : null}
 
       <Text
@@ -145,7 +155,7 @@ function FolderItem({
 
       {/* Hover-only + on desktop; always available on small screens + inside menu */}
       {!implicit && onCreateChat && (
-        <Tooltip label={t('New Chat')} withArrow openDelay={400}>
+        <Tooltip label={t('New chat')} withArrow openDelay={400}>
           <ActionIcon
             variant="transparent"
             size={28}
@@ -154,7 +164,7 @@ function FolderItem({
               'active:scale-[0.96] transition-transform',
               isSmallScreen || menuOpened ? '' : 'group-hover/folder-item:visible invisible'
             )}
-            aria-label={t('New Chat')}
+            aria-label={t('New chat')}
             onClick={(event) => {
               event.stopPropagation()
               event.preventDefault()
@@ -182,7 +192,7 @@ function FolderItem({
               'active:scale-[0.96] transition-transform',
               isSmallScreen || menuOpened ? '' : 'group-hover/folder-item:visible invisible'
             )}
-            aria-label={t('Project options')}
+            aria-label={t('Scope options')}
             onClick={(event) => {
               event.stopPropagation()
               event.preventDefault()
