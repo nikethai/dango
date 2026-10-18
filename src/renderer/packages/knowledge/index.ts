@@ -3,6 +3,7 @@ export { resolveConflict } from './conflicts'
 export { type ContradictionChecker, checkAgainstLayers, selectCandidates } from './contradictions'
 export { formatKnowledgeSection, isLegacyMemoryActive, knowledgeForTurn } from './for-turn'
 export {
+  useDontSuggestList,
   useKnowledgeItem,
   useKnowledgeList,
   useKnowledgeUses,

@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildSettingsNav, findSettingsEntry, type SettingsNavAvailability } from './settingsNavModel'
@@ -62,6 +62,19 @@ describe('settings nav model', () => {
     const nav = buildSettingsNav(ALL)
     const tos = new Set([...nav.sections, ...nav.advanced].flatMap((e) => e.pages.map((p) => p.to)))
     expect(paths.filter((p) => !tos.has(p))).toEqual([])
+  })
+
+  it('every nav page has a route', () => {
+    const nav = buildSettingsNav(ALL)
+    const tos = [...nav.sections, ...nav.advanced].flatMap((e) => e.pages.map((p) => p.to))
+    const dir = join(__dirname, '../../routes/settings')
+    const missing = tos
+      .filter((to) => to.startsWith('/settings/'))
+      .filter((to) => {
+        const name = to.slice('/settings/'.length)
+        return !existsSync(join(dir, `${name}.tsx`)) && !existsSync(join(dir, name, 'route.tsx'))
+      })
+    expect(missing).toEqual([])
   })
 
   it('deep links resolve', () => {

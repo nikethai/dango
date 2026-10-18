@@ -1485,5 +1485,19 @@
   "The same items wait in Review until you approve them.": "The same items wait in Review until you approve them.",
   "Nothing is applied until you press Approve.": "Nothing is applied until you press Approve.",
   "Always asks, whatever you choose: sending anything, deleting, editing files, changing a decision, saving knowledge. Applies to items that arrive from now on.": "Always asks, whatever you choose: sending anything, deleting, editing files, changing a decision, saving knowledge. Applies to items that arrive from now on.",
-  "Trust set to {{level}}. Items already in Review keep their state.": "Trust set to {{level}}. Items already in Review keep their state."
+  "Trust set to {{level}}. Items already in Review keep their state.": "Trust set to {{level}}. Items already in Review keep their state.",
+  "What Dango keeps, what it may do before asking, and what it should stop suggesting.": "What Dango keeps, what it may do before asking, and what it should stop suggesting.",
+  "Trust level": "Trust level",
+  "Change": "Change",
+  "Dango does safe things first and shows you what it did.": "Dango does safe things first and shows you what it did.",
+  "Everything waits for your approval.": "Everything waits for your approval.",
+  "Don't suggest again": "Don't suggest again",
+  "Nothing here yet.": "Nothing here yet.",
+  "When you choose “Don't suggest this again” on a proposal, it is listed here so you can turn it back on.": "When you choose “Don't suggest this again” on a proposal, it is listed here so you can turn it back on.",
+  "Suggest again": "Suggest again",
+  "Preferences and facts every scope reads.": "Preferences and facts every scope reads.",
+  "Open Everywhere": "Open Everywhere",
+  "Export your data": "Export your data",
+  "Back up chats, settings and knowledge to a file.": "Back up chats, settings and knowledge to a file.",
+  "Open backup": "Open backup"
 }
