@@ -39,6 +39,12 @@ describe('SettingsNav', () => {
     expect(screen.queryByRole('link', { name: 'Usage' })).toBeNull()
   })
 
+  it('keeps the full label readable when a long row is truncated', () => {
+    render(<SettingsNav nav={nav} pathname="/settings/hooks" compact={false} />)
+    const label = screen.getByText('Skills · Commands · Hooks')
+    expect(label.getAttribute('title')).toBe('Skills · Commands · Hooks')
+  })
+
   it('opens Advanced on a deep link into it', () => {
     render(<SettingsNav nav={nav} pathname="/settings/hooks" compact={false} />)
     expect(screen.getByRole('button', { name: 'Advanced' }).getAttribute('aria-expanded')).toBe('true')

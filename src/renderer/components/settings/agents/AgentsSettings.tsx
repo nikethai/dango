@@ -194,7 +194,9 @@ function MiniItem(props: MiniItemProps) {
           '✦'
         )}
       </span>
-      <span className="agent-tile-name">{props.detail.name}</span>
+      <span className="agent-tile-name" title={props.detail.name}>
+        {props.detail.name}
+      </span>
 
       {props.mode === 'local' && (
         <span className="agent-tile-actions">

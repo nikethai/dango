@@ -56,6 +56,7 @@ export function SettingsNav({ nav, pathname, compact }: SettingsNavProps) {
           <span
             className={clsx('flex-1 truncate tracking-tight', compact && 'min-h-[32px] leading-[32px]')}
             style={{ fontSize: '0.875rem', fontWeight: active ? 600 : 500 }}
+            title={t(entry.label)}
           >
             {t(entry.label)}
           </span>

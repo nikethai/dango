@@ -70,6 +70,12 @@ describe('AgentsSettings', () => {
     expect(screen.getByText('No agents yet. Create one, or add a featured agent below.')).toBeTruthy()
   })
 
+  it('keeps a truncated agent name readable through its title', () => {
+    state.agents = [{ id: 'a', name: 'Deep Research Assistant', prompt: 'p', starred: false, usedCount: 0 }]
+    renderIt()
+    expect(screen.getByText('Deep Research Assistant').getAttribute('title')).toBe('Deep Research Assistant')
+  })
+
   it('lists an agent and opens its editor', () => {
     state.agents = [{ id: 'a', name: 'Researcher', prompt: 'p', starred: false, usedCount: 0 }]
     renderIt()
