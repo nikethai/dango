@@ -59,7 +59,7 @@ function FeedRow({ entry, focused, rowsRef, onFocus, onKeyDown }: FeedRowProps) 
 }
 
 /** Leave one tab stop per row: controls in rows without focus get tabindex -1; the focused row gets its own back. */
-function syncTabStops(rows: Map<string, HTMLElement>, focusedId: string | null) {
+function syncTabStops(rows: Iterable<[string, HTMLElement]>, focusedId: string | null) {
   for (const [id, row] of rows) {
     for (const el of Array.from(row.querySelectorAll<HTMLElement>(CONTROLS))) {
       if (id === focusedId) {
@@ -158,7 +158,23 @@ export function ReviewFeed({ scopeId, caughtUp }: ReviewFeedProps) {
   useEffect(() => {
     const root = rootRef.current
     if (!root) return
-    const observer = new MutationObserver(() => syncTabStops(rowsRef.current, focusedRef.current))
+    // Only the rows a mutation touched: a change inside a row, or rows (or groups of rows) added to the list.
+    const observer = new MutationObserver((records) => {
+      const touched = new Map<string, HTMLElement>()
+      const add = (el: Element | null) => {
+        const id = el instanceof HTMLElement ? el.dataset.entryId : undefined
+        if (el instanceof HTMLElement && id && rowsRef.current.get(id) === el) touched.set(id, el)
+      }
+      for (const r of records) {
+        add(r.target instanceof Element ? r.target.closest('[data-entry-id]') : null)
+        for (const node of Array.from(r.addedNodes)) {
+          if (!(node instanceof Element)) continue
+          add(node.closest('[data-entry-id]'))
+          for (const inner of Array.from(node.querySelectorAll('[data-entry-id]'))) add(inner)
+        }
+      }
+      if (touched.size > 0) syncTabStops(touched, focusedRef.current)
+    })
     observer.observe(root, { childList: true, subtree: true })
     return () => observer.disconnect()
   }, [])

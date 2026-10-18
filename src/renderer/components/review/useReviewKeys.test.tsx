@@ -6,6 +6,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { type ReactNode, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useStore } from 'zustand'
 import { type ReviewRendererProps, registerReviewOpener, reviewRegistryStore } from '@/packages/review/registry'
 import { reviewStore, setReviewStorageForTests } from '@/packages/review/store'
 import { setReviewApplierForTests } from '@/packages/review/trust'
@@ -110,10 +111,15 @@ const seed = (entries: ReviewEntry[]) => {
   reviewStore.setState({ entries, lastCheckedAt: undefined, loaded: true })
 }
 const fake = (e: ReviewEntry): HarnessRow => ({ entry: e, render: (f) => <FakeProposal entry={e} focused={f} /> })
+/** Like the feed's row: passes the live entry from the store. */
+function LiveDefault({ entry, focused }: ReviewRendererProps) {
+  const live = useStore(reviewStore, (st) => st.entries.find((x) => x.id === entry.id)) ?? entry
+  return <DefaultReviewRenderer entry={live} focused={focused} />
+}
 const byDefault = (e: ReviewEntry): HarnessRow => ({
   entry: e,
   isDefault: true,
-  render: (f) => <DefaultReviewRenderer entry={e} focused={f} />,
+  render: (f) => <LiveDefault entry={e} focused={f} />,
 })
 const mount = (rows: HarnessRow[], dismissFallback = vi.fn()) => {
   seed(rows.map((r) => r.entry))

@@ -5,12 +5,11 @@ import { useScopes } from '@/hooks/useScopes'
 import {
   applyReviewEntry,
   canUndoArrival,
-  getReviewApplier,
-  hasReviewOpener,
   openReviewEntry,
   type ReviewRendererProps,
   undoArrival,
-  useReviewEntries,
+  useHasReviewOpener,
+  useReviewApplier,
 } from '@/packages/review'
 import { defaultActions } from './defaultActions'
 import { dismissReviewEntry } from './dismissEntry'
@@ -19,11 +18,13 @@ import { ReviewItem } from './ReviewItem'
 
 const warn = (what: string) => (error: unknown) => console.warn(`[review] ${what} failed`, error)
 
-export function DefaultReviewRenderer({ entry: initial, focused }: ReviewRendererProps) {
+/**
+ * Renders the entry it is given; the feed passes the live row and re-renders it on change, so this subscribes to
+ * nothing but the opener and applier registries (which change when slices load late).
+ */
+export function DefaultReviewRenderer({ entry, focused }: ReviewRendererProps) {
   const { t } = useTranslation()
   const { getScope } = useScopes()
-  const live = useReviewEntries().find((e) => e.id === initial.id)
-  const entry = live ?? initial
   const [, rerender] = useReducer((n: number) => n + 1, 0)
 
   // Undo goes away when the window closes: re-render once at expiry.
@@ -36,8 +37,8 @@ export function DefaultReviewRenderer({ entry: initial, focused }: ReviewRendere
     return () => clearTimeout(timer)
   }, [undoUntil])
 
-  const canOpen = hasReviewOpener(entry)
-  const canApply = !!getReviewApplier(entry.ref.type) && displayKind(entry) === 'proposal' && entry.state === 'open'
+  const canOpen = useHasReviewOpener(entry.ref.type)
+  const canApply = !!useReviewApplier(entry.ref.type) && displayKind(entry) === 'proposal' && entry.state === 'open'
   const canUndo = canUndoArrival(entry.id) && entry.undoUntil !== undefined && entry.undoUntil > Date.now()
 
   const actions = useMemo(

@@ -175,6 +175,20 @@ describe('ReviewFeed', () => {
     expect(added.getAttribute('tabindex')).toBe('-1')
   })
 
+  it('a row that arrives later, in a new day group, starts with its controls out of the tab order (M9)', async () => {
+    await mountFeed([row('a')])
+    await act(() => rowEl('a').focus())
+    await act(async () => {
+      const entries = [row('a'), row('late', { createdAt: Date.now() - 5 * DAY })]
+      data['review-entries'] = { entries }
+      reviewStore.setState({ entries })
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    const controls = Array.from(rowEl('late').querySelectorAll('button, input'))
+    expect(controls.length).toBeGreaterThan(0)
+    for (const el of controls) expect(el.getAttribute('tabindex')).toBe('-1')
+  })
+
   it('X on the last row moves focus to the row above', async () => {
     const now = Date.now()
     await mountFeed([row('a', { createdAt: now }), row('b', { createdAt: now - 1000 })])
