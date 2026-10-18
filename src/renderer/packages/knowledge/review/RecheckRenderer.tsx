@@ -3,12 +3,16 @@ import { type ReviewAction, ReviewItem } from '@/components/review'
 import { openReviewEntry, type ReviewRendererProps, setReviewEntryState } from '@/packages/review'
 import { reapproveKnowledge } from '../lifecycle'
 import { scopeName } from '../scopes'
-import { useGuarded } from './useGuarded'
+import { OPEN_FAILED, useGuarded } from './useGuarded'
 
 /** A re-check: something an answer relied on changed. A knowledge entry offers only Approve again and Open. */
 export function RecheckRenderer({ entry, focused }: ReviewRendererProps) {
   const { busy, run } = useGuarded()
-  const open: ReviewAction = { label: t('Open'), disabled: busy, onClick: () => void run(() => openReviewEntry(entry)) }
+  const open: ReviewAction = {
+    label: t('Open'),
+    disabled: busy,
+    onClick: () => void run(() => openReviewEntry(entry), OPEN_FAILED),
+  }
   const dismiss: ReviewAction = {
     label: t('Dismiss'),
     variant: 'ghost',

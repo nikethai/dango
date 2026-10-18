@@ -1,5 +1,5 @@
 import type { ReviewKind } from '@shared/types/review'
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 
 export type { ReviewKind } from '@shared/types/review'
 
@@ -8,6 +8,8 @@ export type ReviewAction = {
   onClick: () => void
   variant?: 'primary' | 'secondary' | 'ghost'
   disabled?: boolean
+  /** For returning focus to this button (a proposal leaving edit mode). */
+  ref?: Ref<HTMLButtonElement>
 }
 
 export type ReviewItemProps = {
@@ -62,6 +64,7 @@ export function ReviewItem({ kind, scope, source, text, sub, actions, focused, c
         {actions.slice(0, MAX_ACTIONS).map((action) => (
           <button
             key={action.label}
+            ref={action.ref}
             type="button"
             className={BUTTON_CLASS[action.variant ?? 'secondary']}
             disabled={action.disabled}

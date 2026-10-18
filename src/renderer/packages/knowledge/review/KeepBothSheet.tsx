@@ -1,11 +1,12 @@
 import { t } from 'i18next'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Sheet } from '@/components/ui/Sheet'
 
 export type KeepBothSheetProps = { opened: boolean; onClose: () => void; onConfirm: (condition: string) => void }
 
 /** RV7: both statements stay, each under a condition the user writes. */
 export function KeepBothSheet({ opened, onClose, onConfirm }: KeepBothSheetProps) {
+  const fieldId = useId()
   const [condition, setCondition] = useState('')
   const [wasOpened, setWasOpened] = useState(opened)
   // A reopened sheet starts blank.
@@ -21,7 +22,7 @@ export function KeepBothSheet({ opened, onClose, onConfirm }: KeepBothSheetProps
     <Sheet
       opened={opened}
       onClose={onClose}
-      title={t('Keep both, with a condition')}
+      title={t('Keep both')}
       actions={
         <>
           <button type="button" className="dg-btn dg-btn--ghost" onClick={onClose}>
@@ -33,15 +34,18 @@ export function KeepBothSheet({ opened, onClose, onConfirm }: KeepBothSheetProps
         </>
       }
     >
+      <label htmlFor={fieldId} className="dg-type-caption">
+        {t('Both are true when…')}
+      </label>
       <input
+        id={fieldId}
         data-autofocus
         className="dango-field"
-        aria-label={t('Condition')}
-        placeholder={t('When does each one apply? For example: for the EU launch')}
+        placeholder={t('For example: for the EU launch')}
         value={condition}
         onChange={(e) => setCondition(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) {
             e.preventDefault()
             confirm()
           }

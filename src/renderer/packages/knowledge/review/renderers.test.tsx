@@ -4,7 +4,7 @@
 import type { KnowledgeConflict, KnowledgeProposal } from '@shared/types/knowledge'
 import { emptyKnowledgeState } from '@shared/types/knowledge'
 import type { ReviewEntry } from '@shared/types/review'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getReviewRenderer, openReviewEntry, registerReviewOpener, registerReviewRenderer } from '@/packages/review'
 import * as toastActions from '@/stores/toastActions'
@@ -20,6 +20,7 @@ import { KeepBothSheet } from './KeepBothSheet'
 import { ProposalRenderer } from './ProposalRenderer'
 import { RecheckRenderer } from './RecheckRenderer'
 import { registerKnowledgeRenderers } from './register'
+import { useGuarded } from './useGuarded'
 
 vi.mock('i18next', () => ({
   t: (key: string, vars?: Record<string, string>) => key.replace(/\{\{(\w+)\}\}/g, (_, k) => vars?.[k] ?? ''),
@@ -146,6 +147,54 @@ describe('ProposalRenderer', () => {
     expect(dismissProposal).toHaveBeenCalledWith('p1')
   })
 
+  it('while an approve runs, Esc and Cmd+Enter do nothing', async () => {
+    let resolve: () => void = () => undefined
+    vi.mocked(approveProposal).mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolve = () => r(undefined as never)
+        })
+    )
+    render(<ProposalRenderer entry={entry({})} focused={false} />)
+    fireEvent.click(screen.getByText('Edit'))
+    const field = screen.getByRole('textbox')
+    fireEvent.change(field, { target: { value: 'Launch is 7 Nov' } })
+    fireEvent.click(screen.getByText('Approve'))
+    await waitFor(() => expect((screen.getByText('Cancel') as HTMLButtonElement).disabled).toBe(true))
+
+    fireEvent.keyDown(field, { key: 'Escape' })
+    expect(screen.getByRole('textbox')).toBeTruthy()
+    fireEvent.keyDown(field, { key: 'Enter', metaKey: true })
+    expect(approveProposal).toHaveBeenCalledTimes(1)
+    await act(async () => resolve())
+  })
+
+  it('Cmd+Enter while an IME composes (keyCode 229) does not approve', () => {
+    render(<ProposalRenderer entry={entry({})} focused={false} />)
+    fireEvent.click(screen.getByText('Edit'))
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', metaKey: true, keyCode: 229 })
+    expect(approveProposal).not.toHaveBeenCalled()
+  })
+
+  it('a failing error handler or toast never rejects', async () => {
+    const { result } = renderHook(() =>
+      useGuarded(() => {
+        throw new Error('handler broke')
+      })
+    )
+    vi.mocked(toastActions.add).mockImplementationOnce(() => {
+      throw new Error('toast broke')
+    })
+    let outcome: Promise<void> = Promise.resolve()
+    await act(async () => {
+      outcome = result.current.run(() => Promise.reject(new Error('disk')))
+      await outcome.catch(() => undefined)
+    })
+    await expect(outcome).resolves.toBeUndefined()
+    expect(toastActions.add).toHaveBeenCalledTimes(1)
+    expect(result.current.busy).toBe(false)
+  })
+
   it('a contradiction shows the waiting toast', async () => {
     const conflict = { id: 'c' } as KnowledgeConflict
     vi.mocked(approveProposal).mockRejectedValueOnce(new KnowledgeConflictError(conflict, 'Launch is 4 Nov'))
@@ -210,10 +259,10 @@ describe('ConflictRenderer', () => {
     expect(dismissProposal).toHaveBeenCalledWith('p1')
     await waitFor(() => expect((screen.getByText('Dismiss') as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByText('Keep both, with a condition…'))
-    const field = await screen.findByLabelText('Condition')
+    const field = await screen.findByLabelText('Both are true when…')
     expect(document.activeElement).toBe(field)
     fireEvent.change(field, { target: { value: 'for the EU launch' } })
-    fireEvent.click(screen.getByText('Keep both'))
+    fireEvent.click(screen.getByRole('button', { name: 'Keep both' }))
     expect(resolveConflict).toHaveBeenCalledWith('c1', { keepBoth: 'for the EU launch' })
   })
 
@@ -237,21 +286,39 @@ describe('ConflictRenderer', () => {
 })
 
 describe('KeepBothSheet', () => {
+  it('uses the plan copy: title Keep both, field Both are true when…, button Keep both', () => {
+    render(<KeepBothSheet opened onClose={() => {}} onConfirm={() => {}} />)
+    expect(screen.getByRole('dialog', { name: 'Keep both' })).toBeTruthy()
+    expect(screen.getByLabelText('Both are true when…')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Keep both' })).toBeTruthy()
+  })
+
+  it('Enter while an IME composes (keyCode 229) does not confirm', () => {
+    const onConfirm = vi.fn()
+    render(<KeepBothSheet opened onClose={() => {}} onConfirm={onConfirm} />)
+    const field = screen.getByLabelText('Both are true when…')
+    fireEvent.change(field, { target: { value: 'khi ra mắt' } })
+    fireEvent.keyDown(field, { key: 'Enter', keyCode: 229 })
+    expect(onConfirm).not.toHaveBeenCalled()
+    fireEvent.keyDown(field, { key: 'Enter', keyCode: 13 })
+    expect(onConfirm).toHaveBeenCalledWith('khi ra mắt')
+  })
+
   it('starts blank when reopened', () => {
     const { rerender } = render(<KeepBothSheet opened onClose={() => {}} onConfirm={() => {}} />)
-    fireEvent.change(screen.getByLabelText('Condition'), { target: { value: 'for the EU launch' } })
+    fireEvent.change(screen.getByLabelText('Both are true when…'), { target: { value: 'for the EU launch' } })
     rerender(<KeepBothSheet opened={false} onClose={() => {}} onConfirm={() => {}} />)
     rerender(<KeepBothSheet opened onClose={() => {}} onConfirm={() => {}} />)
-    expect((screen.getByLabelText('Condition') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Both are true when…') as HTMLInputElement).value).toBe('')
   })
 
   it('is disabled for a blank condition and confirms a real one', () => {
     const onConfirm = vi.fn()
     render(<KeepBothSheet opened onClose={() => {}} onConfirm={onConfirm} />)
-    const button = screen.getByText('Keep both') as HTMLButtonElement
-    fireEvent.change(screen.getByLabelText('Condition'), { target: { value: '   ' } })
+    const button = screen.getByRole('button', { name: 'Keep both' }) as HTMLButtonElement
+    fireEvent.change(screen.getByLabelText('Both are true when…'), { target: { value: '   ' } })
     expect(button.disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText('Condition'), { target: { value: 'for the EU launch' } })
+    fireEvent.change(screen.getByLabelText('Both are true when…'), { target: { value: 'for the EU launch' } })
     expect(button.disabled).toBe(false)
     fireEvent.click(button)
     expect(onConfirm).toHaveBeenCalledWith('for the EU launch')
@@ -267,6 +334,14 @@ describe('RecheckRenderer', () => {
     await waitFor(() => expect((screen.getByText('Dismiss') as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByText('Dismiss'))
     expect(setReviewEntryState).toHaveBeenCalledWith({ id: 'r1' }, 'dismissed')
+  })
+
+  it('a failed Open toasts that it could not open', async () => {
+    vi.mocked(openReviewEntry).mockRejectedValueOnce(new Error('gone'))
+    render(<RecheckRenderer entry={entry({ kind: 're-check', ref: { type: 'draft', id: 'd1' } })} focused={false} />)
+    fireEvent.click(screen.getByText('Open'))
+    await waitFor(() => expect(toastActions.add).toHaveBeenCalledWith("Couldn't open that. Try again."))
+    expect(toastActions.add).not.toHaveBeenCalledWith("Couldn't save that. Try again.")
   })
 
   it('a knowledge ref offers Approve again', () => {

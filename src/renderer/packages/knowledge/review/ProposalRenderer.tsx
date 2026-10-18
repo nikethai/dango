@@ -21,7 +21,7 @@ export function ProposalRenderer({ entry, focused }: ReviewRendererProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(entry.text)
   const field = useRef<HTMLTextAreaElement>(null)
-  const root = useRef<HTMLDivElement>(null)
+  const editButton = useRef<HTMLButtonElement>(null)
   const returnFocus = useRef(false)
   const { busy, run } = useGuarded(handleConflict)
 
@@ -29,7 +29,7 @@ export function ProposalRenderer({ entry, focused }: ReviewRendererProps) {
     if (editing) field.current?.focus()
     else if (returnFocus.current) {
       returnFocus.current = false
-      root.current?.querySelector<HTMLButtonElement>('.dg-item__actions button:nth-child(2)')?.focus()
+      editButton.current?.focus()
     }
   }, [editing])
 
@@ -55,7 +55,7 @@ export function ProposalRenderer({ entry, focused }: ReviewRendererProps) {
   }
 
   return (
-    <div ref={root}>
+    <div>
       {editing ? (
         <ReviewItem
           {...base}
@@ -72,13 +72,16 @@ export function ProposalRenderer({ entry, focused }: ReviewRendererProps) {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
+              // An IME composing text (Safari reports keyCode 229) owns Enter and Esc.
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault()
-                approveEdit()
+                if (!busy) approveEdit()
               } else if (e.key === 'Escape') {
                 e.preventDefault()
                 e.stopPropagation()
-                cancelEdit()
+                // While the approve runs, Esc does not leave editing.
+                if (!busy) cancelEdit()
               }
             }}
           />
@@ -93,7 +96,7 @@ export function ProposalRenderer({ entry, focused }: ReviewRendererProps) {
               disabled: busy,
               onClick: () => void run(() => approveProposal(entry.ref.id)),
             },
-            { label: t('Edit'), disabled: busy, onClick: startEdit },
+            { label: t('Edit'), disabled: busy, onClick: startEdit, ref: editButton },
             {
               label: t('Dismiss'),
               variant: 'ghost',
