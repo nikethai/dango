@@ -140,6 +140,16 @@ export function ReviewFeed({ scopeId, caughtUp }: ReviewFeedProps) {
     else emptyRef.current?.focus()
   }, [ids])
 
+  // A row that changes in place (Approve from its Edit field, an undo) can take the focused control with it, which
+  // drops DOM focus to the body while the feed still shows the ring. Put focus back on the row so the keys keep working.
+  // Clicking away clears `focusedId` first, so this never pulls focus back from outside. It runs after every render because the loss has no event of its own.
+  useLayoutEffect(() => {
+    const id = focusedRef.current
+    const row = id ? rowsRef.current.get(id) : undefined
+    const active = document.activeElement
+    if (row && (!active || active === document.body)) row.focus()
+  })
+
   // On focus change here; rows and controls added later are caught by the observer below.
   useLayoutEffect(() => {
     syncTabStops(rowsRef.current, focusedId)

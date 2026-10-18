@@ -312,4 +312,17 @@ describe('ReviewFeed', () => {
     expect(rowEl('b')).toBeNull()
     expect(document.activeElement).toBe(input)
   })
+
+  it('a row that resolves in place keeps focus when its focused control goes with it (walk: ⌘↵ in Edit)', async () => {
+    const now = Date.now()
+    await mountFeed([row('a', { createdAt: now }), row('b', { createdAt: now - 1000 })])
+    await act(() => within(rowEl('a')).getByLabelText('Note a').focus())
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Note a')
+    // The row stays (now Done, rendered by the default renderer), but the field that held focus is gone.
+    await act(async () => {
+      await setReviewEntryState({ id: 'a' }, 'done')
+    })
+    expect(rowEl('a')).not.toBeNull()
+    expect(document.activeElement).toBe(rowEl('a'))
+  })
 })
