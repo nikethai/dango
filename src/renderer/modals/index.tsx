@@ -12,6 +12,7 @@ import JsonViewer from './JsonViewer'
 import MessageEdit from './MessageEdit'
 import ModelEdit from './ModelEdit'
 import ReportContent from './ReportContent'
+import RewriteSheet from './RewriteSheet'
 import SessionSettings from './SessionSettings'
 import ThreadNameEdit from './ThreadNameEdit'
 import ToolApproval from './ToolApproval'
@@ -20,10 +21,9 @@ import VideoPlayer from './VideoPlayer'
 import ImportChatGptArchive from './ImportChatGptArchive'
 import ImportedConversationView from './ImportedConversationView'
 import Welcome from './Welcome'
-import WritingAssistant from './WritingAssistant'
 
 NiceModal.register('welcome', Welcome)
-NiceModal.register('writing-assistant', WritingAssistant)
+NiceModal.register('rewrite', RewriteSheet)
 NiceModal.register('import-chatgpt-archive', ImportChatGptArchive)
 NiceModal.register('imported-conversation', ImportedConversationView)
 NiceModal.register('file-parse-error', FileParseError)

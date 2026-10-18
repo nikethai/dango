@@ -1,10 +1,9 @@
 /**
  * Floating quick chat — content-first compact composer with the shared thread and input box.
  */
-import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Flex, Kbd, Text } from '@mantine/core'
 import type { Message, ModelProvider } from '@shared/types'
-import { IconMenu2, IconPencil } from '@tabler/icons-react'
+import { IconMenu2 } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useAtom } from 'jotai'
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -300,17 +299,6 @@ function QuickChatPage() {
             {t('Quick Chat')}
           </Text>
         </Flex>
-        <ActionIcon
-          variant="subtle"
-          size={40}
-          color="chatbox-tertiary"
-          style={{ WebkitAppRegion: 'no-drag' } as CSSProperties}
-          aria-label={t('Improve writing')}
-          title={t('Improve writing')}
-          onClick={() => void NiceModal.show('writing-assistant', { initialModel: model })}
-        >
-          <IconPencil size={20} />
-        </ActionIcon>
       </Flex>
 
       {/* Always mount MessageList so empty state + turns render (never a blank spacer). */}

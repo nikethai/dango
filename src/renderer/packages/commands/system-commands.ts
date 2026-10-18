@@ -3,7 +3,9 @@
  * Example: /compact → summarize conversation context.
  */
 
-export type SystemCommandId = 'compact'
+import type { WritingStyle } from '@shared/types/writing'
+
+export type SystemCommandId = 'compact' | 'rewrite'
 
 export type SystemCommand = {
   id: SystemCommandId
@@ -19,6 +21,11 @@ export const SYSTEM_COMMANDS: readonly SystemCommand[] = [
     name: 'compact',
     aliases: ['compress', 'summarize'],
     description: 'Summarize older messages to free context space',
+  },
+  {
+    id: 'rewrite',
+    name: 'rewrite',
+    description: 'Rewrite text: clearer, friendlier, shorter, formal or translated',
   },
 ] as const
 
@@ -41,4 +48,16 @@ export function filterSystemCommands(query: string): SystemCommand[] {
     if (cmd.name.startsWith(q) || cmd.name.includes(q)) return true
     return cmd.aliases?.some((a) => a.startsWith(q) || a.includes(q)) ?? false
   })
+}
+
+const REWRITE_OPTION_RE = /^(clearer|friendlier|shorter|formal|translate)(?=\s|$)\s*/i
+
+/** `/rewrite [option] text…` → the style (if named) and the text; null when the message is not a /rewrite command. */
+export function parseRewriteCommand(text: string): { option: WritingStyle | null; text: string } | null {
+  const match = text.trimStart().match(/^\/rewrite(?=\s|$)\s*([\s\S]*)$/i)
+  if (!match) return null
+  const rest = match[1]
+  const optionMatch = rest.match(REWRITE_OPTION_RE)
+  if (!optionMatch) return { option: null, text: rest.trimEnd() }
+  return { option: optionMatch[1].toLowerCase() as WritingStyle, text: rest.slice(optionMatch[0].length).trimEnd() }
 }

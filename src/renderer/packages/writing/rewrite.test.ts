@@ -9,7 +9,6 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import { buildWritingMessages } from './prompt'
 import { rewriteDraft } from './rewrite'
-import { writingResultToSession } from './save'
 
 const request: WritingRequest = {
   draft: 'I checked yesterday but still cannot found the root cause.',
@@ -214,14 +213,5 @@ describe('isolated writing request', () => {
       'AbortError'
     )
     expect(onText).not.toHaveBeenCalled()
-  })
-
-  it('builds an explicit saved review without unrelated defaults or automatic memory saving', () => {
-    const saved = writingResultToSession({ request, text: 'Revised draft' }, 'Writing review')
-    expect(saved.settings).toEqual({ ...request.model, memoryAutoSave: false })
-    expect(saved.messages.map((message) => message.role)).toEqual(['user', 'assistant'])
-    expect(saved.messages[0].contentParts).toEqual([{ type: 'text', text: request.draft }])
-    expect(saved).not.toHaveProperty('agentMode')
-    expect(saved).not.toHaveProperty('projectId')
   })
 })

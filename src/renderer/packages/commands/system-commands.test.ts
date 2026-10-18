@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterSystemCommands, matchSystemSlashCommand } from './system-commands'
+import { filterSystemCommands, matchSystemSlashCommand, parseRewriteCommand } from './system-commands'
 
 describe('system-commands', () => {
   it('matches /compact and aliases as whole-message commands', () => {
@@ -20,5 +20,21 @@ describe('system-commands', () => {
     expect(filterSystemCommands('').map((c) => c.name)).toContain('compact')
     expect(filterSystemCommands('comp').map((c) => c.name)).toEqual(['compact'])
     expect(filterSystemCommands('zzz')).toEqual([])
+  })
+
+  it('parses /rewrite with an optional style and the text', () => {
+    expect(parseRewriteCommand('/rewrite shorter Hey team, so sorry')).toEqual({
+      option: 'shorter',
+      text: 'Hey team, so sorry',
+    })
+    expect(parseRewriteCommand('/Rewrite  hello\nworld')).toEqual({ option: null, text: 'hello\nworld' })
+    expect(parseRewriteCommand('/rewrite')).toEqual({ option: null, text: '' })
+    expect(parseRewriteCommand('/rewriter x')).toBe(null)
+    expect(parseRewriteCommand('say /rewrite')).toBe(null)
+  })
+
+  it('lists rewrite in the picker and keeps /compact', () => {
+    expect(filterSystemCommands('rew').map((c) => c.id)).toEqual(['rewrite'])
+    expect(matchSystemSlashCommand('/compact')?.id).toBe('compact')
   })
 })

@@ -29,6 +29,7 @@ export {
 export {
   filterSystemCommands,
   matchSystemSlashCommand,
+  parseRewriteCommand,
   SYSTEM_COMMANDS,
   type SystemCommand,
   type SystemCommandId,
