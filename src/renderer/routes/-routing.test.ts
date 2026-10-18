@@ -46,6 +46,6 @@ describe('/new wiring', () => {
     }
   })
   it('copilots navigates to /new', () => {
-    expect(src('routes/copilots.tsx')).toContain("to: '/new'")
+    expect(src('components/settings/agents/AgentsSettings.tsx')).toContain("to: '/new'")
   })
 })
