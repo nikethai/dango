@@ -73,3 +73,24 @@
   justify-content: center;
   gap: var(--dango-space-2);
 }
+
+/* Phone width: the row's actions drop under its text instead of squeezing it into a narrow column. */
+@media (max-width: 640px) {
+  .dango-review-feed {
+    padding: 0 var(--dango-space-4);
+  }
+
+  .dango-review-toolbar {
+    flex-wrap: wrap;
+    padding: var(--dango-space-3) var(--dango-space-4);
+  }
+
+  .dango-review-feed__row .dg-item {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .dango-review-feed__row .dg-item__actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}
