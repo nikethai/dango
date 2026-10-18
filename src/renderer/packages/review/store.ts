@@ -70,7 +70,7 @@ export function loadReviewEntries(): Promise<void> {
   })
 }
 
-const NEVER_AUTO_REFS: readonly ReviewRef['type'][] = ['proposal', 'conflict', 'knowledge']
+export const NEVER_AUTO_REFS: readonly ReviewRef['type'][] = ['proposal', 'conflict', 'knowledge']
 
 /** Cheap, dependency-free check for whether a new row could arrive done; applier and Trust are checked later. */
 export function isArrivalCandidate(e: Pick<ReviewEntry, 'kind' | 'risk' | 'ref'>): boolean {
@@ -108,7 +108,8 @@ export async function addReviewEntry(input: ReviewEntryInput): Promise<ReviewEnt
   if (!trust.getReviewApplier(entry.ref.type)) return entry
   try {
     return await trust.arrive(entry, await trust.getTrustLevel(), Date.now())
-  } catch {
+  } catch (error) {
+    console.warn('[review] Trust arrival failed; the row stays open', error)
     return entry
   }
 }
@@ -123,6 +124,21 @@ export function updateReviewEntry(
     const next: ReviewEntry = { ...found, ...patch, id }
     doc.entries = doc.entries.map((e) => (e === found ? next : e))
     return next
+  })
+}
+
+/** Patches the row inside the store lock only when `predicate` holds for its stored state. Internal to Trust. */
+export function updateReviewEntryIf(
+  id: string,
+  predicate: (e: ReviewEntry) => boolean,
+  patch: Partial<Omit<ReviewEntry, 'id'>>
+): Promise<boolean> {
+  return mutate((doc) => {
+    const found = doc.entries.find((e) => e.id === id)
+    if (!found || !predicate(found)) return false
+    const next: ReviewEntry = { ...found, ...patch, id }
+    doc.entries = doc.entries.map((e) => (e === found ? next : e))
+    return true
   })
 }
 

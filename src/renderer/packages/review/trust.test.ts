@@ -13,14 +13,16 @@ vi.mock('@/packages/undo', () => undoMock)
 const settings = vi.hoisted(() => ({ trustLevel: undefined as unknown }))
 vi.mock('@/stores/settingsStore', () => ({ settingsStore: { getState: () => ({ trustLevel: settings.trustLevel }) } }))
 
-import { addReviewEntry, setReviewStorageForTests } from './store'
+import { addReviewEntry, setReviewEntryState, setReviewStorageForTests } from './store'
 import {
+  applyReviewEntry,
   arrive,
   canUndoArrival,
   getReviewApplier,
   getTrustLevel,
   type ReviewApplier,
   registerReviewApplier,
+  setReviewApplierForTests,
   undoArrival,
 } from './trust'
 
@@ -72,9 +74,9 @@ describe('Trust arrival', () => {
     const row = stored()[0]
     expect(row.id).toBe(arg.id)
     expect(row).toMatchObject({ kind: 'done', state: 'done', undoUntil: 105_000 })
-    expect(out).toMatchObject({ id: arg.id, kind: 'done', undoUntil: 105_000 })
+    expect(out).toEqual(row)
     expect(undoMock.pushUndo).toHaveBeenCalledTimes(1)
-    expect(undoMock.pushUndo.mock.calls[0][0].silent).toBe(true)
+    expect(undoMock.pushUndo.mock.calls[0][0]).toMatchObject({ silent: true, group: 'other', message: '' })
   })
 
   it('ask stays an open proposal', async () => {
@@ -93,8 +95,10 @@ describe('Trust arrival', () => {
 
   it('arrive refuses proposal, conflict and knowledge refs', async () => {
     for (const t of ['proposal', 'conflict', 'knowledge'] as const) {
+      setReviewApplierForTests(t, applier)
       const e: ReviewEntry = { ...draft(), id: 'x', state: 'open', createdAt: 1, ref: { type: t, id: 'a' } }
       expect(await arrive(e, 'auto', 5)).toBe(e)
+      setReviewApplierForTests(t, undefined)
     }
     expect(applier.apply).not.toHaveBeenCalled()
   })
@@ -153,6 +157,51 @@ describe('Trust arrival', () => {
     expect(applier.undo).toHaveBeenCalledTimes(1)
     expect(stored()[0]).toMatchObject({ kind: 'proposal', state: 'open' })
     expect(stored()[0].undoUntil).toBeUndefined()
+  })
+
+  it('a row dismissed during apply stays dismissed, is undone, and gets no undo record', async () => {
+    let release: () => void = () => {}
+    applier.apply = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          release = r
+        })
+    )
+    const pending = addReviewEntry(draft())
+    await vi.waitFor(() => expect(applier.apply).toHaveBeenCalled())
+    await setReviewEntryState({ id: stored()[0].id }, 'dismissed')
+    release()
+    const out = await pending
+    expect(stored()[0]).toMatchObject({ state: 'dismissed', kind: 'proposal' })
+    expect(out.state).toBe('open')
+    expect(applier.undo).toHaveBeenCalledTimes(1)
+    expect(undoMock.pushUndo).not.toHaveBeenCalled()
+  })
+
+  it('a concurrent second apply for the same row does not call apply twice', async () => {
+    let release: () => void = () => {}
+    applier.apply = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          release = r
+        })
+    )
+    const e: ReviewEntry = { ...draft(), id: 'same', state: 'open', createdAt: 1 }
+    settings.trustLevel = 'ask'
+    await addReviewEntry({ ...e })
+    const first = applyReviewEntry(e, { silent: true })
+    await vi.waitFor(() => expect(applier.apply).toHaveBeenCalled())
+    expect(await applyReviewEntry(e, { silent: false })).toBe(false)
+    release()
+    expect(await first).toBe(true)
+    expect(applier.apply).toHaveBeenCalledTimes(1)
+  })
+
+  it('canUndoArrival forgets the record once it can no longer be undone', async () => {
+    const out = await addReviewEntry(draft())
+    undoMock.canUndo.mockReturnValueOnce(false)
+    expect(canUndoArrival(out.id)).toBe(false)
+    expect(await undoArrival(out.id)).toBe(false)
   })
 
   it('getTrustLevel is auto with the setting absent', async () => {
