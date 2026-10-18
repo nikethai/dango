@@ -3,6 +3,7 @@
 Newest first. Add a line when you create, accept, supersede or move a decision, spec or research note.
 
 ## 2026-10-18
+* **Proposal**: [knowledge search tool](specs/2026-10-18-knowledge-search-tool.md) (draft plan) — answers carry a small always-on core of approved knowledge (built-in, preferences, scope items, 1,000 tokens) and the model calls `search_knowledge` for the rest, replacing slice 4's single 1,500-token cap; models without tools keep slice 4's behaviour.
 * **Implementation**: [slice 05 review home](specs/2026-10-17-slice-05-review-home.md) built on `feat/redesign-05-review-home` — Review is home at /, the feed with keys, default renderer, Trust arrival for safe non-knowledge actions, empty states, sidebar badge.
 * **Implementation**: [slice 02 settings](specs/2026-10-17-slice-02-settings.md) built on `feat/redesign-02-settings` — five sections plus Advanced, Sources and Memory and privacy pages, Trust sheet, Agents replaces Copilots, Image studio moves to Advanced, cost and thinking controls.
 * **Implementation**: [slice 04 knowledge](specs/2026-10-17-slice-04-knowledge.md) built on `feat/redesign-04-knowledge` — approved knowledge per scope and Everywhere, proposals from chat with an inline card, approve/edit/remove/move with undo, conflicts (Keep this, Keep both), Review renderers, Knowledge tab, and the one-time move of old memory.
