@@ -24,6 +24,7 @@ import { cloneMessage, getMessageText, mergeMessages } from '@shared/utils/messa
 import type { ToolSet } from 'ai'
 import { getDefaultStore } from 'jotai'
 import { createModelDependencies } from '@/adapters'
+import { getLogger } from '@/lib/utils'
 import { getAgentDetailById } from '@/packages/agents'
 import * as appleAppStore from '@/packages/apple_app_store'
 import { buildCommandContextBlocks, resolveCommandActivations } from '@/packages/commands'
@@ -82,6 +83,7 @@ import { runCompactionWithUIState } from '@/packages/context-management'
 // tree-shaken from the Android bundle. CHATBOX_BUILD_PLATFORM === 'android'
 // gates ensure the dynamic imports never execute on mobile.
 const isAgentEnabled = CHATBOX_BUILD_PLATFORM !== 'android'
+const knowledgeLog = getLogger('knowledge')
 const planDecisionInFlight = new Set<string>()
 
 function getMessageFromSession(session: Session, messageId: string): Message | null {
@@ -1224,7 +1226,7 @@ export async function generate(
             .then(({ recordKnowledgeUse }) =>
               recordKnowledgeUse(knowledgeIds, { type: 'chat', id: session.id, label: session.name })
             )
-            .catch((error) => console.error('Failed to record knowledge use:', error))
+            .catch((error) => knowledgeLog.error('Failed to record knowledge use:', error))
         }
 
         // Knowledge proposals from this turn (non-blocking): they wait under the answer and in Review.
@@ -1239,7 +1241,7 @@ export async function generate(
               sessionSettings: effectiveSettings,
             })
           )
-          .catch((error) => console.error('Failed to propose knowledge from chat:', error))
+          .catch((error) => knowledgeLog.error('Failed to propose knowledge from chat:', error))
 
         if (firstHandoff && session.continuationLineage) {
           const consumed = markHandoffConsumed({ ...session.continuationLineage, pendingExcerpts: undefined })

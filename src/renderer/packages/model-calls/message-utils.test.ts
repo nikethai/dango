@@ -1,5 +1,5 @@
 import type { ModelDependencies } from '@shared/types/adapters'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/adapters', () => ({
   createModelDependencies: vi.fn(),
@@ -231,6 +231,12 @@ describe('injectModelSystemPrompt', () => {
   const systemText = (out: ReturnType<typeof injectModelSystemPrompt>) =>
     out[0].contentParts.map((p) => (p.type === 'text' ? p.text : '')).join('')
 
+  // Reset even when an assertion fails, so later tests start from memory off and no move.
+  afterEach(() => {
+    memorySettings.enabled = false
+    knowledgeStore.setState({ migration: 'unknown' })
+  })
+
   it('knowledge section is in the system prompt and memory section is not once migration is done', () => {
     memorySettings.enabled = true
     knowledgeStore.setState({ migration: 'unknown' })
@@ -244,8 +250,5 @@ describe('injectModelSystemPrompt', () => {
     expect(after).toContain('## Approved knowledge: Acme\n- Launch is 6 Nov')
     expect(after).not.toContain('Old bank note')
     expect(after).toContain('Be helpful.')
-
-    memorySettings.enabled = false
-    knowledgeStore.setState({ migration: 'unknown' })
   })
 })
