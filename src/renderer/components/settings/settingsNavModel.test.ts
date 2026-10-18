@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { buildSettingsNav, findSettingsEntry, type SettingsNavAvailability } from './settingsNav'
+import { buildSettingsNav, findSettingsEntry, type SettingsNavAvailability } from './settingsNavModel'
 
 const ALL: SettingsNavAvailability = { agents: true, mcp: true, knowledgeBase: true, hotkeys: true, devTools: true }
 const NONE: SettingsNavAvailability = {

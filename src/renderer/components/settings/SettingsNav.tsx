@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import clsx from 'clsx'
 import { ChevronRight } from 'lucide-react'
-import { useEffect, useId, useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Divider from '@/components/common/Divider'
 import {
@@ -9,7 +9,7 @@ import {
   findSettingsEntry,
   type SettingsNavEntry,
   type SettingsNav as SettingsNavModel,
-} from './settingsNav'
+} from './settingsNavModel'
 
 export interface SettingsNavProps {
   nav: SettingsNavModel
@@ -24,11 +24,12 @@ export function SettingsNav({ nav, pathname, compact }: SettingsNavProps) {
   const currentId = found?.entry.id ?? null
   const inAdvanced = !!found?.inAdvanced
   const [advancedOpen, setAdvancedOpen] = useState(inAdvanced)
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname re-opens Advanced when navigating within it
-  useEffect(() => {
+  const [wasInAdvanced, setWasInAdvanced] = useState(inAdvanced)
+  // Landing inside Advanced opens it; a manual collapse is kept until navigation next lands there.
+  if (inAdvanced !== wasInAdvanced) {
+    setWasInAdvanced(inAdvanced)
     if (inAdvanced) setAdvancedOpen(true)
-  }, [inAdvanced, pathname])
+  }
 
   const renderRow = (entry: SettingsNavEntry, index: number) => {
     const active = entry.id === currentId
@@ -68,7 +69,7 @@ export function SettingsNav({ nav, pathname, compact }: SettingsNavProps) {
   }
 
   return (
-    <>
+    <nav aria-label={t('Settings')} className="contents">
       {nav.sections.map((entry, i) => renderRow(entry, i))}
       {nav.advanced.length > 0 && (
         <>
@@ -87,6 +88,6 @@ export function SettingsNav({ nav, pathname, compact }: SettingsNavProps) {
           </div>
         </>
       )}
-    </>
+    </nav>
   )
 }

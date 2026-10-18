@@ -9,7 +9,7 @@ import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsNav } from './SettingsNav'
 import { SettingsTabs } from './SettingsTabs'
-import { buildSettingsNav, findSettingsEntry } from './settingsNav'
+import { buildSettingsNav, findSettingsEntry } from './settingsNavModel'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -50,6 +50,17 @@ describe('SettingsNav', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))
     expect(screen.getByRole('link', { name: 'Usage' })).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Image studio' }).getAttribute('href')).toBe('/image-creator')
+  })
+
+  it('points aria-controls at the Advanced list and keeps a manual collapse', () => {
+    render(<SettingsNav nav={nav} pathname="/settings/usage" compact={false} />)
+    const button = screen.getByRole('button', { name: 'Advanced' })
+    const id = button.getAttribute('aria-controls')
+    expect(id).toBeTruthy()
+    expect(document.getElementById(id as string)?.contains(screen.getByRole('link', { name: 'Usage' }))).toBe(true)
+    fireEvent.click(button)
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByRole('navigation', { name: 'Settings' })).toBeTruthy()
   })
 
   it('opens Advanced when navigation lands inside it', () => {

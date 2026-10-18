@@ -177,6 +177,11 @@ function stripTrailingSlash(pathname: string): string {
   return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
 }
 
+export function isActiveSettingsPath(pathname: string, to: string): boolean {
+  const path = stripTrailingSlash(pathname)
+  return path === to || path.startsWith(`${to}/`)
+}
+
 export function findSettingsEntry(
   nav: SettingsNav,
   pathname: string
@@ -189,7 +194,7 @@ export function findSettingsEntry(
   for (const [entries, inAdvanced] of groups) {
     for (const entry of entries) {
       for (const page of entry.pages) {
-        if (path === page.to || path.startsWith(`${page.to}/`)) {
+        if (isActiveSettingsPath(path, page.to)) {
           return { entry, page, inAdvanced }
         }
       }

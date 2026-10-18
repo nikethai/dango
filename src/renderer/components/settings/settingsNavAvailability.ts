@@ -2,7 +2,7 @@ import { FORCE_ENABLE_DEV_PAGES } from '@/dev/devToolsConfig'
 import platform, { platformCapabilities } from '@/platform'
 import { featureFlags } from '@/utils/feature-flags'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
-import type { SettingsNavAvailability } from './settingsNav'
+import type { SettingsNavAvailability } from './settingsNavModel'
 
 export function currentSettingsNavAvailability(): SettingsNavAvailability {
   return {
