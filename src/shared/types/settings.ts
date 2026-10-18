@@ -592,6 +592,15 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
   /** First-run toast for close-to-tray has been shown */
   trayIntroSeen: z.boolean().default(false).catch(false),
 
+  /** Trust: 'auto' lets Dango act on its own, 'ask' asks before it acts. */
+  trustLevel: z.enum(['auto', 'ask']).default('auto').catch('auto'),
+  /** Cost: warn before a run is expected to cost more than this many USD; 0 turns the warning off. */
+  costWarningUsd: z.number().min(0).default(0.5).catch(0.5),
+  /** Thinking: 'auto' lets Dango decide, 'open' always shows thinking, 'closed' keeps it collapsed. */
+  showThinking: z.enum(['auto', 'open', 'closed']).default('auto').catch('auto'),
+  /** Background: true pauses background work (suggestions, memory upkeep). */
+  backgroundPaused: z.boolean().default(false).catch(false),
+
   shortcuts: ShortcutSettingSchema,
 
   /**
@@ -672,6 +681,14 @@ export type ProviderInfo = (ProviderBaseInfo | CustomProviderBaseInfo) & Provide
 
 export type SessionSettings = z.infer<typeof SessionSettingsSchema>
 export type Settings = z.infer<typeof SettingsSchema>
+export type TrustLevel = Settings['trustLevel']
+export type ShowThinking = Settings['showThinking']
+
+/** Normalisers: coerce a raw stored value to a valid one (bad values fall back to the default). */
+export const readTrustLevel = (raw: unknown): TrustLevel => SettingsSchema.shape.trustLevel.parse(raw)
+export const readCostWarningUsd = (raw: unknown): number => SettingsSchema.shape.costWarningUsd.parse(raw)
+export const readShowThinking = (raw: unknown): ShowThinking => SettingsSchema.shape.showThinking.parse(raw)
+export const readBackgroundPaused = (raw: unknown): boolean => SettingsSchema.shape.backgroundPaused.parse(raw)
 export type ProviderModelInfo = z.infer<typeof ProviderModelInfoSchema>
 export type ProviderBaseInfo = z.infer<typeof ProviderBaseInfoSchema>
 export type ProviderSettings = z.infer<typeof ProviderSettingsSchema>
