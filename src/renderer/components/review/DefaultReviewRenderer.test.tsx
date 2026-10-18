@@ -32,7 +32,13 @@ const row = (over: Partial<ReviewEntry> = {}): ReviewEntry => ({
   ...over,
 })
 
-let data: Record<string, any>
+const click = (name: string) =>
+  act(async () => {
+    fireEvent.click(screen.getByRole('button', { name }))
+    await Promise.resolve()
+  })
+
+let data: Record<string, unknown>
 const seed = (e: ReviewEntry) => {
   data['review-entries'] = { entries: [e] }
   reviewStore.setState({ entries: [e], lastCheckedAt: undefined, loaded: true })
@@ -43,8 +49,9 @@ beforeEach(() => {
   data = {}
   setReviewStorageForTests({
     getItem: async <T,>(k: string, fb: T) => (k in data ? (JSON.parse(JSON.stringify(data[k])) as T) : fb),
-    setItemNow: vi.fn(async (k: string, v: unknown) => {
+    setItemNow: vi.fn((k: string, v: unknown) => {
       data[k] = JSON.parse(JSON.stringify(v))
+      return Promise.resolve()
     }),
   })
   resetUndoForTests()
@@ -65,15 +72,11 @@ describe('DefaultReviewRenderer', () => {
     const e = row({ kind: 'proposal', risk: 'risky', actionLabel: 'Apply', ref: { type: 'draft', id: 'd1' } })
     seed(e)
     render(<DefaultReviewRenderer entry={e} focused={false} />)
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
-    })
+    await click('Apply')
     expect(apply).toHaveBeenCalledTimes(1)
     expect(stored().state).toBe('done')
     expect(undoStore.getState().toast?.message).toBe(`Done: "${TEXT}"`)
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
-    })
+    await click('Undo')
     expect(undo).toHaveBeenCalledTimes(1)
     expect(stored()).toMatchObject({ kind: 'proposal', state: 'open' })
     expect(screen.getByRole('button', { name: 'Apply' })).toBeTruthy()
@@ -85,9 +88,7 @@ describe('DefaultReviewRenderer', () => {
     const e = row({ ref: { type: 'job', id: 'j1' }, actionLabel: 'Sign in again' })
     seed(e)
     render(<DefaultReviewRenderer entry={e} focused={false} />)
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Sign in again' }))
-    })
+    await click('Sign in again')
     expect(open).toHaveBeenCalledWith(e)
   })
 
@@ -97,9 +98,7 @@ describe('DefaultReviewRenderer', () => {
     const e = row()
     seed(e)
     render(<DefaultReviewRenderer entry={e} focused={false} />)
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Answer' }))
-    })
+    await click('Answer')
     expect(open).toHaveBeenCalledWith(e)
   })
 
@@ -107,9 +106,7 @@ describe('DefaultReviewRenderer', () => {
     const e = row()
     seed(e)
     render(<DefaultReviewRenderer entry={e} focused={false} />)
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
-    })
+    await click('Dismiss')
     expect(stored().state).toBe('dismissed')
     expect(undoStore.getState().toast?.message).toBe(`Dismissed "${TEXT}"`)
   })
@@ -132,12 +129,11 @@ describe('DefaultReviewRenderer', () => {
     const e = row({ kind: 'proposal', actionLabel: 'Apply', ref: { type: 'draft', id: 'd1' } })
     seed(e)
     render(<DefaultReviewRenderer entry={e} focused={false} />)
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
-    })
+    await click('Apply')
     expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy()
-    await act(async () => {
+    await act(() => {
       vi.advanceTimersByTime(5001)
+      return Promise.resolve()
     })
     expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
   })
@@ -146,13 +142,44 @@ describe('DefaultReviewRenderer', () => {
     const e = row()
     seed(e)
     render(<DefaultReviewRenderer entry={e} focused={false} />)
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
-    })
+    await click('Dismiss')
     const { undoLatest } = await import('@/packages/undo')
-    await act(async () => {
-      await undoLatest()
-    })
-    expect(stored().state).toBe('open')
+    await act(() => undoLatest())
+    expect(stored()).toMatchObject({ kind: 'needs-you', state: 'open' })
+  })
+
+  it('a needs-you row with an actionLabel opens even when a draft applier exists', async () => {
+    const apply = vi.fn(() => Promise.resolve())
+    const open = vi.fn()
+    setReviewApplierForTests('draft', { apply, undo: vi.fn(() => Promise.resolve()) })
+    registerReviewOpener('draft', open)
+    const e = row({ kind: 'needs-you', actionLabel: 'Fix it', ref: { type: 'draft', id: 'd1' } })
+    seed(e)
+    render(<DefaultReviewRenderer entry={e} focused={false} />)
+    await click('Fix it')
+    expect(open).toHaveBeenCalledWith(e)
+    expect(apply).not.toHaveBeenCalled()
+  })
+
+  it('a dismissed proposal has no applying primary', () => {
+    const apply = vi.fn(() => Promise.resolve())
+    setReviewApplierForTests('draft', { apply, undo: vi.fn(() => Promise.resolve()) })
+    const e = row({ kind: 'proposal', state: 'dismissed', actionLabel: 'Apply', ref: { type: 'draft', id: 'd1' } })
+    seed(e)
+    render(<DefaultReviewRenderer entry={e} focused={false} />)
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull()
+    expect(apply).not.toHaveBeenCalled()
+  })
+
+  it('a throwing applier leaves the row an open proposal and pushes no toast', async () => {
+    const apply = vi.fn(() => Promise.reject(new Error('boom')))
+    setReviewApplierForTests('draft', { apply, undo: vi.fn(() => Promise.resolve()) })
+    const e = row({ kind: 'proposal', actionLabel: 'Apply', ref: { type: 'draft', id: 'd1' } })
+    seed(e)
+    render(<DefaultReviewRenderer entry={e} focused={false} />)
+    await click('Apply')
+    expect(apply).toHaveBeenCalledTimes(1)
+    expect(stored()).toMatchObject({ kind: 'proposal', state: 'open' })
+    expect(undoStore.getState().toast).toBeUndefined()
   })
 })

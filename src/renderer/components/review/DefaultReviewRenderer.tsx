@@ -17,6 +17,8 @@ import { defaultActions } from './defaultActions'
 import { clip, displayKind } from './feedSelectors'
 import { ReviewItem } from './ReviewItem'
 
+const warn = (what: string) => (error: unknown) => console.warn(`[review] ${what} failed`, error)
+
 async function pushDismissUndo(message: string, reopen: () => Promise<unknown>) {
   const { pushUndo } = await import('@/packages/undo')
   pushUndo({ message, group: 'other', undo: async () => void (await reopen()) })
@@ -48,26 +50,32 @@ export function DefaultReviewRenderer({ entry: initial, focused }: ReviewRendere
       defaultActions(
         entry,
         {
-          open: () => void openReviewEntry(entry),
-          undo: () => void undoArrival(entry.id).finally(rerender),
+          open: () => void openReviewEntry(entry).catch(warn('open')),
+          undo: () => void undoArrival(entry.id).catch(warn('undo')).finally(rerender),
           approve: () =>
             void applyReviewEntry(entry, {
               silent: false,
               message: t('Done: "{{text}}"', { text: clip(entry.text) }),
-            }).finally(rerender),
+            })
+              .catch(warn('apply'))
+              .finally(rerender),
           dismiss: () =>
-            void setReviewEntryState({ id: entry.id }, 'dismissed').then(() =>
-              pushDismissUndo(t('Dismissed "{{text}}"', { text: clip(entry.text) }), () =>
-                setReviewEntryState({ id: entry.id }, 'open')
-              )
-            ),
+            void setReviewEntryState({ id: entry.id }, 'dismissed')
+              .then((next) => {
+                // No row written (it vanished or the write failed): nothing was dismissed, so no toast.
+                if (!next) return
+                return pushDismissUndo(t('Dismissed "{{text}}"', { text: clip(entry.text) }), () =>
+                  setReviewEntryState({ id: entry.id }, 'open')
+                )
+              })
+              .catch(warn('dismiss')),
         },
         { canOpen, canUndo, canApply }
       ).map((a) => ({ ...a, label: t(a.label) })),
     [entry, canOpen, canUndo, canApply, t]
   )
 
-  const scope = isEverywhere(entry.scopeId) ? t('Everywhere') : (getScope(entry.scopeId)?.name ?? '')
+  const scope = isEverywhere(entry.scopeId) ? t('Everywhere') : (getScope(entry.scopeId)?.name ?? t('Unknown scope'))
   return (
     <ReviewItem
       kind={displayKind(entry)}
