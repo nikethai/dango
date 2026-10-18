@@ -3,6 +3,7 @@ import { type FC, useEffect, useLayoutEffect, useMemo, useRef, useState } from '
 import { useTranslation } from 'react-i18next'
 import { ThinkingLine } from '@/components/chat/ThinkingLine'
 import { liveToolHint } from '@/packages/thinking/tool-summary'
+import { getLiveGenerationStartedAt } from '@/stores/session/session-live-generation'
 import { ToolBlock } from './ToolBlock'
 
 /** While generating, the line stays live until work has been inactive this long (narration between tool calls). */
@@ -65,11 +66,17 @@ export const ThinkingGroupUI: FC<ThinkingGroupUIProps> = ({
 
   const reasoningMs = reasoningParts.reduce((sum, p) => sum + (p.duration || 0), 0)
   const workStart = reasoningParts[reasoningParts.length - 1]?.startTime || message.timestamp
+  // The turn's start, stable across remounts and persisted writes; another window (no live mark) falls back.
+  const liveOrigin = (generating ? getLiveGenerationStartedAt(message.id) : undefined) ?? message.timestamp ?? workStart
 
   // Fallback duration when reasoning parts carry none: the work time measured when this mount saw it go live → done.
   // A turn loaded from history never saw that transition, so it gets no number rather than "now - timestamp".
   const sawLiveRef = useRef(live)
-  if (live) sawLiveRef.current = true
+  const originRef = useRef<number | undefined>(undefined)
+  if (live) {
+    sawLiveRef.current = true
+    originRef.current ??= liveOrigin
+  }
   const [settledMs, setSettledMs] = useState<number | undefined>(undefined)
   // Layout effect: the measured duration lands before paint, so the line never flashes a bare "Thought".
   useLayoutEffect(() => {
@@ -77,7 +84,8 @@ export const ThinkingGroupUI: FC<ThinkingGroupUIProps> = ({
       setSettledMs(undefined)
       return
     }
-    if (sawLiveRef.current && workStart) setSettledMs(Date.now() - workStart)
+    const origin = originRef.current ?? workStart
+    if (sawLiveRef.current && origin) setSettledMs(Date.now() - origin)
   }, [live, workStart])
 
   // One slot for the line in both states, so its open/closed choice carries from live to finished.
@@ -86,7 +94,7 @@ export const ThinkingGroupUI: FC<ThinkingGroupUIProps> = ({
       {live || text ? (
         <ThinkingLine
           live={live}
-          startedAt={message.timestamp ?? workStart}
+          startedAt={liveOrigin}
           durationMs={reasoningMs > 0 ? reasoningMs : settledMs}
           text={text}
           toolHint={live ? liveToolHint(toolParts, t) : undefined}

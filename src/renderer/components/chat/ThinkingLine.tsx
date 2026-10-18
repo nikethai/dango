@@ -1,5 +1,5 @@
 import { ChevronRight } from 'lucide-react'
-import { type JSX, type MouseEvent, type SyntheticEvent, useEffect, useRef, useState } from 'react'
+import { type JSX, type MouseEvent, type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Mascot } from '@/components/brand/Mascot'
 import Markdown from '@/components/Markdown'
@@ -55,13 +55,17 @@ export function ThinkingLine({
     if (!userToggledRef.current) setOpen(defaultOpen)
   }, [defaultOpen])
 
-  // The live origin is captured once: a persisted write can bump the message timestamp mid-wait.
+  // The live origin is captured once per live phase (a persisted write can bump a fallback timestamp mid-wait) and
+  // dropped when the line leaves live, so a later live phase takes its own origin.
   const originRef = useRef<number | undefined>(undefined)
-  if (live && originRef.current === undefined && startedAt) originRef.current = startedAt
+  if (!live) originRef.current = undefined
+  else if (originRef.current === undefined && startedAt) originRef.current = startedAt
   const elapsed = useThinkingTimer(originRef.current ?? startedAt, live)
-  const summary = rollingSummary(text) || (live ? (toolHint?.trim() ?? '') : '')
+  // Memoised: the timer re-renders the line about four times a second, and the scan walks the whole reasoning.
+  const thoughtSummary = useMemo(() => rollingSummary(text), [text])
+  const summary = thoughtSummary || (live ? (toolHint?.trim() ?? '') : '')
   const stage = live ? thinkingStage(elapsed) : null
-  const stageTitle = stage === 'thinking' ? t('Thinking') : t('Still thinking')
+  const stageTitle = stage === null ? '' : stage === 'thinking' ? t('Thinking') : t('Still thinking')
 
   // Screen readers hear the summary (or the stage on a plain wait), at most every 5 s.
   const announced = useThrottledValue(live ? summary || stageTitle : '', THINKING_ANNOUNCE_MS)

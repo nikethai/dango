@@ -76,6 +76,7 @@ import { countWord } from '@/packages/word-count'
 import platform from '@/platform'
 import { router } from '@/router'
 import storage from '@/storage'
+import { getLiveGenerationStartedAt } from '@/stores/session/session-live-generation'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import {
@@ -542,6 +543,8 @@ const _Message: FC<Props> = (props) => {
   }, [contentParts, partsRevision, msg.generating, msg.role, keepEmptyThinking])
 
   // While this message runs a plan, the plan card shows the mascot; the live line hides its own (one mascot on screen).
+  // Live timers count from the turn's start (stable across remounts); the timestamp moves on every persisted write.
+  const liveTimerOrigin = (msg.generating ? getLiveGenerationStartedAt(msg.id) : undefined) ?? msg.timestamp
   const planRunning = contentParts.some(
     (part) => part.type === 'plan' && planCardState(part, Boolean(msg.generating)) === 'running'
   )
@@ -739,7 +742,7 @@ const _Message: FC<Props> = (props) => {
                             group.workActive ? (
                               <ThinkingLine
                                 live
-                                startedAt={msg.timestamp}
+                                startedAt={liveTimerOrigin}
                                 text=""
                                 defaultOpen={thinkingDefaultOpen}
                                 showMascot={!planRunning}
@@ -941,7 +944,7 @@ const _Message: FC<Props> = (props) => {
             <div className="mt-0.5">
               <ThinkingLine
                 live
-                startedAt={msg.timestamp}
+                startedAt={liveTimerOrigin}
                 text=""
                 defaultOpen={thinkingDefaultOpen}
                 showMascot={!planRunning}

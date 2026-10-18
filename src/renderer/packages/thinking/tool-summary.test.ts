@@ -122,14 +122,17 @@ describe('toolRow', () => {
     )
   })
 
-  it('verbs use tool-context keys, not bare button labels', () => {
-    const verbs: string[] = []
+  it('verbs use their own tool keys, never a bare button label through a context fallback', () => {
+    // A context lookup falls back to the bare key in the current locale (de "Bearbeiten", a button label).
+    const calls: Array<{ key: string; context?: string }> = []
     const spy = ((key: string, opts?: { context?: string }) => {
-      if (opts?.context) verbs.push(`${key}_${opts.context}`)
+      calls.push({ key, context: opts?.context })
       return t(key, opts as never)
     }) as unknown as TFunction
     toolRow(call('edit_file'), spy)
-    expect(verbs).toEqual(['edit_tool'])
+    toolRow(call('read_file'), spy)
+    expect(calls.filter((c) => c.key.endsWith('_tool'))).toEqual([{ key: 'edit_tool' }, { key: 'read_tool' }])
+    expect(calls.some((c) => c.context)).toBe(false)
     expect((en as Record<string, string>).edit_tool).toBe('edit')
   })
 })

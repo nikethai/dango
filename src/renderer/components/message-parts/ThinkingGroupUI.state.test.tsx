@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
 import { initReactI18next } from 'react-i18next'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import en from '@/i18n/locales/en/translation.json'
+import { clearSessionGenerationLive, markSessionGenerationLive } from '@/stores/session/session-live-generation'
 import { LEAVE_LIVE_MS, ThinkingGroupUI } from './ThinkingGroupUI'
 
 // The real ThinkingLine: these tests are about its state surviving the live → finished change.
@@ -52,14 +53,26 @@ const tool = (id: string, state: MessageToolCallPart['state']): MessageToolCallP
   args: { query: 'dango' },
 })
 
-type Props = { parts: MessageContentParts; generating: boolean; workActive: boolean; defaultOpen?: boolean }
+type Props = {
+  parts: MessageContentParts
+  generating: boolean
+  workActive: boolean
+  defaultOpen?: boolean
+  timestamp?: number
+}
 
 function view(start: Props) {
   const el = (p: Props) => (
     <MantineProvider>
       <ThinkingGroupUI
         message={
-          { id: 'm1', role: 'assistant', contentParts: p.parts, generating: p.generating, timestamp: 1 } as Message
+          {
+            id: 'm1',
+            role: 'assistant',
+            contentParts: p.parts,
+            generating: p.generating,
+            timestamp: p.timestamp ?? 1,
+          } as Message
         }
         parts={p.parts}
         isLastGroup={p.workActive}
@@ -129,5 +142,34 @@ describe('ThinkingGroupUI keeps its state across the turn', () => {
     const { container, update } = view({ parts, generating: true, workActive: true })
     update({ parts, generating: false, workActive: false })
     expect(toolBlock(container)).not.toBeNull()
+  })
+})
+
+describe('ThinkingGroupUI debounce and timer origin', () => {
+  it('generation ending inside the leave-live window settles at once', () => {
+    const parts = [reasoning, tool('a', 'result')]
+    const { container, update } = view({ parts, generating: true, workActive: true })
+    update({ parts, generating: true, workActive: false })
+    act(() => vi.advanceTimersByTime(LEAVE_LIVE_MS / 3))
+    expect(toolBlock(container)).toBeNull()
+    update({ parts, generating: false, workActive: false })
+    expect(toolBlock(container)).not.toBeNull()
+    expect(container.querySelector('.dg-think__time')).toBeNull()
+  })
+
+  it('the live timer counts from the turn start, across remounts and persisted writes (M2)', () => {
+    vi.setSystemTime(new Date('2026-10-18T10:00:00Z'))
+    markSessionGenerationLive('s-timer', 'm1')
+    act(() => vi.advanceTimersByTime(10_000))
+    // Switching chats and back remounts the line; a persisted write has bumped the message timestamp to now.
+    const parts = [tool('a', 'call')]
+    const first = view({ parts, generating: true, workActive: true, timestamp: Date.now() })
+    expect(first.container.querySelector('.dg-think__time')?.textContent).toBe('10 s')
+    first.unmount()
+    act(() => vi.advanceTimersByTime(5_000))
+    const second = view({ parts, generating: true, workActive: true, timestamp: Date.now() })
+    expect(second.container.querySelector('.dg-think__time')?.textContent).toBe('15 s')
+    expect(second.container.querySelector('.dg-think__title')?.textContent).toContain('Still thinking')
+    clearSessionGenerationLive('s-timer', 'm1')
   })
 })

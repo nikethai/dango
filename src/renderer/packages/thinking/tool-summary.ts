@@ -71,19 +71,19 @@ function groupPhrase(group: ToolGroup, count: number, t: TFunction): string {
 function groupVerb(group: ToolGroup, t: TFunction): string {
   switch (group) {
     case 'read':
-      return t('read', { context: 'tool' })
+      return t('read_tool')
     case 'files':
     case 'web':
     case 'knowledge':
-      return t('search', { context: 'tool' })
+      return t('search_tool')
     case 'link':
-      return t('open', { context: 'tool' })
+      return t('open_tool')
     case 'edit':
-      return t('edit', { context: 'tool' })
+      return t('edit_tool')
     case 'terminal':
-      return t('run', { context: 'tool' })
+      return t('run_tool')
     default:
-      return t('use', { context: 'tool' })
+      return t('use_tool')
   }
 }
 

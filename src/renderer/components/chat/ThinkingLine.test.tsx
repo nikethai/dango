@@ -175,6 +175,19 @@ describe('ThinkingLine', () => {
     expect(container.querySelector('.dg-think__time')?.textContent).toBe('13 s')
   })
 
+  it('a line that leaves live and comes back takes the new origin (no stale origin kept)', () => {
+    const { container, rerenderLine } = line({ startedAt: Date.now() })
+    act(() => {
+      vi.advanceTimersByTime(20_000)
+    })
+    rerenderLine({ live: false, text: 'done thinking' })
+    rerenderLine({ live: true, startedAt: Date.now() - 2_000 })
+    act(() => {
+      vi.advanceTimersByTime(250)
+    })
+    expect(container.querySelector('.dg-think__time')?.textContent).toBe('2 s')
+  })
+
   it('hides the reduced-motion mascot word inside the thinking line', () => {
     const css = postcss.parse(readFileSync(resolve(process.cwd(), 'src/renderer/static/dango-chat.css'), 'utf8'))
     let hidden = false
