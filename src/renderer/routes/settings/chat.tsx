@@ -13,6 +13,7 @@ import {
 } from '@mantine/core'
 import { chatSessionSettings, getDefaultPrompt } from '@shared/defaults'
 import type { PromptPreset } from '@shared/types'
+import { readShowThinking } from '@shared/types/settings'
 import { applyOpenAIReasoningEffort, getReasoningDropdownValue } from '@shared/utils'
 import { IconEdit, IconInfoCircle, IconPlus, IconTrash } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
@@ -33,6 +34,7 @@ import { SettingsPage } from '@/components/settings/SettingsPage'
 import { SettingsPageHeader } from '@/components/settings/SettingsPageHeader'
 import { SettingsPrefRow } from '@/components/settings/SettingsPrefRow'
 import { SettingsSection } from '@/components/settings/SettingsSection'
+import { ShowThinkingRow } from '@/components/settings/ShowThinkingRow'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { usePromptPresets } from '@/stores/promptPresetsStore'
 import { useSettingsStore } from '@/stores/settingsStore'
@@ -248,6 +250,15 @@ export function RouteComponent() {
               }
             />
           </div>
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection title={t('Thinking')}>
+        <SettingsCard>
+          <ShowThinkingRow
+            value={readShowThinking(settings.showThinking)}
+            onChange={(showThinking) => setSettings({ showThinking })}
+          />
         </SettingsCard>
       </SettingsSection>
 

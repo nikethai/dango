@@ -1,12 +1,14 @@
 /** biome-ignore-all lint/style/noNonNullAssertion: <todo> */
 import { Flex, Text } from '@mantine/core'
 import { SystemProviders } from '@shared/defaults'
+import { readCostWarningUsd } from '@shared/types/settings'
 import { IconSelector } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import { forwardRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import ModelSelector from '@/components/ModelSelector'
+import { CostWarningRow } from '@/components/settings/CostWarningRow'
 import { SettingsCard } from '@/components/settings/SettingsCard'
 import { SettingsPage } from '@/components/settings/SettingsPage'
 import { SettingsPageHeader } from '@/components/settings/SettingsPageHeader'
@@ -171,6 +173,15 @@ export function RouteComponent() {
                 />
               </ModelSelector>
             }
+          />
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection title={t('Cost')}>
+        <SettingsCard>
+          <CostWarningRow
+            value={readCostWarningUsd(settings.costWarningUsd)}
+            onChange={(costWarningUsd) => setSettings({ costWarningUsd })}
           />
         </SettingsCard>
       </SettingsSection>

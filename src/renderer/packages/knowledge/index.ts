@@ -3,6 +3,7 @@ export { resolveConflict } from './conflicts'
 export { type ContradictionChecker, checkAgainstLayers, selectCandidates } from './contradictions'
 export { formatKnowledgeSection, isLegacyMemoryActive, knowledgeForTurn } from './for-turn'
 export {
+  useDontSuggestList,
   useKnowledgeItem,
   useKnowledgeList,
   useKnowledgeUses,
@@ -31,7 +32,7 @@ export {
   moveProposalsForSession,
   proposeKnowledge,
 } from './proposals'
-export { scopeName } from './scopes'
+export { refreshScopes, scopeName } from './scopes'
 export { ensureKnowledgeLoaded, type KnowledgeMigrationState } from './store'
 export { contentHash, knowledgeTextKey, parseStaleAfter, quote } from './text'
 export { pushKnowledgeUndo } from './undo'

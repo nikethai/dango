@@ -27,7 +27,9 @@ import { Route as SettingsVideoUrlImport } from './routes/settings/video-url'
 import { Route as SettingsUserPersonalInfoImport } from './routes/settings/user-personal-info'
 import { Route as SettingsUsageImport } from './routes/settings/usage'
 import { Route as SettingsSyncImport } from './routes/settings/sync'
+import { Route as SettingsSourcesImport } from './routes/settings/sources'
 import { Route as SettingsSkillsImport } from './routes/settings/skills'
+import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
 import { Route as SettingsMemoryImport } from './routes/settings/memory'
 import { Route as SettingsMcpImport } from './routes/settings/mcp'
 import { Route as SettingsKnowledgeBaseImport } from './routes/settings/knowledge-base'
@@ -152,9 +154,21 @@ const SettingsSyncRoute = SettingsSyncImport.update({
   getParentRoute: () => SettingsRouteRoute,
 } as any)
 
+const SettingsSourcesRoute = SettingsSourcesImport.update({
+  id: '/sources',
+  path: '/sources',
+  getParentRoute: () => SettingsRouteRoute,
+} as any)
+
 const SettingsSkillsRoute = SettingsSkillsImport.update({
   id: '/skills',
   path: '/skills',
+  getParentRoute: () => SettingsRouteRoute,
+} as any)
+
+const SettingsPrivacyRoute = SettingsPrivacyImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => SettingsRouteRoute,
 } as any)
 
@@ -524,11 +538,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsMemoryImport
       parentRoute: typeof SettingsRouteImport
     }
+    '/settings/privacy': {
+      id: '/settings/privacy'
+      path: '/privacy'
+      fullPath: '/settings/privacy'
+      preLoaderRoute: typeof SettingsPrivacyImport
+      parentRoute: typeof SettingsRouteImport
+    }
     '/settings/skills': {
       id: '/settings/skills'
       path: '/skills'
       fullPath: '/settings/skills'
       preLoaderRoute: typeof SettingsSkillsImport
+      parentRoute: typeof SettingsRouteImport
+    }
+    '/settings/sources': {
+      id: '/settings/sources'
+      path: '/sources'
+      fullPath: '/settings/sources'
+      preLoaderRoute: typeof SettingsSourcesImport
       parentRoute: typeof SettingsRouteImport
     }
     '/settings/sync': {
@@ -667,7 +695,9 @@ interface SettingsRouteRouteChildren {
   SettingsKnowledgeBaseRoute: typeof SettingsKnowledgeBaseRoute
   SettingsMcpRoute: typeof SettingsMcpRoute
   SettingsMemoryRoute: typeof SettingsMemoryRoute
+  SettingsPrivacyRoute: typeof SettingsPrivacyRoute
   SettingsSkillsRoute: typeof SettingsSkillsRoute
+  SettingsSourcesRoute: typeof SettingsSourcesRoute
   SettingsSyncRoute: typeof SettingsSyncRoute
   SettingsUsageRoute: typeof SettingsUsageRoute
   SettingsUserPersonalInfoRoute: typeof SettingsUserPersonalInfoRoute
@@ -694,7 +724,9 @@ const SettingsRouteRouteChildren: SettingsRouteRouteChildren = {
   SettingsKnowledgeBaseRoute: SettingsKnowledgeBaseRoute,
   SettingsMcpRoute: SettingsMcpRoute,
   SettingsMemoryRoute: SettingsMemoryRoute,
+  SettingsPrivacyRoute: SettingsPrivacyRoute,
   SettingsSkillsRoute: SettingsSkillsRoute,
+  SettingsSourcesRoute: SettingsSourcesRoute,
   SettingsSyncRoute: SettingsSyncRoute,
   SettingsUsageRoute: SettingsUsageRoute,
   SettingsUserPersonalInfoRoute: SettingsUserPersonalInfoRoute,
@@ -739,7 +771,9 @@ export interface FileRoutesByFullPath {
   '/settings/knowledge-base': typeof SettingsKnowledgeBaseRoute
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
+  '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/skills': typeof SettingsSkillsRoute
+  '/settings/sources': typeof SettingsSourcesRoute
   '/settings/sync': typeof SettingsSyncRoute
   '/settings/usage': typeof SettingsUsageRoute
   '/settings/user-personal-info': typeof SettingsUserPersonalInfoRoute
@@ -781,7 +815,9 @@ export interface FileRoutesByTo {
   '/settings/knowledge-base': typeof SettingsKnowledgeBaseRoute
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
+  '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/skills': typeof SettingsSkillsRoute
+  '/settings/sources': typeof SettingsSourcesRoute
   '/settings/sync': typeof SettingsSyncRoute
   '/settings/usage': typeof SettingsUsageRoute
   '/settings/user-personal-info': typeof SettingsUserPersonalInfoRoute
@@ -827,7 +863,9 @@ export interface FileRoutesById {
   '/settings/knowledge-base': typeof SettingsKnowledgeBaseRoute
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/memory': typeof SettingsMemoryRoute
+  '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/skills': typeof SettingsSkillsRoute
+  '/settings/sources': typeof SettingsSourcesRoute
   '/settings/sync': typeof SettingsSyncRoute
   '/settings/usage': typeof SettingsUsageRoute
   '/settings/user-personal-info': typeof SettingsUserPersonalInfoRoute
@@ -874,7 +912,9 @@ export interface FileRouteTypes {
     | '/settings/knowledge-base'
     | '/settings/mcp'
     | '/settings/memory'
+    | '/settings/privacy'
     | '/settings/skills'
+    | '/settings/sources'
     | '/settings/sync'
     | '/settings/usage'
     | '/settings/user-personal-info'
@@ -915,7 +955,9 @@ export interface FileRouteTypes {
     | '/settings/knowledge-base'
     | '/settings/mcp'
     | '/settings/memory'
+    | '/settings/privacy'
     | '/settings/skills'
+    | '/settings/sources'
     | '/settings/sync'
     | '/settings/usage'
     | '/settings/user-personal-info'
@@ -959,7 +1001,9 @@ export interface FileRouteTypes {
     | '/settings/knowledge-base'
     | '/settings/mcp'
     | '/settings/memory'
+    | '/settings/privacy'
     | '/settings/skills'
+    | '/settings/sources'
     | '/settings/sync'
     | '/settings/usage'
     | '/settings/user-personal-info'
@@ -1055,7 +1099,9 @@ export const routeTree = rootRoute
         "/settings/knowledge-base",
         "/settings/mcp",
         "/settings/memory",
+        "/settings/privacy",
         "/settings/skills",
+        "/settings/sources",
         "/settings/sync",
         "/settings/usage",
         "/settings/user-personal-info",
@@ -1171,8 +1217,16 @@ export const routeTree = rootRoute
       "filePath": "settings/memory.tsx",
       "parent": "/settings"
     },
+    "/settings/privacy": {
+      "filePath": "settings/privacy.tsx",
+      "parent": "/settings"
+    },
     "/settings/skills": {
       "filePath": "settings/skills.tsx",
+      "parent": "/settings"
+    },
+    "/settings/sources": {
+      "filePath": "settings/sources.tsx",
       "parent": "/settings"
     },
     "/settings/sync": {

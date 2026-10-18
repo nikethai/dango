@@ -7,7 +7,6 @@ import {
   IconInfoCircle,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
-  IconPhotoPlus,
   IconSearch,
   IconSettings,
   IconX,
@@ -98,14 +97,6 @@ export default function Sidebar() {
     }
     trackingEvent('create_new_conversation', { event_category: 'user' })
   }, [setShowSidebar, isSmallScreen])
-
-  const handleCreateNewPictureSession = useCallback(() => {
-    navigate({ to: '/image-creator' })
-    if (isSmallScreen) {
-      setShowSidebar(false)
-    }
-    trackingEvent('open_image_creator', { event_category: 'user' })
-  }, [isSmallScreen, setShowSidebar, navigate])
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
@@ -292,16 +283,6 @@ export default function Sidebar() {
                     <IconEdit size={18} stroke={1.5} aria-hidden />
                   </button>
                 </Tooltip>
-                <Tooltip label={t('Imagine')} position="right" withArrow openDelay={300}>
-                  <button
-                    type="button"
-                    className="rail-icon-btn active:scale-[0.96]"
-                    onClick={handleCreateNewPictureSession}
-                    aria-label={t('Imagine')}
-                  >
-                    <IconPhotoPlus size={18} stroke={1.5} aria-hidden />
-                  </button>
-                </Tooltip>
               </>
             ) : (
               <>
@@ -321,10 +302,6 @@ export default function Sidebar() {
                   <IconEdit size={18} stroke={1.5} aria-hidden />
                   <span>{t('New Chat')}</span>
                   {!isSmallScreen && <kbd className="rail-nav-kbd">⌘N</kbd>}
-                </button>
-                <button type="button" className="rail-nav-item" onClick={handleCreateNewPictureSession}>
-                  <IconPhotoPlus size={18} stroke={1.5} aria-hidden />
-                  <span>{t('Imagine')}</span>
                 </button>
               </>
             )}
@@ -426,16 +403,6 @@ export default function Sidebar() {
 
                 <Menu.Divider />
 
-                <Menu.Item
-                  leftSection={<IconPhotoPlus size={15} stroke={1.5} />}
-                  rightSection={<em className="user-menu-badge">{t('Beta')}</em>}
-                  onClick={() => {
-                    handleCreateNewPictureSession()
-                    closeSidebarIfMobile()
-                  }}
-                >
-                  {t('Image studio')}
-                </Menu.Item>
                 <Menu.Item
                   leftSection={<IconSettings size={15} stroke={1.5} />}
                   rightSection={<em className="user-menu-kbd">⌘,</em>}
