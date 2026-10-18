@@ -25,7 +25,7 @@ vi.mock('@/components/scope/ScopeFilesTab', () => ({
 }))
 vi.mock('@/components/scope/ScopeSettingsTab', () => ({ NO_AGENT_VALUE: '', ScopeSettingsTab: () => null }))
 vi.mock('@/components/scope/useScopeKnowledgeCount', () => ({ useScopeKnowledgeCount: () => 0 }))
-vi.mock('@/components/session/session-list-helpers', () => ({ groupSessionsByScope: () => ({ groups: [] }) }))
+vi.mock('@/components/session/session-list-helpers', () => ({ chatsInScope: () => [] }))
 vi.mock('@/hooks/useCopilots', () => ({
   useMyCopilots: () => ({ copilots: [] }),
   useRemoteCopilots: () => ({ copilots: [] }),

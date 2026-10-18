@@ -135,3 +135,9 @@ export function groupSessionsByScope(
   }
   return { groups, unscoped }
 }
+
+/** A scope's chats for its page (Recent chats, Chats tab, empty state). Archived chats are left out, as in the sidebar. */
+export function chatsInScope(scopes: Scope[], sessions: SessionMeta[], scopeId: string): SessionMeta[] {
+  const live = sessions.filter((session) => !session.archived)
+  return groupSessionsByScope(scopes, live).groups.find((group) => group.scope.id === scopeId)?.sessions ?? []
+}

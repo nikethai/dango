@@ -9,7 +9,7 @@ import { ScopeFilesTab, shouldShowFilesTab } from '@/components/scope/ScopeFiles
 import { ScopePageView } from '@/components/scope/ScopePage'
 import { NO_AGENT_VALUE, ScopeSettingsTab } from '@/components/scope/ScopeSettingsTab'
 import { useScopeKnowledgeCount } from '@/components/scope/useScopeKnowledgeCount'
-import { groupSessionsByScope } from '@/components/session/session-list-helpers'
+import { chatsInScope } from '@/components/session/session-list-helpers'
 import { useMyCopilots, useRemoteCopilots } from '@/hooks/useCopilots'
 import { useProjectWorkspace } from '@/hooks/useProjectWorkspace'
 import { useScopes } from '@/hooks/useScopes'
@@ -44,10 +44,7 @@ function ScopeContent({ scopeId }: { scopeId: string }) {
   const knowledgeCount = useScopeKnowledgeCount(scopeId)
   const { descriptor, setDescriptor } = useProjectWorkspace({ projectId: scopeId })
   const filesVisible = shouldShowFilesTab(descriptor, platformCapabilities.supportsProjectWorkspace)
-  const chats = useMemo(() => {
-    const { groups } = groupSessionsByScope(scopes, sessionMetaList ?? [])
-    return groups.find((group) => group.scope.id === scopeId)?.sessions ?? []
-  }, [scopes, sessionMetaList, scopeId])
+  const chats = useMemo(() => chatsInScope(scopes, sessionMetaList ?? [], scopeId), [scopes, sessionMetaList, scopeId])
 
   const agentOptions = useMemo(() => {
     const seen = new Set<string>()

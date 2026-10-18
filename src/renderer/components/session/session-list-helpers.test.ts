@@ -1,6 +1,7 @@
 import type { SessionMeta } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import {
+  chatsInScope,
   folderDropId,
   formatRailRelativeTime,
   getDayBucket,
@@ -98,5 +99,21 @@ describe('groupSessionsByScope', () => {
       ['b', ['2']],
     ])
     expect(unscoped.map((x) => x.id)).toEqual(['3', '4', '5'])
+  })
+})
+
+describe('chatsInScope', () => {
+  const scopes = [{ id: 'a', name: 'A', kind: 'project' }] as Parameters<typeof chatsInScope>[0]
+  it("lists the scope's chats and leaves archived chats out, as the sidebar does", () => {
+    const sessions = [
+      { id: 'live', name: 'live', projectId: 'a' },
+      { id: 'old', name: 'old', projectId: 'a', archived: true },
+      { id: 'elsewhere', name: 'elsewhere', projectId: 'b' },
+    ] as SessionMeta[]
+    expect(chatsInScope(scopes, sessions, 'a').map((s) => s.id)).toEqual(['live'])
+  })
+
+  it('is empty for an unknown scope', () => {
+    expect(chatsInScope(scopes, [{ id: 'x', name: 'x', projectId: 'a' }] as SessionMeta[], 'gone')).toEqual([])
   })
 })
