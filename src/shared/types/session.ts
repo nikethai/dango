@@ -230,7 +230,11 @@ export const MessageToolCallPartSchema = z.object({
 export const MessagePlanPartSchema = z.object({
   type: z.literal('plan'),
   planText: z.string(),
-  status: z.enum(['pending', 'approved', 'rejected']).default('pending'),
+  // 'revised' = superseded by a newer version after Request changes (older payloads only hold the first three).
+  status: z.enum(['pending', 'approved', 'rejected', 'revised']).default('pending'),
+  version: z.number().int().positive().optional(), // absent = 1
+  startedAt: z.number().optional(), // set when the plan is approved and starts running
+  finishedAt: z.number().optional(), // set when the run ends on its own; a stopped run has none
 })
 
 // Plan phase for 2-phase agent execution

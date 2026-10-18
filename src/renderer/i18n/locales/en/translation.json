@@ -1559,5 +1559,7 @@
   "failed": "failed",
   "{{size}}k": "{{size}}k",
   "{{count}} hits_one": "{{count}} hit",
-  "{{count}} hits_other": "{{count}} hits"
+  "{{count}} hits_other": "{{count}} hits",
+  "Plan finished: {{title}}": "Plan finished: {{title}}",
+  "From the chat \"{{name}}\"": "From the chat \"{{name}}\""
 }

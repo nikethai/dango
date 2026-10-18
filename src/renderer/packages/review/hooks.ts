@@ -2,7 +2,7 @@ import type { ReviewEntry, ReviewRefType } from '@shared/types/review'
 import type { ComponentType } from 'react'
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { useStore } from 'zustand'
-import { lookupReviewRenderer, type ReviewRendererProps, reviewRegistryStore } from './registry'
+import { lookupReviewRenderer, openerFor, type ReviewRendererProps, reviewRegistryStore } from './registry'
 import { loadReviewEntries, reviewStore, waitingCount } from './store'
 import { getReviewApplier, type ReviewApplier, subscribeReviewAppliers } from './trust'
 
@@ -47,6 +47,11 @@ export function useReviewRenderer(
 /** Whether an opener is registered for `refType`; re-renders when one registers later (the default 'question' opener, slice 10). */
 export function useHasReviewOpener(refType: ReviewRefType): boolean {
   return useStore(reviewRegistryStore, (s) => Boolean(s.openers[refType]))
+}
+
+/** Whether `entry` can be opened: an opener for its ref type that accepts it (`canOpen`). Re-renders on registration. */
+export function useCanOpenReviewEntry(entry: ReviewEntry): boolean {
+  return useStore(reviewRegistryStore, (s) => Boolean(openerFor(s.openers, entry)))
 }
 
 /** The applier registered for `refType`, re-rendering when slice 10 registers or removes one. */

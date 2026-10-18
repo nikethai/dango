@@ -8,7 +8,7 @@ import {
   openReviewEntry,
   type ReviewRendererProps,
   undoArrival,
-  useHasReviewOpener,
+  useCanOpenReviewEntry,
   useReviewApplier,
 } from '@/packages/review'
 import { defaultActions } from './defaultActions'
@@ -37,7 +37,7 @@ export function DefaultReviewRenderer({ entry, focused }: ReviewRendererProps) {
     return () => clearTimeout(timer)
   }, [undoUntil])
 
-  const canOpen = useHasReviewOpener(entry.ref.type)
+  const canOpen = useCanOpenReviewEntry(entry)
   const canApply = !!useReviewApplier(entry.ref.type) && displayKind(entry) === 'proposal' && entry.state === 'open'
   const canUndo = canUndoArrival(entry.id) && entry.undoUntil !== undefined && entry.undoUntil > Date.now()
 

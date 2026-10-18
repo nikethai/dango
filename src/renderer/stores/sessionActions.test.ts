@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Message, Session, SessionThread } from '../../shared/types'
+import { MessagePlanPartSchema } from '../../shared/types/session'
 
 import * as sessionActions from './sessionActions'
 
@@ -14,10 +15,11 @@ const { uuidQueue, uuidv4Mock } = vi.hoisted(() => {
   return { uuidQueue: queue, uuidv4Mock: mock }
 })
 
-const { updateSessionWithMessages, useSessionMock, getSessionMock } = vi.hoisted(() => ({
+const { updateSessionWithMessages, useSessionMock, getSessionMock, updateMessageMock } = vi.hoisted(() => ({
   updateSessionWithMessages: vi.fn(),
   useSessionMock: vi.fn(),
   getSessionMock: vi.fn(),
+  updateMessageMock: vi.fn(),
 }))
 
 vi.hoisted(() => {
@@ -56,6 +58,7 @@ vi.mock('uuid', () => ({
 vi.mock('./chatStore', () => ({
   updateSessionWithMessages,
   updateSession: vi.fn(),
+  updateMessage: updateMessageMock,
   getSession: getSessionMock,
   useSession: useSessionMock,
 }))
@@ -155,6 +158,7 @@ beforeEach(() => {
   updateSessionWithMessages.mockReset()
   useSessionMock.mockReset()
   getSessionMock.mockReset()
+  updateMessageMock.mockReset()
 })
 
 describe('fork actions', () => {
@@ -451,5 +455,54 @@ describe('fork actions', () => {
     expect(fork!.lists).toHaveLength(2)
     expect(fork!.lists[0].messages).toEqual([target])
     expect(runGenerateMore).toHaveBeenCalledWith(session.id, pivot.id)
+  })
+})
+
+describe('plan lifecycle actions', () => {
+  const pendingPlanSession = (): Session => ({
+    id: 'plan-session',
+    name: 'Plan',
+    messages: [
+      makeMessage('u1', 'user'),
+      { ...makeMessage('a1', 'assistant'), contentParts: [{ type: 'plan', planText: '1. Do it', status: 'pending' }] },
+    ],
+  })
+  const writtenPlan = () => {
+    const written = updateMessageMock.mock.calls[0]?.[2] as Message | undefined
+    return written?.contentParts.find((p) => p.type === 'plan')
+  }
+
+  test('requestPlanChanges marks the old plan revised, not rejected', async () => {
+    getSessionMock.mockResolvedValue(pendingPlanSession())
+    await sessionActions.requestPlanChanges('plan-session', 'a1', 'Shorter please').catch(() => {})
+    expect(writtenPlan()).toMatchObject({ type: 'plan', status: 'revised' })
+  })
+
+  test('approveAndExecutePlan stamps startedAt with the approval', async () => {
+    getSessionMock.mockResolvedValue(pendingPlanSession())
+    const before = Date.now()
+    await sessionActions.approveAndExecutePlan('plan-session', 'a1').catch(() => {})
+    const plan = writtenPlan()
+    expect(plan).toMatchObject({ type: 'plan', status: 'approved' })
+    expect((plan as { startedAt?: number }).startedAt).toBeGreaterThanOrEqual(before)
+  })
+
+  test('old plan payloads still parse', () => {
+    expect(MessagePlanPartSchema.parse({ type: 'plan', planText: 'x', status: 'rejected' })).toEqual({
+      type: 'plan',
+      planText: 'x',
+      status: 'rejected',
+    })
+    expect(MessagePlanPartSchema.parse({ type: 'plan', planText: 'x' }).status).toBe('pending')
+    expect(
+      MessagePlanPartSchema.parse({
+        type: 'plan',
+        planText: 'x',
+        status: 'revised',
+        version: 2,
+        startedAt: 1,
+        finishedAt: 2,
+      })
+    ).toMatchObject({ status: 'revised', version: 2, startedAt: 1, finishedAt: 2 })
   })
 })

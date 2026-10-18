@@ -37,6 +37,18 @@ describe('review openers', () => {
     expect(await openReviewEntry(e)).toBe(false)
   })
 
+  it('an opener with canOpen opens only the entries it accepts', async () => {
+    const open = vi.fn()
+    const off = registerReviewOpener('job', open, { canOpen: (x) => x.text === 'yes' })
+    expect(hasReviewOpener(entry({ text: 'yes' }))).toBe(true)
+    expect(hasReviewOpener(entry({ text: 'no' }))).toBe(false)
+    expect(await openReviewEntry(entry({ text: 'no' }))).toBe(false)
+    expect(open).not.toHaveBeenCalled()
+    expect(await openReviewEntry(entry({ text: 'yes' }))).toBe(true)
+    expect(open).toHaveBeenCalledTimes(1)
+    off()
+  })
+
   it('an older unregister does not remove a replacement', async () => {
     const a = vi.fn()
     const b = vi.fn()

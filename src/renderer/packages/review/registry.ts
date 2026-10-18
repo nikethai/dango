@@ -3,6 +3,10 @@ import type { ComponentType } from 'react'
 import { createStore } from 'zustand/vanilla'
 
 export type ReviewOpener = (entry: ReviewEntry) => void | Promise<void>
+export type ReviewOpenerOptions = {
+  /** Which entries of this ref type the opener can open; absent = all. Entries it refuses get no Open action. */
+  canOpen?: (entry: ReviewEntry) => boolean
+}
 export type ReviewRendererProps = { entry: ReviewEntry; focused: boolean }
 type RendererComponent = ComponentType<ReviewRendererProps>
 
@@ -28,16 +32,34 @@ function register<K extends 'openers' | 'renderers'>(
   }
 }
 
-export function registerReviewOpener(refType: ReviewRefType, open: ReviewOpener): () => void {
-  return register('openers', refType, open)
+// Keyed by the registered function, so the predicate leaves with its opener.
+const openerCanOpen = new WeakMap<ReviewOpener, (entry: ReviewEntry) => boolean>()
+
+export function registerReviewOpener(
+  refType: ReviewRefType,
+  open: ReviewOpener,
+  opts?: ReviewOpenerOptions
+): () => void {
+  // Wrap so one function registered twice with different predicates keeps each predicate.
+  const registered: ReviewOpener = opts?.canOpen ? (entry) => open(entry) : open
+  if (opts?.canOpen) openerCanOpen.set(registered, opts.canOpen)
+  return register('openers', refType, registered)
+}
+
+/** The opener for `entry`, if one is registered for its ref type and accepts this entry. */
+export function openerFor(openers: Record<string, ReviewOpener>, entry: ReviewEntry): ReviewOpener | undefined {
+  const open = openers[entry.ref.type]
+  if (!open) return undefined
+  const canOpen = openerCanOpen.get(open)
+  return !canOpen || canOpen(entry) ? open : undefined
 }
 
 export function hasReviewOpener(entry: ReviewEntry): boolean {
-  return Boolean(reviewRegistryStore.getState().openers[entry.ref.type])
+  return Boolean(openerFor(reviewRegistryStore.getState().openers, entry))
 }
 
 export async function openReviewEntry(entry: ReviewEntry): Promise<boolean> {
-  const open = reviewRegistryStore.getState().openers[entry.ref.type]
+  const open = openerFor(reviewRegistryStore.getState().openers, entry)
   if (!open) return false
   await open(entry)
   return true

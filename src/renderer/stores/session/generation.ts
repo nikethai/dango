@@ -61,9 +61,10 @@ import * as chatStore from '../chatStore'
 import { settingsStore } from '../settingsStore'
 import { uiStore } from '../uiStore'
 import { createNewFork, findMessageLocation } from './forks'
-import { clearGenerationCancel, registerGenerationCancel } from './generation-cancel'
+import { clearGenerationCancel, registerGenerationCancel, wasGenerationCancelled } from './generation-cancel'
 import { messageQueueStore } from './messageQueue'
 import { insertMessageAfter, modifyMessage, submitNewUserMessage } from './messages'
+import { finishExecutedPlan, nextPlanVersion, recordFinishedPlan } from './plan-lifecycle'
 import { clearSessionGenerationLive, markSessionGenerationLive } from './session-live-generation'
 import { getSessionWebBrowsing } from './session-web-browsing'
 import { buildVisibleAnswerContinuePrompt, mergeContinuedContentParts } from './tool-only-continue'
@@ -104,12 +105,16 @@ function withPlanPart(
   return [...withoutPlan, planPart]
 }
 
-function withPlanStatus(message: Message, status: MessagePlanPart['status']): Message {
+function withPlanStatus(
+  message: Message,
+  status: MessagePlanPart['status'],
+  extra?: Pick<MessagePlanPart, 'startedAt'>
+): Message {
   let found = false
   const contentParts = message.contentParts.map((part) => {
     if (part.type !== 'plan') return part
     found = true
-    return { ...part, status }
+    return { ...part, ...extra, status }
   })
   if (!found) {
     throw new Error('The proposed plan is no longer available.')
@@ -120,7 +125,8 @@ function withPlanStatus(message: Message, status: MessagePlanPart['status']): Me
 async function updatePendingPlanStatus(
   sessionId: string,
   messageId: string,
-  status: Extract<MessagePlanPart['status'], 'approved' | 'rejected'>
+  status: Extract<MessagePlanPart['status'], 'approved' | 'rejected' | 'revised'>,
+  extra?: Pick<MessagePlanPart, 'startedAt'>
 ): Promise<{ message: Message; plan: MessagePlanPart }> {
   const session = await chatStore.getSession(sessionId)
   if (!session) {
@@ -134,7 +140,7 @@ async function updatePendingPlanStatus(
   if (!plan || plan.status !== 'pending') {
     throw new Error('This plan has already been decided.')
   }
-  const updatedMessage = withPlanStatus(message, status)
+  const updatedMessage = withPlanStatus(message, status, extra)
   await modifyMessage(sessionId, updatedMessage, true)
   return { message: updatedMessage, plan }
 }
@@ -144,7 +150,7 @@ export async function approveAndExecutePlan(sessionId: string, messageId: string
   if (planDecisionInFlight.has(key)) return
   planDecisionInFlight.add(key)
   try {
-    await updatePendingPlanStatus(sessionId, messageId, 'approved')
+    await updatePendingPlanStatus(sessionId, messageId, 'approved', { startedAt: Date.now() })
     await chatStore.updateSession(sessionId, { planPhase: 'executing' })
 
     const session = await chatStore.getSession(sessionId)
@@ -180,7 +186,8 @@ export async function requestPlanChanges(sessionId: string, messageId: string, f
   if (planDecisionInFlight.has(key)) return
   planDecisionInFlight.add(key)
   try {
-    const { plan } = await updatePendingPlanStatus(sessionId, messageId, 'rejected')
+    // Superseded by the next version, not rejected: the card folds it as "Plan v{{version}}".
+    const { plan } = await updatePendingPlanStatus(sessionId, messageId, 'revised')
     await chatStore.updateSession(sessionId, { planPhase: 'planning' })
     await submitNewUserMessage(sessionId, {
       newUserMsg: createMessage(
@@ -1218,6 +1225,8 @@ export async function generate(
               }
             : undefined,
         })
+        // Read now: a visible-answer continue below registers a new abort function, which clears the Stop mark.
+        const stoppedDuringStream = wasGenerationCancelled(sessionId, targetMsg.id)
 
         // The approved knowledge this answer was given with: kept on the message and recorded as a use.
         targetMsg = { ...targetMsg, knowledgeIds }
@@ -1262,15 +1271,19 @@ export async function generate(
         // If we're in execution phase with no existing plan, no plan part needed
         let finalPlanPart: MessagePlanPart | undefined
         if (isPlanMode) {
-          if (isExecutionPhase) {
-            // Keep existing approved plan
-            finalPlanPart = existingPlanPart
+          if (isExecutionPhase && existingPlanPart) {
+            // Keep the approved plan; it is finished only when the run was not stopped.
+            finalPlanPart = finishExecutedPlan(existingPlanPart, {
+              stopped: stoppedDuringStream || wasGenerationCancelled(sessionId, targetMsg.id),
+              now: Date.now(),
+            })
           } else if (!isPendingPlan) {
             // New pending plan from this generation
             finalPlanPart = {
               type: 'plan',
               planText: planTextFromResult,
               status: 'pending',
+              version: nextPlanVersion(messages, targetMsg.id),
             }
           } else {
             // This shouldn't happen - pending plan should already exist
@@ -1437,6 +1450,15 @@ export async function generate(
 
         if (isExecutionPhase) {
           await chatStore.updateSession(sessionId, { planPhase: undefined })
+          // A finished plan with staged edits files one Change in Review (a stopped run has no finishedAt).
+          if (finalPlanPart?.finishedAt !== undefined) {
+            try {
+              const current = (await chatStore.getSession(sessionId)) ?? session
+              await recordFinishedPlan(current, targetMsg.id, finalPlanPart)
+            } catch (error) {
+              console.warn('[plan] Could not file the Change entry', error)
+            }
+          }
         }
 
         // Global PostTurn hooks, then agent/copilot post hooks
