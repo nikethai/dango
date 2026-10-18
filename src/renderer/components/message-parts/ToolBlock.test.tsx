@@ -11,7 +11,9 @@ import en from '@/i18n/locales/en/translation.json'
 import { ToolBlock } from './ToolBlock'
 
 vi.mock('./ToolCallPartUI', () => ({
-  ToolCallPartUI: ({ part }: { part: MessageToolCallPart }) => <div data-testid={`tool-ui-${part.toolCallId}`} />,
+  ToolCallPartUI: ({ part, defaultExpanded }: { part: MessageToolCallPart; defaultExpanded?: boolean }) => (
+    <div data-testid={`tool-ui-${part.toolCallId}`} data-expanded={String(defaultExpanded)} />
+  ),
 }))
 
 beforeAll(async () => {
@@ -65,6 +67,28 @@ describe('ToolBlock', () => {
     expect(screen.queryByTestId('tool-ui-a')).toBeNull()
     fireEvent.click(row)
     expect(screen.queryByTestId('tool-ui-b')).toBeNull()
+  })
+
+  it('a row names its detail region and shows the target as a title; the detail opens expanded', () => {
+    const { container } = render(<ToolBlock parts={parts} />)
+    fireEvent.click(container.querySelector('summary') as HTMLElement)
+    const row = container.querySelectorAll('button.dg-tool')[0] as HTMLButtonElement
+    expect(row.getAttribute('title')).toBe('docs/a.md')
+    const controls = row.getAttribute('aria-controls')
+    expect(controls).toBeTruthy()
+    fireEvent.click(row)
+    const region = document.getElementById(controls as string)
+    expect(region?.contains(screen.getByTestId('tool-ui-a'))).toBe(true)
+    expect(screen.getByTestId('tool-ui-a').dataset.expanded).toBe('true')
+    const ids = Array.from(container.querySelectorAll('button.dg-tool'), (r) => r.getAttribute('aria-controls'))
+    expect(new Set(ids).size).toBe(3)
+  })
+
+  it('marks a failed call on its row', () => {
+    const failed: MessageToolCallPart = { ...call('f', 'read_file', { path: 'b.md' }), state: 'error' }
+    const { container } = render(<ToolBlock parts={[failed]} />)
+    fireEvent.click(container.querySelector('summary') as HTMLElement)
+    expect(container.querySelector('.dg-tool .dg-tool__size')?.textContent).toBe('failed')
   })
 
   it('renders nothing when the summary is empty', () => {

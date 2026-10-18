@@ -271,9 +271,13 @@ function tFallbackHost(link: string): string {
   return link ? previewText(link, 40) : '—'
 }
 
-const WebSearchToolCallUI: FC<{ part: WebBrowsingToolCallPart; runCount?: number }> = ({ part, runCount }) => {
+const WebSearchToolCallUI: FC<{ part: WebBrowsingToolCallPart; runCount?: number; defaultExpanded?: boolean }> = ({
+  part,
+  runCount,
+  defaultExpanded = false,
+}) => {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const results = part.result?.searchResults ?? []
   const count = results.length
   const query = part.args?.query?.trim() || part.result?.query?.trim() || ''
@@ -372,9 +376,13 @@ const ParseLinkResultSchema = z.object({
   truncated: z.boolean().optional(),
 })
 
-const ParseLinkToolCallUI: FC<{ part: MessageToolCallPart; runCount?: number }> = ({ part, runCount }) => {
+const ParseLinkToolCallUI: FC<{ part: MessageToolCallPart; runCount?: number; defaultExpanded?: boolean }> = ({
+  part,
+  runCount,
+  defaultExpanded = false,
+}) => {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const args = (part.args ?? {}) as { url?: string }
   const url = typeof args.url === 'string' ? args.url : ''
   const parsed = useMemo(() => ParseLinkResultSchema.safeParse(part.result), [part.result])
@@ -535,9 +543,13 @@ function readVideoSummary(
   })
 }
 
-const ReadVideoToolCallUI: FC<{ part: ReadVideoToolCallPart; runCount?: number }> = ({ part, runCount }) => {
+const ReadVideoToolCallUI: FC<{ part: ReadVideoToolCallPart; runCount?: number; defaultExpanded?: boolean }> = ({
+  part,
+  runCount,
+  defaultExpanded = false,
+}) => {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const summary = useMemo(() => readVideoSummary(part, t), [part, t])
   const frames = part.result?.frames ?? []
   const remainingBudget = part.result?.remainingBudget
@@ -723,9 +735,13 @@ function readVideoUrlSummary(
   return previewText(line, 96)
 }
 
-const ReadVideoUrlToolCallUI: FC<{ part: ReadVideoUrlToolCallPart; runCount?: number }> = ({ part, runCount }) => {
+const ReadVideoUrlToolCallUI: FC<{ part: ReadVideoUrlToolCallPart; runCount?: number; defaultExpanded?: boolean }> = ({
+  part,
+  runCount,
+  defaultExpanded = false,
+}) => {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const [showFullTranscript, setShowFullTranscript] = useState(false)
   const summary = useMemo(() => readVideoUrlSummary(part, t), [part, t])
   const result = part.result
@@ -896,9 +912,13 @@ function memorySummary(part: MessageToolCallPart, t: (k: string, o?: Record<stri
   return n === 1 ? t('1 match') : t('{{count}} matches', { count: n })
 }
 
-const MemoryToolCallUI: FC<{ part: MessageToolCallPart; runCount?: number }> = ({ part, runCount }) => {
+const MemoryToolCallUI: FC<{ part: MessageToolCallPart; runCount?: number; defaultExpanded?: boolean }> = ({
+  part,
+  runCount,
+  defaultExpanded = false,
+}) => {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const summary = useMemo(() => memorySummary(part, t), [part, t])
   const { matchCount, matches, note } = useMemo(() => parseMemoryResult(part.result), [part.result])
   const shown = matches.slice(0, 8)
@@ -1029,9 +1049,13 @@ function humanResultLines(result: unknown): string[] {
   return lines
 }
 
-const GeneralToolCallUI: FC<{ part: MessageToolCallPart; runCount?: number }> = ({ part, runCount }) => {
+const GeneralToolCallUI: FC<{ part: MessageToolCallPart; runCount?: number; defaultExpanded?: boolean }> = ({
+  part,
+  runCount,
+  defaultExpanded = false,
+}) => {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded)
 
   const summary = useMemo(() => summarizeToolArgs(part, t), [part, t])
   const badge = useMemo(() => accountBadgeFromPart(part), [part])
@@ -1107,34 +1131,56 @@ const GeneralToolCallUI: FC<{ part: MessageToolCallPart; runCount?: number }> = 
 
 // ── Router ───────────────────────────────────────────────────────────────
 
-export const ToolCallPartUI: FC<{ part: MessageToolCallPart; runCount?: number }> = ({ part, runCount }) => {
+export const ToolCallPartUI: FC<{ part: MessageToolCallPart; runCount?: number; defaultExpanded?: boolean }> = ({
+  part,
+  runCount,
+  defaultExpanded = false,
+}) => {
   // Task tools render as TodoAppCard (coalesced) — hide raw steps to avoid noise.
   if (isTaskTrackingTool(part.toolName)) {
     return null
   }
   if (part.toolName.startsWith('memory_')) {
-    return <MemoryToolCallUI part={part} runCount={runCount} />
+    return <MemoryToolCallUI part={part} runCount={runCount} defaultExpanded={defaultExpanded} />
   }
   if (part.toolName === 'web_search') {
     const parsedPart = WebBrowsingToolCallPartSchema.safeParse(part)
     if (parsedPart.success) {
-      return <WebSearchToolCallUI part={parsedPart.data as WebBrowsingToolCallPart} runCount={runCount} />
+      return (
+        <WebSearchToolCallUI
+          part={parsedPart.data as WebBrowsingToolCallPart}
+          runCount={runCount}
+          defaultExpanded={defaultExpanded}
+        />
+      )
     }
   }
   if (part.toolName === 'parse_link') {
-    return <ParseLinkToolCallUI part={part} runCount={runCount} />
+    return <ParseLinkToolCallUI part={part} runCount={runCount} defaultExpanded={defaultExpanded} />
   }
   if (part.toolName === 'read_video') {
     const parsedPart = ReadVideoToolCallPartSchema.safeParse(part)
     if (parsedPart.success) {
-      return <ReadVideoToolCallUI part={parsedPart.data as ReadVideoToolCallPart} runCount={runCount} />
+      return (
+        <ReadVideoToolCallUI
+          part={parsedPart.data as ReadVideoToolCallPart}
+          runCount={runCount}
+          defaultExpanded={defaultExpanded}
+        />
+      )
     }
   }
   if (part.toolName === 'read_video_url') {
     const parsedPart = ReadVideoUrlToolCallPartSchema.safeParse(part)
     if (parsedPart.success) {
-      return <ReadVideoUrlToolCallUI part={parsedPart.data as ReadVideoUrlToolCallPart} runCount={runCount} />
+      return (
+        <ReadVideoUrlToolCallUI
+          part={parsedPart.data as ReadVideoUrlToolCallPart}
+          runCount={runCount}
+          defaultExpanded={defaultExpanded}
+        />
+      )
     }
   }
-  return <GeneralToolCallUI part={part} runCount={runCount} />
+  return <GeneralToolCallUI part={part} runCount={runCount} defaultExpanded={defaultExpanded} />
 }

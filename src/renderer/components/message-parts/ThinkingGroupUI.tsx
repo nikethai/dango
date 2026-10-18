@@ -1,9 +1,12 @@
 import type { Message, MessageContentParts, MessageReasoningPart, MessageToolCallPart } from '@shared/types'
-import { type FC, useEffect, useMemo, useRef, useState } from 'react'
+import { type FC, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ThinkingLine } from '@/components/chat/ThinkingLine'
 import { liveToolHint } from '@/packages/thinking/tool-summary'
 import { ToolBlock } from './ToolBlock'
+
+/** While generating, the line stays live until work has been inactive this long (narration between tool calls). */
+export const LEAVE_LIVE_MS = 1_500
 
 interface ThinkingGroupUIProps {
   message: Message
@@ -34,7 +37,24 @@ export const ThinkingGroupUI: FC<ThinkingGroupUIProps> = ({
   onStop,
 }) => {
   const { t } = useTranslation()
-  const live = isLastGroup
+
+  // Entering live is immediate; leaving it while generating waits LEAVE_LIVE_MS, so a short narration between two
+  // tool calls never flashes the finished line and tool block. Once generation ends, settle at once.
+  const [holdLive, setHoldLive] = useState(isLastGroup)
+  const generating = Boolean(message.generating)
+  useEffect(() => {
+    if (isLastGroup) {
+      setHoldLive(true)
+      return
+    }
+    if (!generating) {
+      setHoldLive(false)
+      return
+    }
+    const timer = setTimeout(() => setHoldLive(false), LEAVE_LIVE_MS)
+    return () => clearTimeout(timer)
+  }, [isLastGroup, generating])
+  const live = isLastGroup || (generating && holdLive)
 
   const reasoningParts = useMemo(() => parts.filter((p) => p.type === 'reasoning') as MessageReasoningPart[], [parts])
   const toolParts = useMemo(() => parts.filter((p) => p.type === 'tool-call') as MessageToolCallPart[], [parts])
@@ -51,7 +71,8 @@ export const ThinkingGroupUI: FC<ThinkingGroupUIProps> = ({
   const sawLiveRef = useRef(live)
   if (live) sawLiveRef.current = true
   const [settledMs, setSettledMs] = useState<number | undefined>(undefined)
-  useEffect(() => {
+  // Layout effect: the measured duration lands before paint, so the line never flashes a bare "Thought".
+  useLayoutEffect(() => {
     if (live) {
       setSettledMs(undefined)
       return
@@ -59,31 +80,22 @@ export const ThinkingGroupUI: FC<ThinkingGroupUIProps> = ({
     if (sawLiveRef.current && workStart) setSettledMs(Date.now() - workStart)
   }, [live, workStart])
 
-  if (live) {
-    return (
-      <ThinkingLine
-        live
-        startedAt={message.timestamp ?? workStart}
-        text={text}
-        toolHint={liveToolHint(toolParts, t)}
-        defaultOpen={defaultOpen}
-        showMascot={showMascot}
-        onStop={onStop}
-      />
-    )
-  }
-
+  // One slot for the line in both states, so its open/closed choice carries from live to finished.
   return (
     <>
-      {text ? (
+      {live || text ? (
         <ThinkingLine
-          live={false}
+          live={live}
+          startedAt={message.timestamp ?? workStart}
           durationMs={reasoningMs > 0 ? reasoningMs : settledMs}
           text={text}
+          toolHint={live ? liveToolHint(toolParts, t) : undefined}
           defaultOpen={defaultOpen}
+          showMascot={showMascot}
+          onStop={onStop}
         />
       ) : null}
-      <ToolBlock parts={toolParts} />
+      {live ? null : <ToolBlock parts={toolParts} />}
     </>
   )
 }

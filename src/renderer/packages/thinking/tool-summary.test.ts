@@ -97,7 +97,40 @@ describe('toolRow', () => {
     })
     expect(
       toolRow(call('parse_link', { args: { url: 'https://a.b' }, result: { content: 'y'.repeat(1000) } }), t)
-    ).toEqual({ verb: 'open', target: 'https://a.b', size: '1.0k' })
+    ).toEqual({ verb: 'open', target: 'https://a.b', size: '1k' })
+  })
+
+  it('drops a trailing .0 and the decimal at 10k and above', () => {
+    const sized = (n: number) => toolRow(call('read_file', { result: 'z'.repeat(n) }), t).size
+    expect(sized(4100)).toBe('4.1k')
+    expect(sized(2000)).toBe('2k')
+    expect(sized(12_345)).toBe('12k')
+  })
+
+  it("counts web_search's real searchResults shape", () => {
+    const result = { query: 'dango', searchResults: [{}, {}, {}], maxResults: 5 }
+    expect(toolRow(call('web_search', { args: { query: 'dango' }, result }), t)).toEqual({
+      verb: 'search',
+      target: 'dango',
+      size: '3 hits',
+    })
+  })
+
+  it('marks a failed call in the size slot', () => {
+    expect(toolRow(call('read_file', { state: 'error', args: { path: 'a.md' }, result: 'x'.repeat(5000) }), t)).toEqual(
+      { verb: 'read', target: 'a.md', size: 'failed' }
+    )
+  })
+
+  it('verbs use tool-context keys, not bare button labels', () => {
+    const verbs: string[] = []
+    const spy = ((key: string, opts?: { context?: string }) => {
+      if (opts?.context) verbs.push(`${key}_${opts.context}`)
+      return t(key, opts as never)
+    }) as unknown as TFunction
+    toolRow(call('edit_file'), spy)
+    expect(verbs).toEqual(['edit_tool'])
+    expect((en as Record<string, string>).edit_tool).toBe('edit')
   })
 })
 

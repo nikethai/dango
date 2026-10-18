@@ -1,6 +1,6 @@
 import type { MessageToolCallPart } from '@shared/types'
 import { ChevronRight } from 'lucide-react'
-import { type JSX, useState } from 'react'
+import { type JSX, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { summarizeToolCalls, toolRow, visibleToolCalls } from '@/packages/thinking/tool-summary'
 import { ToolCallPartUI } from './ToolCallPartUI'
@@ -14,6 +14,7 @@ export function ToolBlock({ parts }: { parts: MessageToolCallPart[] }): JSX.Elem
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const baseId = useId()
 
   const summary = summarizeToolCalls(parts, t)
   if (!summary) return null
@@ -34,22 +35,25 @@ export function ToolBlock({ parts }: { parts: MessageToolCallPart[] }): JSX.Elem
       </summary>
       {open ? (
         <div className="dg-think__body">
-          {calls.map((part) => {
+          {calls.map((part, index) => {
             const row = toolRow(part, t)
             const expanded = expandedId === part.toolCallId
+            const detailId = `${baseId}-detail-${index}`
             return (
               <div key={part.toolCallId} className="dg-tool-block__item">
                 <button
                   type="button"
                   className="dg-tool"
                   aria-expanded={expanded}
+                  aria-controls={detailId}
+                  title={row.target}
                   onClick={() => setExpandedId(expanded ? null : part.toolCallId)}
                 >
                   <span className="dg-tool__verb">{row.verb}</span>
                   <span className="dg-tool__target">{row.target}</span>
                   {row.size ? <span className="dg-tool__size">{row.size}</span> : null}
                 </button>
-                {expanded ? <ToolCallPartUI part={part} /> : null}
+                <div id={detailId}>{expanded ? <ToolCallPartUI part={part} defaultExpanded /> : null}</div>
               </div>
             )
           })}

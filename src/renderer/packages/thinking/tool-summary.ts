@@ -71,19 +71,19 @@ function groupPhrase(group: ToolGroup, count: number, t: TFunction): string {
 function groupVerb(group: ToolGroup, t: TFunction): string {
   switch (group) {
     case 'read':
-      return t('read')
+      return t('read', { context: 'tool' })
     case 'files':
     case 'web':
     case 'knowledge':
-      return t('search')
+      return t('search', { context: 'tool' })
     case 'link':
-      return t('open')
+      return t('open', { context: 'tool' })
     case 'edit':
-      return t('edit')
+      return t('edit', { context: 'tool' })
     case 'terminal':
-      return t('run')
+      return t('run', { context: 'tool' })
     default:
-      return t('use')
+      return t('use', { context: 'tool' })
   }
 }
 
@@ -136,19 +136,31 @@ function rowTarget(part: MessageToolCallPart): string {
   return part.toolName
 }
 
+function kiloChars(length: number): string {
+  const k = length / 1000
+  return k >= 10 ? String(Math.round(k)) : k.toFixed(1).replace(/\.0$/, '')
+}
+
 function rowSize(result: unknown, t: TFunction): string | undefined {
   const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : undefined
   const text = typeof result === 'string' ? result : typeof record?.content === 'string' ? record.content : undefined
   if (text !== undefined) {
-    return text.length >= 1000 ? t('{{size}}k', { size: (text.length / 1000).toFixed(1) }) : undefined
+    return text.length >= 1000 ? t('{{size}}k', { size: kiloChars(text.length) }) : undefined
   }
-  const hits = Array.isArray(result) ? result : Array.isArray(record?.results) ? record.results : undefined
+  // web_search returns { query, searchResults }; other search tools return an array or { results }.
+  const hits = Array.isArray(result)
+    ? result
+    : Array.isArray(record?.searchResults)
+      ? record.searchResults
+      : Array.isArray(record?.results)
+        ? record.results
+        : undefined
   return hits ? t('{{count}} hits', { count: hits.length }) : undefined
 }
 
 export function toolRow(part: MessageToolCallPart, t: TFunction): ToolRow {
   const row: ToolRow = { verb: groupVerb(toolGroup(part.toolName), t), target: rowTarget(part) }
-  const size = rowSize(part.result, t)
+  const size = part.state === 'error' ? t('failed') : rowSize(part.result, t)
   if (size) row.size = size
   return row
 }
