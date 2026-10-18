@@ -25,7 +25,12 @@ export type CommitResult = {
   /** Puts back this commit's pre-images onto a fresh read, as an ordinary commit. */
   revert: () => Promise<void>
 }
-export type KnowledgeCommitListener = (r: CommitResult, after: KnowledgeState) => void | Promise<void>
+/** `before` is the document the commit read, so a listener can see what a deleted record pointed at. */
+export type KnowledgeCommitListener = (
+  r: CommitResult,
+  after: KnowledgeState,
+  before: KnowledgeState
+) => void | Promise<void>
 
 type KnowledgeStorage = {
   getItem<T>(key: string, fallback: T): Promise<T>
@@ -159,7 +164,7 @@ export function commitKnowledge(mutate: (draft: KnowledgeState) => void): Promis
 }
 
 async function runCommit(mutate: (draft: KnowledgeState) => void, reverted: boolean): Promise<CommitResult> {
-  const { pre, after } = await enqueue(async () => {
+  const { pre, after, before } = await enqueue(async () => {
     const storage = await getStorage()
     const before = await readState(storage)
     // The recipe's return value never reaches immer: `(d) => d.items.push(x)` returns a number, and an
@@ -173,7 +178,7 @@ async function runCommit(mutate: (draft: KnowledgeState) => void, reverted: bool
     await storage.setItemNow(KEY, next)
     knowledgeStore.setState({ state: next })
     loaded = true
-    return { pre: changes, after: next }
+    return { pre: changes, after: next, before }
   })
 
   const result: CommitResult = {
@@ -192,7 +197,7 @@ async function runCommit(mutate: (draft: KnowledgeState) => void, reverted: bool
 
   for (const listener of [...listeners]) {
     try {
-      await listener(result, after)
+      await listener(result, after, before)
     } catch (error) {
       log.error('Knowledge commit listener failed:', error)
     }

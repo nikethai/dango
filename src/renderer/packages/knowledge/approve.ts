@@ -40,7 +40,7 @@ function conflictError(state: KnowledgeState, conflict: KnowledgeConflict): Know
   return new KnowledgeConflictError(conflict, old)
 }
 
-function originBy(origin: KnowledgeProposal['origin']): KnowledgeEvent['by'] {
+export function originBy(origin: KnowledgeProposal['origin']): KnowledgeEvent['by'] {
   return origin === 'background-review' ? 'background-review' : origin === 'chat' ? 'chat' : 'user'
 }
 
@@ -58,27 +58,45 @@ async function revisionsFor(
   original: string,
   text: string,
   by: KnowledgeEvent['by'],
-  edited: boolean
+  edited: boolean,
+  condition: string | undefined
 ): Promise<KnowledgeRevision[]> {
   const empty = { kind, revisions: [] as KnowledgeRevision[], approvedRevisionId: '' }
-  if (!edited) return [await newRevision(empty, { text, by }, 'user')]
+  if (!edited) return [await newRevision(empty, { text, by, condition }, 'user')]
   const r1 = await newRevision(empty, { text: original, by })
-  const r2 = await newRevision({ kind, revisions: [r1], approvedRevisionId: r1.id }, { text, by: 'user' }, 'user')
+  const r2 = await newRevision(
+    { kind, revisions: [r1], approvedRevisionId: r1.id },
+    { text, by: 'user', condition },
+    'user'
+  )
   return [r1, r2]
 }
 
-type Approved = { item: KnowledgeItem; revert: () => Promise<void> }
+export type Approved = { item: KnowledgeItem; revert: () => Promise<void> }
 
-/**
- * Saves the proposal as an approved item (no undo pushed). `recheck: false` skips the contradiction
- * check (the add that just filed it already checked).
- */
-async function approve(id: string, opts: { text?: string; recheck: boolean }): Promise<Approved> {
+export type ApproveOptions = {
+  text?: string
+  /** False skips the contradiction check (the add that just filed it, or the user settling its conflict). */
+  recheck: boolean
+  /** Keep both: the approved revision carries this condition, mirrored to `condition`. */
+  condition?: string
+  /**
+   * Settles this open conflict in the same commit (Keep this, Keep both): the conflict no longer blocks the
+   * approval, and `apply` makes the rest of the change on the draft, before the item is added. `apply` may
+   * also change the new item. An error it throws cancels the whole commit (nothing is written).
+   */
+  resolving?: { conflictId: string; apply: (d: KnowledgeState, item: KnowledgeItem) => void }
+}
+
+/** Saves the proposal as an approved item (no undo pushed). Internal: `conflicts.ts` reuses it. */
+export async function approve(id: string, opts: ApproveOptions): Promise<Approved> {
   await ensureKnowledgeLoaded({ fresh: true })
   const state = knowledgeStore.getState().state
   const p = state.proposals.find((x) => x.id === id)
   if (!p) throw new Error('missing')
-  const open = state.conflicts.find((c) => c.proposalId === id && c.state === 'open')
+  const blocking = (c: KnowledgeConflict) =>
+    c.proposalId === id && c.state === 'open' && c.id !== opts.resolving?.conflictId
+  const open = state.conflicts.find(blocking)
   if (open) throw conflictError(state, open)
 
   const text = opts.text === undefined ? p.text : opts.text.trim()
@@ -103,12 +121,13 @@ async function approve(id: string, opts: { text?: string; recheck: boolean }): P
 
   const now = Date.now()
   const by = originBy(p.origin)
-  const revisions = await revisionsFor(p.kind, p.text, text, by, edited)
+  const revisions = await revisionsFor(p.kind, p.text, text, by, edited, opts.condition)
   const item: KnowledgeItem = {
     id: uuidv4(),
     scopeId,
     kind: p.kind,
     text,
+    ...(opts.condition !== undefined ? { condition: opts.condition } : {}),
     sources: assignSourceIds([], p.sources),
     status: 'approved',
     history: [
@@ -131,11 +150,12 @@ async function approve(id: string, opts: { text?: string; recheck: boolean }): P
       failure = new Error('missing')
       return
     }
-    const conflict = d.conflicts.find((c) => c.proposalId === id && c.state === 'open')
+    const conflict = d.conflicts.find(blocking)
     if (conflict) {
       failure = conflictError(d, { ...conflict, itemIds: [...conflict.itemIds] })
       return
     }
+    opts.resolving?.apply(d, item)
     d.proposals = d.proposals.filter((x) => x.id !== id)
     d.items.push(item)
   })

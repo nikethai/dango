@@ -1366,5 +1366,14 @@
   "Dismissed \"{{text}}\"": "Dismissed \"{{text}}\"",
   "Approved \"{{text}}\" for {{scope}}": "Approved \"{{text}}\" for {{scope}}",
   "Added \"{{text}}\" to {{scope}}": "Added \"{{text}}\" to {{scope}}",
+  "Saved the new wording": "Saved the new wording",
+  "Removed \"{{text}}\"": "Removed \"{{text}}\"",
+  "Moved \"{{text}}\" to {{scope}}": "Moved \"{{text}}\" to {{scope}}",
+  "from {{scope}}": "from {{scope}}",
+  "Kept \"{{text}}\"": "Kept \"{{text}}\"",
+  "Kept both, with a condition": "Kept both, with a condition",
+  "It used \"{{text}}\", which was replaced.": "It used \"{{text}}\", which was replaced.",
+  "It used \"{{text}}\", which you edited.": "It used \"{{text}}\", which you edited.",
+  "It used \"{{text}}\", which you removed.": "It used \"{{text}}\", which you removed.",
   "Don't suggest this again": "Don't suggest this again"
 }

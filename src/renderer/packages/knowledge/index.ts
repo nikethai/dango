@@ -1,6 +1,18 @@
 export { addKnowledge, approveProposal, KnowledgeConflictError } from './approve'
+export { resolveConflict } from './conflicts'
 export { type ContradictionChecker, checkAgainstLayers, selectCandidates } from './contradictions'
+export { useKnowledgeList, useKnowledgeUses, useProposalsForMessage } from './hooks'
 export { initKnowledge } from './init'
+export {
+  editKnowledge,
+  type KnowledgeListOptions,
+  listKnowledge,
+  markSourceRemoved,
+  moveKnowledge,
+  NEVER_SEND_EMAIL,
+  reapproveKnowledge,
+  removeKnowledge,
+} from './lifecycle'
 export {
   allowSuggestAgain,
   DONT_SUGGEST_WINDOW_MS,
@@ -16,3 +28,4 @@ export { scopeName } from './scopes'
 export { ensureKnowledgeLoaded, type KnowledgeMigrationState } from './store'
 export { contentHash, knowledgeTextKey, parseStaleAfter, quote } from './text'
 export { pushKnowledgeUndo } from './undo'
+export { listKnowledgeUses, recordKnowledgeUse } from './uses'

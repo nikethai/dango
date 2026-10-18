@@ -192,16 +192,22 @@ export async function deferProposal(id: string): Promise<void> {
   })
 }
 
-/** Open proposals (deferred included), oldest first. */
-export function listProposals(opts?: { scopeId?: string; messageId?: string }): KnowledgeProposal[] {
-  return knowledgeStore
-    .getState()
-    .state.proposals.filter(
+export type ProposalListOptions = { scopeId?: string; messageId?: string }
+
+/** Open proposals (deferred included), oldest first. Pure, so hooks and `listProposals` share it. */
+export function selectProposals(state: KnowledgeState, opts?: ProposalListOptions): KnowledgeProposal[] {
+  return state.proposals
+    .filter(
       (p) =>
         (opts?.scopeId === undefined || p.scopeId === opts.scopeId) &&
         (opts?.messageId === undefined || p.messageId === opts.messageId)
     )
     .sort((a, b) => a.createdAt - b.createdAt)
+}
+
+/** Open proposals (deferred included), oldest first. */
+export function listProposals(opts?: ProposalListOptions): KnowledgeProposal[] {
+  return selectProposals(knowledgeStore.getState().state, opts)
 }
 
 export function getConflict(id: string): KnowledgeConflict | undefined {
