@@ -8,7 +8,7 @@ import { MantineProvider } from '@mantine/core'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const state = vi.hoisted(() => ({ agents: [] as unknown[] }))
+const state = vi.hoisted(() => ({ agents: [] as unknown[], navigate: vi.fn() }))
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
@@ -21,7 +21,7 @@ vi.mock('@/stores/uiStore', () => ({
   useUIStore: (sel: (s: unknown) => unknown) =>
     sel({ showCopilotsInNewSession: true, setShowCopilotsInNewSession: vi.fn() }),
 }))
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => state.navigate }))
 vi.mock('@/packages/event', () => ({ trackingEvent: vi.fn() }))
 vi.mock('@/packages/remote', () => ({ recordCopilotShare: vi.fn() }))
 vi.mock('@/platform', () => ({ default: { getConfig: async () => ({ uuid: 'u' }) } }))
@@ -60,6 +60,7 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   state.agents = []
+  state.navigate.mockClear()
 })
 
 describe('AgentsSettings', () => {
@@ -82,6 +83,13 @@ describe('AgentsSettings', () => {
     expect(screen.getByRole('button', { name: /Researcher/ })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'edit' }))
     expect(screen.getByText('Edit agent')).toBeTruthy()
+  })
+
+  it('starts a chat with an agent when its tile is clicked', () => {
+    state.agents = [{ id: 'a', name: 'Researcher', prompt: 'p', starred: false, usedCount: 0 }]
+    renderIt()
+    fireEvent.click(screen.getByRole('button', { name: /Researcher/ }))
+    expect(state.navigate).toHaveBeenCalledWith({ to: '/new', search: { copilotId: 'a' } })
   })
 })
 

@@ -19,7 +19,7 @@ import '@/static/agents-surfaces.css'
 import type { AgentDetail } from '../../../../shared/types'
 import { AgentForm } from './AgentForm'
 
-/** Copilots management UI — embedded in Settings (no full Page chrome). */
+/** Agents management UI — embedded in Settings (no full Page chrome). */
 export function AgentsSettings() {
   const showCopilotsInNewSession = useUIStore((s) => s.showCopilotsInNewSession)
   const setShowCopilotsInNewSession = useUIStore((s) => s.setShowCopilotsInNewSession)

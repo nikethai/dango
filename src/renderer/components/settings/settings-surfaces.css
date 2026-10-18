@@ -890,7 +890,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--dango-space-1);
-  padding: var(--dango-space-4) var(--dango-space-8) 0;
+  padding: var(--dango-space-3) var(--dango-space-4) 0;
 }
 
 .settings-tabs a {

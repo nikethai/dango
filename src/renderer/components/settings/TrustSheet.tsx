@@ -59,6 +59,7 @@ export function TrustSheet(props: {
           >
             <input
               type="radio"
+              style={{ accentColor: 'var(--dango-green)' }}
               name="trust-level"
               value={o.level}
               checked={choice === o.level}

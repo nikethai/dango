@@ -70,7 +70,7 @@ export function SettingsNav({ nav, pathname, compact }: SettingsNavProps) {
   }
 
   return (
-    <nav aria-label={t('Settings')} className="contents">
+    <nav aria-label={t('Settings')} className="flex flex-col gap-[2px]">
       {nav.sections.map((entry, i) => renderRow(entry, i))}
       {nav.advanced.length > 0 && (
         <>

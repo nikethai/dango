@@ -122,7 +122,7 @@ export function AgentForm(props: AgentFormProps) {
       <div className="agents-form-toolbar">
         <SettingsPageHeader
           className="!mb-0 flex-1"
-          title={isNew ? t('Create New Agent') : t('Edit agent')}
+          title={isNew ? t('New agent') : t('Edit agent')}
           description={t('Name, prompt, and optional overrides for this agent.')}
         />
       </div>
