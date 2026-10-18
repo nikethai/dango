@@ -2,13 +2,15 @@
  * @vitest-environment jsdom
  */
 
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { createStore, Provider } from 'jotai'
-import type { ReactNode } from 'react'
+import { type ReactNode, Suspense } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
+const stored = vi.hoisted(() => ({ value: null as unknown }))
+
 vi.mock('@/storage', () => ({
-  default: { getItem: async () => null, setItem: async () => {}, removeItem: async () => {} },
+  default: { getItem: async () => stored.value, setItem: async () => {}, removeItem: async () => {} },
   StorageKey: { MyProjects: 'myProjects', MyFolders: 'myFolders' },
 }))
 
@@ -47,5 +49,26 @@ describe('useScopes writes', () => {
         .map((scope) => scope.name)
         .sort()
     ).toEqual(['A', 'B'])
+  })
+
+  it('a write after a reload keeps the scopes that were loaded from storage', async () => {
+    stored.value = [
+      { id: 'a', name: 'A', kind: 'project', order: 0 },
+      { id: 'b', name: 'B', kind: 'client', order: 1 },
+    ]
+    try {
+      const store = createStore()
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <Provider store={store}>
+          <Suspense fallback={null}>{children}</Suspense>
+        </Provider>
+      )
+      const { result } = renderHook(() => useScopes(), { wrapper })
+      await waitFor(() => expect(result.current?.scopes.map((scope) => scope.name)).toEqual(['A', 'B']))
+      act(() => result.current.updateScope('b', { kind: 'project' }))
+      expect(result.current.scopes.map((scope) => `${scope.name}:${scope.kind}`)).toEqual(['A:project', 'B:project'])
+    } finally {
+      stored.value = null
+    }
   })
 })

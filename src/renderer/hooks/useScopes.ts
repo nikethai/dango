@@ -5,6 +5,9 @@ import { projectToFolder } from '@/projects/project-migration'
 import { createScope, parseScopes, patchScope } from '@/projects/scope-store'
 import { myFoldersAtom, myProjectsAtom } from './useFolders'
 
+const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
+  typeof (value as { then?: unknown } | null)?.then === 'function'
+
 export function useScopes() {
   const store = useStore()
   const raw = useAtomValue(myProjectsAtom)
@@ -19,7 +22,12 @@ export function useScopes() {
 
   // Writes read the live atom value, not the render closure, so two writes in one tick (or an undo
   // that fires seconds after the render that created it) never drop each other's change.
-  const current = () => parseScopes(store.get(myProjectsAtom))
+  // After a reload the atom holds the storage read's Promise until the first write replaces it; the
+  // rendered `raw` is the resolved value then, so fall back to it rather than reading [] and wiping.
+  const current = () => {
+    const live: unknown = store.get(myProjectsAtom)
+    return isPromiseLike(live) ? parseScopes(raw) : parseScopes(live)
+  }
 
   const getScope = (id?: string) => (id ? scopes.find((scope) => scope.id === id) : undefined)
 
