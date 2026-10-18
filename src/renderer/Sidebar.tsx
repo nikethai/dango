@@ -19,6 +19,7 @@ import DangoWordmark from './components/brand/DangoWordmark'
 import { UserAvatar } from './components/common/Avatar'
 import ThemeSwitchButton from './components/dev/ThemeSwitchButton'
 import TitleBarRow from './components/layout/TitleBarRow'
+import { SidebarReviewRow } from './components/review/SidebarReviewRow'
 import { NewScopeSheet } from './components/scope'
 import SessionList from './components/session/SessionList'
 import { FORCE_ENABLE_DEV_PAGES } from './dev/devToolsConfig'
@@ -260,6 +261,9 @@ export default function Sidebar() {
           >
             {isIconRail ? (
               <>
+                <Tooltip label={t('Review')} position="right" withArrow openDelay={300}>
+                  <SidebarReviewRow variant="rail" onNavigate={closeSidebarIfMobile} />
+                </Tooltip>
                 <Tooltip label={`${t('Search')} ⌘K`} position="right" withArrow openDelay={300}>
                   <button
                     type="button"
@@ -286,6 +290,7 @@ export default function Sidebar() {
               </>
             ) : (
               <>
+                <SidebarReviewRow variant="expanded" onNavigate={closeSidebarIfMobile} />
                 <button
                   type="button"
                   className="rail-nav-item"
