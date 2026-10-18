@@ -2,6 +2,7 @@ import { google } from '@ai-sdk/google'
 import { getModel } from '@shared/models'
 import { OCRError, ProviderAPIError } from '@shared/models/errors'
 import type { ModelDependencies } from '@shared/types/adapters'
+import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { sequenceMessages } from '@shared/utils/message'
 import { getModelSettings } from '@shared/utils/model_settings'
 import { shouldPreserveReasoningInContext } from '@shared/utils/reasoning-replay'
@@ -10,6 +11,9 @@ import type { ModelMessage, ToolSet } from 'ai'
 import { t } from 'i18next'
 import { uniqueId } from 'lodash'
 import { createModelDependencies } from '@/adapters'
+import { formatKnowledgeSection, isLegacyMemoryActive, knowledgeForTurn } from '@/packages/knowledge/for-turn'
+import { NEVER_SEND_EMAIL } from '@/packages/knowledge/select'
+import { ensureKnowledgeLoaded } from '@/packages/knowledge/store'
 import { hostPreSearchMemories } from '@/packages/memory/host-presearch'
 import { isSessionMemoryToolRetainAllowed } from '@/packages/memory/session-policy'
 import { getMemoryToolSet, MEMORY_TOOL_NAMES } from '@/packages/memory/tools'
@@ -321,9 +325,11 @@ export async function streamText(
       forceHybridFallback?: boolean
       userQuery?: string
     }
+    /** The session's scope for approved knowledge; null or omitted means Everywhere. */
+    knowledgeScopeId?: string | null
   },
   signal?: AbortSignal
-): Promise<{ result: StreamTextResult; coreMessages: ModelMessage[] }> {
+): Promise<{ result: StreamTextResult; coreMessages: ModelMessage[]; knowledgeIds: string[] }> {
   const {
     knowledgeBase,
     webBrowsing,
@@ -341,6 +347,7 @@ export async function streamText(
     computerUse,
     tools: customTools,
     memory: memoryContext,
+    knowledgeScopeId,
   } = params
   const globalSettings = settingsStore.getState().getSettings()
   const hasDocumentFileOrLink = params.messages.some(
@@ -493,17 +500,26 @@ export async function streamText(
   } catch {
     // non-fatal in tests / degraded storage
   }
+  // A fresh read, so knowledge approved in another window (and the memory move's state) applies to this turn.
+  const knowledgeScope = knowledgeScopeId ?? EVERYWHERE_SCOPE_ID
+  try {
+    await ensureKnowledgeLoaded({ fresh: true })
+  } catch (err) {
+    console.error('Failed to load knowledge:', err)
+  }
+  const knowledgeItems = knowledgeForTurn(knowledgeScope)
+  const knowledgeIds = knowledgeItems.filter((i) => i.id !== NEVER_SEND_EMAIL.id).map((i) => i.id)
+  const legacyMemoryActive = isLegacyMemoryActive()
   const memorySettings = memoryStore.getState().settings
   const memoryToolsAvailable =
     memorySettings.enabled &&
+    legacyMemoryActive &&
     model.isSupportToolUse() &&
     !customTools &&
     (!allowedTools || allowedTools.length === 0 || MEMORY_TOOL_NAMES.some((name) => allowedTools.includes(name)))
   const imageCatalog =
     providedImageCatalog ||
-    (enableImageGenerationTool || agentImageFlowInstructions
-      ? buildChatImageCatalog(params.messages)
-      : [])
+    (enableImageGenerationTool || agentImageFlowInstructions ? buildChatImageCatalog(params.messages) : [])
   const needGenerateImageTool =
     model.isSupportToolUse() && (Boolean(agentImageFlowInstructions) || Boolean(enableImageGenerationTool))
   const hasFunctionTools =
@@ -543,9 +559,9 @@ export async function streamText(
     toolSetInstructions += `
 
 ${computerUiSpaceLockInstructions({
-      sessionId: computerSessionId,
-      agentCodingEnabled: Boolean(agentCoding?.enabled && needWorkspaceCodingTools),
-    })}
+  sessionId: computerSessionId,
+  agentCodingEnabled: Boolean(agentCoding?.enabled && needWorkspaceCodingTools),
+})}
 `
   }
   if (agentCoding?.enabled && !needWorkspaceCodingTools) {
@@ -640,7 +656,8 @@ Do not open with repeated web searches when personal memory may apply.
     {
       ...memoryContext,
       forceHybridFallback: memoryForceHybridFallback || memoryContext?.forceHybridFallback,
-    }
+    },
+    formatKnowledgeSection(knowledgeScope, knowledgeItems)
   )
 
   if (!model.isSupportSystemMessage()) {
@@ -667,6 +684,7 @@ Do not open with repeated web searches when personal memory may apply.
       const mode = memorySettings.retrievalMode ?? 'hybrid'
       const hostLookupOn =
         memorySettings.enabled &&
+        legacyMemoryActive &&
         memorySettings.hostPreSearchEnabled !== false &&
         (mode === 'hybrid' || mode === 'on_demand')
       if (hostLookupOn) {
@@ -764,17 +782,20 @@ Do not open with repeated web searches when personal memory may apply.
           controller.signal
         )
         const toolName = callResult.type === 'knowledge_base' ? 'query_knowledge_base' : 'web_search'
-        return handleSearchResult(
-          callResult,
-          toolName,
-          model,
-          messages,
-          coreMessages,
-          controller,
-          onResultChange,
-          { ...params, includeAssistantReasoning },
-          dependencies
-        )
+        return {
+          ...(await handleSearchResult(
+            callResult,
+            toolName,
+            model,
+            messages,
+            coreMessages,
+            controller,
+            onResultChange,
+            { ...params, includeAssistantReasoning },
+            dependencies
+          )),
+          knowledgeIds,
+        }
       }
       // (legacy comment removed)
       else if (kbNotSupported) {
@@ -787,17 +808,20 @@ Do not open with repeated web searches when personal memory may apply.
 
         const callResult = await knowledgeBaseSearchByPromptEngineering(model, params.messages, knowledgeBase.id)
 
-        return handleSearchResult(
-          callResult || { query: '', searchResults: [] },
-          'query_knowledge_base',
-          model,
-          messages,
-          coreMessages,
-          controller,
-          onResultChange,
-          { ...params, includeAssistantReasoning },
-          dependencies
-        )
+        return {
+          ...(await handleSearchResult(
+            callResult || { query: '', searchResults: [] },
+            'query_knowledge_base',
+            model,
+            messages,
+            coreMessages,
+            controller,
+            onResultChange,
+            { ...params, includeAssistantReasoning },
+            dependencies
+          )),
+          knowledgeIds,
+        }
       }
       // (legacy comment removed)
       else if (webNotSupported) {
@@ -809,17 +833,20 @@ Do not open with repeated web searches when personal memory may apply.
         // })
 
         const callResult = await searchByPromptEngineering(model, params.messages, controller.signal)
-        return handleSearchResult(
-          callResult || { query: '', searchResults: [] },
-          'web_search',
-          model,
-          messages,
-          coreMessages,
-          controller,
-          onResultChange,
-          { ...params, includeAssistantReasoning },
-          dependencies
-        )
+        return {
+          ...(await handleSearchResult(
+            callResult || { query: '', searchResults: [] },
+            'web_search',
+            model,
+            messages,
+            coreMessages,
+            controller,
+            onResultChange,
+            { ...params, includeAssistantReasoning },
+            dependencies
+          )),
+          knowledgeIds,
+        }
       }
     }
 
@@ -858,8 +885,6 @@ Do not open with repeated web searches when personal memory may apply.
           ...wrappedWorkspaceTools,
         }
       }
-
-
 
       if (needVideoToolSet) {
         const wrappedVideoTools = wrapToolsWithApproval(sessionId, videoToolSet.tools as ToolSet)
@@ -1001,12 +1026,12 @@ Do not open with repeated web searches when personal memory may apply.
       })
     )
 
-    return { result, coreMessages }
+    return { result, coreMessages, knowledgeIds }
   } catch (err) {
     console.error(err)
     // if a cancellation is performed, do not throw an exception, otherwise the content will be overwritten.
     if (controller.signal.aborted) {
-      return { result, coreMessages }
+      return { result, coreMessages, knowledgeIds }
     }
     throw err
   } finally {

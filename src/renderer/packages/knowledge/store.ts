@@ -11,11 +11,17 @@ const KEY = 'knowledge'
 const MIGRATION_KEY = 'knowledge-migration'
 
 export type KnowledgeMigrationState = 'unknown' | 'pending' | 'done'
-type KnowledgeStoreState = { state: KnowledgeState; migration: KnowledgeMigrationState }
+type KnowledgeStoreState = {
+  state: KnowledgeState
+  migration: KnowledgeMigrationState
+  /** Approved items whose content no longer matches their approval; answers leave them out (set by the health check). */
+  unverified: Set<string>
+}
 
 export const knowledgeStore = createStore<KnowledgeStoreState>()(() => ({
   state: emptyKnowledgeState(),
   migration: 'unknown',
+  unverified: new Set<string>(),
 }))
 
 export type CommitResult = {
@@ -128,7 +134,10 @@ let loaded = false
 let loading: Promise<void> | null = null
 const listeners = new Set<KnowledgeCommitListener>()
 
-/** Loads the document once per window; `fresh` re-reads it (another window may have written). */
+/**
+ * Loads the document once per window; `fresh` re-reads it (another window may have written). Each load
+ * also reads the migration state (preflight C10) and then runs the health check (preflight C9).
+ */
 export function ensureKnowledgeLoaded(opts?: { fresh?: boolean }): Promise<void> {
   if (loaded && !opts?.fresh) return Promise.resolve()
   if (loading && !opts?.fresh) return loading
@@ -144,7 +153,13 @@ export function ensureKnowledgeLoaded(opts?: { fresh?: boolean }): Promise<void>
   const scopes = import('./scopes')
     .then((m) => m.refreshScopes())
     .catch((error) => log.error('Knowledge scope refresh failed:', error))
-  const run = Promise.all([load, scopes]).then(() => undefined)
+  // Lazy: `for-turn` imports this module. A failed check is logged and never fails the load.
+  const health = load.then(() =>
+    import('./for-turn')
+      .then((m) => m.checkKnowledgeHealth())
+      .catch((error) => log.error('Knowledge health check failed:', error))
+  )
+  const run = Promise.all([health, scopes]).then(() => undefined)
   loading = run
   run
     .catch(() => undefined)
@@ -216,5 +231,5 @@ export function _resetKnowledgeForTests(): void {
   loaded = false
   loading = null
   listeners.clear()
-  knowledgeStore.setState({ state: emptyKnowledgeState(), migration: 'unknown' })
+  knowledgeStore.setState({ state: emptyKnowledgeState(), migration: 'unknown', unverified: new Set() })
 }

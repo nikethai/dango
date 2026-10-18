@@ -2,8 +2,8 @@ import type { KnowledgeItem, KnowledgeProposal, KnowledgeUse } from '@shared/typ
 import { useEffect, useMemo } from 'react'
 import { useStore } from 'zustand'
 import { getLogger } from '@/lib/utils'
-import { type KnowledgeListOptions, selectKnowledge } from './lifecycle'
 import { selectProposals } from './proposals'
+import { type KnowledgeListOptions, selectKnowledge } from './select'
 import { ensureKnowledgeLoaded, knowledgeStore } from './store'
 import { selectKnowledgeUses } from './uses'
 

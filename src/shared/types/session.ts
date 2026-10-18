@@ -437,6 +437,8 @@ export const MessageSchema = z.object({
   roomRole: z.enum(['turn', 'synthesis', 'plan', 'do', 'review', 'deliver']).optional().catch(undefined),
   /** 1-based discussion round for roomRole turn */
   roomRound: z.number().int().positive().optional().catch(undefined),
+  /** Approved knowledge item ids this answer was given with (the built-in item excluded). */
+  knowledgeIds: z.array(z.string()).optional(),
 })
 
 // Compaction point schema (for context management)

@@ -43,6 +43,7 @@ import { buildSkillContextBlocks, resolveSkillActivations, selectCatalogForInjec
 import { estimateTokensFromMessages } from '@/packages/token'
 import { getVideoLimits } from '@/packages/video'
 import platform from '@/platform'
+import { getEffectiveProjectId } from '@/projects/project-context'
 import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import { mergeCommandsList, refreshAgentCommands, userCommandsAtom } from '@/stores/commandsStore'
@@ -1105,8 +1106,9 @@ export async function generate(
             ? 1
             : maxSteps
 
-        const { result } = await streamText(model, {
+        const { result, knowledgeIds } = await streamText(model, {
           sessionId: session.id,
+          knowledgeScopeId: getEffectiveProjectId(session) ?? null,
           messages: promptMsgs,
           sessionSettings: effectiveSettings,
           onResultChangeWithCancel: modifyMessageCache,
@@ -1135,15 +1137,21 @@ export async function generate(
             let rootGeneration: string | undefined
             const { getProjectWorkspaceFlags } = await import('@/projects/flags')
             const { platformCapabilities } = await import('@/platform')
-            if (enabled && projectId && platform.restoreProjectBinding && platformCapabilities.supportsProjectWorkspace) {
+            if (
+              enabled &&
+              projectId &&
+              platform.restoreProjectBinding &&
+              platformCapabilities.supportsProjectWorkspace
+            ) {
               try {
                 const desc = await platform.restoreProjectBinding(projectId)
                 if (desc?.status === 'ready' && desc.capabilityId) {
                   capabilityId = desc.capabilityId
                   rootGeneration = desc.rootGeneration
                   if (desc.trust?.instructions === 'allowed') {
-                    const { loadTrustedProjectInstructions, formatInstructionContext } =
-                      await import('@/projects/project-instructions')
+                    const { loadTrustedProjectInstructions, formatInstructionContext } = await import(
+                      '@/projects/project-instructions'
+                    )
                     const sources = await loadTrustedProjectInstructions({
                       capabilityId,
                       instructionsTrust: desc.trust.instructions,
@@ -1208,6 +1216,16 @@ export async function generate(
               }
             : undefined,
         })
+
+        // The approved knowledge this answer was given with: kept on the message and recorded as a use.
+        targetMsg = { ...targetMsg, knowledgeIds }
+        if (knowledgeIds.length) {
+          void import('@/packages/knowledge/uses')
+            .then(({ recordKnowledgeUse }) =>
+              recordKnowledgeUse(knowledgeIds, { type: 'chat', id: session.id, label: session.name })
+            )
+            .catch((error) => console.error('Failed to record knowledge use:', error))
+        }
 
         // Auto-save memory (non-blocking)
         try {
@@ -1288,6 +1306,7 @@ export async function generate(
           const firstParts = finalContentParts
           const { result: continueResult } = await streamText(model, {
             sessionId: session.id,
+            knowledgeScopeId: getEffectiveProjectId(session) ?? null,
             messages: [
               ...promptMsgs,
               { ...targetMsg, contentParts: firstParts },
