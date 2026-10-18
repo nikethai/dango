@@ -3,7 +3,7 @@
  */
 
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { createStore, Provider } from 'jotai'
+import { createStore, Provider, useAtomValue } from 'jotai'
 import { type ReactNode, Suspense } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -16,7 +16,7 @@ vi.mock('@/storage', () => ({
 
 import { parseScopes } from '@/projects/scope-store'
 import { myProjectsAtom } from './useFolders'
-import { useScopes } from './useScopes'
+import { readScopes, useScopes } from './useScopes'
 
 describe('useScopes writes', () => {
   it('two writes in one tick both land', () => {
@@ -67,6 +67,69 @@ describe('useScopes writes', () => {
       await waitFor(() => expect(result.current?.scopes.map((scope) => scope.name)).toEqual(['A', 'B']))
       act(() => result.current.updateScope('b', { kind: 'project' }))
       expect(result.current.scopes.map((scope) => `${scope.name}:${scope.kind}`)).toEqual(['A:project', 'B:project'])
+      act(() => {
+        result.current.addScope({ name: 'C', kind: 'client' })
+      })
+      expect(result.current.scopes.map((scope) => scope.name)).toEqual(['A', 'B', 'C'])
+    } finally {
+      stored.value = null
+    }
+  })
+
+  it('addScope after a reload keeps A and B', async () => {
+    stored.value = [
+      { id: 'a', name: 'A', kind: 'project', order: 0 },
+      { id: 'b', name: 'B', kind: 'client', order: 1 },
+    ]
+    try {
+      const store = createStore()
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <Provider store={store}>
+          <Suspense fallback={null}>{children}</Suspense>
+        </Provider>
+      )
+      const { result } = renderHook(() => useScopes(), { wrapper })
+      await waitFor(() => expect(result.current?.scopes).toHaveLength(2))
+      act(() => {
+        result.current.addScope({ name: 'C', kind: 'project' })
+      })
+      expect(result.current.scopes.map((scope) => scope.name)).toEqual(['A', 'B', 'C'])
+    } finally {
+      stored.value = null
+    }
+  })
+})
+
+describe('readScopes', () => {
+  const data = [
+    { id: 'a', name: 'A', kind: 'client', order: 0 },
+    { id: 'b', name: 'B', kind: 'project', order: 1 },
+  ]
+
+  it('awaits the storage Promise the atom holds after a reload', async () => {
+    stored.value = data
+    try {
+      const store = createStore()
+      const { unmount } = renderHook(() => useAtomValue(myProjectsAtom), {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <Provider store={store}>
+            <Suspense fallback={null}>{children}</Suspense>
+          </Provider>
+        ),
+      })
+      expect(store.get(myProjectsAtom)).toBeInstanceOf(Promise)
+      expect((await readScopes(store)).map((scope) => scope.name)).toEqual(['A', 'B'])
+      unmount()
+    } finally {
+      stored.value = null
+    }
+  })
+
+  it('reads storage when the atom was never mounted', async () => {
+    stored.value = data
+    try {
+      const scopes = await readScopes(createStore())
+      expect(scopes.map((scope) => `${scope.name}:${scope.kind}`)).toEqual(['A:client', 'B:project'])
     } finally {
       stored.value = null
     }

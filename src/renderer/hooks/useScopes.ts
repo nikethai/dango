@@ -1,12 +1,32 @@
 import type { Scope, ScopeKind } from '@shared/types'
-import { useAtomValue, useSetAtom, useStore } from 'jotai'
+import { getDefaultStore, useAtomValue, useSetAtom, useStore } from 'jotai'
 import { useMemo } from 'react'
 import { projectToFolder } from '@/projects/project-migration'
 import { createScope, parseScopes, patchScope } from '@/projects/scope-store'
+import storage, { StorageKey } from '@/storage'
 import { myFoldersAtom, myProjectsAtom } from './useFolders'
 
 const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
   typeof (value as { then?: unknown } | null)?.then === 'function'
+
+/**
+ * Read the scope list outside React (slice 4 reads kind and readsEverywhere this way). A sync
+ * `parseScopes(store.get(myProjectsAtom))` is wrong after a reload: the atom holds the storage read's
+ * Promise, or still the initial [] when nothing has mounted it yet. Await the Promise; for an empty
+ * value ask storage directly.
+ */
+export async function readScopes(store: Pick<ReturnType<typeof getDefaultStore>, 'get'> = getDefaultStore()) {
+  let value: unknown = store.get(myProjectsAtom)
+  if (isPromiseLike(value)) value = await value
+  if (Array.isArray(value) && value.length === 0) {
+    value = await storage.getItem<unknown>(StorageKey.MyProjects, [])
+  }
+  return parseScopes(value)
+}
+
+// Last scope list each store rendered or committed. After an unmount/remount the atom is a fresh
+// storage Promise again, so a write from an older closure must not fall back to that closure's `raw`.
+const lastKnown = new WeakMap<object, Scope[]>()
 
 export function useScopes() {
   const store = useStore()
@@ -14,8 +34,10 @@ export function useScopes() {
   const setProjects = useSetAtom(myProjectsAtom)
   const setFolders = useSetAtom(myFoldersAtom)
   const scopes = useMemo(() => parseScopes(raw), [raw])
+  lastKnown.set(store, scopes)
 
   const commit = (next: Scope[]) => {
+    lastKnown.set(store, next)
     setProjects(next)
     setFolders(next.map(projectToFolder))
   }
@@ -26,7 +48,7 @@ export function useScopes() {
   // rendered `raw` is the resolved value then, so fall back to it rather than reading [] and wiping.
   const current = () => {
     const live: unknown = store.get(myProjectsAtom)
-    return isPromiseLike(live) ? parseScopes(raw) : parseScopes(live)
+    return isPromiseLike(live) ? (lastKnown.get(store) ?? parseScopes(raw)) : parseScopes(live)
   }
 
   const getScope = (id?: string) => (id ? scopes.find((scope) => scope.id === id) : undefined)
