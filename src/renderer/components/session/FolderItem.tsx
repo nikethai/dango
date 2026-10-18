@@ -139,7 +139,7 @@ function FolderItem({
       >
         {name}
       </Text>
-      {kind === 'client' ? <span className="dg-chip">client</span> : null}
+      {kind === 'client' ? <span className="dg-chip">{t('client')}</span> : null}
       {workspaceStatus ? <ProjectBadge status={workspaceStatus} /> : null}
 
       <Text

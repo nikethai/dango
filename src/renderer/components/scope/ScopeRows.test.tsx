@@ -30,7 +30,8 @@ vi.mock('@tanstack/react-router', () => ({
   ),
   useNavigate: () => vi.fn(),
 }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+const translate = vi.hoisted(() => vi.fn((key: string) => key))
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => false }))
 vi.mock('../project/ProjectMenu', () => ({ projectFolderActions: () => [] }))
 
@@ -105,6 +106,7 @@ describe('FolderItem as a scope row', () => {
   it('shows the client chip only for client scopes', () => {
     renderFolder({ kind: 'client' })
     expect(screen.getByText('client').className).toContain('dg-chip')
+    expect(translate).toHaveBeenCalledWith('client')
     cleanup()
     const { container } = render(
       wrap(

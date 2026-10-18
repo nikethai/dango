@@ -517,8 +517,7 @@ export default function Sidebar() {
         onCreate={(input) => {
           const scope = addScope(input)
           setFolderModalOpened(false)
-          // TODO(slice 03 Task 6): the /scope/$scopeId route does not exist yet, so `to` is cast until it lands.
-          void navigate({ to: `/scope/${scope.id}` as string } as never)
+          void navigate({ to: '/scope/$scopeId', params: { scopeId: scope.id }, search: { tab: 'overview' } })
         }}
       />
     </>

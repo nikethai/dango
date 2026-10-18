@@ -15,7 +15,9 @@ const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
  * Promise, or still the initial [] when nothing has mounted it yet. Await the Promise; for an empty
  * value ask storage directly.
  */
-export async function readScopes(store: Pick<ReturnType<typeof getDefaultStore>, 'get'> = getDefaultStore()) {
+export async function readScopes(
+  store: Pick<ReturnType<typeof getDefaultStore>, 'get'> = getDefaultStore()
+): Promise<Scope[]> {
   let value: unknown = store.get(myProjectsAtom)
   if (isPromiseLike(value)) value = await value
   if (Array.isArray(value) && value.length === 0) {
