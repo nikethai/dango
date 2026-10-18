@@ -10,10 +10,14 @@ const undoMock = vi.hoisted(() => ({
 }))
 vi.mock('@/packages/undo', () => undoMock)
 
-const settings = vi.hoisted(() => ({ trustLevel: undefined as unknown }))
-vi.mock('@/stores/settingsStore', () => ({ settingsStore: { getState: () => ({ trustLevel: settings.trustLevel }) } }))
+const settings = vi.hoisted(() => ({ trustLevel: undefined as unknown, init: vi.fn(async () => {}) }))
+vi.mock('@/stores/settingsStore', () => ({
+  settingsStore: { getState: () => ({ trustLevel: settings.trustLevel }) },
+  initSettingsStore: settings.init,
+}))
 
-import { addReviewEntry, setReviewEntryState, setReviewStorageForTests } from './store'
+import * as barrel from './index'
+import { addReviewEntry, setReviewEntryState, setReviewStorageForTests, updateReviewEntry } from './store'
 import {
   applyReviewEntry,
   arrive,
@@ -23,6 +27,7 @@ import {
   type ReviewApplier,
   registerReviewApplier,
   setReviewApplierForTests,
+  subscribeReviewAppliers,
   undoArrival,
 } from './trust'
 
@@ -54,6 +59,7 @@ beforeEach(() => {
   vi.setSystemTime(100_000)
   undoMock.pushUndo.mockClear()
   undoMock.undoEntry.mockClear()
+  settings.init.mockClear()
   applier = { apply: vi.fn(async () => {}), undo: vi.fn(async () => {}) }
   unregister = registerReviewApplier('draft', applier)
 })
@@ -217,5 +223,81 @@ describe('Trust arrival', () => {
   it('getTrustLevel is auto with the setting absent', async () => {
     settings.trustLevel = undefined
     expect(await getTrustLevel()).toBe('auto')
+  })
+  it('getTrustLevel waits for settings to hydrate (M1)', async () => {
+    settings.trustLevel = undefined
+    settings.init.mockImplementationOnce(async () => {
+      await Promise.resolve()
+      settings.trustLevel = 'ask'
+    })
+    expect(await getTrustLevel()).toBe('ask')
+    expect(settings.init).toHaveBeenCalledTimes(1)
+  })
+
+  it('when recording the undo fails, the row stays Done and arrive returns it as stored (T1)', async () => {
+    undoMock.pushUndo.mockImplementationOnce(() => {
+      throw new Error('quota')
+    })
+    const out = await addReviewEntry(draft())
+    expect(stored()[0]).toMatchObject({ kind: 'done', state: 'done' })
+    expect(out).toEqual(stored()[0])
+    expect(canUndoArrival(out.id)).toBe(false)
+    expect(applier.undo).not.toHaveBeenCalled()
+  })
+
+  const pendingApply = () => {
+    let release: () => void = () => {}
+    applier.apply = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          release = r
+        })
+    )
+    return () => release()
+  }
+
+  it('a row another window already applied is left Done, never undone (M2)', async () => {
+    const release = pendingApply()
+    settings.trustLevel = 'ask'
+    const e = await addReviewEntry(draft())
+    const pending = applyReviewEntry(e, { silent: false })
+    await vi.waitFor(() => expect(applier.apply).toHaveBeenCalled())
+    await updateReviewEntry(e.id, { kind: 'done', state: 'done', resolvedAt: 1 })
+    release()
+    expect(await pending).toBe(false)
+    expect(applier.undo).not.toHaveBeenCalled()
+    expect(stored()[0]).toMatchObject({ kind: 'done', state: 'done' })
+    expect(undoMock.pushUndo).not.toHaveBeenCalled()
+  })
+
+  it('a row merged while apply ran is undone and waits with its new text (M2, stale entry)', async () => {
+    const release = pendingApply()
+    settings.trustLevel = 'ask'
+    const input = draft()
+    const e = await addReviewEntry(input)
+    const pending = applyReviewEntry(e, { silent: false })
+    await vi.waitFor(() => expect(applier.apply).toHaveBeenCalled())
+    await addReviewEntry({ ...input, text: 'Reply to Ann, again' })
+    release()
+    expect(await pending).toBe(false)
+    expect(applier.undo).toHaveBeenCalledTimes(1)
+    expect(stored()[0]).toMatchObject({ id: e.id, kind: 'proposal', state: 'open', text: 'Reply to Ann, again' })
+  })
+
+  it('subscribeReviewAppliers fires on register and unregister', () => {
+    const cb = vi.fn()
+    const stop = subscribeReviewAppliers(cb)
+    const off = registerReviewApplier('job', applier)
+    expect(cb).toHaveBeenCalledTimes(1)
+    off()
+    expect(cb).toHaveBeenCalledTimes(2)
+    stop()
+    registerReviewApplier('job', applier)()
+    expect(cb).toHaveBeenCalledTimes(2)
+  })
+
+  it('the package barrel does not export the applier test seam (M7)', () => {
+    expect('setReviewApplierForTests' in barrel).toBe(false)
+    expect(typeof barrel.registerReviewApplier).toBe('function')
   })
 })

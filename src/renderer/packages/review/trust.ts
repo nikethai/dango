@@ -8,7 +8,22 @@ type AppliableRefType = Exclude<ReviewRefType, 'proposal' | 'conflict' | 'knowle
 const NEVER_AUTO = NEVER_AUTO_REFS
 const inFlight = new Set<string>()
 const appliers = new Map<ReviewRefType, ReviewApplier>()
+const applierListeners = new Set<() => void>()
 const arrivals = new Map<string, string>()
+
+function setApplier(refType: ReviewRefType, a: ReviewApplier | undefined): void {
+  if (a) appliers.set(refType, a)
+  else appliers.delete(refType)
+  for (const cb of applierListeners) cb()
+}
+
+/** Calls `cb` whenever an applier is registered or removed, so rows can show Approve once slice 10 loads. */
+export function subscribeReviewAppliers(cb: () => void): () => void {
+  applierListeners.add(cb)
+  return () => {
+    applierListeners.delete(cb)
+  }
+}
 
 // Lazy: the undo module touches localStorage at import, and the review barrel is imported by node-side code.
 type UndoModule = typeof import('@/packages/undo')
@@ -18,34 +33,50 @@ async function loadUndo(): Promise<UndoModule> {
   return undoMod
 }
 
-/** Settings are loaded lazily so importing the review package stays platform-free. */
+/**
+ * Settings are loaded lazily so importing the review package stays platform-free. Waits for settings to hydrate
+ * (memoised), so an early background arrival never reads the default Auto over a stored Ask first.
+ */
 export async function getTrustLevel(): Promise<TrustLevel> {
-  const { settingsStore } = await import('@/stores/settingsStore')
+  const { settingsStore, initSettingsStore } = await import('@/stores/settingsStore')
+  await initSettingsStore()
   return readTrustLevel(settingsStore.getState().trustLevel)
 }
 
 export function registerReviewApplier(refType: AppliableRefType, a: ReviewApplier): () => void {
   if (NEVER_AUTO.includes(refType)) throw new Error(`No applier may be registered for "${refType}" (ADR 0001)`)
-  appliers.set(refType, a)
+  setApplier(refType, a)
   return () => {
-    if (appliers.get(refType) === a) appliers.delete(refType)
+    if (appliers.get(refType) === a) setApplier(refType, undefined)
   }
 }
 
-/** Test seam: installs an applier without the register guard, to prove the arrival guards hold on their own. */
+/**
+ * Test seam: installs an applier without the register guard, to prove the arrival guards hold on their own.
+ * Not in the package barrel; tests import it from `./trust`.
+ */
 export function setReviewApplierForTests(refType: ReviewRefType, a: ReviewApplier | undefined): void {
-  if (a) appliers.set(refType, a)
-  else appliers.delete(refType)
+  setApplier(refType, a)
 }
 
 export function getReviewApplier(refType: ReviewRefType): ReviewApplier | undefined {
   return appliers.get(refType)
 }
 
+/** The fields an apply acts on; if any changed while `apply` ran (a merge), the stored row is not what was applied. */
+function sameAction(a: ReviewEntry, b: ReviewEntry): boolean {
+  const pick = (e: ReviewEntry) =>
+    JSON.stringify([e.ref, e.text, e.sub, e.actionLabel, e.options, e.risk, e.scopeId, e.source])
+  return pick(a) === pick(b)
+}
+
 /**
- * Applies the entry, marks its row Done, and pushes a silent-or-toast undo record. Returns false, changing nothing,
- * when no applier is registered, `apply` throws, another apply for the same row is running, or the row stopped
- * being an open proposal while `apply` ran (then the action is undone, best effort).
+ * Applies the entry, marks its row Done, and pushes a silent-or-toast undo record. Returns false when no applier is
+ * registered, `apply` throws, another apply for the same row is running in this window, or the row stopped being the
+ * open proposal that was applied while `apply` ran. In the last case the action is undone (best effort) when the row
+ * was dismissed, removed or changed (a merge), but never when it is already Done: another window's apply won, and
+ * undoing ours would revert the effect that row now reports. If only the undo record fails, the row stays Done and
+ * this returns true, so callers agree with the stored row (it just has no Undo).
  */
 export async function applyReviewEntry(
   entry: ReviewEntry,
@@ -63,19 +94,28 @@ export async function applyReviewEntry(
       console.warn('[review] apply failed', error)
       return false
     }
+    let undoMs: number
+    let pushUndo: UndoModule['pushUndo']
+    let marked: { ok: boolean; prev?: ReviewEntry }
     try {
-      const { pushUndo, DEFAULT_UNDO_MS } = await loadUndo()
+      ;({ pushUndo, DEFAULT_UNDO_MS: undoMs } = await loadUndo())
       const now = opts.now ?? Date.now()
-      const marked = await updateReviewEntryIf(entry.id, (e) => e.state === 'open' && e.kind === 'proposal', {
-        kind: 'done',
-        state: 'done',
-        undoUntil: now + DEFAULT_UNDO_MS,
-        resolvedAt: now,
-      })
-      if (!marked) {
+      marked = await updateReviewEntryIf(
+        entry.id,
+        (e) => e.state === 'open' && e.kind === 'proposal' && sameAction(e, entry),
+        { kind: 'done', state: 'done', undoUntil: now + undoMs, resolvedAt: now }
+      )
+    } catch (error) {
+      console.warn('[review] applied, but marking the row Done failed', error)
+      return false
+    }
+    if (!marked.ok) {
+      if (marked.prev?.state !== 'done') {
         await applier.undo(entry).catch((error) => console.warn('[review] undo of a superseded apply failed', error))
-        return false
       }
+      return false
+    }
+    try {
       const recordId = pushUndo({
         message: opts.message ?? '',
         silent: opts.silent,
@@ -91,11 +131,10 @@ export async function applyReviewEntry(
         },
       })
       arrivals.set(entry.id, recordId)
-      return true
     } catch (error) {
-      console.warn('[review] applied, but recording it failed', error)
-      return false
+      console.warn('[review] applied and marked Done, but recording its undo failed', error)
     }
+    return true
   } finally {
     inFlight.delete(entry.id)
   }

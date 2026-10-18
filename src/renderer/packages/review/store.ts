@@ -127,18 +127,21 @@ export function updateReviewEntry(
   })
 }
 
-/** Patches the row inside the store lock only when `predicate` holds for its stored state. Internal to Trust. */
+/**
+ * Patches the row inside the store lock only when `predicate` holds for its stored state. `prev` is the stored row as
+ * the lock found it (before any patch), or undefined when the row is gone. Internal to Trust and dismissal.
+ */
 export function updateReviewEntryIf(
   id: string,
   predicate: (e: ReviewEntry) => boolean,
   patch: Partial<Omit<ReviewEntry, 'id'>>
-): Promise<boolean> {
+): Promise<{ ok: boolean; prev?: ReviewEntry }> {
   return mutate((doc) => {
     const found = doc.entries.find((e) => e.id === id)
-    if (!found || !predicate(found)) return false
+    if (!found || !predicate(found)) return { ok: false, prev: found }
     const next: ReviewEntry = { ...found, ...patch, id }
     doc.entries = doc.entries.map((e) => (e === found ? next : e))
-    return true
+    return { ok: true, prev: found }
   })
 }
 
