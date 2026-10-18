@@ -22,3 +22,27 @@
 .dango-review-feed__empty:focus {
   outline: none;
 }
+
+/* Toolbar */
+.dango-review-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--dango-space-2);
+  padding: var(--dango-space-4) var(--dango-space-7);
+}
+
+.dango-review-toolbar__scope {
+  position: relative;
+}
+
+.dango-review-toolbar__menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: var(--dango-space-1);
+  z-index: 10;
+}
+
+.dango-review-toolbar__new {
+  margin-left: auto;
+}

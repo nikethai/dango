@@ -1,14 +1,21 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { isRedirect } from '@tanstack/react-router'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Route } from '@/routes/index'
+
+// The route module is imported in node; its components pull in storage (localStorage).
+vi.mock('@/components/review/ReviewHome', () => ({ ReviewHome: () => null }))
+vi.mock('@/components/layout/Page', () => ({ default: () => null }))
 
 const src = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8')
 
-describe('/ redirect', () => {
-  it('redirects to /new keeping the search', () => {
-    const beforeLoad = Route.options.beforeLoad as (ctx: unknown) => void
+describe('/ is Review', () => {
+  const beforeLoad = Route.options.beforeLoad as (ctx: unknown) => void
+  it('renders ReviewHome', () => {
+    expect(src('routes/index.tsx')).toContain('ReviewHome')
+  })
+  it('redirects old copilotId links to /new', () => {
     let thrown: unknown
     try {
       beforeLoad({ search: { copilotId: 'c1' } })
@@ -21,6 +28,9 @@ describe('/ redirect', () => {
       search: { copilotId: 'c1' },
       replace: true,
     })
+  })
+  it('does not redirect without copilotId', () => {
+    expect(() => beforeLoad({ search: {} })).not.toThrow()
   })
 })
 

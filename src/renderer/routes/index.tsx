@@ -1,11 +1,24 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
+import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
+import Page from '@/components/layout/Page'
+import { ReviewHome } from '@/components/review/ReviewHome'
 
-// Slice 5 replaces this redirect with Review. Until then `/` (old links, startup) lands on `/new`.
 export const Route = createFileRoute('/')({
-  validateSearch: zodValidator(z.object({ copilotId: z.string().optional() })),
+  validateSearch: zodValidator(z.object({ scope: z.string().optional(), copilotId: z.string().optional() })),
   beforeLoad: ({ search }) => {
-    throw redirect({ to: '/new', search, replace: true })
+    // Old links (`/?copilotId=`) keep landing on /new.
+    if (search.copilotId) throw redirect({ to: '/new', search: { copilotId: search.copilotId }, replace: true })
   },
+  component: Index,
 })
+
+function Index() {
+  const { t } = useTranslation()
+  return (
+    <Page title={t('Review')}>
+      <ReviewHome />
+    </Page>
+  )
+}
