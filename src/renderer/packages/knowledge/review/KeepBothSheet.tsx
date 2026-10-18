@@ -7,6 +7,12 @@ export type KeepBothSheetProps = { opened: boolean; onClose: () => void; onConfi
 /** RV7: both statements stay, each under a condition the user writes. */
 export function KeepBothSheet({ opened, onClose, onConfirm }: KeepBothSheetProps) {
   const [condition, setCondition] = useState('')
+  const [wasOpened, setWasOpened] = useState(opened)
+  // A reopened sheet starts blank.
+  if (wasOpened !== opened) {
+    setWasOpened(opened)
+    if (!opened) setCondition('')
+  }
   const ready = condition.trim().length > 0
   const confirm = () => {
     if (ready) onConfirm(condition.trim())
@@ -35,7 +41,7 @@ export function KeepBothSheet({ opened, onClose, onConfirm }: KeepBothSheetProps
         value={condition}
         onChange={(e) => setCondition(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
             e.preventDefault()
             confirm()
           }

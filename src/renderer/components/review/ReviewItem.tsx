@@ -3,7 +3,12 @@ import type { ReactNode } from 'react'
 
 export type { ReviewKind } from '@shared/types/review'
 
-export type ReviewAction = { label: string; onClick: () => void; variant?: 'primary' | 'secondary' | 'ghost' }
+export type ReviewAction = {
+  label: string
+  onClick: () => void
+  variant?: 'primary' | 'secondary' | 'ghost'
+  disabled?: boolean
+}
 
 export type ReviewItemProps = {
   kind: ReviewKind
@@ -59,6 +64,7 @@ export function ReviewItem({ kind, scope, source, text, sub, actions, focused, c
             key={action.label}
             type="button"
             className={BUTTON_CLASS[action.variant ?? 'secondary']}
+            disabled={action.disabled}
             onClick={action.onClick}
           >
             {action.label}

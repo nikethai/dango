@@ -1,22 +1,18 @@
 import { t } from 'i18next'
 import { type ReviewAction, ReviewItem } from '@/components/review'
-import { getLogger } from '@/lib/utils'
 import { openReviewEntry, type ReviewRendererProps, setReviewEntryState } from '@/packages/review'
 import { reapproveKnowledge } from '../lifecycle'
+import { useGuarded } from './useGuarded'
 
-const log = getLogger('knowledge')
-
-/** A re-check: something an answer relied on changed. Knowledge entries offer Approve again. */
+/** A re-check: something an answer relied on changed. A knowledge entry offers only Approve again and Open. */
 export function RecheckRenderer({ entry, focused }: ReviewRendererProps) {
-  const open: ReviewAction = {
-    label: t('Open'),
-    onClick: () => void openReviewEntry(entry).catch((error) => log.error('Open failed:', error)),
-  }
+  const { busy, run } = useGuarded()
+  const open: ReviewAction = { label: t('Open'), disabled: busy, onClick: () => void run(() => openReviewEntry(entry)) }
   const dismiss: ReviewAction = {
     label: t('Dismiss'),
     variant: 'ghost',
-    onClick: () =>
-      void setReviewEntryState({ id: entry.id }, 'dismissed').catch((e) => log.error('Dismiss failed:', e)),
+    disabled: busy,
+    onClick: () => void run(() => setReviewEntryState({ id: entry.id }, 'dismissed')),
   }
   const actions: ReviewAction[] =
     entry.ref.type === 'knowledge'
@@ -24,10 +20,10 @@ export function RecheckRenderer({ entry, focused }: ReviewRendererProps) {
           {
             label: t('Approve again'),
             variant: 'primary',
-            onClick: () => void reapproveKnowledge(entry.ref.id).catch((e) => log.error('Approve again failed:', e)),
+            disabled: busy,
+            onClick: () => void run(() => reapproveKnowledge(entry.ref.id)),
           },
           open,
-          dismiss,
         ]
       : [open, dismiss]
   return (

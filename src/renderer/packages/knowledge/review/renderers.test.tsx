@@ -78,10 +78,46 @@ describe('ProposalRenderer', () => {
     expect(approveProposal).not.toHaveBeenCalled()
   })
 
-  it('Approve, Dismiss', () => {
+  it('a double click approves once and toasts once', async () => {
+    const conflict = { id: 'c' } as KnowledgeConflict
+    let reject: (e: unknown) => void = () => undefined
+    vi.mocked(approveProposal).mockImplementationOnce(
+      () =>
+        new Promise((_, r) => {
+          reject = r
+        })
+    )
+    render(<ProposalRenderer entry={entry({})} focused={false} />)
+    const approve = screen.getByText('Approve')
+    fireEvent.click(approve)
+    fireEvent.click(approve)
+    expect((approve as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => reject(new KnowledgeConflictError(conflict, 'Launch is 4 Nov')))
+    await waitFor(() => expect(toastActions.add).toHaveBeenCalledTimes(1))
+    expect(approveProposal).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect((screen.getByText('Approve') as HTMLButtonElement).disabled).toBe(false))
+  })
+
+  it('any other failure toasts that it could not save', async () => {
+    vi.mocked(approveProposal).mockRejectedValueOnce(new Error('disk'))
+    render(<ProposalRenderer entry={entry({})} focused={false} />)
+    fireEvent.click(screen.getByText('Approve'))
+    await waitFor(() => expect(toastActions.add).toHaveBeenCalledWith("Couldn't save that. Try again."))
+  })
+
+  it('Esc cancels editing and focus returns to Edit', () => {
+    render(<ProposalRenderer entry={entry({})} focused={false} />)
+    fireEvent.click(screen.getByText('Edit'))
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(document.activeElement).toBe(screen.getByText('Edit'))
+  })
+
+  it('Approve, Dismiss', async () => {
     render(<ProposalRenderer entry={entry({})} focused={false} />)
     fireEvent.click(screen.getByText('Approve'))
     expect(approveProposal).toHaveBeenCalledWith('p1')
+    await waitFor(() => expect((screen.getByText('Dismiss') as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByText('Dismiss'))
     expect(dismissProposal).toHaveBeenCalledWith('p1')
   })
@@ -128,17 +164,18 @@ describe('ConflictRenderer', () => {
   })
   const conflictEntry = () => entry({ kind: 'conflict', ref: { type: 'conflict', id: 'c1' } })
 
-  it('shows both statements; the second Keep this keeps the saved one', () => {
+  it('shows both statements; the second Keep this keeps the saved one', async () => {
     const { container } = render(<ConflictRenderer entry={conflictEntry()} focused={false} />)
     expect(container.querySelector('.dg-item--conflict')).not.toBeNull()
     expect(screen.getByText('Launch is 6 Nov')).toBeTruthy()
     expect(screen.getByText('Launch is 4 Nov')).toBeTruthy()
     expect(screen.getByText(/Launch planning/)).toBeTruthy()
     expect(screen.getByText(/12 Oct/)).toBeTruthy()
-    const keeps = screen.getAllByText('Keep this')
+    const keeps = screen.getAllByRole('button', { name: /^Keep this: / })
     expect(keeps).toHaveLength(2)
     fireEvent.click(keeps[0])
     expect(resolveConflict).toHaveBeenCalledWith('c1', { keep: 'p1' })
+    await waitFor(() => expect((keeps[1] as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(keeps[1])
     expect(resolveConflict).toHaveBeenCalledWith('c1', { keep: 'old' })
   })
@@ -147,6 +184,7 @@ describe('ConflictRenderer', () => {
     render(<ConflictRenderer entry={conflictEntry()} focused={false} />)
     fireEvent.click(screen.getByText('Dismiss'))
     expect(dismissProposal).toHaveBeenCalledWith('p1')
+    await waitFor(() => expect((screen.getByText('Dismiss') as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByText('Keep both, with a condition…'))
     const field = await screen.findByLabelText('Condition')
     expect(document.activeElement).toBe(field)
@@ -157,6 +195,14 @@ describe('ConflictRenderer', () => {
 })
 
 describe('KeepBothSheet', () => {
+  it('starts blank when reopened', () => {
+    const { rerender } = render(<KeepBothSheet opened onClose={() => {}} onConfirm={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Condition'), { target: { value: 'for the EU launch' } })
+    rerender(<KeepBothSheet opened={false} onClose={() => {}} onConfirm={() => {}} />)
+    rerender(<KeepBothSheet opened onClose={() => {}} onConfirm={() => {}} />)
+    expect((screen.getByLabelText('Condition') as HTMLInputElement).value).toBe('')
+  })
+
   it('is disabled for a blank condition and confirms a real one', () => {
     const onConfirm = vi.fn()
     render(<KeepBothSheet opened onClose={() => {}} onConfirm={onConfirm} />)
@@ -171,11 +217,12 @@ describe('KeepBothSheet', () => {
 })
 
 describe('RecheckRenderer', () => {
-  it('Open opens the entry; Dismiss dismisses it', () => {
+  it('Open opens the entry; Dismiss dismisses it', async () => {
     const e = entry({ kind: 're-check', ref: { type: 'draft', id: 'd1' } })
     render(<RecheckRenderer entry={e} focused={false} />)
     fireEvent.click(screen.getByText('Open'))
     expect(openReviewEntry).toHaveBeenCalledWith(e)
+    await waitFor(() => expect((screen.getByText('Dismiss') as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByText('Dismiss'))
     expect(setReviewEntryState).toHaveBeenCalledWith({ id: 'r1' }, 'dismissed')
   })
@@ -187,6 +234,7 @@ describe('RecheckRenderer', () => {
     fireEvent.click(screen.getByText('Approve again'))
     expect(reapproveKnowledge).toHaveBeenCalledWith('k1')
     expect(screen.getByText('Open')).toBeTruthy()
+    expect(screen.queryByText('Dismiss')).toBeNull()
   })
 })
 

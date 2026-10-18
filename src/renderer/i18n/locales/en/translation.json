@@ -1389,5 +1389,7 @@
   "Condition": "Condition",
   "When does each one apply? For example: for the EU launch": "When does each one apply? For example: for the EU launch",
   "Approve again": "Approve again",
-  "Conflict": "Conflict"
+  "Conflict": "Conflict",
+  "Couldn't save that. Try again.": "Couldn't save that. Try again.",
+  "Keep this: {{text}}": "Keep this: {{text}}"
 }

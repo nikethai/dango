@@ -2,26 +2,22 @@ import dayjs from 'dayjs'
 import { t } from 'i18next'
 import { useState } from 'react'
 import { useStore } from 'zustand'
-import { getLogger } from '@/lib/utils'
 import type { ReviewRendererProps } from '@/packages/review'
 import { resolveConflict } from '../conflicts'
 import { dismissProposal } from '../proposals'
 import { scopeName } from '../scopes'
 import { knowledgeStore } from '../store'
+import { quote } from '../text'
 import { KeepBothSheet } from './KeepBothSheet'
-
-const log = getLogger('knowledge')
+import { useGuarded } from './useGuarded'
 
 type Statement = { id: string; text: string; source?: string; at: number }
-
-const settle = (action: Promise<unknown>) => {
-  action.catch((error) => log.error('Conflict action failed:', error))
-}
 
 /** RV4: the proposed and the saved statement side by side, with the three ways out (RV6, RV7). */
 export function ConflictRenderer({ entry, focused }: ReviewRendererProps) {
   const state = useStore(knowledgeStore, (s) => s.state)
   const [sheet, setSheet] = useState(false)
+  const { busy, run } = useGuarded()
   const conflict = state.conflicts.find((c) => c.id === entry.ref.id)
   const proposal = conflict ? state.proposals.find((p) => p.id === conflict.proposalId) : undefined
 
@@ -65,7 +61,9 @@ export function ConflictRenderer({ entry, focused }: ReviewRendererProps) {
               <button
                 type="button"
                 className="dg-btn"
-                onClick={() => settle(resolveConflict(conflict.id, { keep: s.id }))}
+                disabled={busy}
+                aria-label={t('Keep this: {{text}}', { text: quote(s.text) })}
+                onClick={() => void run(() => resolveConflict(conflict.id, { keep: s.id }))}
               >
                 {t('Keep this')}
               </button>
@@ -81,13 +79,14 @@ export function ConflictRenderer({ entry, focused }: ReviewRendererProps) {
       <div className="dg-item__actions">
         {conflict && proposal ? (
           <>
-            <button type="button" className="dg-btn" onClick={() => setSheet(true)}>
+            <button type="button" className="dg-btn" disabled={busy} onClick={() => setSheet(true)}>
               {t('Keep both, with a condition…')}
             </button>
             <button
               type="button"
               className="dg-btn dg-btn--ghost"
-              onClick={() => settle(dismissProposal(conflict.proposalId))}
+              disabled={busy}
+              onClick={() => void run(() => dismissProposal(conflict.proposalId))}
             >
               {t('Dismiss')}
             </button>
@@ -100,7 +99,7 @@ export function ConflictRenderer({ entry, focused }: ReviewRendererProps) {
           onClose={() => setSheet(false)}
           onConfirm={(condition) => {
             setSheet(false)
-            settle(resolveConflict(conflict.id, { keepBoth: condition }))
+            void run(() => resolveConflict(conflict.id, { keepBoth: condition }))
           }}
         />
       ) : null}
