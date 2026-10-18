@@ -884,6 +884,7 @@ async function migrate_17_to_18(dataStore: MigrateStore) {
   await runScopeMigration({
     getData: dataStore.getData,
     setData: dataStore.setData,
+    removeData: dataStore.removeData,
   })
   log.info('migrate_17_to_18, scopes written')
   return false

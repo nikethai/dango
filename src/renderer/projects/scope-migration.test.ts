@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { runScopeMigration } from './scope-migration'
+import { runScopeMigration, SCOPE_MIGRATION_EVERYWHERE_ID_KEY } from './scope-migration'
 
 function memoryStore(initial: Record<string, unknown> = {}) {
   const data: Record<string, unknown> = structuredClone(initial)
@@ -85,5 +85,41 @@ describe('runScopeMigration', () => {
     await runScopeMigration(store)
     expect((store.data.myProjects as Array<{ id: string }>)[0].id).toBe('new-id')
     expect((store.data['chat-sessions-list'] as Array<{ projectId: string }>)[0].projectId).toBe('new-id')
+  })
+
+  it('clears the replacement id after a successful run, and a rerun is still a no-op', async () => {
+    const store = memoryStore({
+      myProjects: [{ id: 'everywhere', name: 'E', order: 0 }],
+      'chat-sessions-list': [{ id: 's1', projectId: 'everywhere' }],
+      'session:s1': { id: 's1', projectId: 'everywhere' },
+    })
+    await runScopeMigration(store)
+    expect(store.data[SCOPE_MIGRATION_EVERYWHERE_ID_KEY] ?? '').toBe('')
+    const first = structuredClone(store.data)
+    const res = await runScopeMigration(store)
+    expect(res).toEqual({ renamedEverywhere: false })
+    expect(store.data).toEqual(first)
+  })
+
+  it('uses removeData to clear the replacement id when the store has it', async () => {
+    const base = memoryStore({ myProjects: [{ id: 'everywhere', name: 'E', order: 0 }] })
+    const store = {
+      ...base,
+      removeData: async (key: string) => {
+        delete base.data[key]
+      },
+    }
+    await runScopeMigration(store)
+    expect(SCOPE_MIGRATION_EVERYWHERE_ID_KEY in base.data).toBe(false)
+  })
+
+  it('clears a replacement id left behind by a run that crashed after writing scopes', async () => {
+    const store = memoryStore({
+      myProjects: [{ id: 'new-id', name: 'E', order: 0, kind: 'project' }],
+      scopeMigrationEverywhereId: 'new-id',
+    })
+    await runScopeMigration(store)
+    expect(store.data[SCOPE_MIGRATION_EVERYWHERE_ID_KEY]).toBe('')
+    expect((store.data.myProjects as Array<{ id: string }>)[0].id).toBe('new-id')
   })
 })

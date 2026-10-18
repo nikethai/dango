@@ -83,6 +83,9 @@ export default class StoreStorage extends BaseStorage {
     StorageKey.Integrations,
     StorageKey.ImportedHistory,
     StorageKey.ReviewEntries,
+    // Scope lists hold a client scope's privacy switch (readsEverywhere); a debounced write can lose it on quit.
+    StorageKey.MyProjects,
+    StorageKey.MyFolders,
   ])
 
   public async getItem<T>(key: string, initialValue: T): Promise<T> {
