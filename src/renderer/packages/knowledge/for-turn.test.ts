@@ -17,6 +17,7 @@ import { _resetScopesForTests, _setScopeReaderForTests } from './scopes'
 import { NEVER_SEND_EMAIL } from './select'
 import { _resetKnowledgeForTests, ensureKnowledgeLoaded, knowledgeStore } from './store'
 import { getRaw, type MakeItemInput, makeItem, putRaw, resetTestStorage } from './test-storage'
+import { contentHash } from './text'
 
 vi.mock('@/storage', async () => (await import('./test-storage')).default)
 vi.mock('i18next', () => ({
@@ -27,6 +28,10 @@ const memory = vi.hoisted(() => ({ enabled: true }))
 vi.mock('@/stores/memoryStore', () => ({
   memoryStore: { getState: () => ({ settings: { enabled: memory.enabled } }) },
 }))
+vi.mock('./text', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./text')>()
+  return { ...actual, contentHash: vi.fn(actual.contentHash) }
+})
 vi.mock('@/packages/review', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/packages/review')>()
   return { ...actual, addReviewEntry: vi.fn(actual.addReviewEntry) }
@@ -197,6 +202,34 @@ describe('knowledgeForTurn', () => {
     await ensureKnowledgeLoaded({ fresh: true })
 
     expect(ids('acme')).toEqual([NEVER_SEND_EMAIL.id])
+  })
+
+  it('an item whose hash throws is left out and re-checked; the others still count', async () => {
+    const made = await Promise.all([
+      makeItem({ id: 'h-bad', scopeId: 'acme', text: 'Hash me if you can' }),
+      makeItem({ id: 'h-good', scopeId: 'acme', text: 'Budget is 12k' }),
+    ])
+    const actual = vi.mocked(contentHash).getMockImplementation()
+    vi.mocked(contentHash).mockImplementation((kind, text, condition) => {
+      if (text === 'Hash me if you can') return Promise.reject(new Error('no crypto'))
+      return actual ? actual(kind, text, condition) : Promise.resolve('')
+    })
+    try {
+      putRaw('knowledge', { ...stored(), items: made })
+      await ensureKnowledgeLoaded({ fresh: true })
+    } finally {
+      vi.mocked(contentHash).mockImplementation(actual as typeof contentHash)
+    }
+
+    expect(ids('acme')).toEqual(['h-good', NEVER_SEND_EMAIL.id])
+    expect(knowledgeStore.getState().unverified).toEqual(new Set(['h-bad']))
+    expect(recheckCalls().map(([e]) => e.ref)).toEqual([{ type: 'knowledge', id: 'h-bad' }])
+  })
+
+  it('unverified is replaced on every load', async () => {
+    knowledgeStore.setState({ unverified: new Set(['gone']) })
+    await seed([{ id: 'a1', text: 'Launch is 6 Nov' }])
+    expect(knowledgeStore.getState().unverified).toEqual(new Set())
   })
 
   it('due item stays in use and is filed once', async () => {

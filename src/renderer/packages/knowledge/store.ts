@@ -153,11 +153,17 @@ export function ensureKnowledgeLoaded(opts?: { fresh?: boolean }): Promise<void>
   const scopes = import('./scopes')
     .then((m) => m.refreshScopes())
     .catch((error) => log.error('Knowledge scope refresh failed:', error))
-  // Lazy: `for-turn` imports this module. A failed check is logged and never fails the load.
+  // Lazy: `for-turn` imports this module. A failed check is logged and never fails the load, but it fails
+  // closed: every approved item counts as unverified, so nothing unchecked reaches an answer.
   const health = load.then(() =>
     import('./for-turn')
       .then((m) => m.checkKnowledgeHealth())
-      .catch((error) => log.error('Knowledge health check failed:', error))
+      .catch((error) => {
+        log.error('Knowledge health check failed:', error)
+        knowledgeStore.setState((s) => ({
+          unverified: new Set(s.state.items.filter((i) => i.status === 'approved').map((i) => i.id)),
+        }))
+      })
   )
   const run = Promise.all([health, scopes]).then(() => undefined)
   loading = run

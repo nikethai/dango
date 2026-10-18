@@ -12,8 +12,14 @@ import { getRaw, makeItem, putRaw, resetTestStorage, testStorage } from './test-
 import { assignSourceIds, contentHash, knowledgeTextKey, newRevision, parseStaleAfter, quote } from './text'
 import { pushKnowledgeUndo } from './undo'
 
+const { checkKnowledgeHealth } = await import('./for-turn')
+
 vi.mock('@/storage', async () => (await import('./test-storage')).default)
 vi.mock('@/packages/undo', () => ({ pushUndo: vi.fn(() => 'undo-1') }))
+vi.mock('./for-turn', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./for-turn')>()
+  return { ...actual, checkKnowledgeHealth: vi.fn(actual.checkKnowledgeHealth) }
+})
 
 const KEY = 'knowledge'
 const stored = () => getRaw<KnowledgeState>(KEY)
@@ -65,6 +71,14 @@ describe('knowledge store', () => {
     expect(knowledgeStore.getState().state.items).toHaveLength(0)
     await ensureKnowledgeLoaded({ fresh: true })
     expect(knowledgeStore.getState().state.items).toHaveLength(1)
+  })
+
+  it('a health check that fails as a whole fails closed: every approved item is unverified', async () => {
+    putRaw(KEY, { items: [await makeItem({ id: 'k1' }), await makeItem({ id: 'k2', status: 'removed' })] })
+    knowledgeStore.setState({ unverified: new Set(['stale']) })
+    vi.mocked(checkKnowledgeHealth).mockRejectedValueOnce(new Error('import failed'))
+    await ensureKnowledgeLoaded({ fresh: true })
+    expect(knowledgeStore.getState().unverified).toEqual(new Set(['k1']))
   })
 
   it('reads a finished migration into the store', async () => {

@@ -167,7 +167,14 @@ export async function checkKnowledgeHealth(now: number = Date.now()): Promise<vo
   for (const item of items) {
     if (item.id === NEVER_SEND_EMAIL.id) continue
     let notice: Notice | undefined
-    if (!(await isVerified(item))) {
+    // Fails closed: an item whose check throws (hashing unavailable, a malformed record) counts as unverified.
+    let verified = false
+    try {
+      verified = await isVerified(item)
+    } catch (error) {
+      log.error(`Knowledge health check failed for ${item.id}:`, error)
+    }
+    if (!verified) {
       unverified.add(item.id)
       notice = { reason: 'unverified', key: item.approvedRevisionId }
     } else {
@@ -178,7 +185,15 @@ export async function checkKnowledgeHealth(now: number = Date.now()): Promise<vo
   }
   knowledgeStore.setState({ unverified })
   if (!notices.length) return
+  try {
+    await fileHealthNotices(notices)
+  } catch (error) {
+    // `unverified` is already in place; a notice that failed to file is tried again on the next load.
+    log.error('Knowledge health notices failed:', error)
+  }
+}
 
+async function fileHealthNotices(notices: Array<{ item: KnowledgeItem; notice: Notice }>): Promise<void> {
   // Claim each notice in one commit (another window may have filed it since our read), then file entries.
   const claimed: typeof notices = []
   await commitKnowledge((d) => {
