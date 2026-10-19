@@ -1,14 +1,75 @@
 import { Button, Flex, Text } from '@mantine/core'
+import type { ProviderModelInfo } from '@shared/types'
 import { IconAlertCircle, IconSettings } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { navigateToSettings } from '@/modals/Settings'
-import type { ModelReadiness } from '@/utils/modelReadiness'
+import { isNonChatComposerModel } from '@/utils/modelDisplayName'
+import { type ModelReadiness, modelMeetsNeeds } from '@/utils/modelReadiness'
 import { ScalableIcon } from '../common/ScalableIcon'
+import { ModelSelector } from '../ModelSelector'
 
-export function ModelReadinessNotice({ readiness }: { readiness: ModelReadiness }) {
+/** Chat models that can use tools; a model whose capabilities are unknown is never left out. */
+export function canUseToolsModelFilter(model: ProviderModelInfo): boolean {
+  return !isNonChatComposerModel(model) && modelMeetsNeeds(model, { requiresTools: true })
+}
+
+type Props = {
+  readiness: ModelReadiness
+  /** The selected model's display name, for "{{model}} can't use tools." */
+  modelName?: string
+  /** ER4 primary: send this message with no tools (`handleSubmit(true, { toolsOff: true })`). */
+  onAnswerWithoutTools?(): void
+  answerWithoutToolsDisabled?: boolean
+  /** ER4 secondary: the user's own pick in a model picker. Dango never switches models by itself. */
+  onSelectModel?(provider: string, modelId: string): void
+}
+
+export function ModelReadinessNotice({
+  readiness,
+  modelName,
+  onAnswerWithoutTools,
+  answerWithoutToolsDisabled,
+  onSelectModel,
+}: Props) {
   const { t } = useTranslation()
 
   if (readiness.status === 'ready') return null
+
+  // ER4: the turn needs tools and this model can't use them. Checked before sending, never during a turn.
+  if (readiness.status === 'capability-required' && readiness.capability === 'tool_use') {
+    return (
+      <div className="dg-composer-notice" role="status">
+        <p className="dg-composer-notice__text dg-type-caption">
+          {t("{{model}} can't use tools.", { model: modelName || readiness.modelId })}
+        </p>
+        <div className="dg-composer-notice__actions">
+          {onAnswerWithoutTools ? (
+            <button
+              type="button"
+              className="dg-btn dg-btn--primary"
+              disabled={answerWithoutToolsDisabled}
+              onClick={onAnswerWithoutTools}
+            >
+              {t('Answer without tools')}
+            </button>
+          ) : null}
+          {onSelectModel ? (
+            <ModelSelector
+              onSelect={(provider, modelId) => onSelectModel(provider, modelId)}
+              modelFilter={canUseToolsModelFilter}
+              selectedProviderId={readiness.providerId}
+              selectedModelId={readiness.modelId}
+              position="top-start"
+            >
+              <button type="button" className="dg-btn dg-btn--ghost">
+                {t('Choose a model')}
+              </button>
+            </ModelSelector>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
 
   const content =
     readiness.status === 'capability-required'

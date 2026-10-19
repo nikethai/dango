@@ -117,6 +117,32 @@ button.dg-tool {
   font-variant-numeric: tabular-nums;
 }
 
+/* Composer notices (06b ER4, 80% context): one sentence, then the fixes as buttons; wraps at phone width. */
+.dg-composer-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dango-space-2);
+  padding: var(--dango-space-2) var(--dango-space-3) var(--dango-space-1);
+  min-width: 0;
+  color: var(--dango-ink-2);
+}
+.dg-composer-notice--quiet {
+  padding: 0 var(--dango-space-1);
+  color: var(--dango-muted);
+}
+.dg-composer-notice__text {
+  margin: 0;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.dg-composer-notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dango-space-2);
+}
+
 /* Model error under an answer (06b ER1/ER2/ER5/CH5): the sentence, then the fix as the button, then details. */
 .dg-model-error__actions {
   display: flex;

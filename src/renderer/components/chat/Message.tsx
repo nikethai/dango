@@ -15,6 +15,7 @@ import {
   type MessagePicture,
   type MessageToolCallPart,
   ModelProviderEnum,
+  type ProviderModelInfo,
   type SessionType,
 } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
@@ -75,8 +76,10 @@ import {
 import platform from '@/platform'
 import { router } from '@/router'
 import storage from '@/storage'
+import { peekSession } from '@/stores/chatStore'
 import { branchChatFromMessage } from '@/stores/session/branch'
 import { editAndResend } from '@/stores/session/edit-resend'
+import { turnAbilityNeeds } from '@/stores/session/redo-needs'
 import { getLiveGenerationStartedAt } from '@/stores/session/session-live-generation'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -86,6 +89,8 @@ import {
   hasVisibleAssistantReply,
   shouldShowAssistantPending,
 } from '@/utils/message-stream-ui'
+import { isNonChatComposerModel } from '@/utils/modelDisplayName'
+import { type ModelNeeds, modelMeetsNeeds } from '@/utils/modelReadiness'
 import '../../static/Block.css'
 import { type PlanContinueState, planCardState } from '@/packages/plan/planSteps'
 import {
@@ -704,6 +709,23 @@ const _Message: FC<Props> = (props) => {
   const actionMenuItems = isChatSession ? chatMenuItems : pictureMenuItems
   const [actionMenuOpened, setActionMenuOpened] = useState(false)
   const [redoListOpened, setRedoListOpened] = useState(false)
+  // Redo ▾ obeys the composer's before-send ability checks: its list offers only models that can take this turn
+  // (tools unless the turn was sent without them, vision for a picture). Unknown capabilities are never left out.
+  const [redoNeeds, setRedoNeeds] = useState<ModelNeeds>({})
+  const handleRedoListChange = useCallback(
+    (opened: boolean) => {
+      if (opened) {
+        const session = peekSession(sessionId)
+        setRedoNeeds(session ? turnAbilityNeeds(session, msg.id) : {})
+      }
+      setRedoListOpened(opened)
+    },
+    [sessionId, msg.id]
+  )
+  const redoModelFilter = useCallback(
+    (model: ProviderModelInfo) => !isNonChatComposerModel(model) && modelMeetsNeeds(model, redoNeeds),
+    [redoNeeds]
+  )
   const isUser = msg.role === 'user'
   const isAssistant = msg.role === 'assistant'
 
@@ -1068,7 +1090,8 @@ const _Message: FC<Props> = (props) => {
                         menu={actionMenuItems}
                         menuOpened={actionMenuOpened}
                         onMenuChange={setActionMenuOpened}
-                        onRedoListChange={setRedoListOpened}
+                        onRedoListChange={handleRedoListChange}
+                        redoModelFilter={redoModelFilter}
                       />
                     ) : (
                       <>

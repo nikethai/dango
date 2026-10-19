@@ -137,6 +137,11 @@ export async function getSession(sessionId: string) {
   return await queryClient.fetchQuery(getSessionQueryOptions(sessionId))
 }
 
+/** The session as cached right now, read synchronously; undefined when it is not loaded. */
+export function peekSession(sessionId: string): Session | undefined {
+  return queryClient.getQueryData<Session | null>(QueryKeys.ChatSession(sessionId)) ?? undefined
+}
+
 /** Read a session directly from storage without consulting the stale React Query cache. */
 export async function sessionExistsInStorage(sessionId: string): Promise<boolean> {
   return (await storage.getItem<Session | null>(StorageKeyGenerator.session(sessionId), null)) !== null

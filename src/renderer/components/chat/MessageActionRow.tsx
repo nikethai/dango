@@ -1,4 +1,4 @@
-import type { Message } from '@shared/types'
+import type { Message, ProviderModelInfo } from '@shared/types'
 import { ChevronDown, Copy, Ellipsis, type LucideIcon, Pencil, RotateCcw, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { forwardRef, type MouseEventHandler } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -46,6 +46,8 @@ export type MessageActionRowProps = {
   onMenuChange?(opened: boolean): void
   /** Lets the host keep the hover row visible while the Redo ▾ model list (a portal) is open. */
   onRedoListChange?(opened: boolean): void
+  /** Models Redo ▾ may offer: those that can take this turn (checked before sending, like the composer). */
+  redoModelFilter?(model: ProviderModelInfo): boolean
 }
 
 /**
@@ -53,8 +55,19 @@ export type MessageActionRowProps = {
  * model · tokens · time. User: Copy · Edit · More.
  */
 export function MessageActionRow(props: MessageActionRowProps) {
-  const { msg, onCopy, onRedo, onRedoWithModel, onFeedback, menu, onEdit, menuOpened, onMenuChange, onRedoListChange } =
-    props
+  const {
+    msg,
+    onCopy,
+    onRedo,
+    onRedoWithModel,
+    onFeedback,
+    menu,
+    onEdit,
+    menuOpened,
+    onMenuChange,
+    onRedoListChange,
+    redoModelFilter,
+  } = props
   const { t } = useTranslation()
   const isAssistant = msg.role === 'assistant'
   const rating = msg.feedback?.rating
@@ -70,6 +83,7 @@ export function MessageActionRow(props: MessageActionRowProps) {
             onSelect={(provider, modelId) => onRedoWithModel(provider, modelId)}
             onDropdownOpen={() => onRedoListChange?.(true)}
             onDropdownClose={() => onRedoListChange?.(false)}
+            modelFilter={redoModelFilter}
             position="bottom-start"
           >
             <RowButton label={t('Redo with another model')} icon={ChevronDown} />

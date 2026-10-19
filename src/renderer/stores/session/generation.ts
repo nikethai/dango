@@ -95,6 +95,7 @@ import {
 } from './session-live-generation'
 import { getSessionWebBrowsing } from './session-web-browsing'
 import { buildVisibleAnswerContinuePrompt, mergeContinuedContentParts } from './tool-only-continue'
+import { isToolsOffTurn } from './tools-off'
 
 export { getSessionWebBrowsing }
 export { cancelSessionGeneration, clearGenerationCancel } from './generation-cancel'
@@ -813,6 +814,9 @@ export async function generate(
     }
   }
 
+  // ER4 "Answer without tools": decided before sending (InputBox), only honoured here; no ability check mid-turn.
+  const toolsOffForTurn = isToolsOffTurn(messages, targetMsg.id)
+
   // Shared stream UI coalescing — visible to catch so error path can cancel pending writes.
   // ~32ms (~30fps) is smoother token growth than 50ms without the 16ms Virtuoso thrash.
   const STREAM_UI_MIN_MS = 32
@@ -1134,7 +1138,7 @@ export async function generate(
         let toolsToUse: ToolSet | undefined
         let planningToolsInstructions = ''
         const executionAgentImageFlowInstructions =
-          (roomMulti && !roomToolsAllowed) || !(!isPlanMode || isExecutionPhase)
+          toolsOffForTurn || (roomMulti && !roomToolsAllowed) || !(!isPlanMode || isExecutionPhase)
             ? undefined
             : agentImageFlowInstructions
 
@@ -1159,6 +1163,11 @@ export async function generate(
           planningToolsInstructions =
             (taskTracking.default?.description || '') +
             formatActiveTaskContext(taskStore.getState().getSessionTasks(sessionId))
+        }
+        // Answer without tools: empty object = no tools (undefined still attaches MCP), and no tool instructions.
+        if (toolsOffForTurn) {
+          toolsToUse = {}
+          planningToolsInstructions = ''
         }
 
         // Inject planning tools instructions into system prompt if in planning phase
@@ -1295,16 +1304,21 @@ export async function generate(
           providerOptions: effectiveSettings.providerOptions,
           // Discuss/plan/review: pure chat. Work/Swarm do/deliver: allow tools/web like solo agent.
           // Swarm plan: task tools only (no KB/web).
-          knowledgeBase: firstHandoff || roomBlocksExternalTools ? undefined : knowledgeBase,
-          webBrowsing: firstHandoff || roomBlocksExternalTools ? false : webBrowsing,
+          knowledgeBase: firstHandoff || roomBlocksExternalTools || toolsOffForTurn ? undefined : knowledgeBase,
+          webBrowsing: firstHandoff || roomBlocksExternalTools || toolsOffForTurn ? false : webBrowsing,
           nativeWebSearch:
-            firstHandoff || roomBlocksExternalTools ? undefined : useGeminiGrounding ? 'gemini-grounding' : undefined,
+            firstHandoff || roomBlocksExternalTools || toolsOffForTurn
+              ? undefined
+              : useGeminiGrounding
+                ? 'gemini-grounding'
+                : undefined,
           agentImageFlowInstructions: executionAgentImageFlowInstructions,
           // Default chat image generate/edit (provider-neutral) when tools are available.
-          enableImageGenerationTool: !firstHandoff && !roomBlocksExternalTools && model.isSupportToolUse(),
+          enableImageGenerationTool:
+            !firstHandoff && !roomBlocksExternalTools && !toolsOffForTurn && model.isSupportToolUse(),
           imageGenerationMessageId: targetMsg.id,
           agentCoding: await (async () => {
-            const enabled = !firstHandoff && isAgentExecuteTurn
+            const enabled = !firstHandoff && !toolsOffForTurn && isAgentExecuteTurn
             const projectId = session.projectId || session.folderId
             let capabilityId: string | undefined
             let rootGeneration: string | undefined
@@ -1358,7 +1372,7 @@ export async function generate(
             const toolsRoleOk = !roomMultiLocal || roomToolsAllowed
             const roomAllowed = !discussOff && toolsRoleOk && !roomBlocksExternalTools
             return {
-              armed: !firstHandoff && Boolean(session.browserArmed) && roomAllowed,
+              armed: !firstHandoff && !toolsOffForTurn && Boolean(session.browserArmed) && roomAllowed,
               sessionId,
               workspaceRoot: undefined,
               runId: targetMsg.id,
@@ -1372,15 +1386,15 @@ export async function generate(
             const toolsRoleOk = !roomMultiLocal || roomToolsAllowed
             const roomAllowed = !discussOff && toolsRoleOk && !roomBlocksExternalTools
             return {
-              armed: !firstHandoff && Boolean(session.computerArmed) && roomAllowed,
+              armed: !firstHandoff && !toolsOffForTurn && Boolean(session.computerArmed) && roomAllowed,
               sessionId,
               // Act tools only when computerArmed (observe+act share arm; master setting gates tools)
-              allowAct: !firstHandoff && Boolean(session.computerArmed),
+              allowAct: !firstHandoff && !toolsOffForTurn && Boolean(session.computerArmed),
               roomAllowed,
             }
           })(),
-          maxSteps: firstHandoff ? 1 : roomMaxSteps,
-          tools: firstHandoff ? {} : toolsToUse,
+          maxSteps: firstHandoff || toolsOffForTurn ? 1 : roomMaxSteps,
+          tools: firstHandoff || toolsOffForTurn ? {} : toolsToUse,
           toolAccess: firstHandoff ? firstHandoff.toolAccess : copilotOverrides?.toolAccess,
           memory: speakerAgentId
             ? {

@@ -105,7 +105,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { delay } from '@/utils'
 import { decideClipboardPaste, extractClipboardNonImageFiles, imagePayloadFingerprint } from '@/utils/clipboardImages'
 import { getModelDisplayName } from '@/utils/modelDisplayName'
-import { getModelReadiness } from '@/utils/modelReadiness'
+import { getModelReadiness, turnNeedsTools } from '@/utils/modelReadiness'
 import { trackEvent } from '@/utils/track'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
 import type {
@@ -156,6 +156,8 @@ import DictateButton from './DictateButton'
 import type { ComposerChipData } from './composer-chip-dom'
 import { ImageUploadInput } from './ImageUploadInput'
 import MemoryMentionPicker from './MemoryMentionPicker'
+import { ContextNearFullNotice } from './ContextNearFullNotice'
+import { contextFillRatio, shouldWarnContextFill } from './contextFill'
 import { ModelReadinessNotice } from './ModelReadinessNotice'
 import OpenClawCommandPicker, { filterOpenClawCommands, getCommandAlias } from './OpenClawCommandPicker'
 import PresetPicker, { filterPresets } from './PresetPicker'
@@ -565,7 +567,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const voiceSawGeneratingRef = useRef(false)
     const messageInputRef = useRef(messageInput)
     messageInputRef.current = messageInput
-    const handleSubmitRef = useRef<(needGenerating?: boolean) => Promise<void>>(async () => {})
+    const handleSubmitRef = useRef<(needGenerating?: boolean, opts?: { toolsOff?: boolean }) => Promise<void>>(
+      async () => {}
+    )
 
     // Check if any preprocessing is in progress
     const isPreprocessing = useMemo(() => {
@@ -623,9 +627,26 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     const showNonVisionVideoBanner = hasVideoAttachments && !modelSupportsVision && !visionBannerDismissed
 
+    // ER4: abilities are checked here, before sending, never during a turn.
+    const browserArmedForTurn = controlledBrowserArmed ?? currentSession?.browserArmed
+    const computerArmedForTurn = controlledComputerArmed ?? currentSession?.computerArmed
+    const roomSizeForTurn = isNewSession ? (draftAgentIds?.length ?? 0) : (currentSession?.agentIds?.length ?? 0)
+    const roomModeForTurn = roomSizeForTurn > 1 ? (isNewSession ? draftRoomMode : currentSession?.roomMode) : undefined
+    const requiresTools =
+      sessionType === 'chat' &&
+      turnNeedsTools({
+        agentMode,
+        browserArmed: browserArmedForTurn,
+        computerArmed: computerArmedForTurn,
+        roomMode: roomModeForTurn,
+      })
     const modelReadiness = useMemo(
-      () => getModelReadiness(model, providers, { requiresVision: pictureKeys.length > 0 || hasVideoAttachments }),
-      [hasVideoAttachments, model, pictureKeys.length, providers]
+      () =>
+        getModelReadiness(model, providers, {
+          requiresVision: pictureKeys.length > 0 || hasVideoAttachments,
+          requiresTools,
+        }),
+      [hasVideoAttachments, model, pictureKeys.length, providers, requiresTools]
     )
 
     const videoLimitsForUi = useMemo(() => getVideoLimits(platform.formFactor === 'desktop' ? 'desktop' : 'mobile'), [])
@@ -703,7 +724,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       return compactionUIStateMap[currentSessionId]?.status === 'running'
     }, [compactionUIStateMap, currentSessionId, isNewSession])
 
-    const isModelReadinessBlocking = platformCapabilities.isMobileLayout && modelReadiness.status !== 'ready'
+    // A missing ability blocks on every layout (its notice shows the fix); setup/unavailable stay mobile-only.
+    const isModelReadinessBlocking =
+      modelReadiness.status === 'capability-required' ||
+      (platformCapabilities.isMobileLayout && modelReadiness.status !== 'ready')
     // While generating (or sticky race window), button is always Stop and always clickable.
     // Never key Stop on empty-draft (old: generating && disableSubmit) — that flipped Send mid-turn.
     const showStop = Boolean(generating || stickyStop)
@@ -738,6 +762,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       if (model?.modelId) return getModelContextWindowSync(model.modelId)
       return null
     }, [modelInfo?.contextWindow, model?.modelId])
+
+    const contextFill = contextFillRatio(contextTokens, effectiveContextWindow ?? undefined)
+    const showContextNearFull = !isNewSession && !!currentSessionId && shouldWarnContextFill(contextFill)
 
     useEffect(() => {
       if (!currentSessionId || isNewSession) {
@@ -1500,7 +1527,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     )
 
     const closeSelectModelErrorTipCb = useRef<NodeJS.Timeout>()
-    const handleSubmit = async (needGenerating = true) => {
+    const handleSubmit = async (needGenerating = true, opts?: { toolsOff?: boolean }) => {
       if (disableSubmit || isSubmitting || isPreprocessing) {
         return
       }
@@ -1538,8 +1565,14 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         return
       }
 
-      // error tip
-      if (platformCapabilities.isMobileLayout && modelReadiness.status !== 'ready') {
+      // ER4 "Answer without tools": the one way past a model that can't use tools.
+      const answerWithoutTools = opts?.toolsOff === true
+      if (modelReadiness.status === 'capability-required') {
+        const skipsTools = answerWithoutTools && modelReadiness.capability === 'tool_use'
+        // The notice above the composer names the fix; nothing to send until it is chosen.
+        if (needGenerating && !skipsTools) return
+      } else if (platformCapabilities.isMobileLayout && modelReadiness.status !== 'ready') {
+        // error tip
         if (!model) {
           // (legacy comment)
           await delay(100)
@@ -1572,6 +1605,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
         // Sample video frames for vision models right before send
         let constructedMessage = preConstructedMessage.message
+        if (answerWithoutTools) {
+          constructedMessage = { ...constructedMessage, toolsOff: true }
+        }
 
         // Parse @ / $ / # tokens from the message body (Slack-style).
         // Keep completed tokens in the sent text so models can follow who/what is directed.
@@ -2750,6 +2786,16 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           {currentSessionId && <CompactionStatus sessionId={currentSessionId} />}
           {currentSessionId && <QueuedMessageList sessionId={currentSessionId} />}
           {currentSessionId ? <TeamRoomActions sessionId={currentSessionId} /> : null}
+          {showContextNearFull && contextFill !== null && currentSessionId ? (
+            <ContextNearFullNotice
+              ratio={contextFill}
+              onStartNewChat={() =>
+                import('@/stores/session/new-chat-with-summary').then(({ startNewChatWithSummary }) =>
+                  startNewChatWithSummary(currentSessionId)
+                )
+              }
+            />
+          ) : null}
           <Stack
             ref={composerCardRef}
             className={cn(
@@ -3110,7 +3156,15 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
               </div>
             )}
 
-            {platformCapabilities.isMobileLayout && <ModelReadinessNotice readiness={modelReadiness} />}
+            {(platformCapabilities.isMobileLayout || modelReadiness.status === 'capability-required') && (
+              <ModelReadinessNotice
+                readiness={modelReadiness}
+                modelName={modelSelectorDisplayText}
+                onAnswerWithoutTools={() => void handleSubmit(true, { toolsOff: true })}
+                answerWithoutToolsDisabled={disableSubmit || isSubmitting || isPreprocessing || hardStopBlocked}
+                onSelectModel={onSelectModel}
+              />
+            )}
 
             {/* Toolbar row — mock .bar (rail bg + send on the right) */}
             <Flex align="center" gap={0} className="composer-bar shrink-0 w-full">

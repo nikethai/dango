@@ -1762,5 +1762,8 @@
   "{{provider}} is still limiting requests. It's waiting in Review.": "{{provider}} is still limiting requests. It's waiting in Review.",
   "{{provider}} is limiting requests.": "{{provider}} is limiting requests.",
   "{{provider}} is still limiting requests": "{{provider}} is still limiting requests",
-  "The chat \"{{chat}}\" is waiting for a retry.": "The chat \"{{chat}}\" is waiting for a retry."
+  "The chat \"{{chat}}\" is waiting for a retry.": "The chat \"{{chat}}\" is waiting for a retry.",
+  "{{model}} can't use tools.": "{{model}} can't use tools.",
+  "Answer without tools": "Answer without tools",
+  "This chat is {{pct}}% full. Early messages may be left out.": "This chat is {{pct}}% full. Early messages may be left out."
 }
