@@ -819,4 +819,98 @@ describe('background job runner: one job per source, fixes and resolver', () => 
     await settle()
     expect(addReviewEntry).toHaveBeenCalledWith(expect.objectContaining({ source: 'Label of src1' }))
   })
+
+  it('a fix for a job whose source was removed never runs it again', async () => {
+    const present = new Set(['src1'])
+    setJobSourceResolver({ exists: (sourceId) => present.has(sourceId), label: () => undefined })
+    const handler = handlerThat(async () => {
+      await Promise.resolve()
+      throw needsSignIn()
+    })
+    registerJobHandler('sync', handler)
+    const fix = vi.fn(async () => true)
+    registerFixHandler('reconnect', fix)
+    const { id } = gmail()
+    await settle()
+    present.delete('src1')
+    await runJobFix(id)
+    await settle()
+    expect(fix).not.toHaveBeenCalled()
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(getBackgroundJob(id)?.status).toBe('needs-you')
+  })
+
+  it('a fix that finishes after its source was removed does not run the job again', async () => {
+    const present = new Set(['src1'])
+    setJobSourceResolver({ exists: (sourceId) => present.has(sourceId), label: () => undefined })
+    const handler = handlerThat(async () => {
+      await Promise.resolve()
+      throw needsSignIn()
+    })
+    registerJobHandler('sync', handler)
+    let finishFix: (ok: boolean) => void = () => undefined
+    registerFixHandler(
+      'reconnect',
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishFix = resolve
+        })
+    )
+    const { id } = gmail()
+    await settle()
+    const fixing = runJobFix(id)
+    await settle()
+    present.delete('src1')
+    finishFix(true)
+    await fixing
+    await settle()
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(runningFor('src1')).toEqual([])
+  })
+
+  it('stopJob retires a needs-you job: failed with stoppedAt, no fix, no new entry', async () => {
+    registerJobHandler('sync', async () => {
+      await Promise.resolve()
+      throw needsSignIn()
+    })
+    const { id } = gmail()
+    await settle()
+    vi.mocked(addReviewEntry).mockClear()
+    await stopJob(id)
+    const job = getBackgroundJob(id)
+    expect(job?.status).toBe('failed')
+    expect(job?.stoppedAt).toBeTypeOf('number')
+    expect(job?.fix).toBeUndefined()
+    expect(stored().find((j) => j.id === id)?.status).toBe('failed')
+    expect(addReviewEntry).not.toHaveBeenCalled()
+  })
+
+  it('a superseded needs-you job counts toward the history cap; the latest of its source and kind never does', async () => {
+    let fail = true
+    registerJobHandler('sync', async () => {
+      await Promise.resolve()
+      if (fail) throw needsSignIn()
+      return { summary: 'ok', addDoneEntry: false }
+    })
+    registerJobHandler('swarm', async () => {
+      await Promise.resolve()
+      return { summary: 'ok', addDoneEntry: false }
+    })
+    const superseded = gmail()
+    await settle()
+    await vi.advanceTimersByTimeAsync(1_000)
+    // Sync now after the failure: the new run supersedes the needs-you job, and fails the same way.
+    const latest = gmail()
+    await settle()
+    expect(getBackgroundJob(latest.id)?.status).toBe('needs-you')
+    fail = false
+    for (let i = 0; i < JOB_HISTORY_PER_SCOPE + 2; i++) {
+      await vi.advanceTimersByTimeAsync(1_000)
+      startJob({ scopeId: 's1', kind: 'swarm', label: 'Swarm' })
+      await settle()
+    }
+    expect(getBackgroundJob(superseded.id)).toBeUndefined()
+    expect(stored().find((j) => j.id === superseded.id)).toBeUndefined()
+    expect(getBackgroundJob(latest.id)?.status).toBe('needs-you')
+  })
 })

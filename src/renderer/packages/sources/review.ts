@@ -8,6 +8,7 @@ import { proposeKnowledge } from '@/packages/knowledge'
 import { getSourceKind } from './kinds'
 import { throwIfAborted } from './kinds/common'
 import { backgroundModelChoice, hasUsableModel } from './model-check'
+import { _resetReviewStateForTests, forgetReviewState, reviewProgressFor } from './review-state'
 import { getSource, loadSources, sourcesStore, updateSource } from './store'
 
 /** Item characters (text, label and ref) sent in one model call. */
@@ -95,7 +96,7 @@ function toBatches(items: SourceItem[]): SourceItem[][] {
   let current: SourceItem[] = []
   let size = 0
   for (const original of items) {
-    const room = REVIEW_BATCH_CHARS - original.label.length - original.ref.length
+    const room = Math.max(0, REVIEW_BATCH_CHARS - original.label.length - original.ref.length)
     const item =
       itemSize(original) > REVIEW_BATCH_CHARS ? { ...original, text: original.text.slice(0, room) } : original
     if (current.length > 0 && size + itemSize(item) > REVIEW_BATCH_CHARS) {
@@ -120,18 +121,14 @@ function uniqueByRef(items: SourceItem[]): SourceItem[] {
   return [...latest.values()]
 }
 
-/**
- * Items already reviewed (ref → text) by an earlier run of a source whose cursor was not saved because that run failed.
- * A retry reads them again and skips them, so they produce no proposal twice. Cleared once the cursor is saved.
- */
-const reviewedSinceCursor = new Map<string, Map<string, string>>()
-
-async function sourceFor(sourceId: string | undefined): Promise<ConnectedSource> {
+/** The job's source, or undefined when it was removed (its jobs then end quietly). */
+async function sourceFor(sourceId: string | undefined): Promise<ConnectedSource | undefined> {
   if (!sourcesStore.getState().loaded) await loadSources()
-  const source = sourceId === undefined ? undefined : getSource(sourceId)
-  if (!source) throw new Error(i18n.t('This source was removed.'))
-  return source
+  return sourceId === undefined ? undefined : getSource(sourceId)
 }
+
+/** A run of a removed source: no error (so no retries and no Needs you entry) and no Done entry. */
+const removedOutcome = () => ({ summary: i18n.t('This source was removed.'), addDoneEntry: false })
 
 async function cursorStorage() {
   const [mod, { StorageKeyGenerator }] = await Promise.all([import('@/storage'), import('@/storage/StoreStorage')])
@@ -197,6 +194,7 @@ function reviewSummary(read: number, proposals: number, label: string): string {
  */
 export const reviewJobHandler: JobHandler = async ({ job, signal, progress }) => {
   const source = await sourceFor(job.sourceId)
+  if (!source) return removedOutcome()
   await checkModel(source)
   const def = getSourceKind(source.kind)
   if (!def?.read) throw new Error(i18n.t('This source cannot be reviewed.'))
@@ -205,11 +203,11 @@ export const reviewJobHandler: JobHandler = async ({ job, signal, progress }) =>
   throwIfAborted(signal)
   const { items: read, cursor: nextCursor } = await def.read(source, { signal, cursor })
   const items = uniqueByRef(read)
-  const reviewed = reviewedSinceCursor.get(source.id) ?? new Map<string, string>()
-  reviewedSinceCursor.set(source.id, reviewed)
+  // Items and proposals of earlier attempts whose cursor was not saved (see `review-state`).
+  const state = reviewProgressFor(source.id)
+  const { reviewed } = state
   const pending = items.filter((item) => reviewed.get(item.ref) !== item.text)
 
-  let proposals = 0
   let done = items.length - pending.length
   for (const batch of toBatches(pending)) {
     throwIfAborted(signal)
@@ -226,7 +224,7 @@ export const reviewJobHandler: JobHandler = async ({ job, signal, progress }) =>
         origin: 'background-review',
         sources: [{ kind: KNOWLEDGE_SOURCE_KIND[source.kind], label: item.label, ref: item.ref, sourceId: source.id }],
       })
-      if (proposal) proposals += 1
+      if (proposal) state.proposals += 1
     }
     // The original text (not the clipped one) is what a retry compares with.
     for (const item of batch) reviewed.set(item.ref, items.find((i) => i.ref === item.ref)?.text ?? item.text)
@@ -236,7 +234,8 @@ export const reviewJobHandler: JobHandler = async ({ job, signal, progress }) =>
   throwIfAborted(signal)
   if (nextCursor === null) await storage.removeItem(key(source.id))
   else await storage.setItemNow(key(source.id), nextCursor)
-  reviewedSinceCursor.delete(source.id)
+  const { proposals } = state
+  forgetReviewState(source.id)
   await updateSource(source.id, { lastReviewAt: Date.now() })
   return { summary: reviewSummary(items.length, proposals, source.label), addDoneEntry: proposals > 0 }
 }
@@ -244,6 +243,7 @@ export const reviewJobHandler: JobHandler = async ({ job, signal, progress }) =>
 /** Runs the kind's sync and records `lastSyncAt`; every finished sync adds a Done entry. */
 export const syncJobHandler: JobHandler = async ({ job, signal, progress }) => {
   const source = await sourceFor(job.sourceId)
+  if (!source) return removedOutcome()
   const def = getSourceKind(source.kind)
   if (!def?.sync) throw new Error(i18n.t('This source cannot be synced.'))
   const { summary } = await def.sync(source, { signal, progress })
@@ -253,5 +253,5 @@ export const syncJobHandler: JobHandler = async ({ job, signal, progress }) => {
 }
 
 export function _resetReviewForTests(): void {
-  reviewedSinceCursor.clear()
+  _resetReviewStateForTests()
 }

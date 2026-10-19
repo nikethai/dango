@@ -314,7 +314,8 @@ describe('reviewJobHandler', () => {
     const outcome = await reviewJobHandler(ctxOf())
     expect(generateText).toHaveBeenCalledTimes(3)
     expect(vi.mocked(proposeKnowledge).mock.calls.map(([i]) => i.sources[0].ref)).toEqual(['t1', 't2'])
-    expect(outcome.summary).toBe('Read 2 items from Codex threads: 1 proposal')
+    // The summary counts the proposal the failed attempt filed too (final review #11).
+    expect(outcome.summary).toBe('Read 2 items from Codex threads: 2 proposals')
   })
 
   it('reviews an item read twice in one run once', async () => {
@@ -344,6 +345,47 @@ describe('reviewJobHandler', () => {
     modelSays({ proposals: [] }, { proposals: [] }, { proposals: [] })
     await reviewJobHandler(ctxOf())
     expect(generateText).toHaveBeenCalledTimes(3)
+  })
+
+  it('a retry counts proposals an earlier failed attempt filed, so its Done entry is kept', async () => {
+    storeSources(sourceOf())
+    const items = [
+      { ref: 't1', label: 'Thread one', text: 'Use pnpm.' },
+      { ref: 't2', label: 'Thread two', text: 'x'.repeat(11_995) },
+    ]
+    read.mockResolvedValue({ items, cursor: 'c2' })
+    modelSays({ proposals: [{ kind: 'decision', text: 'Use pnpm', ref: 't1' }] })
+    vi.mocked(generateText).mockRejectedValueOnce(new Error('offline'))
+    await expect(reviewJobHandler(ctxOf())).rejects.toThrow('offline')
+    // The retry proposes nothing new, but the run as a whole filed one proposal.
+    modelSays({ proposals: [] })
+    const outcome = await reviewJobHandler(ctxOf())
+    expect(outcome).toEqual({ summary: 'Read 2 items from Codex threads: 1 proposal', addDoneEntry: true })
+    // Once the cursor is saved, the next run starts counting from zero.
+    read.mockResolvedValue({ items: [{ ref: 't3', label: 'Thread three', text: 'Hello.' }], cursor: 'c3' })
+    modelSays({ proposals: [] })
+    expect(await reviewJobHandler(ctxOf())).toMatchObject({ addDoneEntry: false })
+  })
+
+  it('an item whose label and ref alone exceed the batch size is sent with no text', async () => {
+    storeSources(sourceOf())
+    read.mockResolvedValue({
+      items: [{ ref: 't1', label: 'L'.repeat(12_001), text: `secret-${'z'.repeat(100)}` }],
+      cursor: 'c2',
+    })
+    modelSays({ proposals: [] })
+    await reviewJobHandler(ctxOf())
+    const sent = JSON.stringify(vi.mocked(generateText).mock.calls[0][1])
+    expect(sent).not.toContain('secret-')
+  })
+
+  it('a review or sync of a removed source ends quietly: no error, no Done entry', async () => {
+    storeSources(sourceOf({ id: 'other' }))
+    const review = await reviewJobHandler(ctxOf())
+    expect(review).toEqual({ summary: 'This source was removed.', addDoneEntry: false })
+    const sync = await syncJobHandler(ctxOf(jobOf({ kind: 'sync' })))
+    expect(sync).toEqual({ summary: 'This source was removed.', addDoneEntry: false })
+    expect(read).not.toHaveBeenCalled()
   })
 
   it('no model raises choose-model', async () => {

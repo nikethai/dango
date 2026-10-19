@@ -16,6 +16,7 @@ import {
   registerSourceKind,
   type SourceKindDefinition,
 } from './kinds'
+import { reviewProgressFor } from './review-state'
 import {
   _resetSourcesForTests,
   addSource,
@@ -201,6 +202,37 @@ describe('sources store', () => {
     expect(listSources().map((s) => s.id)).toEqual(['ok'])
   })
 
+  it('a failed read in a window that never loaded refuses to write and keeps the stored rows', async () => {
+    const stored = [
+      { id: 'g', kind: 'gmail', scopeId: 'acme', label: 'me@work', connectedAt: 1 },
+      { id: 'c', kind: 'codex-threads', scopeId: 'acme', label: 'Codex threads', connectedAt: 2 },
+    ]
+    memory.set('sources', stored)
+    io.failRead = true
+    await expect(addSource(input({ kind: 'folder', label: 'site' }))).rejects.toThrow()
+    await expect(updateSource('g', { label: 'x' })).resolves.toBeUndefined()
+    expect(io.writes).toBe(0)
+    expect(sourcesStore.getState().loaded).toBe(false)
+    io.failRead = false
+    await loadSources()
+    expect(listSources().map((s) => s.id)).toEqual(['g', 'c'])
+    expect(memory.get('sources')).toEqual(stored)
+  })
+
+  it('adopting folder bindings after a failed read never overwrites stored sources', async () => {
+    memory.set('sources', [{ id: 'g', kind: 'gmail', scopeId: 'acme', label: 'me@work', connectedAt: 1 }])
+    vi.mocked(platform.restoreProjectBinding as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: 'ready',
+      displayPath: '/Users/me/Acme',
+    })
+    io.failRead = true
+    await expect(adoptExistingFolderBindings(['acme'])).rejects.toThrow()
+    expect(io.writes).toBe(0)
+    io.failRead = false
+    await loadSources()
+    expect(listSources().map((s) => s.id)).toEqual(['g'])
+  })
+
   it('a rule-rejected add or a no-op change writes nothing', async () => {
     await addSource(input({ kind: 'folder' }))
     expect(io.writes).toBe(1)
@@ -304,6 +336,35 @@ describe('sources store', () => {
     expect(state('e1')).toBe('dismissed')
     expect(state('e2')).toBe('done')
     expect(state('e3')).toBe('open')
+  })
+
+  it("revoke stops a job started while it ran and dismisses that job's entry", async () => {
+    const s = await addSource(input())
+    reviewMemory.doc = { entries: [openJobEntry('e-late', 'j-late'), openJobEntry('e-needs', 'j-needs')] }
+    const jobs = [job({ id: 'j-needs', sourceId: s.id, status: 'needs-you' })]
+    vi.mocked(listJobs).mockImplementation((filter) => (filter?.sourceId === s.id ? [...jobs] : []))
+    // A check that runs while the kind revokes starts a review of the source (the record still exists then).
+    const revoke = vi.fn(() => {
+      jobs.push(job({ id: 'j-late', kind: 'review', sourceId: s.id, status: 'running' }))
+      return Promise.resolve()
+    })
+    registerSourceKind(kind('gmail', { revoke }))
+
+    await revokeSource(s.id)
+
+    expect(calls).toContain('stopJob:j-late')
+    // The needs-you job is retired (failed + stoppedAt) once the record is gone, not before.
+    expect(calls.indexOf('stopJob:j-needs')).toBeGreaterThan(calls.indexOf(`markSourceRemoved:${s.id}`))
+    expect(entryState('e-late')).toBe('dismissed')
+    expect(entryState('e-needs')).toBe('dismissed')
+  })
+
+  it('revoke forgets the review progress of the source', async () => {
+    const s = await addSource(input())
+    reviewProgressFor(s.id).proposals = 3
+    reviewProgressFor(s.id).reviewed.set('t1', 'text')
+    await revokeSource(s.id)
+    expect(reviewProgressFor(s.id)).toEqual({ proposals: 0, reviewed: new Map() })
   })
 
   it('revoke keeps the record and the entries when the kind revoke throws, and a retry completes', async () => {

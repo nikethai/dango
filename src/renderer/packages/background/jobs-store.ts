@@ -34,14 +34,25 @@ const pruned = new Set<string>()
 
 const finishedAt = (j: BackgroundJob) => j.finishedAt ?? j.stoppedAt ?? j.startedAt
 
+const slotKey = (j: BackgroundJob) => JSON.stringify([j.sourceId, j.kind])
+
 /**
- * Keeps every running and needs-you job (a needs-you job waits for its fix) and the newest `JOB_HISTORY_PER_SCOPE`
- * done or stopped jobs of each scope.
+ * Keeps every running job, every needs-you job that waits for its fix (the latest of its source and kind, or one
+ * without a source), and the newest `JOB_HISTORY_PER_SCOPE` other jobs of each scope: done, stopped, and needs-you
+ * jobs a later run of the same source and kind superseded.
  */
 function prune(jobs: BackgroundJob[]): BackgroundJob[] {
+  const latestOfSlot = new Map<string, BackgroundJob>()
+  for (const j of jobs) {
+    if (j.sourceId === undefined) continue
+    const latest = latestOfSlot.get(slotKey(j))
+    if (!latest || j.startedAt > latest.startedAt) latestOfSlot.set(slotKey(j), j)
+  }
+  const waitsForFix = (j: BackgroundJob) =>
+    j.status === 'needs-you' && (j.sourceId === undefined || latestOfSlot.get(slotKey(j)) === j)
   const finishedByScope = new Map<string, BackgroundJob[]>()
   for (const j of jobs) {
-    if (j.status === 'running' || j.status === 'needs-you') continue
+    if (j.status === 'running' || waitsForFix(j)) continue
     const list = finishedByScope.get(j.scopeId) ?? []
     list.push(j)
     finishedByScope.set(j.scopeId, list)

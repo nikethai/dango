@@ -11,6 +11,7 @@ import { markSourceRemoved } from '@/packages/knowledge'
 import { loadReviewEntries, reviewStore, setReviewEntryState } from '@/packages/review'
 import platform from '@/platform'
 import { getSourceKind } from './kinds'
+import { forgetReviewState } from './review-state'
 
 /*
  * Connected sources, stored under `StorageKey.Sources` (immediate write, IndexedDB on desktop).
@@ -102,18 +103,28 @@ function ensureLoaded(): Promise<void> {
   return sourcesStore.getState().loaded ? Promise.resolve() : loadSources()
 }
 
+/** Storage could not be read and this window never loaded its sources: nothing is written then. */
+export class SourcesUnreadableError extends Error {
+  constructor() {
+    super('Sources could not be read')
+    this.name = 'SourcesUnreadableError'
+  }
+}
+
 /**
- * Applies `fn` to the latest list (storage, or this window's list when storage cannot be read), updates this window
- * at once and writes the result. `fn` returns the list it was given to change nothing; nothing is written then.
- * A failed write is logged; it never rejects. Errors thrown by `fn` reject and change nothing.
+ * Applies `fn` to the latest list (storage, or this window's loaded list when storage cannot be read), updates this
+ * window at once and writes the result. `fn` returns the list it was given to change nothing; nothing is written then.
+ * When storage cannot be read and this window never loaded, it rejects with `SourcesUnreadableError` and writes
+ * nothing, so an empty list never overwrites the stored sources. A failed write is logged; it never rejects. Errors
+ * thrown by `fn` reject and change nothing.
  */
 function mutate<T>(fn: (sources: ConnectedSource[]) => { sources: ConnectedSource[]; result: T }): Promise<T> {
   return enqueue(async () => {
     const stored = await readStored()
+    if (!stored && !sourcesStore.getState().loaded) throw new SourcesUnreadableError()
     const current = stored ?? sourcesStore.getState().sources
     const { sources, result } = fn(current)
-    if (stored) sourcesStore.setState({ sources, loaded: true })
-    else sourcesStore.setState({ sources })
+    sourcesStore.setState({ sources, loaded: true })
     if (sources === current) return result
     try {
       const storage = await getStorage()
@@ -123,6 +134,19 @@ function mutate<T>(fn: (sources: ConnectedSource[]) => { sources: ConnectedSourc
     }
     return result
   })
+}
+
+/** `mutate` for changes that may be skipped: unreadable storage is logged, not thrown. */
+async function mutateOrSkip(
+  what: string,
+  fn: (sources: ConnectedSource[]) => { sources: ConnectedSource[]; result: undefined }
+): Promise<void> {
+  try {
+    await mutate(fn)
+  } catch (error) {
+    if (!(error instanceof SourcesUnreadableError)) throw error
+    console.warn(`[sources] Skipped ${what}: sources could not be read`, error)
+  }
 }
 
 type SourceFilter = { scopeId?: string; kind?: SourceKind }
@@ -206,7 +230,7 @@ export async function updateSource(
   id: string,
   patch: Partial<Omit<ConnectedSource, 'id' | 'kind' | 'connectedAt'>>
 ): Promise<void> {
-  await mutate((sources) => ({
+  await mutateOrSkip('a source update', (sources) => ({
     sources: sources.some((s) => s.id === id)
       ? sources.map((s) => (s.id === id ? { ...s, ...patch, id: s.id, kind: s.kind, connectedAt: s.connectedAt } : s))
       : sources,
@@ -233,7 +257,8 @@ async function dismissJobEntries(jobIds: Set<string>): Promise<void> {
 /**
  * Removes a source: stops its running jobs, runs the kind's `revoke` (a folder is unbound; Integrations accounts and
  * Documents collections are kept), marks its knowledge sources removed (approved knowledge stays), deletes the record
- * and its read cursor, and only then closes the open Review entries of its jobs.
+ * and its read cursor, and only then retires its jobs (a job started meanwhile is stopped, a needs-you job becomes
+ * stopped) and closes the open Review entries of all of them.
  *
  * If `revoke` or `markSourceRemoved` throws, the call rejects with the record kept and the entries open, so the user
  * can try again; a retry repeats every step (each is idempotent, see `SourceKindDefinition.revoke`).
@@ -245,22 +270,33 @@ export async function revokeSource(id: string): Promise<void> {
   // Jobs (and so their Review entries) are matched through this window's job store. Main is the only window that
   // runs jobs and revokes sources, and it has loaded its jobs by then.
   const jobs = listJobs({ sourceId: id })
+  const stopped = new Set<string>()
   for (const job of jobs) {
-    if (job.status === 'running') await stopJob(job.id)
+    if (job.status !== 'running') continue
+    await stopJob(job.id)
+    stopped.add(job.id)
   }
   await getSourceKind(source.kind)?.revoke?.(source)
   await markSourceRemoved(id)
-  await mutate((sources) => {
+  await mutateOrSkip('removing a source', (sources) => {
     const next = sources.filter((s) => s.id !== id)
     return { sources: next.length === sources.length ? sources : next, result: undefined }
   })
+  forgetReviewState(id)
   try {
     const storage = await getStorage()
     await storage.removeItem(storage.cursorKey(id))
   } catch (error) {
     console.warn('[sources] Could not remove the read cursor', error)
   }
-  await dismissJobEntries(new Set(jobs.map((j) => j.id)))
+  // Read again: a check or a fix may have started a job of this source while `revoke` ran. With the record gone,
+  // nothing starts one any more.
+  const after = listJobs({ sourceId: id })
+  for (const job of after) {
+    if (stopped.has(job.id) || (job.status !== 'running' && job.status !== 'needs-you')) continue
+    await stopJob(job.id)
+  }
+  await dismissJobEntries(new Set([...jobs, ...after].map((j) => j.id)))
 }
 
 const lastSegment = (path: string) =>

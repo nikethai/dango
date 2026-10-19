@@ -44,6 +44,11 @@ export function setJobSourceResolver(resolver: JobSourceResolver | null): void {
   sourceResolver = resolver
 }
 
+/** The job names a source the resolver says was removed (unknown while sources load: not removed). */
+function sourceRemoved(job: BackgroundJob): boolean {
+  return job.sourceId !== undefined && sourceResolver !== null && !sourceResolver.exists(job.sourceId)
+}
+
 function sourceLabelFor(job: BackgroundJob): string | undefined {
   const known = sourceLabels.get(job.id)
   if (known !== undefined || job.sourceId === undefined) return known
@@ -277,10 +282,13 @@ function closeSupersededEntry(job: BackgroundJob): void {
   if (latest?.status === 'needs-you') void closeEntry(latest.id)
 }
 
-/** Stops a running job for good: `failed` with `stoppedAt`, no retry and no Review entry. */
+/**
+ * Stops a running job for good: `failed` with `stoppedAt`, no retry and no Review entry. A needs-you job is retired
+ * the same way (its fix is dropped; closing its open entry is the caller's part, as when a source is removed).
+ */
 export async function stopJob(id: string): Promise<void> {
   const job = getBackgroundJob(id)
-  if (!job || job.status !== 'running') return
+  if (!job || (job.status !== 'running' && job.status !== 'needs-you')) return
   await halt(job)
 }
 
@@ -291,7 +299,12 @@ function halt(job: BackgroundJob): Promise<void> {
   active.delete(id)
   controller?.abort()
   const now = Date.now()
-  return putJob({ ...without(job, 'progress', 'nextRetryAt'), status: 'failed', stoppedAt: now, finishedAt: now })
+  return putJob({
+    ...without(job, 'progress', 'nextRetryAt', 'fix'),
+    status: 'failed',
+    stoppedAt: now,
+    finishedAt: now,
+  })
 }
 
 /**
@@ -308,7 +321,8 @@ export function runJobFix(id: string): Promise<void> {
 
 async function fixJob(id: string): Promise<void> {
   const job = getBackgroundJob(id)
-  if (!job || job.status !== 'needs-you' || !job.fix) return
+  // A removed source's job has nothing to fix: it is never run again.
+  if (!job || job.status !== 'needs-you' || !job.fix || sourceRemoved(job)) return
   const run = fixHandlers.get(job.fix.action) ?? (job.fix.action === 'try-again' ? async () => true : undefined)
   if (!run) {
     console.warn(`[background] No fix handler for ${job.fix.action}`)
@@ -322,7 +336,7 @@ async function fixJob(id: string): Promise<void> {
   }
   if (!fixed) return
   const cur = getBackgroundJob(id)
-  if (!cur || cur.status !== 'needs-you') return
+  if (!cur || cur.status !== 'needs-you' || sourceRemoved(cur)) return
   await closeEntry(id)
   // A newer run of the same source and kind started meanwhile: it does the work, this job stays as it was.
   if (runningSibling(cur)) return
@@ -377,8 +391,8 @@ export function registerJobReviewOpener(): () => void {
       canOpen: (entry) => {
         if (entry.kind !== 'needs-you' && entry.kind !== 'done') return false
         // R15: an entry whose source was removed has nothing to fix or open.
-        const sourceId = getBackgroundJob(entry.ref.id)?.sourceId
-        return sourceId === undefined || !sourceResolver || sourceResolver.exists(sourceId)
+        const job = getBackgroundJob(entry.ref.id)
+        return !job || !sourceRemoved(job)
       },
     }
   )
