@@ -1642,5 +1642,8 @@
   "Gmail sync": "Gmail sync",
   "Asana sync": "Asana sync",
   "Codex threads sync": "Codex threads sync",
-  "Documents sync": "Documents sync"
+  "Documents sync": "Documents sync",
+  "Folders belong to a project or client.": "Folders belong to a project or client.",
+  "This scope already has a folder.": "This scope already has a folder.",
+  "These documents already belong to {{scope}}.": "These documents already belong to {{scope}}."
 }
