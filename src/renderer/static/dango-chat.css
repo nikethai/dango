@@ -105,7 +105,7 @@ button.dg-tool {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
+  gap: calc(var(--dango-space-1) / 2);
   min-width: 0;
 }
 .dg-msg-actions .dg-btn[aria-pressed="true"] {

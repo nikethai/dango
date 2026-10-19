@@ -668,6 +668,7 @@ const _Message: FC<Props> = (props) => {
   )
   const actionMenuItems = isChatSession ? chatMenuItems : pictureMenuItems
   const [actionMenuOpened, setActionMenuOpened] = useState(false)
+  const [redoListOpened, setRedoListOpened] = useState(false)
   const isUser = msg.role === 'user'
   const isAssistant = msg.role === 'assistant'
 
@@ -999,7 +1000,7 @@ const _Message: FC<Props> = (props) => {
                   gap={0}
                   className={clsx(
                     'msg-actions',
-                    (actionMenuOpened || buttonGroup === 'always') && 'is-visible',
+                    (actionMenuOpened || redoListOpened || buttonGroup === 'always') && 'is-visible',
                     isSamllScreen ? 'sticky bottom-4' : '',
                     isUser && 'justify-end'
                   )}
@@ -1024,6 +1025,7 @@ const _Message: FC<Props> = (props) => {
                         menu={actionMenuItems}
                         menuOpened={actionMenuOpened}
                         onMenuChange={setActionMenuOpened}
+                        onRedoListChange={setRedoListOpened}
                       />
                     ) : (
                       <>

@@ -44,6 +44,8 @@ export type MessageActionRowProps = {
   /** Lets the host keep the hover row visible while More is open. */
   menuOpened?: boolean
   onMenuChange?(opened: boolean): void
+  /** Lets the host keep the hover row visible while the Redo ▾ model list (a portal) is open. */
+  onRedoListChange?(opened: boolean): void
 }
 
 /**
@@ -51,7 +53,8 @@ export type MessageActionRowProps = {
  * model · tokens · time. User: Copy · Edit · More.
  */
 export function MessageActionRow(props: MessageActionRowProps) {
-  const { msg, onCopy, onRedo, onRedoWithModel, onFeedback, menu, onEdit, menuOpened, onMenuChange } = props
+  const { msg, onCopy, onRedo, onRedoWithModel, onFeedback, menu, onEdit, menuOpened, onMenuChange, onRedoListChange } =
+    props
   const { t } = useTranslation()
   const isAssistant = msg.role === 'assistant'
   const rating = msg.feedback?.rating
@@ -63,7 +66,12 @@ export function MessageActionRow(props: MessageActionRowProps) {
       {isAssistant ? (
         <>
           <RowButton label={t('Redo')} icon={RotateCcw} onClick={onRedo} />
-          <ModelSelector onSelect={(provider, modelId) => onRedoWithModel(provider, modelId)} position="bottom-start">
+          <ModelSelector
+            onSelect={(provider, modelId) => onRedoWithModel(provider, modelId)}
+            onDropdownOpen={() => onRedoListChange?.(true)}
+            onDropdownClose={() => onRedoListChange?.(false)}
+            position="bottom-start"
+          >
             <RowButton label={t('Redo with another model')} icon={ChevronDown} />
           </ModelSelector>
           <RowButton

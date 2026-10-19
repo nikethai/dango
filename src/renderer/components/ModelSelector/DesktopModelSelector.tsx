@@ -43,6 +43,7 @@ interface DesktopModelSelectorProps {
   onSearchChange: (search: string) => void
   onOptionSubmit: (val: string) => void
   onDropdownOpen?: () => void
+  onDropdownClose?: () => void
   modelFilter?: (model: ProviderModelInfo) => boolean
   comboboxProps?: ComboboxProps
   searchPosition?: 'top' | 'bottom'
@@ -147,6 +148,7 @@ export const DesktopModelSelector = forwardRef<HTMLDivElement, DesktopModelSelec
       onSearchChange,
       onOptionSubmit,
       onDropdownOpen,
+      onDropdownClose,
       comboboxProps,
       searchPosition = 'bottom',
     },
@@ -167,6 +169,7 @@ export const DesktopModelSelector = forwardRef<HTMLDivElement, DesktopModelSelec
       onDropdownClose: () => {
         combobox.resetSelectedOption()
         onSearchChange('')
+        onDropdownClose?.()
       },
       onDropdownOpen: () => {
         onDropdownOpen?.()
