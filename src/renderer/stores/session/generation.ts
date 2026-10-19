@@ -40,6 +40,7 @@ import {
 import { buildUntrustedImportedContextBlock } from '@/packages/imported-context'
 import { prependUntrustedBlockToPrompt } from '@/packages/imported-history/continue-session'
 import { generateImage, streamText } from '@/packages/model-calls'
+import { classifyModelError } from '@/packages/model-errors/classify'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
 import { buildSkillContextBlocks, resolveSkillActivations, selectCatalogForInject } from '@/packages/skills'
 import { estimateTokensFromMessages } from '@/packages/token'
@@ -81,6 +82,12 @@ import {
   resumedRunParts,
   withResumedParts,
 } from './plan-lifecycle'
+import {
+  cancelRateLimitRetry,
+  clearRateLimitAttempts,
+  resolveRateLimitNeedsYou,
+  scheduleRateLimitRetry,
+} from './rate-limit-retry'
 import {
   clearSessionGenerationLive,
   isSessionGenerationLive,
@@ -653,6 +660,9 @@ export async function generate(
     modelOverride?: ModelOverride
   }
 ) {
+  // Any new turn in this chat (send, Retry, Redo, Run plan, Continue, edit and resend) replaces a waiting rate-limit
+  // retry: it must never fire into the new turn (ER3).
+  cancelRateLimitRetry(sessionId)
   // Long-run notifications time the run itself (send, regenerate, plan run, resume), not the message's age.
   const runStartedAt = Date.now()
   // Process the send-queue unless multi-agent intermediate turns opt out, or plan mode
@@ -1563,6 +1573,11 @@ export async function generate(
           durationMs: Date.now() - runStartedAt,
         }
         await settleStreamUi(targetMsg)
+        if (!emptyCompletionError) {
+          // Answered: the next rate limit starts the schedule again, and a waiting Needs you for this chat is done.
+          clearRateLimitAttempts(targetMsg.id)
+          void resolveRateLimitNeedsYou(sessionId).catch(() => {})
+        }
         // The answer and the plan part (with finishedAt) are saved: from here the error path must keep this plan,
         // and nothing below may turn a finished turn into an error or file a second Change.
         if (isExecutionPhase) activeExecutionPlan = finalPlanPart
@@ -1791,6 +1806,17 @@ export async function generate(
     }
     // Drop any in-flight stream patch so it cannot overwrite the error state
     await settleStreamUi(targetMsg)
+
+    // Rate limited: retry on schedule, then ask in Review (ER3). A plan run or a room turn needs its own run options,
+    // which a bare retry would lose: it goes to Review at once (R18, R20).
+    if (classifyModelError(targetMsg) === 'rate-limit') {
+      const ownRun = executionRun || Boolean(activeExecutionPlan) || Boolean(options?.roomMulti || targetMsg.roomRole)
+      try {
+        scheduleRateLimitRetry(sessionId, targetMsg, { autoRetry: !ownRun })
+      } catch {
+        // non-fatal: the notice still offers Retry
+      }
+    }
 
     // Mark provider plan exhausted on quota errors (best-effort)
     try {

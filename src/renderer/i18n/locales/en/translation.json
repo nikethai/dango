@@ -1756,5 +1756,11 @@
   "{{name}} (continued)": "{{name}} (continued)",
   "Couldn't summarise this chat. Try again.": "Couldn't summarise this chat. Try again.",
   "You've reached your usage budget.": "You've reached your usage budget.",
-  "Open Usage": "Open Usage"
+  "Open Usage": "Open Usage",
+  "{{provider}} is limiting requests. Trying again in {{time}}.": "{{provider}} is limiting requests. Trying again in {{time}}.",
+  "Retry now": "Retry now",
+  "{{provider}} is still limiting requests. It's waiting in Review.": "{{provider}} is still limiting requests. It's waiting in Review.",
+  "{{provider}} is limiting requests.": "{{provider}} is limiting requests.",
+  "{{provider}} is still limiting requests": "{{provider}} is still limiting requests",
+  "The chat \"{{chat}}\" is waiting for a retry.": "The chat \"{{chat}}\" is waiting for a retry."
 }

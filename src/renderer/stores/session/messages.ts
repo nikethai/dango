@@ -4,8 +4,8 @@ import {
   AIProviderNoImplementedPaintError,
   ApiError,
   BaseError,
-  ProviderAPIError,
   NetworkError,
+  ProviderAPIError,
 } from '@shared/models/errors'
 import { createMessage, type Message } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
@@ -18,6 +18,7 @@ import * as chatStore from '../chatStore'
 import { getAllMessageList } from '../sessionHelpers'
 import { settingsStore } from '../settingsStore'
 import { messageQueueStore } from './messageQueue'
+import { cancelRateLimitRetry } from './rate-limit-retry'
 import { getSessionWebBrowsing } from './session-web-browsing'
 
 /**
@@ -129,6 +130,8 @@ export async function submitNewUserMessage(
     userAlreadyInserted?: boolean
   }
 ) {
+  // A new send replaces a waiting rate-limit retry: it must never fire into the new turn.
+  cancelRateLimitRetry(sessionId)
   // Import generate lazily to avoid circular dependency
   // generate will be moved to generation.ts in US-006, then this import will change
   const { generate } = await import('../sessionActions.js')

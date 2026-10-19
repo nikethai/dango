@@ -7,6 +7,7 @@ import type { Message, MessageContentParts } from '@shared/types'
 import * as chatStore from '../chatStore'
 import { cancelSessionGeneration, getActiveGenerationMessageId } from './generation-cancel'
 import { modifyMessage } from './messages'
+import { cancelRateLimitRetry } from './rate-limit-retry'
 import { clearSessionGenerationLive } from './session-live-generation'
 
 function markRunningToolsCancelled(parts: MessageContentParts | undefined): MessageContentParts | undefined {
@@ -34,6 +35,8 @@ export async function stopSessionGeneration(
   sessionId: string,
   lastGeneratingMessage?: Message | null
 ): Promise<boolean> {
+  // A waiting rate-limit retry is not live, so cancel it before the nothing-live early return.
+  cancelRateLimitRetry(sessionId)
   const registryMsgId = getActiveGenerationMessageId(sessionId)
   const hasLive = Boolean(lastGeneratingMessage?.generating) || Boolean(registryMsgId)
   if (!hasLive) {

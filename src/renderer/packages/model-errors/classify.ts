@@ -45,6 +45,18 @@ function isExplicitContextLengthError(text: string | undefined): boolean {
 
 const RATE_LIMIT_BODY_PATTERN = /"type"\s*:\s*"rate_limit_error"/
 
+/**
+ * Gemini answers a per-minute quota with RESOURCE_EXHAUSTED and "You exceeded your current quota", wording the quota
+ * classifier reads as used-up credit. A per-minute metric, a retry delay or the free-tier request counter means waiting
+ * helps, unless the body also names credit or billing.
+ */
+const PER_MINUTE_QUOTA_PATTERN = /PerMinute|per[_ ]minute|retryDelay|free_tier_requests/i
+const CREDIT_PATTERN = /insufficient[_ ]quota|credit[_ ]balance|out[_ ]of[_ ]credits?|billing[_ ]hard[_ ]limit/i
+
+function isPerMinuteQuota(text: string): boolean {
+  return /RESOURCE_EXHAUSTED/.test(text) && PER_MINUTE_QUOTA_PATTERN.test(text) && !CREDIT_PATTERN.test(text)
+}
+
 function stringField(extra: Message['errorExtra'], key: string): string | undefined {
   const value = extra?.[key]
   return typeof value === 'string' ? value : undefined
@@ -70,6 +82,8 @@ export function classifyModelError(msg: Pick<Message, 'error' | 'errorCode' | 'e
   const rateLimited = status === 429 || (responseBody !== undefined && RATE_LIMIT_BODY_PATTERN.test(responseBody))
   const contextCheck = rateLimited ? isExplicitContextLengthError : isContextLengthError
   if (contextCheck(error) || contextCheck(responseBody)) return 'too-long'
+
+  if (isPerMinuteQuota(`${error}\n${responseBody ?? ''}`)) return 'rate-limit'
 
   const quota = classifyQuotaError({ message: error, responseBody, status, errorCode: code }).kind
   if (quota === 'exhausted' || code === 10004 || status === 402) return 'out-of-credit'

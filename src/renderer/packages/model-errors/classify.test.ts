@@ -81,6 +81,42 @@ describe('classifyModelError: budget and rate-limit wording', () => {
     expect(classifyModelError(apiError(undefined, body))).toBe('rate-limit')
   })
 
+  it('a Gemini per-minute quota 429 is a rate limit, not out of credit', () => {
+    const body = JSON.stringify({
+      error: {
+        code: 429,
+        message:
+          'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 10, model: gemini-2.5-flash\nPlease retry in 41.8s.',
+        status: 'RESOURCE_EXHAUSTED',
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+            violations: [
+              {
+                quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests',
+                quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier',
+              },
+            ],
+          },
+          { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '41s' },
+        ],
+      },
+    })
+    const gemini = (status?: number) =>
+      apiError(status, body, { errorExtra: { aiProvider: 'gemini', status, responseBody: body } })
+    expect(classifyModelError(gemini(429))).toBe('rate-limit')
+    expect(classifyModelError(gemini(undefined))).toBe('rate-limit')
+  })
+
+  it('a Gemini RESOURCE_EXHAUSTED that names billing or credit is out of credit', () => {
+    const insufficient =
+      '{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"insufficient_quota: PerMinute"}}'
+    const credit =
+      '{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"Your credit balance is too low. retryDelay 5s"}}'
+    expect(classifyModelError(apiError(429, insufficient))).toBe('out-of-credit')
+    expect(classifyModelError(apiError(429, credit))).toBe('out-of-credit')
+  })
+
   it('a 429 that names the context window is still too long', () => {
     expect(classifyModelError(apiError(429, 'context_length_exceeded'))).toBe('too-long')
   })

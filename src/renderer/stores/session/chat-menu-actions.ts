@@ -23,6 +23,9 @@ export async function deleteChatWithUndo(sessionId: string): Promise<{ name: str
   const generating = [...live.messages].reverse().find((m) => m.generating)
   const { getActiveGenerationMessageId } = await import('./generation-cancel')
   const running = Boolean(generating) || Boolean(getActiveGenerationMessageId(sessionId))
+  // A waiting rate-limit retry would otherwise answer into the deleted chat.
+  const { cancelRateLimitRetry } = await import('./rate-limit-retry')
+  cancelRateLimitRetry(sessionId)
   if (running) {
     const { stopSessionGeneration } = await import('./stop-generation')
     await stopSessionGeneration(sessionId, generating ?? null)

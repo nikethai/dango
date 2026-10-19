@@ -1,10 +1,17 @@
 import { ProviderAPIError } from '@shared/models/errors'
 import type { Message } from '@shared/types'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useCopied } from '@/hooks/useCopied'
+import { formatDangoDuration } from '@/hooks/useThinkingTimer'
 import { navigateToSettings } from '@/modals/Settings'
 import { classifyModelError, type ModelErrorKind, modelErrorProviderName } from '@/packages/model-errors/classify'
+import {
+  cancelRateLimitRetry,
+  clearRateLimitAttempts,
+  isRateLimitRetryPending,
+  subscribeRateLimitRetries,
+} from '@/stores/session/rate-limit-retry'
 import { useSettingsStore } from '@/stores/settingsStore'
 
 function rawDetail(msg: Message): string {
@@ -64,6 +71,21 @@ function isPlanRun(msg: Message): boolean {
 
 type Fix = { label: string; run(): unknown }
 
+/** Time left before the scheduled rate-limit retry, ticking each second; undefined when no retry is waiting. */
+function useRateLimitWait(sessionId: string, msg: Message): number | undefined {
+  const pending = useSyncExternalStore(subscribeRateLimitRetries, () => isRateLimitRetryPending(sessionId, msg.id))
+  const retryAt = typeof msg.errorExtra?.retryAt === 'number' ? msg.errorExtra.retryAt : undefined
+  const [now, setNow] = useState(() => Date.now())
+  const waiting = pending && retryAt !== undefined
+  useEffect(() => {
+    if (!waiting) return
+    setNow(Date.now())
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [waiting])
+  return waiting ? Math.max(0, retryAt - now) : undefined
+}
+
 /**
  * A failed model call under its answer (ER1, ER2, ER5, CH5): one sentence that says what happened, one button that
  * names the fix, and the raw detail behind "Show details". Never switches models; the composer stays usable.
@@ -76,6 +98,7 @@ export function ModelErrorNotice(props: { msg: Message; sessionId: string }) {
   const [busy, setBusy] = useState(false)
   const detail = rawDetail(msg)
   const { copied, copy } = useCopied(detail)
+  const waitMs = useRateLimitWait(sessionId, msg)
 
   if (!msg.error) return null
 
@@ -129,8 +152,37 @@ export function ModelErrorNotice(props: { msg: Message; sessionId: string }) {
       sentence = t("Couldn't reach {{host}}.", { host })
       fix = retry
       break
+    case 'rate-limit':
+      // ER3: retried on schedule, then a Needs you entry. Stop or a new send cancels the wait: plain Retry then.
+      if (msg.errorExtra?.rateLimitGaveUp === true) {
+        sentence = t("{{provider}} is still limiting requests. It's waiting in Review.", { provider })
+        // The person asked: if this fails again, the schedule starts over.
+        fix = retry && {
+          label: t('Retry'),
+          run: () => {
+            clearRateLimitAttempts(msg.id)
+            return retry.run()
+          },
+        }
+      } else if (waitMs !== undefined) {
+        sentence = t('{{provider}} is limiting requests. Trying again in {{time}}.', {
+          provider,
+          time: formatDangoDuration(waitMs),
+        })
+        // Counts as the next attempt.
+        fix = retry && {
+          label: t('Retry now'),
+          run: () => {
+            cancelRateLimitRetry(sessionId)
+            return retry.run()
+          },
+        }
+      } else {
+        sentence = t('{{provider}} is limiting requests.', { provider })
+        fix = retry
+      }
+      break
     default:
-      // 'provider', and 'rate-limit' until its waiting states land (ER3).
       sentence = legacy ? (
         <LegacySentence i18nKey={legacy.i18nKey} model={msg.model} />
       ) : (

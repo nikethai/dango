@@ -554,7 +554,9 @@ describe('redo with another model', () => {
     } finally {
       vi.mocked(streamText).mockReset()
     }
-    return { settings, saved: updateMessageMock.mock.calls.at(-1)?.[2] as Message | undefined }
+    // The last whole message written; a rate-limit retry then patches errorExtra through an updater function.
+    const written = updateMessageMock.mock.calls.map((call) => call[2]).filter((m) => typeof m === 'object')
+    return { settings, saved: written.at(-1) as Message | undefined }
   }
 
   test('regenerateInNewFork forwards the model override to generateMore', async () => {
@@ -615,6 +617,21 @@ describe('redo with another model', () => {
       retryAfterMs: 7_000,
       responseBody: '{"error":"rate"}',
     })
+    const { cancelRateLimitRetry } = await import('./session/rate-limit-retry')
+    cancelRateLimitRetry('redo-session')
+  })
+
+  test('stop and new send cancel the pending retry: a rate-limited answer waits, Stop drops the wait', async () => {
+    const { ApiError } = await import('../../shared/models/errors')
+    const { isRateLimitRetryPending } = await import('./session/rate-limit-retry')
+    const { stopSessionGeneration } = await import('./session/stop-generation')
+    const failed = await redo(() =>
+      Promise.reject(new ApiError('Error from Claude', '{"error":"rate"}', { status: 429, retryAfterMs: 7_000 }))
+    )
+    const failedId = failed.saved?.id as string
+    expect(isRateLimitRetryPending('redo-session', failedId)).toBe(true)
+    await expect(stopSessionGeneration('redo-session', null)).resolves.toBe(false)
+    expect(isRateLimitRetryPending('redo-session', failedId)).toBe(false)
   })
 
   test('a send blocked by the usage budget is marked as a budget error', async () => {

@@ -29,6 +29,17 @@ const startNewChatWithSummary = vi.hoisted(() => vi.fn(async () => 'new-1'))
 vi.mock('@/stores/session/new-chat-with-summary', () => ({ startNewChatWithSummary }))
 const copyToClipboard = vi.hoisted(() => vi.fn())
 vi.mock('@/packages/navigator', () => ({ copyToClipboard }))
+const rateLimit = vi.hoisted(() => ({
+  pending: false,
+  cancelRateLimitRetry: vi.fn(),
+  clearRateLimitAttempts: vi.fn(),
+}))
+vi.mock('@/stores/session/rate-limit-retry', () => ({
+  isRateLimitRetryPending: () => rateLimit.pending,
+  subscribeRateLimitRetries: () => () => {},
+  cancelRateLimitRetry: rateLimit.cancelRateLimitRetry,
+  clearRateLimitAttempts: rateLimit.clearRateLimitAttempts,
+}))
 vi.mock('@/stores/settingsStore', () => ({
   useSettingsStore: (selector: (s: { customProviders: unknown[] }) => unknown) => selector({ customProviders: [] }),
 }))
@@ -194,5 +205,50 @@ describe('ModelErrorNotice', () => {
   it('renders nothing without an error', () => {
     const { container } = render(<ModelErrorNotice msg={failed({ error: undefined })} sessionId="s1" />)
     expect(container.textContent).toBe('')
+  })
+})
+
+describe('ModelErrorNotice: rate limits (ER3)', () => {
+  const limited = (errorExtra: Record<string, unknown> = {}) =>
+    failed({}, { status: 429, responseBody: '{}', ...errorExtra })
+
+  beforeEach(() => {
+    rateLimit.pending = false
+    rateLimit.cancelRateLimitRetry.mockClear()
+    rateLimit.clearRateLimitAttempts.mockClear()
+  })
+
+  it('while a retry waits: the countdown and Retry now', async () => {
+    rateLimit.pending = true
+    const msg = limited({ rateLimitAttempt: 1, retryAt: Date.now() + 10_000 })
+    const { container } = render(<ModelErrorNotice msg={msg} sessionId="s1" />)
+    expect(screen.getByText('OpenAI is limiting requests. Trying again in 10 s.')).toBeTruthy()
+    const buttons = primaryButtons(container)
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0].textContent).toBe('Retry now')
+    expect(container.textContent).not.toMatch(/returned an error/)
+    fireEvent.click(buttons[0])
+    expect(rateLimit.cancelRateLimitRetry).toHaveBeenCalledWith('s1')
+    await waitFor(() => expect(retryFailedMessage).toHaveBeenCalledWith('s1', msg))
+  })
+
+  it('after the last retry: it waits in Review, and Retry starts the schedule again', async () => {
+    const msg = limited({ rateLimitAttempt: 3, rateLimitGaveUp: true })
+    const { container } = render(<ModelErrorNotice msg={msg} sessionId="s1" />)
+    expect(screen.getByText("OpenAI is still limiting requests. It's waiting in Review.")).toBeTruthy()
+    const buttons = primaryButtons(container)
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0].textContent).toBe('Retry')
+    fireEvent.click(buttons[0])
+    expect(rateLimit.clearRateLimitAttempts).toHaveBeenCalledWith('a1')
+    await waitFor(() => expect(retryFailedMessage).toHaveBeenCalledWith('s1', msg))
+  })
+
+  it('a retry cancelled by Stop or a new send shows no countdown, only Retry', () => {
+    const msg = limited({ rateLimitAttempt: 1, retryAt: Date.now() + 10_000 })
+    const { container } = render(<ModelErrorNotice msg={msg} sessionId="s1" />)
+    expect(screen.getByText('OpenAI is limiting requests.')).toBeTruthy()
+    expect(container.textContent).not.toMatch(/Trying again|returned an error/)
+    expect(primaryButtons(container)[0].textContent).toBe('Retry')
   })
 })

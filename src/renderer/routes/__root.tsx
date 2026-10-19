@@ -34,6 +34,7 @@ import platform from '@/platform'
 import { router } from '@/router'
 import Sidebar from '@/Sidebar'
 import * as atoms from '@/stores/atoms'
+import { registerChatReviewOpener } from '@/stores/session/rate-limit-retry'
 import * as settingActions from '@/stores/settingActions'
 import { settingsStore, useLanguage, useSettingsStore, useTheme } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -60,6 +61,8 @@ function Root() {
   useEffect(() => registerDefaultQuestionOpener(), [])
   // Change rows from a finished plan open the chat they came from (slice 6a).
   useEffect(() => registerChangeOpener(), [])
+  // Needs you rows for a rate-limited chat open it and retry the answer (06b, ER3).
+  useEffect(() => registerChatReviewOpener(), [])
 
   useEffect(() => {
     void platform.getWindowLabel?.().then((label) => {
