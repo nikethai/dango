@@ -344,3 +344,110 @@ fn huge_file_read_is_truncated_without_returning_full_body() {
     assert_eq!(content.len(), 1024 * 1024);
     assert_eq!(read.get("size").and_then(|v| v.as_u64()), Some(big.len() as u64));
 }
+
+#[test]
+fn adopt_moves_a_draft_binding_to_the_scope() {
+    let dir = test_dir();
+    let folder = dir.join("proj");
+    fs::create_dir(&folder).unwrap();
+    fs::write(folder.join("a.txt"), "hello").unwrap();
+    let rt = runtime(&dir, false);
+    let draft = bind_main(&rt, "draft:one", &folder);
+    let draft_cap = cap_id(&draft).to_string();
+
+    let desc = rt.adopt_draft_binding("draft:one", "scope-1", "main").expect("adopt");
+    assert_eq!(desc.get("projectId").and_then(|v| v.as_str()), Some("scope-1"));
+    assert_eq!(desc.get("status").and_then(|v| v.as_str()), Some("ready"));
+    let cap = cap_id(&desc).to_string();
+    assert_ne!(cap, draft_cap);
+    let read = rt.read(&cap, "main", "a.txt").expect("read");
+    assert_eq!(read.get("content").and_then(|v| v.as_str()), Some("hello"));
+
+    // The draft is gone: its capability no longer works and it cannot be restored.
+    let err = rt.read(&draft_cap, "main", "a.txt").unwrap_err();
+    assert!(err.code == STALE_CAPABILITY || err.code == REVOKED);
+    assert_eq!(rt.restore("draft:one", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
+
+    // The re-keyed record survives a restart with a valid checksum.
+    let rt2 = runtime(&dir, false);
+    rt2.open_desktop(&dir).unwrap();
+    let restored = rt2.restore("scope-1", "main").expect("restore after restart");
+    assert_eq!(restored.get("status").and_then(|v| v.as_str()), Some("ready"));
+    assert_eq!(rt2.restore("draft:one", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn adopt_rejects_non_draft_ids_and_taken_scopes() {
+    let dir = test_dir();
+    let a = dir.join("a");
+    let b = dir.join("b");
+    fs::create_dir(&a).unwrap();
+    fs::create_dir(&b).unwrap();
+    let rt = runtime(&dir, false);
+    bind_main(&rt, "draft:a", &a);
+    bind_main(&rt, "scope-taken", &b);
+
+    // Only main may adopt.
+    assert_eq!(rt.adopt_draft_binding("draft:a", "scope-1", "quick").unwrap_err().code, WRONG_WINDOW);
+    // Source must be a draft id; target must be a non-empty, non-draft id.
+    assert_eq!(rt.adopt_draft_binding("scope-taken", "scope-1", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
+    assert_eq!(rt.adopt_draft_binding("draft:", "scope-1", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
+    assert_eq!(rt.adopt_draft_binding("draft:a", "", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
+    assert_eq!(rt.adopt_draft_binding("draft:a", "  ", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
+    assert_eq!(rt.adopt_draft_binding("draft:a", "draft:b", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
+    // The draft must exist.
+    assert_eq!(rt.adopt_draft_binding("draft:missing", "scope-1", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
+    // A scope that already has a folder keeps it, and the draft stays put.
+    let err = rt.adopt_draft_binding("draft:a", "scope-taken", "main").unwrap_err();
+    assert_eq!(err.code, ALREADY_EXISTS);
+    assert_eq!(err.message, "This scope already has a folder.");
+    assert!(rt.restore("draft:a", "main").is_ok());
+    let kept = rt.restore("scope-taken", "main").expect("taken scope keeps its folder");
+    assert!(kept
+        .get("displayPath")
+        .and_then(|v| v.as_str())
+        .is_some_and(|p| p.ends_with("b")));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn discard_removes_only_draft_bindings() {
+    let dir = test_dir();
+    let a = dir.join("a");
+    let b = dir.join("b");
+    fs::create_dir(&a).unwrap();
+    fs::create_dir(&b).unwrap();
+    fs::write(a.join("x.txt"), "x").unwrap();
+    let rt = runtime(&dir, false);
+    let draft = bind_main(&rt, "draft:one", &a);
+    bind_main(&rt, "draft:two", &b);
+    bind_main(&rt, "scope-1", &b);
+
+    assert_eq!(rt.discard_draft_bindings("quick").unwrap_err().code, WRONG_WINDOW);
+    assert_eq!(rt.discard_draft_bindings("main").expect("discard"), 2);
+    assert!(rt.read(cap_id(&draft), "main", "x.txt").is_err());
+    assert_eq!(rt.restore("draft:one", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
+    assert_eq!(rt.restore("draft:two", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
+    assert!(rt.restore("scope-1", "main").is_ok());
+    assert_eq!(rt.discard_draft_bindings("main").expect("second discard"), 0);
+
+    let rt2 = runtime(&dir, false);
+    rt2.open_desktop(&dir).unwrap();
+    assert_eq!(rt2.restore("draft:one", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
+    assert!(rt2.restore("scope-1", "main").is_ok());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn unbind_of_an_unbound_scope_succeeds() {
+    let dir = test_dir();
+    let rt = runtime(&dir, false);
+    rt.unbind("scope-never-bound", "main").expect("idempotent unbind");
+    let folder = dir.join("proj");
+    fs::create_dir(&folder).unwrap();
+    bind_main(&rt, "scope-1", &folder);
+    rt.unbind("scope-1", "main").expect("unbind");
+    rt.unbind("scope-1", "main").expect("second unbind");
+    let _ = fs::remove_dir_all(&dir);
+}

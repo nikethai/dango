@@ -1,4 +1,5 @@
 import NiceModal from '@ebay/nice-modal-react'
+import AddSourceSheet, { ADD_SOURCE_MODAL_ID } from '@/components/sources/AddSourceSheet'
 import AppStoreRating from './AppStoreRating'
 import ArtifactPreview from './ArtifactPreview'
 import AttachLink from './AttachLink'
@@ -8,6 +9,8 @@ import ContextOverflow from './ContextOverflow'
 import EdgeOneDeploySuccess from './EdgeOneDeploySuccess'
 import ExportChat from './ExportChat'
 import FileParseError from './FileParseError'
+import ImportChatGptArchive from './ImportChatGptArchive'
+import ImportedConversationView from './ImportedConversationView'
 import JsonViewer from './JsonViewer'
 import MessageEdit from './MessageEdit'
 import ModelEdit from './ModelEdit'
@@ -18,11 +21,10 @@ import ThreadNameEdit from './ThreadNameEdit'
 import ToolApproval from './ToolApproval'
 import VideoAttachmentPreview from './VideoAttachmentPreview'
 import VideoPlayer from './VideoPlayer'
-import ImportChatGptArchive from './ImportChatGptArchive'
-import ImportedConversationView from './ImportedConversationView'
 import Welcome from './Welcome'
 
 NiceModal.register('welcome', Welcome)
+NiceModal.register(ADD_SOURCE_MODAL_ID, AddSourceSheet)
 NiceModal.register('rewrite', RewriteSheet)
 NiceModal.register('import-chatgpt-archive', ImportChatGptArchive)
 NiceModal.register('imported-conversation', ImportedConversationView)

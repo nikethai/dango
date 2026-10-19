@@ -24,6 +24,7 @@ describe('createPlatformCapabilities', () => {
     expect(capabilities.supportsChangeReview).toBe(false)
     expect(capabilities.supportsLocalExecution).toBe(false)
     expect(capabilities.supportsManagedWorktrees).toBe(false)
+    expect(capabilities.supportsCodexThreads).toBe(false)
   })
 
   test('enables desktop-only capabilities on desktop builds', () => {
@@ -48,6 +49,7 @@ describe('createPlatformCapabilities', () => {
     expect(capabilities.supportsChangeReview).toBe(true)
     expect(capabilities.supportsLocalExecution).toBe(false)
     expect(capabilities.supportsManagedWorktrees).toBe(false)
+    expect(capabilities.supportsCodexThreads).toBe(true)
   })
 
   test('does not infer runtime support from mobile layout alone', () => {
@@ -72,5 +74,6 @@ describe('createPlatformCapabilities', () => {
     expect(capabilities.supportsChangeReview).toBe(false)
     expect(capabilities.supportsLocalExecution).toBe(false)
     expect(capabilities.supportsManagedWorktrees).toBe(false)
+    expect(capabilities.supportsCodexThreads).toBe(false)
   })
 })

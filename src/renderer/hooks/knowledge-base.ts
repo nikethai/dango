@@ -2,7 +2,7 @@ import { KnowledgeBaseFile } from '@shared/types'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import platform from '@/platform'
 
-const useKnowledgeBases = () => {
+const useKnowledgeBases = (opts?: { enabled?: boolean }) => {
   const fetchKnowledgeBases = async () => {
     const knowledgeBaseController = platform.getKnowledgeBaseController()
     return knowledgeBaseController.list()
@@ -10,6 +10,7 @@ const useKnowledgeBases = () => {
   return useQuery({
     queryKey: ['knowledge-bases'],
     queryFn: fetchKnowledgeBases,
+    enabled: opts?.enabled ?? true,
   })
 }
 

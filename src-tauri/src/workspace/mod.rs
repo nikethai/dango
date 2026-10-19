@@ -4,6 +4,7 @@ mod apply_journal;
 mod authority;
 mod budgets;
 mod change_set;
+mod codex_threads;
 mod error;
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod export;
@@ -79,6 +80,7 @@ pub fn handle(
         && !channel.starts_with("wasi:")
         && !channel.starts_with("worktrees:")
         && channel != "codex:read-auth-config"
+        && channel != "codex:threads"
         && channel != "video:yt-dlp"
     {
         return None;
@@ -150,6 +152,14 @@ fn handle_inner(
         "workspace:unbind" => {
             let project_id = arg_str(args, 0)?;
             wrap(runtime.unbind(&project_id, &label).map(|_| Value::Null))
+        }
+        "workspace:adopt-draft-binding" => {
+            let draft_id = arg_str(args, 0)?;
+            let project_id = arg_str(args, 1)?;
+            wrap(runtime.adopt_draft_binding(&draft_id, &project_id, &label))
+        }
+        "workspace:discard-draft-bindings" => {
+            wrap(runtime.discard_draft_bindings(&label).map(|count| json!(count)))
         }
         "workspace:reveal" => {
             let project_id = arg_str(args, 0)?;
@@ -403,6 +413,16 @@ fn handle_inner(
         "worktrees:status" => wrap(Ok(worktree_gate::status())),
         "worktrees:create" | "worktrees:remove" => wrap(Err(error::feature_disabled("worktrees"))),
         "codex:read-auth-config" => read_codex_auth(),
+        "codex:threads" => {
+            if let Err(err) = WorkspaceRuntime::require_main(&label) {
+                return wrap(Err(err));
+            }
+            let root = codex_threads::sessions_root();
+            wrap(
+                codex_threads::dispatch(root.as_deref(), args.first())
+                    .map_err(|message| error::WorkspaceError::new(error::NOT_FOUND, message)),
+            )
+        }
         "video:yt-dlp" => video_yt_dlp(args),
         _ => {
             let _ = app;

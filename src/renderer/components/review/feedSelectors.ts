@@ -66,9 +66,12 @@ export function formatLastChecked(at: number, now: number): string {
   return key.replace('{{time}}', time)
 }
 
-/** `sourceCount > 0` when known (slice 7); until then any entry or a last-checked time counts as a source. */
+/**
+ * Whether Review shows the feed rather than EM2. With a known `sourceCount` (slice 7): a connected source or any
+ * visible (not dismissed) Review entry (R5: EM2 only with neither). Until then any entry or a last-checked time counts as a source.
+ */
 export function hasSources(o: { sourceCount?: number; entries: ReviewEntry[]; lastCheckedAt?: number }): boolean {
-  if (o.sourceCount !== undefined) return o.sourceCount > 0
+  if (o.sourceCount !== undefined) return o.sourceCount > 0 || o.entries.some((e) => e.state !== 'dismissed')
   return o.entries.length > 0 || o.lastCheckedAt !== undefined
 }
 

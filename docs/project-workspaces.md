@@ -8,6 +8,7 @@ Dango Projects group chats and, on desktop, may bind to one user-authorized dire
 - Directory access is granted only by the native folder picker or restore of a private native binding record.
 - Runtime capabilities are bound to project ID, owner window (`main` only), and root generation.
 - Quick, web, and mobile cannot use privileged bind/read/mutate APIs.
+- A draft binding is a picker result held under a `draft:` id until it is re-keyed to a scope (`workspace:adopt-draft-binding`, main window only); leftover drafts are discarded at launch.
 - Broad renderer `fs:*` and `execute_command` channels are unavailable. Generic Project shell is disabled.
 - Native compiled rollout bits default export, source control, staging, apply, Quick Local Run, and managed worktrees off. App/user flags may only hide or revoke; they cannot grant native permission.
 

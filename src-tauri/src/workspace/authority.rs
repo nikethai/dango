@@ -6,7 +6,7 @@ use super::budgets::{
 };
 use super::error::{
     already_exists, ambiguous_edit, cancelled, conflict, hard_denied, limit_exceeded, mutation_disabled, not_found,
-    revoked, stale_capability, unauthorized_root, wrong_window, WorkspaceError, PERMISSION_DENIED,
+    revoked, stale_capability, unauthorized_root, wrong_window, WorkspaceError, ALREADY_EXISTS, PERMISSION_DENIED,
 };
 use super::ignore::{gitignore_path, is_hard_denied, IgnoreStack};
 use super::lease::{LeaseBook, OpGuard};
@@ -29,6 +29,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 const MAIN_WINDOW: &str = "main";
+/// Binding ids minted for a picked folder before its scope exists (Add a source sheet).
+const DRAFT_PREFIX: &str = "draft:";
+/// Exact text; the renderer maps it to `SourceRuleError('folder-taken')`.
+const SCOPE_HAS_FOLDER: &str = "This scope already has a folder.";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -414,6 +418,72 @@ impl WorkspaceRuntime {
         drop(inner);
         self.wait_in_flight();
         Ok(())
+    }
+
+    /// Re-keys a picker-minted `draft:` binding to a scope. Never takes a path from the renderer.
+    pub fn adopt_draft_binding(
+        &self,
+        draft_id: &str,
+        project_id: &str,
+        window_label: &str,
+    ) -> Result<Value, WorkspaceError> {
+        Self::require_main(window_label)?;
+        if !draft_id.starts_with(DRAFT_PREFIX) || draft_id.len() == DRAFT_PREFIX.len() {
+            return Err(unauthorized_root("Only a draft folder binding can be adopted"));
+        }
+        if project_id.trim().is_empty() || project_id.starts_with(DRAFT_PREFIX) {
+            return Err(unauthorized_root("projectId is required"));
+        }
+        let mut inner = self.lock()?;
+        let draft = inner
+            .bindings
+            .get(draft_id)
+            .cloned()
+            .ok_or_else(|| unauthorized_root("No draft folder binding exists"))?;
+        if !draft.verify() {
+            return Err(unauthorized_root("Native binding record failed integrity check"));
+        }
+        if inner.bindings.contains_key(project_id) {
+            return Err(WorkspaceError::new(ALREADY_EXISTS, SCOPE_HAS_FOLDER));
+        }
+        let adopted = ProjectBinding {
+            project_id: project_id.to_string(),
+            last_opened_at: Self::now_ms(),
+            ..draft
+        }
+        .with_checksum();
+        self.revoke_project_locked(&mut inner, draft_id);
+        self.revoke_project_locked(&mut inner, project_id);
+        inner.bindings.remove(draft_id);
+        inner.bindings.insert(project_id.to_string(), adopted);
+        Self::persist(&inner);
+        drop(inner);
+        self.wait_in_flight();
+        self.restore(project_id, window_label)
+    }
+
+    /// Removes every `draft:` binding (sheet cancelled, or leftovers at launch). Returns how many.
+    pub fn discard_draft_bindings(&self, window_label: &str) -> Result<usize, WorkspaceError> {
+        Self::require_main(window_label)?;
+        let mut inner = self.lock()?;
+        let drafts: Vec<String> = inner
+            .bindings
+            .keys()
+            .filter(|id| id.starts_with(DRAFT_PREFIX))
+            .cloned()
+            .collect();
+        for id in &drafts {
+            self.revoke_project_locked(&mut inner, id);
+            inner.bindings.remove(id);
+        }
+        if !drafts.is_empty() {
+            Self::persist(&inner);
+        }
+        drop(inner);
+        if !drafts.is_empty() {
+            self.wait_in_flight();
+        }
+        Ok(drafts.len())
     }
 
     pub fn revoke_project(&self, project_id: &str, window_label: &str) -> Result<(), WorkspaceError> {

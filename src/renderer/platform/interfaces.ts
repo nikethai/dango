@@ -1,5 +1,6 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: <any> */
 import type { Config, Language, Settings, ShortcutSetting } from '@shared/types'
+import type { CodexThread, CodexThreadSummary, CodexThreadsDetection } from '@shared/types/sources'
 import type {
   WorkspaceDescriptor,
   WorkspaceListResult,
@@ -174,6 +175,18 @@ export interface Platform extends Storage {
   getLocalExecutionStatus?(): Promise<unknown>
   getManagedWorktreeStatus?(): Promise<unknown>
   readCodexAuthConfig?(): Promise<string>
+  /** Re-keys a picker-made `draft:` folder binding to a scope. Fails with "This scope already has a folder." */
+  adoptDraftFolderBinding?(draftId: string, scopeId: string): Promise<WorkspaceDescriptor>
+  /** Removes every leftover `draft:` folder binding; resolves to how many were removed. */
+  discardDraftFolderBindings?(): Promise<number>
+  /** Counts local Codex threads without reading them. */
+  detectCodexThreads?(): Promise<CodexThreadsDetection>
+  /**
+   * Codex threads oldest first by `(updatedAt, id)`, after the thread `(sinceMs, sinceId)` (without `sinceId`, after
+   * every thread updated at `sinceMs`), at most `limit` (default 200).
+   */
+  listCodexThreads?(opts?: { sinceMs?: number; sinceId?: string; limit?: number }): Promise<CodexThreadSummary[]>
+  readCodexThread?(id: string): Promise<CodexThread>
   videoYtDlp?(op: 'detect' | 'install'): Promise<unknown>
   /** Test-only: never a renderer authorization path. */
   __testBindProjectFolder?(projectId: string, folderPath: string): Promise<WorkspaceDescriptor>

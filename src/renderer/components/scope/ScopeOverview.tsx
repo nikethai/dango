@@ -1,6 +1,7 @@
 import type { Scope, SessionMeta } from '@shared/types'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
+import { BackgroundWork } from '@/components/sources/BackgroundWork'
 import { ChatRows } from './ScopeChatsTab'
 import { ScopeEmpty } from './ScopeEmpty'
 import type { ScopeTab } from './ScopePage'
@@ -27,20 +28,25 @@ export function ScopeOverview(props: {
   const knowledgeId = useId()
   const { scope, chats, knowledgeCount } = props
   if (knowledgeCount === 0 && chats.length === 0) {
+    // A new scope's first sync runs while nothing is known yet, so Background work shows above EM1 (R12); it renders
+    // nothing without jobs.
     return (
-      <ScopeEmpty
-        heading={t('Nothing known about {{name}} yet', { name: scope.name })}
-        text={t(
-          'Dango learns from the chats you have here and the sources you connect. Knowledge you approve shows up on this page.'
-        )}
-      >
-        <button type="button" className="dg-btn dg-btn--primary" onClick={props.onNewChat}>
-          {t('Start a chat')}
-        </button>
-        <button type="button" className="dg-btn" onClick={() => props.onTabChange('sources')}>
-          {t('Add a source')}
-        </button>
-      </ScopeEmpty>
+      <div className="flex flex-col gap-2">
+        <BackgroundWork scopeId={scope.id} />
+        <ScopeEmpty
+          heading={t('Nothing known about {{name}} yet', { name: scope.name })}
+          text={t(
+            'Dango learns from the chats you have here and the sources you connect. Knowledge you approve shows up on this page.'
+          )}
+        >
+          <button type="button" className="dg-btn dg-btn--primary" onClick={props.onNewChat}>
+            {t('Start a chat')}
+          </button>
+          <button type="button" className="dg-btn" onClick={() => props.onTabChange('sources')}>
+            {t('Add a source')}
+          </button>
+        </ScopeEmpty>
+      </div>
     )
   }
   const recent = [...chats].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, 5)
@@ -62,6 +68,7 @@ export function ScopeOverview(props: {
         </div>
         <ChatRows chats={recent} onOpenChat={props.onOpenChat} />
       </section>
+      <BackgroundWork scopeId={scope.id} />
       <section aria-labelledby={knowledgeId}>
         <div className="flex items-baseline justify-between">
           <h2 id={knowledgeId} className="dg-type-headline">

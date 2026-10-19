@@ -25,6 +25,14 @@ vi.mock('react-i18next', () => ({
   }),
 }))
 
+// The scope page now pulls in the sources UI, which translates through the i18n instance.
+vi.mock('@/i18n', () => ({
+  default: {
+    t: (key: string, vars?: Record<string, unknown>) =>
+      key.replace(/\{\{(\w+)\}\}/g, (_m, name: string) => String(vars?.[name] ?? '')),
+  },
+}))
+
 vi.mock('@/components/knowledge/KnowledgeTab', () => ({
   KnowledgeTab: ({ scopeId }: { scopeId: string }) => <div data-testid="knowledge-tab">{scopeId}</div>,
 }))
@@ -88,10 +96,11 @@ describe('ScopePageView', () => {
     expect(screen.getByTestId('knowledge-tab').textContent).toBe('s1')
   })
 
-  it('placeholders name what will appear', () => {
+  it('the empty Sources tab names what will appear', async () => {
     view({ tab: 'sources' })
+    // Shown once the stored sources have been read.
     expect(
-      screen.getByText(
+      await screen.findByText(
         'Folders, Gmail, Asana and documents connected to Acme Co will appear here. Dango reads only the sources you connect.'
       )
     ).toBeTruthy()

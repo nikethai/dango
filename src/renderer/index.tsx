@@ -203,6 +203,11 @@ initializeApp()
     void import('./setup/memory_sync').then(({ initMemorySyncBootstrap }) => {
       initMemorySyncBootstrap()
     })
+
+    // Background syncs and reviews (main window only; non-blocking)
+    void import('./setup/background_jobs')
+      .then(({ initBackgroundJobs }) => initBackgroundJobs())
+      .catch((error) => console.warn('[background] Could not start background work', error))
   })
 
 // If you want to start measuring performance in your app, pass a function
