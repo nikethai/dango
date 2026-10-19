@@ -177,6 +177,7 @@ import { ScopePill } from './ScopePill'
 import SkillPicker, { filterSkills } from './SkillPicker'
 import TeamModeSelect from './TeamModeSelect'
 import { voiceAuthFromSettings } from './VoiceHoldButton'
+import { useCostHeadsUp } from './useCostHeadsUp'
 
 export type InputBoxPayload = {
   constructedMessage: Message
@@ -1534,6 +1535,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     )
 
     const closeSelectModelErrorTipCb = useRef<NodeJS.Timeout>()
+    const { confirm: confirmCost, sheet: costSheet } = useCostHeadsUp()
     const handleSubmit = async (needGenerating = true, opts?: { toolsOff?: boolean }) => {
       if (disableSubmit || isSubmitting || isPreprocessing) {
         return
@@ -1592,6 +1594,23 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           toastActions.add(t('Choose an available model before sending.'))
         }
         return
+      }
+
+      // CS1: a send that may cost more than the user's limit asks first. Only here, before sending —
+      // a run that has started is never interrupted. Cancel leaves the draft as it is.
+      if (needGenerating && model) {
+        const run = await confirmCost({
+          providerId: model.provider,
+          modelId: model.modelId,
+          apiHost:
+            settingsStore.getState().providers?.[model.provider]?.apiHost ||
+            providers.find((p) => p.id === model.provider)?.defaultSettings?.apiHost,
+          inputTokens: totalTokens,
+          maxOutputTokens: currentSessionMergedSettings?.maxTokens,
+          runs: roomModeForTurn === 'swarm' ? Math.max(1, roomSizeForTurn) * 2 : 1,
+          modelName: modelDisplayName || resolvedModelDisplayText || model.modelId,
+        })
+        if (!run) return
       }
 
       setIsSubmitting(true)
@@ -3443,6 +3462,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             </Flex>
           </Stack>
         </Stack>
+        {costSheet}
         {currentSession && (
           <CompressionModal
             opened={showCompressionModal}

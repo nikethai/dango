@@ -1765,5 +1765,8 @@
   "The chat \"{{chat}}\" is waiting for a retry.": "The chat \"{{chat}}\" is waiting for a retry.",
   "{{model}} can't use tools.": "{{model}} can't use tools.",
   "Answer without tools": "Answer without tools",
-  "This chat is {{pct}}% full. Early messages may be left out.": "This chat is {{pct}}% full. Early messages may be left out."
+  "This chat is {{pct}}% full. Early messages may be left out.": "This chat is {{pct}}% full. Early messages may be left out.",
+  "This run may cost about {{cost}}": "This run may cost about {{cost}}",
+  "{{model}} · about {{tokens}} tokens. You asked to hear about runs over {{limit}}. Change the limit in Settings › Models and keys.": "{{model}} · about {{tokens}} tokens. You asked to hear about runs over {{limit}}. Change the limit in Settings › Models and keys.",
+  "Run": "Run"
 }
