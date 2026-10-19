@@ -374,6 +374,7 @@ fn adopt_moves_a_draft_binding_to_the_scope() {
     let restored = rt2.restore("scope-1", "main").expect("restore after restart");
     assert_eq!(restored.get("status").and_then(|v| v.as_str()), Some("ready"));
     assert_eq!(rt2.restore("draft:one", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
+    let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -407,6 +408,7 @@ fn adopt_rejects_non_draft_ids_and_taken_scopes() {
         .get("displayPath")
         .and_then(|v| v.as_str())
         .is_some_and(|p| p.ends_with("b")));
+    let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -434,6 +436,7 @@ fn discard_removes_only_draft_bindings() {
     rt2.open_desktop(&dir).unwrap();
     assert_eq!(rt2.restore("draft:one", "main").unwrap_err().code, UNAUTHORIZED_ROOT);
     assert!(rt2.restore("scope-1", "main").is_ok());
+    let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -446,4 +449,5 @@ fn unbind_of_an_unbound_scope_succeeds() {
     bind_main(&rt, "scope-1", &folder);
     rt.unbind("scope-1", "main").expect("unbind");
     rt.unbind("scope-1", "main").expect("second unbind");
+    let _ = fs::remove_dir_all(&dir);
 }

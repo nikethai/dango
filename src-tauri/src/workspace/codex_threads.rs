@@ -48,27 +48,87 @@ fn sessions_root_from(codex_home: Option<OsString>, home: Option<OsString>) -> O
         .map(|h| PathBuf::from(h).join(".codex").join("sessions"))
 }
 
-/// Path for display: the home directory becomes `~`, separators become `/`.
-fn display_path_for(root: &Path, home: Option<&Path>) -> String {
-    if let Some(home) = home {
-        if let Ok(rest) = root.strip_prefix(home) {
-            let parts: Vec<String> = rest
-                .components()
-                .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                .collect();
-            return if parts.is_empty() {
-                "~".to_string()
-            } else {
-                format!("~/{}", parts.join("/"))
-            };
+/// Whether path comparison ignores case on this target (default macOS and Windows file systems).
+const CASE_INSENSITIVE_PATHS: bool = cfg!(any(target_os = "macos", target_os = "windows"));
+
+/// Resolves `.` and `..` without touching the file system.
+fn lexical(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push(component);
+                }
+            }
+            other => out.push(other),
         }
     }
-    root.display().to_string()
+    out
+}
+
+/// Components of `root` below `home`, or None when `root` is not inside `home`.
+fn strip_home(root: &Path, home: &Path, case_insensitive: bool) -> Option<Vec<String>> {
+    let root_parts: Vec<String> = root
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    let home_parts: Vec<String> = home
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    if home_parts.is_empty() || root_parts.len() < home_parts.len() {
+        return None;
+    }
+    let same = root_parts.iter().zip(&home_parts).all(|(a, b)| {
+        if case_insensitive {
+            a.to_lowercase() == b.to_lowercase()
+        } else {
+            a == b
+        }
+    });
+    same.then(|| root_parts[home_parts.len()..].to_vec())
+}
+
+/// Path for display: the home directory becomes `~`, separators become `/`. Never the full home path.
+fn display_path_for(root: &Path, home: Option<&Path>, case_insensitive: bool) -> String {
+    let lexical_root = lexical(root);
+    if let Some(home) = home {
+        let canonical = fs::canonicalize(root).ok().zip(fs::canonicalize(home).ok());
+        let pairs = canonical
+            .into_iter()
+            .chain(std::iter::once((lexical_root.clone(), lexical(home))));
+        for (r, h) in pairs {
+            if let Some(rest) = strip_home(&r, &h, case_insensitive) {
+                return if rest.is_empty() {
+                    "~".to_string()
+                } else {
+                    format!("~/{}", rest.join("/"))
+                };
+            }
+        }
+    }
+    lexical_root.display().to_string()
 }
 
 fn display_path(root: &Path) -> String {
     let home = home_dir_os().map(PathBuf::from);
-    display_path_for(root, home.as_deref())
+    display_path_for(root, home.as_deref(), CASE_INSENSITIVE_PATHS)
+}
+
+/// One path segment the broker accepts, both when walking and when resolving an id.
+fn is_valid_segment(segment: &str) -> bool {
+    !segment.is_empty() && segment != "." && segment != ".." && !segment.contains(['/', '\\', ':', '\0'])
+}
+
+/// A thread id: `/`-joined valid segments ending in a `rollout-*.jsonl` name.
+fn is_valid_id(id: &str) -> bool {
+    if id.is_empty() || id.len() > MAX_ID_LEN {
+        return false;
+    }
+    let parts: Vec<&str> = id.split('/').collect();
+    parts.iter().all(|p| is_valid_segment(p)) && parts.last().is_some_and(|name| is_rollout_name(name))
 }
 
 fn is_rollout_name(name: &str) -> bool {
@@ -78,6 +138,7 @@ fn is_rollout_name(name: &str) -> bool {
 struct Entry {
     id: String,
     path: PathBuf,
+    meta: fs::Metadata,
     updated_at: u64,
 }
 
@@ -109,6 +170,9 @@ fn walk(root: &Path, mut visit: impl FnMut(&Path, &[String], &fs::DirEntry)) {
             let Some(name) = entry.file_name().to_str().map(str::to_string) else {
                 continue;
             };
+            if !is_valid_segment(&name) {
+                continue;
+            }
             if kind.is_dir() {
                 if rel.len() < MAX_WALK_DEPTH {
                     let mut child = rel.clone();
@@ -118,7 +182,9 @@ fn walk(root: &Path, mut visit: impl FnMut(&Path, &[String], &fs::DirEntry)) {
             } else if kind.is_file() && is_rollout_name(&name) {
                 let mut parts = rel.clone();
                 parts.push(name);
-                visit(&entry.path(), &parts, &entry);
+                if is_valid_id(&parts.join("/")) {
+                    visit(&entry.path(), &parts, &entry);
+                }
             }
         }
     }
@@ -141,11 +207,15 @@ pub fn detect(root: &Path) -> Value {
 fn collect(root: &Path) -> Vec<Entry> {
     let mut out = Vec::new();
     walk(root, |path, parts, entry| {
-        let updated_at = entry.metadata().map(|m| mtime_ms(&m)).unwrap_or(0);
+        // DirEntry::metadata does not follow symlinks.
+        let Ok(meta) = entry.metadata() else {
+            return;
+        };
         out.push(Entry {
             id: parts.join("/"),
             path: path.to_path_buf(),
-            updated_at,
+            updated_at: mtime_ms(&meta),
+            meta,
         });
     });
     out
@@ -166,7 +236,7 @@ pub fn list(root: &Path, since_ms: Option<u64>, limit: usize) -> Vec<Value> {
     entries
         .into_iter()
         .map(|e| {
-            let title = File::open(&e.path)
+            let title = open_checked(&e.path, &e.meta)
                 .map(|f| scan(f, TITLE_SCAN_BYTES, 0).title)
                 .unwrap_or_default();
             json!({ "id": e.id, "title": title, "updatedAt": e.updated_at })
@@ -175,19 +245,12 @@ pub fn list(root: &Path, since_ms: Option<u64>, limit: usize) -> Vec<Value> {
 }
 
 /// Validates a renderer-supplied id and resolves it to a canonical file inside the root.
-fn resolve(root: &Path, id: &str) -> Result<PathBuf, String> {
-    if id.is_empty() || id.len() > MAX_ID_LEN || id.contains('\\') || id.contains('\0') || id.contains(':') {
-        return Err(NOT_FOUND.into());
-    }
-    let parts: Vec<&str> = id.split('/').collect();
-    if parts.iter().any(|p| p.is_empty() || *p == "." || *p == "..") {
+fn resolve(root: &Path, id: &str) -> Result<(PathBuf, fs::Metadata), String> {
+    if !is_valid_id(id) {
         return Err(NOT_FOUND.into());
     }
     let rel = Path::new(id);
     if rel.is_absolute() || !rel.components().all(|c| matches!(c, Component::Normal(_))) {
-        return Err(NOT_FOUND.into());
-    }
-    if !parts.last().is_some_and(|name| is_rollout_name(name)) {
         return Err(NOT_FOUND.into());
     }
     let canon_root = fs::canonicalize(root).map_err(|_| NOT_FOUND.to_string())?;
@@ -196,16 +259,41 @@ fn resolve(root: &Path, id: &str) -> Result<PathBuf, String> {
         return Err(NOT_FOUND.into());
     }
     let resolved_name_ok = canon.file_name().and_then(|n| n.to_str()).is_some_and(is_rollout_name);
-    if !resolved_name_ok || !canon.is_file() {
+    if !resolved_name_ok {
         return Err(NOT_FOUND.into());
     }
-    Ok(canon)
+    let meta = fs::symlink_metadata(&canon).map_err(|_| NOT_FOUND.to_string())?;
+    if !meta.is_file() {
+        return Err(NOT_FOUND.into());
+    }
+    Ok((canon, meta))
+}
+
+/// Opens `path` and confirms the open handle is the regular file that was checked (no swap in between).
+fn open_checked(path: &Path, checked: &fs::Metadata) -> Option<File> {
+    let file = File::open(path).ok()?;
+    let opened = file.metadata().ok()?;
+    if !opened.is_file() || !same_file(checked, &opened) {
+        return None;
+    }
+    Some(file)
+}
+
+#[cfg(unix)]
+fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    a.dev() == b.dev() && a.ino() == b.ino()
+}
+
+#[cfg(not(unix))]
+fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+    a.len() == b.len() && a.modified().ok() == b.modified().ok()
 }
 
 /// `{ id, title, updatedAt, text, truncated }`, text capped at `max_chars` characters.
 pub fn read(root: &Path, id: &str, max_chars: usize) -> Result<Value, String> {
-    let path = resolve(root, id)?;
-    let file = File::open(&path).map_err(|_| NOT_FOUND.to_string())?;
+    let (path, checked) = resolve(root, id)?;
+    let file = open_checked(&path, &checked).ok_or_else(|| NOT_FOUND.to_string())?;
     let updated_at = file.metadata().map(|m| mtime_ms(&m)).unwrap_or(0);
     let scanned = scan(file, READ_SCAN_BYTES, max_chars.min(READ_MAX_CHARS));
     Ok(json!({
@@ -323,10 +411,7 @@ fn message_of(line: &str) -> Option<(&'static str, String)> {
         .and_then(Value::as_array)?
         .iter()
         .filter_map(|item| item.get("text").and_then(Value::as_str))
-        .filter(|text| {
-            let t = text.trim_start();
-            !t.starts_with("<environment_context>") && !t.starts_with("<user_instructions>")
-        })
+        .filter(|text| !is_instruction_text(text))
         .map(|text| text.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|text| !text.is_empty())
         .collect();
@@ -334,6 +419,19 @@ fn message_of(line: &str) -> Option<(&'static str, String)> {
         return None;
     }
     Some((role, parts.join(" ")))
+}
+
+/// Context that Codex injects as user messages, in older and newer log formats.
+const INSTRUCTION_PREFIXES: [&str; 4] = [
+    "<environment_context>",
+    "<user_instructions>",
+    "# AGENTS.md instructions",
+    "<INSTRUCTIONS>",
+];
+
+fn is_instruction_text(text: &str) -> bool {
+    let t = text.trim_start();
+    INSTRUCTION_PREFIXES.iter().any(|prefix| t.starts_with(prefix))
 }
 
 fn since_of(request: &Value) -> Option<u64> {
@@ -394,6 +492,10 @@ mod tests {
         "\n",
         r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>cwd /home/someone</environment_context>"}]}}"#,
         "\n",
+        r##"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for /home/someone/project"}]}}"##,
+        "\n",
+        r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"  <INSTRUCTIONS>be terse</INSTRUCTIONS>"}]}}"#,
+        "\n",
         r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Plan the launch\nfor Friday"}]}}"#,
         "\n",
         "not json at all\n",
@@ -401,21 +503,40 @@ mod tests {
         "\n",
     );
 
-    fn fixture() -> PathBuf {
+    /// Temp fixture removed when dropped.
+    struct Fixture {
+        base: PathBuf,
+        root: PathBuf,
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.base);
+        }
+    }
+
+    fn temp_base() -> PathBuf {
         let n = SEQ.fetch_add(1, Ordering::SeqCst);
         let base = std::env::temp_dir().join(format!("dango-codex-{}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        base
+    }
+
+    fn fixture() -> Fixture {
+        let base = temp_base();
         let root = base.join("sessions");
         let day = root.join("2026").join("10").join("01");
         fs::create_dir_all(&day).unwrap();
         fs::write(day.join("rollout-a.jsonl"), FIXTURE).unwrap();
         fs::write(day.join("notes.txt"), "not a thread").unwrap();
-        root
+        Fixture { base, root }
     }
 
     #[test]
     fn detect_counts_without_reading() {
-        let root = fixture();
+        let fx = fixture();
+        let root = fx.root.clone();
         // An unreadable-as-JSON rollout file still counts: detect never opens files.
         fs::write(
             root.join("2026").join("10").join("01").join("rollout-b.jsonl"),
@@ -434,13 +555,92 @@ mod tests {
     fn display_path_uses_tilde() {
         let home = Path::new("/home/someone");
         assert_eq!(
-            display_path_for(Path::new("/home/someone/.codex/sessions"), Some(home)),
+            display_path_for(Path::new("/home/someone/.codex/sessions"), Some(home), false),
             "~/.codex/sessions"
         );
+        assert_eq!(display_path_for(Path::new("/home/someone"), Some(home), false), "~");
         assert_eq!(
-            display_path_for(Path::new("/opt/codex/sessions"), Some(home)),
+            display_path_for(Path::new("/opt/codex/sessions"), Some(home), false),
             "/opt/codex/sessions"
         );
+        // A sibling whose name merely starts with the home name is not under home.
+        assert_eq!(
+            display_path_for(Path::new("/home/someone-else/s"), Some(home), false),
+            "/home/someone-else/s"
+        );
+    }
+
+    #[test]
+    fn display_path_resolves_dot_dot_in_codex_home() {
+        // Lexical form (nothing exists on disk).
+        let home = Path::new("/home/someone");
+        let root = sessions_root_from(Some("/home/someone/x/../.codex".into()), None).unwrap();
+        assert_eq!(display_path_for(&root, Some(home), false), "~/.codex/sessions");
+        let up = sessions_root_from(Some("/home/someone/../someone/.codex".into()), None).unwrap();
+        assert_eq!(display_path_for(&up, Some(home), false), "~/.codex/sessions");
+
+        // Canonical form (real folders, home reached through `..`).
+        let base = temp_base();
+        let real_home = base.join("home");
+        fs::create_dir_all(real_home.join("x")).unwrap();
+        fs::create_dir_all(real_home.join(".codex").join("sessions")).unwrap();
+        let root = sessions_root_from(Some(real_home.join("x").join("..").join(".codex").into()), None).unwrap();
+        let shown = display_path_for(&root, Some(&real_home), CASE_INSENSITIVE_PATHS);
+        assert_eq!(shown, "~/.codex/sessions");
+        assert!(!shown.contains(real_home.to_str().unwrap()));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn display_path_ignores_case_where_the_file_system_does() {
+        let home = Path::new("/Users/Someone");
+        let root = Path::new("/users/someone/.codex/sessions");
+        assert_eq!(display_path_for(root, Some(home), true), "~/.codex/sessions");
+        assert_eq!(
+            display_path_for(root, Some(home), false),
+            "/users/someone/.codex/sessions"
+        );
+        assert_eq!(
+            strip_home(Path::new("/USERS/SOMEONE/a"), home, true),
+            Some(vec!["a".to_string()])
+        );
+    }
+
+    #[test]
+    fn instruction_messages_are_skipped_in_old_and_new_formats() {
+        for text in [
+            "<environment_context>x</environment_context>",
+            "<user_instructions>x</user_instructions>",
+            "# AGENTS.md instructions for /repo",
+            "\n <INSTRUCTIONS>x</INSTRUCTIONS>",
+        ] {
+            let line = json!({"type":"message","role":"user","content":[{"type":"input_text","text":text}]});
+            assert!(message_of(&line.to_string()).is_none(), "{text}");
+        }
+        let kept = json!({"type":"message","role":"user","content":[{"type":"input_text","text":"About # AGENTS.md instructions"}]});
+        assert!(message_of(&kept.to_string()).is_some());
+    }
+
+    #[test]
+    fn walk_skips_names_read_would_refuse() {
+        let fx = fixture();
+        let root = fx.root.clone();
+        let day = root.join("2026").join("10").join("01");
+        fs::write(day.join("rollout-.jsonl"), FIXTURE).unwrap();
+        fs::write(day.join("rollout-c.json"), FIXTURE).unwrap();
+        #[cfg(unix)]
+        {
+            fs::write(day.join("rollout-b\\x.jsonl"), FIXTURE).unwrap();
+            fs::write(day.join("rollout-c:x.jsonl"), FIXTURE).unwrap();
+            fs::create_dir_all(root.join("we:ird")).unwrap();
+            fs::write(root.join("we:ird").join("rollout-d.jsonl"), FIXTURE).unwrap();
+        }
+        assert_eq!(detect(&root)["threadCount"], json!(1));
+        let items = list(&root, None, DEFAULT_LIST_LIMIT);
+        assert_eq!(items.len(), 1);
+        for item in &items {
+            assert!(read(&root, item["id"].as_str().unwrap(), READ_MAX_CHARS).is_ok());
+        }
     }
 
     #[test]
@@ -458,7 +658,8 @@ mod tests {
 
     #[test]
     fn list_titles_from_first_real_user_message() {
-        let root = fixture();
+        let fx = fixture();
+        let root = fx.root.clone();
         let items = list(&root, None, DEFAULT_LIST_LIMIT);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0]["id"], json!("2026/10/01/rollout-a.jsonl"));
@@ -472,7 +673,8 @@ mod tests {
 
     #[test]
     fn list_title_is_capped_at_80_chars() {
-        let root = fixture();
+        let fx = fixture();
+        let root = fx.root.clone();
         let long = "x".repeat(200);
         let line = json!({"type":"message","role":"user","content":[{"type":"input_text","text":long}]});
         fs::write(root.join("rollout-long.jsonl"), format!("{line}\n")).unwrap();
@@ -483,7 +685,8 @@ mod tests {
 
     #[test]
     fn read_formats_roles_and_truncates() {
-        let root = fixture();
+        let fx = fixture();
+        let root = fx.root.clone();
         let v = read(&root, "2026/10/01/rollout-a.jsonl", READ_MAX_CHARS).unwrap();
         assert_eq!(v["id"], json!("2026/10/01/rollout-a.jsonl"));
         assert_eq!(v["title"], json!("Plan the launch for Friday"));
@@ -499,7 +702,8 @@ mod tests {
 
     #[test]
     fn read_rejects_parent_and_absolute_ids() {
-        let root = fixture();
+        let fx = fixture();
+        let root = fx.root.clone();
         fs::write(root.parent().unwrap().join("x.jsonl"), FIXTURE).unwrap();
         fs::write(root.parent().unwrap().join("rollout-x.jsonl"), FIXTURE).unwrap();
         for bad in [
@@ -525,7 +729,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn read_rejects_symlink_escaping_root() {
-        let root = fixture();
+        let fx = fixture();
+        let root = fx.root.clone();
         let outside = root.parent().unwrap().join("secret.jsonl");
         fs::write(&outside, FIXTURE).unwrap();
         std::os::unix::fs::symlink(&outside, root.join("rollout-escape.jsonl")).unwrap();
@@ -538,9 +743,40 @@ mod tests {
         assert_eq!(list(&root, None, DEFAULT_LIST_LIMIT).len(), 1);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn read_rejects_symlink_into_a_prefix_sibling() {
+        // `sessions-evil` shares the string prefix `sessions` but is outside the root.
+        let fx = fixture();
+        let root = fx.root.clone();
+        let evil = fx.base.join("sessions-evil");
+        fs::create_dir_all(&evil).unwrap();
+        fs::write(evil.join("rollout-e.jsonl"), FIXTURE).unwrap();
+        std::os::unix::fs::symlink(evil.join("rollout-e.jsonl"), root.join("rollout-evil.jsonl")).unwrap();
+        std::os::unix::fs::symlink(&evil, root.join("evil")).unwrap();
+        assert!(read(&root, "rollout-evil.jsonl", READ_MAX_CHARS).is_err());
+        assert!(read(&root, "evil/rollout-e.jsonl", READ_MAX_CHARS).is_err());
+        assert_eq!(detect(&root)["threadCount"], json!(1));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_checked_rejects_a_swapped_file() {
+        let fx = fixture();
+        let path = fx.root.join("2026").join("10").join("01").join("rollout-a.jsonl");
+        let checked = fs::symlink_metadata(&path).unwrap();
+        assert!(open_checked(&path, &checked).is_some());
+        // Created before the removal so it cannot reuse the original inode.
+        fs::write(fx.base.join("other.jsonl"), FIXTURE).unwrap();
+        fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(fx.base.join("other.jsonl"), &path).unwrap();
+        assert!(open_checked(&path, &checked).is_none());
+    }
+
     #[test]
     fn dispatch_never_panics_on_bad_input() {
-        let root = fixture();
+        let fx = fixture();
+        let root = fx.root.clone();
         for bad in [
             json!(null),
             json!("detect"),
