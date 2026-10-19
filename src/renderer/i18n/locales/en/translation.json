@@ -1672,5 +1672,18 @@
   "Found {{count}} Codex threads_other": "Found {{count}} Codex threads",
   "Untitled thread": "Untitled thread",
   "Add an OAuth client ID in Integrations.": "Add an OAuth client ID in Integrations.",
-  "Open Integrations": "Open Integrations"
+  "Open Integrations": "Open Integrations",
+  "no model is set up": "no model is set up",
+  "this source stays on this device; choose a local model": "this source stays on this device; choose a local model",
+  "This source was removed.": "This source was removed.",
+  "This source cannot be reviewed.": "This source cannot be reviewed.",
+  "This source cannot be synced.": "This source cannot be synced.",
+  "Reviewed {{done}} of {{count}} items_one": "Reviewed {{done}} of {{count}} item",
+  "Reviewed {{done}} of {{count}} items_other": "Reviewed {{done}} of {{count}} items",
+  "Read {{count}} items from {{label}}: no proposals_one": "Read {{count}} item from {{label}}: no proposals",
+  "Read {{count}} items from {{label}}: no proposals_other": "Read {{count}} items from {{label}}: no proposals",
+  "Read {{count}} items from {{label}}: 1 proposal_one": "Read {{count}} item from {{label}}: 1 proposal",
+  "Read {{count}} items from {{label}}: 1 proposal_other": "Read {{count}} items from {{label}}: 1 proposal",
+  "Read {{count}} items from {{label}}: {{proposals}} proposals_one": "Read {{count}} item from {{label}}: {{proposals}} proposals",
+  "Read {{count}} items from {{label}}: {{proposals}} proposals_other": "Read {{count}} items from {{label}}: {{proposals}} proposals"
 }

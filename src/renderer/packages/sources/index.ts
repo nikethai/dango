@@ -11,7 +11,7 @@ export function registerBuiltinSourceKinds(): void {
 
 registerBuiltinSourceKinds()
 
-// Task 6 registers the job opener and the sources resolver (after `registerSourcesResolver()`); not done here.
+// `initBackgroundJobs` (setup/background_jobs.ts) registers the resolver, handlers and job opener; not done here.
 export {
   connectSource,
   discardSourceDraft,
@@ -20,6 +20,7 @@ export {
   registerSourceFixHandlers,
   syncJobLabel,
 } from './connect'
+export { dueReviews, dueSyncs, startDueJobs } from './jobs'
 export {
   _resetSourceKindsForTests,
   getSourceKind,
@@ -37,6 +38,15 @@ export {
   useCodexDetection,
 } from './kinds/codex-threads'
 export { INTEGRATIONS_ROUTE, isOAuthClientIdError, OAuthClientIdError } from './kinds/oauth'
+export {
+  _resetReviewForTests,
+  buildReviewPrompt,
+  type ProposalDraft,
+  parseProposalDraft,
+  REVIEW_BATCH_CHARS,
+  reviewJobHandler,
+  syncJobHandler,
+} from './review'
 export {
   _resetSourcesForTests,
   addSource,
