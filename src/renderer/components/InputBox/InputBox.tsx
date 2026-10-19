@@ -366,6 +366,11 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     )
 
     const { messageInput, setMessageInput, clearDraft } = useMessageInput(initialMessage, { isNewSession })
+    // First-chat chips hide while the composer holds text, so a pick never overwrites a draft.
+    const setComposerHasDraft = useUIStore((s) => s.setComposerHasDraft)
+    const composerHasText = messageInput.trim().length > 0
+    useEffect(() => setComposerHasDraft(composerHasText), [composerHasText, setComposerHasDraft])
+    useEffect(() => () => setComposerHasDraft(false), [setComposerHasDraft])
     const memoryReady = useMemoryStore((state) => state.ready)
     const globalMemoryBank = useMemoryStore((state) => state.globalBank)
 

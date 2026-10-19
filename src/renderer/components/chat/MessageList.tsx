@@ -56,7 +56,7 @@ import ActionMenu from '../ActionMenu'
 import { ErrorBoundary } from '../common/ErrorBoundary'
 import { ScalableIcon } from '../common/ScalableIcon'
 import { BlockCodeCollapsedStateProvider } from '../Markdown'
-import EmptyThreadState from './EmptyThreadState'
+import EmptyThreadState, { firstChatChipsShown } from './EmptyThreadState'
 import Message from './Message'
 import SummaryMessage from './SummaryMessage'
 
@@ -196,6 +196,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   )
 
   const threadEmpty = useMemo(() => isThreadVisuallyEmpty(currentMessageList), [currentMessageList])
+  const composerHasDraft = useUIStore((s) => s.composerHasDraft)
 
   const handleJumpToLatest = useCallback(() => {
     virtuoso.current?.scrollTo({ top: Infinity, behavior: 'smooth' })
@@ -245,6 +246,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
               scopeName={scope?.name}
               scopeKind={scope ? scopeKindOf(scope) : null}
               compact={alignToBottom || isSmallScreen}
+              showSuggestions={firstChatChipsShown({ sessionType: currentSession.type, composerHasDraft })}
             />
           ) : (
             <Virtuoso

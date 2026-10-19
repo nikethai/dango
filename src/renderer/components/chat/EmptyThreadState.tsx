@@ -1,3 +1,4 @@
+import type { SessionType } from '@shared/types'
 import { type FC, memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { type FirstChatScopeKind, firstChatSuggestions } from '@/utils/firstChatSuggestions'
@@ -10,6 +11,13 @@ export type EmptyThreadStateProps = {
   /** The chat's scope, when it has one: the suggestions ask about it by name. */
   scopeName?: string
   scopeKind?: FirstChatScopeKind
+  /** Show the suggestion chips (see `firstChatChipsShown`). Default true. */
+  showSuggestions?: boolean
+}
+
+/** EM3 chips show in a chat (not a picture chat) while its composer is empty: a pick never overwrites a draft. */
+export function firstChatChipsShown(s: { sessionType: SessionType | undefined; composerHasDraft: boolean }): boolean {
+  return s.sessionType !== 'picture' && !s.composerHasDraft
 }
 
 /** EM3: three things to ask in a first chat, as chips; a click fills the composer (never sends). */
@@ -46,6 +54,7 @@ const EmptyThreadState: FC<EmptyThreadStateProps> = ({
   onPickStarter,
   scopeName,
   scopeKind = null,
+  showSuggestions = true,
 }) => {
   const { t } = useTranslation()
 
@@ -61,7 +70,9 @@ const EmptyThreadState: FC<EmptyThreadStateProps> = ({
     >
       <div className="empty-thread-stage">
         <h2 className="empty-thread-title blank-enter">{title}</h2>
-        <FirstChatSuggestionChips scopeName={scopeName} scopeKind={scopeKind} onPick={onPickStarter} />
+        {showSuggestions ? (
+          <FirstChatSuggestionChips scopeName={scopeName} scopeKind={scopeKind} onPick={onPickStarter} />
+        ) : null}
       </div>
     </div>
   )

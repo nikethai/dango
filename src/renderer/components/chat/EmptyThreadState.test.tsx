@@ -4,7 +4,7 @@
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import EmptyThreadState from './EmptyThreadState'
+import EmptyThreadState, { firstChatChipsShown } from './EmptyThreadState'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -33,5 +33,20 @@ describe('EmptyThreadState', () => {
     render(<EmptyThreadState onPickStarter={onPickStarter} scopeKind={null} />)
     fireEvent.click(screen.getByRole('button', { name: 'What needs me today?' }))
     expect(onPickStarter).toHaveBeenCalledWith('What needs me today?')
+  })
+
+  it('hides the chips when told to (a draft in the composer, a picture chat)', () => {
+    render(<EmptyThreadState onPickStarter={vi.fn()} scopeKind={null} showSuggestions={false} />)
+    expect(document.querySelectorAll('button.dg-chip')).toHaveLength(0)
+    expect(screen.getByRole('region', { name: 'Empty conversation' })).toBeTruthy()
+  })
+})
+
+describe('firstChatChipsShown', () => {
+  it('only in a chat whose composer is empty, so a pick never overwrites a draft', () => {
+    expect(firstChatChipsShown({ sessionType: 'chat', composerHasDraft: false })).toBe(true)
+    expect(firstChatChipsShown({ sessionType: undefined, composerHasDraft: false })).toBe(true)
+    expect(firstChatChipsShown({ sessionType: 'chat', composerHasDraft: true })).toBe(false)
+    expect(firstChatChipsShown({ sessionType: 'picture', composerHasDraft: false })).toBe(false)
   })
 })

@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { v4 as uuidv4 } from 'uuid'
 import { BeforeSendHost } from '@/components/chat/BeforeSendGate'
 import { ChatDropOverlay } from '@/components/chat/ChatDropOverlay'
-import { FirstChatSuggestionChips } from '@/components/chat/EmptyThreadState'
+import { FirstChatSuggestionChips, firstChatChipsShown } from '@/components/chat/EmptyThreadState'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
 import Page from '@/components/layout/Page'
 import NewChatAgentBar from '@/components/new-chat/NewChatAgentBar'
@@ -176,6 +176,7 @@ function Index() {
   // EM3: first-chat suggestions ask about the draft's scope; a pick fills the composer without remounting it.
   const draftScope = getScope(session.projectId)
   const setNewPrefillText = useSetAtom(atoms.inputBoxPrefillTextFamily('new'))
+  const composerHasDraft = useUIStore((s) => s.composerHasDraft)
 
   const handleAgentIdsChange = useCallback((ids: string[]) => {
     const fields = toSessionAgentFieldsFromSelection(ids)
@@ -316,7 +317,7 @@ function Index() {
               </Button>
             )}
           </div>
-          {!isSending ? (
+          {!isSending && firstChatChipsShown({ sessionType: 'chat', composerHasDraft }) ? (
             <FirstChatSuggestionChips
               scopeName={draftScope?.name}
               scopeKind={draftScope ? scopeKindOf(draftScope) : null}
