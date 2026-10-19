@@ -1931,6 +1931,11 @@
     align-items: flex-end;
   }
 
+  /* The inline editor replaces the bubble while a question is being edited. */
+  .user-msg .msg-bubble.hidden {
+    display: none;
+  }
+
   .user-msg .msg-bubble {
     display: inline-block;
     max-width: min(78%, 36rem);
