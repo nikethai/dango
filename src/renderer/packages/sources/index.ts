@@ -33,6 +33,7 @@ export {
 } from './kinds'
 export {
   _resetCodexDetectionForTests,
+  codexThreadsFound,
   codexThreadsHint,
   getCodexDetection,
   useCodexDetection,

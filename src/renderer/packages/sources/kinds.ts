@@ -26,6 +26,8 @@ export type SourceKindDefinition = SourceAdapter & {
   kind: SourceKind
   name: string
   hint: string
+  /** OAuth kinds: the Integrations connector whose active accounts the sheet offers to reuse. */
+  connectorId?: string
   supportsBackgroundReview: boolean
   isAvailable(): boolean
   unavailableHint?: string

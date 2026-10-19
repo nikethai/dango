@@ -28,9 +28,12 @@ export function getCodexDetection(): Promise<CodexThreadsDetection | null> {
   return detection
 }
 
-/** The detection, or null until it is known (and where Codex threads are unavailable). */
-export function useCodexDetection(): CodexThreadsDetection | null {
-  const [value, setValue] = useState<CodexThreadsDetection | null>(null)
+/**
+ * The detection: `undefined` while it is still being looked up, `null` where Codex threads are unavailable (or the
+ * lookup failed). The sheet tells "still looking" apart from "nothing found" with this.
+ */
+export function useCodexDetection(): CodexThreadsDetection | null | undefined {
+  const [value, setValue] = useState<CodexThreadsDetection | null | undefined>(undefined)
   useEffect(() => {
     let live = true
     void getCodexDetection().then((d) => {
@@ -43,9 +46,15 @@ export function useCodexDetection(): CodexThreadsDetection | null {
   return value
 }
 
-/** The Codex threads row's hint, translated. The row is disabled when nothing was found. */
-export function codexThreadsHint(found: CodexThreadsDetection | null): string {
-  if (!found?.found || found.threadCount === 0) return i18n.t('No Codex threads on this computer.')
+/** Whether the detection found threads to connect (false while still looking). */
+export function codexThreadsFound(found: CodexThreadsDetection | null | undefined): boolean {
+  return !!found?.found && found.threadCount > 0
+}
+
+/** The Codex threads row's hint, translated. The row is disabled unless `codexThreadsFound`. */
+export function codexThreadsHint(found: CodexThreadsDetection | null | undefined): string {
+  if (found === undefined) return i18n.t('Looking for Codex threads…')
+  if (!found || !codexThreadsFound(found)) return i18n.t('No Codex threads on this computer.')
   // displayPath is external text, passed as a plain value.
   return i18n.t('Found {{count}} threads in {{displayPath}}. Dango reads them only after you connect.', {
     count: found.threadCount,

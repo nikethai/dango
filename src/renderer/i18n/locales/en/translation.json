@@ -1685,5 +1685,15 @@
   "Read {{count}} items from {{label}}: 1 proposal_one": "Read {{count}} item from {{label}}: 1 proposal",
   "Read {{count}} items from {{label}}: 1 proposal_other": "Read {{count}} items from {{label}}: 1 proposal",
   "Read {{count}} items from {{label}}: {{proposals}} proposals_one": "Read {{count}} item from {{label}}: {{proposals}} proposals",
-  "Read {{count}} items from {{label}}: {{proposals}} proposals_other": "Read {{count}} items from {{label}}: {{proposals}} proposals"
+  "Read {{count}} items from {{label}}: {{proposals}} proposals_other": "Read {{count}} items from {{label}}: {{proposals}} proposals",
+  "Waiting for the browser…": "Waiting for the browser…",
+  "Choose a folder in the window that opened.": "Choose a folder in the window that opened.",
+  "Connect {{name}}": "Connect {{name}}",
+  "Connected {{label}} to {{scope}}": "Connected {{label}} to {{scope}}",
+  "Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.": "Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.",
+  "Connect": "Connect",
+  "Use {{accountHint}}": "Use {{accountHint}}",
+  "Another account": "Another account",
+  "Add documents": "Add documents",
+  "Looking for Codex threads…": "Looking for Codex threads…"
 }

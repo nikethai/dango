@@ -99,6 +99,7 @@ function oauthKind(spec: OAuthKindSpec): SourceKindDefinition {
     kind: spec.kind,
     name: spec.name,
     hint: spec.hint,
+    connectorId: spec.connectorId,
     supportsBackgroundReview: true,
     isAvailable: () => canUseLocalOAuthCallback(),
     unavailableHint: UNAVAILABLE_HINT,
