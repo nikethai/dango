@@ -19,6 +19,7 @@ import {
   shouldShowCostSheet,
 } from '@/packages/cost-tracking/headsUp'
 import type { PricingOverrides } from '@/packages/cost-tracking/types'
+import { estimateTokensFromMessages } from '@/packages/token'
 import { getSession, peekSession } from '@/stores/chatStore'
 import { turnAbilityNeeds } from '@/stores/session/redo-needs'
 import { settingsStore } from '@/stores/settingsStore'
@@ -189,7 +190,8 @@ export async function requestBeforeSend(sessionId: string, action: MessageAction
     providerId: model.provider,
     modelId: model.modelId,
     apiHost: providerApiHost(model.provider),
-    inputTokens: estimateInputTokens(contextFor(list, action)),
+    // Tokenizer counts (CJK-accurate) including attached files and links, priced for the model that answers.
+    inputTokens: estimateTokensFromMessages(contextFor(list, action), 'input', model),
     maxOutputTokens: session.settings?.maxTokens,
     runs: runsForRoom(roomSize > 1 ? session.roomMode : undefined, roomSize),
     modelName,

@@ -395,6 +395,19 @@ describe('plan flow end to end (scripted model)', () => {
     await continueToFinished()
   })
 
+  test('an AbortError without a Stop (e.g. a provider or network abort) is saved as an error, not as stopped', async () => {
+    const a1 = seedChat()
+    h.script.push(
+      step([text('Partial')], {
+        during: () => Promise.reject(new DOMException('This operation was aborted', 'AbortError')),
+      })
+    )
+    await generate('s1', a1, { operationType: 'send_message' })
+    const failed = storedMessage('a1')
+    expect(failed.generating).toBe(false)
+    expect(failed.error).toContain('aborted')
+  })
+
   test('with plan mode off, a send in an agent chat answers directly and proposes no plan', async () => {
     const a1 = seedChat()
     h.script.push(step([text('Done: the docs are tidy.')]))

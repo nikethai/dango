@@ -195,7 +195,6 @@ button.dg-tool {
   gap: var(--dango-space-2);
 }
 
-/* Model error under an answer (06b ER1/ER2/ER5/CH5): the sentence, then the fix as the button, then details. */
 /* A failed model call under its answer (06b ER1): sentence, fix buttons (wrap at 375 px), raw detail. */
 .dg-model-error {
   margin-top: var(--dango-space-3);
