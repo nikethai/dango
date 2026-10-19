@@ -320,10 +320,9 @@ describe('routeNotificationClick', () => {
 
   test('a failing openInMain falls back to showing main and navigating', async () => {
     const navigate = vi.fn()
-    await routeNotificationClick(
-      { kind: 'needs_you' },
-      { openInMain: async () => Promise.reject(new Error('x')), navigate, showMainWindow: async () => undefined }
-    )
+    const openInMain = vi.fn(() => Promise.reject(new Error('x')))
+    await routeNotificationClick({ kind: 'needs_you' }, { openInMain, navigate, showMainWindow: async () => undefined })
+    expect(openInMain).toHaveBeenCalledWith('/')
     expect(navigate).toHaveBeenCalledWith('/')
   })
 })

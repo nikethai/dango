@@ -21,4 +21,11 @@ describe('formatShortcutLabel', () => {
     expect(await label('Windows', 'CommandOrControl')).toBe('Ctrl')
     expect(await label('Linux', 'CommandOrControl')).toBe('Ctrl')
   })
+
+  it('shows Shift as ⇧ on macOS, so the Quick Chat hotkey reads ⌘⇧Space', async () => {
+    const keys = 'CommandOrControl+Shift+Space'.split('+')
+    const mac = await Promise.all(keys.map((key) => label('Mac', key)))
+    expect(mac.join('')).toBe('⌘⇧Space')
+    expect(await label('Windows', 'Shift')).toBe('Shift')
+  })
 })

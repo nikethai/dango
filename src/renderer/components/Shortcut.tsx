@@ -39,6 +39,7 @@ function formatKey(key: string) {
     mod: '⌘',
     command: '⌘',
     commandorcontrol: '⌘',
+    shift: '⇧',
     option: '⌥',
     alt: '⌥',
     tab: '⇥',

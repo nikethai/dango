@@ -103,6 +103,13 @@ describe('quickErrorSummary', () => {
     expect(quickErrorSummary('429 Too Many Requests: rate_limit_exceeded')).toBe(
       'The model is busy or out of quota. Try again in a moment.'
     )
+    // A rate limit whose body mentions the API key is still a rate limit.
+    expect(quickErrorSummary('429: Rate limit reached for your API key')).toBe(
+      'The model is busy or out of quota. Try again in a moment.'
+    )
+    expect(quickErrorSummary('Your api key has no quota left', 429)).toBe(
+      'The model is busy or out of quota. Try again in a moment.'
+    )
     expect(quickErrorSummary('TypeError: Failed to fetch')).toBe("Couldn't reach the model. Check your connection.")
     expect(quickErrorSummary("This model's maximum context length is 8192 tokens")).toBe(
       'This chat is too long for the model.'

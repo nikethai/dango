@@ -216,7 +216,7 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
   }
 
   const submit = () => {
-    if (!question.trim()) return
+    if (!question.trim() && pictureCount === 0) return
     setAsked(question)
     onSubmit()
   }

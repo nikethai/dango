@@ -12,10 +12,16 @@ const h = vi.hoisted(() => ({
   created: 0,
   providers: [] as unknown[],
   scopes: [] as { id: string; name: string }[],
+  caps: { supportsDesktopOnlySettings: true },
+  shown: undefined as undefined | (() => void),
   platform: null as null | {
     quickHidden: number
     quickWindowHeights: number[]
     openedInMain: string[]
+    openInMain: (path: string) => Promise<void>
+    showMainWindow?: () => Promise<void>
+    openSessionInMain?: (id: string) => Promise<void>
+    onQuickShown?: (cb: () => void) => () => void
   },
 }))
 
@@ -23,7 +29,7 @@ vi.mock('@/platform', async () => {
   const { default: TestPlatform } = await import('@/platform/test_platform')
   const platform = new TestPlatform()
   h.platform = platform
-  return { default: platform, platformCapabilities: { supportsDesktopOnlySettings: true } }
+  return { default: platform, platformCapabilities: h.caps }
 })
 vi.mock('@/stores/chatStore', () => ({
   createSession: vi.fn((session: Omit<Session, 'id'>) => {
@@ -54,8 +60,10 @@ vi.mock('@/hooks/useScopes', () => ({ useScopes: () => ({ scopes: h.scopes }) })
 vi.mock('@/router', () => ({ router: { navigate: vi.fn() } }))
 vi.mock('@/modals/Settings', () => ({ navigateToSettings: vi.fn() }))
 
-import * as chatStore from '@/stores/chatStore'
+import { navigateToSettings } from '@/modals/Settings'
+import { router } from '@/router'
 import { quickPendingCaptureAtom } from '@/stores/atoms'
+import * as chatStore from '@/stores/chatStore'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import { stopSessionGeneration } from '@/stores/session/stop-generation'
 import * as sessionActions from '@/stores/sessionActions'
@@ -91,7 +99,18 @@ beforeEach(() => {
     h.platform.quickHidden = 0
     h.platform.quickWindowHeights = []
     h.platform.openedInMain = []
+    h.platform.showMainWindow = vi.fn(() => Promise.resolve())
+    h.platform.openSessionInMain = vi.fn(() => Promise.resolve())
+    h.platform.onQuickShown = (cb) => {
+      h.shown = cb
+      return () => {
+        h.shown = undefined
+      }
+    }
+    // Back to the TestPlatform's recording method.
+    delete (h.platform as { openInMain?: unknown }).openInMain
   }
+  h.caps.supportsDesktopOnlySettings = true
   setOnline(true)
   localStorage.clear()
   lastUsedModelStore.getState().setChatModel('openai', 'gpt-4o')
@@ -273,13 +292,120 @@ describe('useQuickChat', () => {
     const { result } = await renderQuick()
     await ask(result, 'Hello')
     vi.mocked(chatStore.broadcastSessionChanged).mockClear()
-    const openSessionInMain = vi.fn(async () => undefined)
-    ;(h.platform as unknown as { openSessionInMain: typeof openSessionInMain }).openSessionInMain = openSessionInMain
+    const openSessionInMain = h.platform?.openSessionInMain
     await act(async () => {
       result.current.onContinue()
       await flush()
     })
     expect(chatStore.broadcastSessionChanged).toHaveBeenCalledWith('chat-1')
     expect(openSessionInMain).toHaveBeenCalledWith('chat-1')
+  })
+
+  it('without a desktop shell, Sign in and Continue in Chat stay in this window', async () => {
+    h.caps.supportsDesktopOnlySettings = false
+    const { result } = await renderQuick()
+    await act(async () => {
+      result.current.onSignIn()
+      await flush()
+    })
+    expect(h.platform?.openedInMain).toEqual([])
+    expect(h.platform?.showMainWindow).not.toHaveBeenCalled()
+    expect(navigateToSettings).toHaveBeenCalledWith('/provider')
+
+    await ask(result, 'Hello')
+    await act(async () => {
+      result.current.onContinue()
+      await flush()
+    })
+    expect(h.platform?.openSessionInMain).not.toHaveBeenCalled()
+    expect(router.navigate).toHaveBeenCalledWith({ to: '/session/$sessionId', params: { sessionId: 'chat-1' } })
+  })
+
+  it('a failing openInMain falls back to Settings in this window', async () => {
+    if (h.platform) h.platform.openInMain = vi.fn(() => Promise.reject(new Error('no shell')))
+    const { result } = await renderQuick()
+    await act(async () => {
+      result.current.onSignIn()
+      await flush()
+    })
+    expect(h.platform?.openInMain).toHaveBeenCalledWith('/settings/provider')
+    expect(navigateToSettings).toHaveBeenCalledWith('/provider')
+    expect(h.platform?.showMainWindow).not.toHaveBeenCalled()
+  })
+
+  it('Esc without a desktop shell goes to /', async () => {
+    h.caps.supportsDesktopOnlySettings = false
+    const { result } = await renderQuick()
+    act(() => result.current.onEsc())
+    expect(h.platform?.quickHidden).toBe(0)
+    expect(router.navigate).toHaveBeenCalledWith({ to: '/' })
+  })
+
+  it('removes the online and offline listeners on unmount', async () => {
+    const remove = vi.spyOn(window, 'removeEventListener')
+    const view = await renderQuick()
+    view.unmount()
+    const removed = remove.mock.calls.map(([type]) => type)
+    expect(removed).toEqual(expect.arrayContaining(['online', 'offline']))
+    remove.mockRestore()
+  })
+
+  it('leaving the window refreshes lastOpenedAt, so a long read keeps the chat', async () => {
+    const { result } = await renderQuick()
+    await ask(result, 'Hello')
+    const old = Date.now() - 10 * 60_000
+    const stamp = () => JSON.parse(localStorage.getItem(QUICK_SESSION_STORAGE_KEY) ?? 'null')
+    localStorage.setItem(
+      QUICK_SESSION_STORAGE_KEY,
+      JSON.stringify({ sessionId: 'chat-1', lastOpenedAt: old, lastScopeId: null })
+    )
+    act(() => result.current.onEsc())
+    expect(stamp().lastOpenedAt).toBeGreaterThan(old)
+
+    localStorage.setItem(
+      QUICK_SESSION_STORAGE_KEY,
+      JSON.stringify({ sessionId: 'chat-1', lastOpenedAt: old, lastScopeId: null })
+    )
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+    expect(stamp()).toMatchObject({ sessionId: 'chat-1' })
+    expect(stamp().lastOpenedAt).toBeGreaterThan(old)
+  })
+
+  it('sends a picture-only capture', async () => {
+    getDefaultStore().set(quickPendingCaptureAtom, { text: null, pictureKeys: ['picture:9'] })
+    const { result } = await renderQuick()
+    await act(async () => {
+      result.current.onSubmit()
+      await flush()
+    })
+    expect(chatStore.createSession).toHaveBeenCalledWith(expect.objectContaining({ name: 'Untitled' }))
+    const sent = vi.mocked(sessionActions.submitNewUserMessage).mock.calls[0][1].newUserMsg
+    expect(sent.contentParts).toEqual([{ type: 'image', storageKey: 'picture:9' }])
+  })
+
+  it('gives the question and pictures back when sending fails', async () => {
+    vi.mocked(sessionActions.submitNewUserMessage).mockRejectedValueOnce(new Error('boom'))
+    getDefaultStore().set(quickPendingCaptureAtom, { text: null, pictureKeys: ['picture:2'] })
+    const { result } = await renderQuick()
+    await ask(result, 'Keep me')
+    expect(result.current.question).toBe('Keep me')
+    expect(getDefaultStore().get(quickPendingCaptureAtom).pictureKeys).toEqual(['picture:2'])
+  })
+
+  it('reopening a recent chat leaves the rewrite view', async () => {
+    const { result } = await renderQuick()
+    await ask(result, 'Hello')
+    act(() => result.current.onRewrite('shorter', 'Some text'))
+    expect(result.current.view).toBe('rewrite')
+    await act(async () => {
+      h.shown?.()
+      await flush()
+    })
+    expect(result.current.view).toBe('answered')
+    expect(result.current.rewrite).toBeNull()
   })
 })

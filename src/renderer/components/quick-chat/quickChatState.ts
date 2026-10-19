@@ -50,15 +50,16 @@ export function resolveQuickView(input: {
 /** One short sentence (an en translation key) for a raw provider error; the details stay in the chat. */
 export function quickErrorSummary(error: string, errorCode?: number): string {
   const text = error.toLowerCase()
+  // Rate limits first: a 429 body often mentions the API key or the account too.
+  if (errorCode === 429 || /\b429\b|rate[ _-]?limit|quota|too many requests|overloaded|insufficient/.test(text)) {
+    return 'The model is busy or out of quota. Try again in a moment.'
+  }
   if (
     errorCode === 401 ||
     errorCode === 403 ||
     /\b40[13]\b|unauthori[sz]ed|forbidden|api[ _-]?key|invalid[ _-]?key|authentication/.test(text)
   ) {
     return "The model didn't accept its sign-in. Check it in Settings."
-  }
-  if (errorCode === 429 || /\b429\b|rate[ _-]?limit|quota|too many requests|overloaded|insufficient/.test(text)) {
-    return 'The model is busy or out of quota. Try again in a moment.'
   }
   if (
     /context[ _-]length|maximum context|prompt is too long|input token limit/.test(text) ||

@@ -309,6 +309,13 @@ describe('QuickChatPanel', () => {
     expect(p.onSubmit).not.toHaveBeenCalled()
   })
 
+  it('Enter with a blank question but a captured picture submits', () => {
+    const p = props({ question: '', pictureCount: 1 })
+    render(<QuickChatPanel {...p} />)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Ask anything' }), { key: 'Enter' })
+    expect(p.onSubmit).toHaveBeenCalledTimes(1)
+  })
+
   it('the asked question comes from the prop, else the last submit, never the live input', () => {
     const p = props({ view: 'answered', answer: answer('A'), question: 'typing a follow-up' })
     const { container, rerender } = render(<QuickChatPanel {...p} />)

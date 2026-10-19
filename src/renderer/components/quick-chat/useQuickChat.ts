@@ -32,13 +32,21 @@ const PROVIDER_SETTINGS_PATH = '/settings/provider'
 
 export type UseQuickChat = Omit<QuickChatPanelProps, 'windowed'> & { panelRef: RefObject<HTMLDivElement> }
 
+/** The desktop shell is there (not Tauri Android, web or mobile), so the quick window can hand work to main. */
+function hasDesktopShell() {
+  return platformCapabilities.supportsDesktopOnlySettings
+}
+
 /** Configuring happens in the main window; without a desktop shell this window goes to Settings itself. */
 async function openProviderSettings() {
-  if (platform.openInMain) {
-    await platform.openInMain(PROVIDER_SETTINGS_PATH)
-    return
+  if (hasDesktopShell() && platform.openInMain) {
+    try {
+      await platform.openInMain(PROVIDER_SETTINGS_PATH)
+      return
+    } catch (error) {
+      console.error('[quick-chat] open settings in main failed', error)
+    }
   }
-  await platform.showMainWindow?.()
   navigateToSettings('/provider')
 }
 
@@ -91,6 +99,7 @@ export function useQuickChat(): UseQuickChat {
       setSessionId(reuse)
       setCachedSessionId(reuse)
       setScopeId(lastScope)
+      setRewrite(null)
       chatScopeRef.current = reuseScope
       writeQuickSessionSnapshot({ sessionId: reuse, lastOpenedAt: Date.now(), lastScopeId: lastScope })
       return
@@ -153,7 +162,9 @@ export function useQuickChat(): UseQuickChat {
 
   const send = useCallback(async () => {
     const text = question
-    if (!text.trim() || sendingRef.current) return
+    const pictureKeys = capture.pictureKeys
+    // A captured picture can be sent on its own, as in the main composer (images, no text part).
+    if ((!text.trim() && pictureKeys.length === 0) || sendingRef.current) return
     if (view === 'no-model' || view === 'offline' || view === 'rewrite' || !model) return
     sendingRef.current = true
     try {
@@ -175,18 +186,40 @@ export function useQuickChat(): UseQuickChat {
       }
       writeQuickSessionSnapshot({ sessionId: target, lastOpenedAt: Date.now(), lastScopeId: scopeId })
       const userMessage = createMessage('user', text)
-      for (const storageKey of capture.pictureKeys) {
+      for (const storageKey of pictureKeys) {
         userMessage.contentParts.push({ type: 'image', storageKey })
       }
       setQuestion('')
       setCapture({ text: null, pictureKeys: [] })
-      await submitNewUserMessage(target, { newUserMsg: userMessage, needGenerating: true })
+      try {
+        await submitNewUserMessage(target, { newUserMsg: userMessage, needGenerating: true })
+      } catch (error) {
+        // Give the typed question and pictures back, so nothing the user wrote is lost.
+        setQuestion(text)
+        setCapture((prev) => ({ text: prev.text, pictureKeys: [...pictureKeys, ...prev.pictureKeys] }))
+        throw error
+      }
     } catch (error) {
       console.error('[quick-chat] send failed', error)
     } finally {
       sendingRef.current = false
     }
   }, [question, view, model, sessionId, scopeId, capture.pictureKeys, setCachedSessionId, setCapture])
+
+  // Leaving the window (Esc, hotkey, click away) counts as the last look: a long read keeps the chat on reopen.
+  const touchSnapshotRef = useRef(() => {})
+  touchSnapshotRef.current = () => {
+    if (!sessionId) return
+    writeQuickSessionSnapshot({ sessionId, lastOpenedAt: Date.now(), lastScopeId: scopeId })
+  }
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') touchSnapshotRef.current()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [])
 
   const onScopeChange = useCallback(
     (id: string | null) => {
@@ -203,7 +236,8 @@ export function useQuickChat(): UseQuickChat {
 
   // Esc only hides the window: the chat and any running answer keep going.
   const onEsc = useCallback(() => {
-    if (platformCapabilities.supportsDesktopOnlySettings && platform.hideQuickWindow) {
+    touchSnapshotRef.current()
+    if (hasDesktopShell() && platform.hideQuickWindow) {
       platform.hideQuickWindow().catch(() => {
         void router.navigate({ to: '/' })
       })
@@ -229,7 +263,7 @@ export function useQuickChat(): UseQuickChat {
       try {
         await broadcastSessionChanged(id)
         void invalidateAndRefetchSession(id)
-        if (platform.openSessionInMain) {
+        if (hasDesktopShell() && platform.openSessionInMain) {
           await platform.openSessionInMain(id)
         } else {
           await router.navigate({ to: '/session/$sessionId', params: { sessionId: id } })
@@ -250,7 +284,7 @@ export function useQuickChat(): UseQuickChat {
   // biome-ignore lint/correctness/useExhaustiveDependencies: the no-model view renders a different root node
   useEffect(() => {
     const node = panelRef.current
-    if (!node || !platform.setQuickWindowHeight || !platformCapabilities.supportsDesktopOnlySettings) return
+    if (!node || !platform.setQuickWindowHeight || !hasDesktopShell()) return
     if (typeof ResizeObserver === 'undefined') return
     const push = () => {
       const height = Math.ceil(node.getBoundingClientRect().height)

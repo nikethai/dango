@@ -8963,7 +8963,10 @@ button.session-statusline-plan:focus-visible {
 }
 
 /* Quick Chat in its own frameless window: the window is the panel */
-.dg-qc--window { width: 100%; border: 0; border-radius: 0; box-shadow: none; }
+/* Its own height drives the window (shell:setQuickHeight), so it never shrinks with the window; past the shell's
+   640 px cap the body scrolls and the foot stays in view. */
+.dg-qc--window { width: 100%; border: 0; border-radius: 0; box-shadow: none; flex: none; max-height: 640px; }
+.dg-qc--window .dg-qc__body { min-height: 0; overflow-y: auto; }
 .dg-qc__bar textarea { flex-grow: 1; min-width: 0; border: 0; outline: none; background: transparent; font: inherit; font-size: 16px; color: var(--dango-ink);
   padding: 0; resize: none; max-height: 160px; }
 .dg-qc__bar textarea::placeholder { color: var(--dango-muted); }
