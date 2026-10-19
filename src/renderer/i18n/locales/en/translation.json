@@ -1283,7 +1283,6 @@
   "Reading file…": "Reading file…",
   "Loading webpage…": "Loading webpage…",
   "Advanced": "Advanced",
-  "No sources connected yet.": "No sources connected yet.",
   "Folders, Gmail, Asana, Codex threads and documents Dango reads from. Each source belongs to one scope.": "Folders, Gmail, Asana, Codex threads and documents Dango reads from. Each source belongs to one scope.",
   "Using tools…": "Using tools…",
   "Using {{count}} tools…": "Using {{count}} tools…",
@@ -1711,5 +1710,13 @@
   "Actions for {{label}}": "Actions for {{label}}",
   "Sync now": "Sync now",
   "No sources yet.": "No sources yet.",
-  "Connect a folder, Gmail, Asana, Codex threads or documents so Dango can learn about your work.": "Connect a folder, Gmail, Asana, Codex threads or documents so Dango can learn about your work."
+  "Connect a folder, Gmail, Asana, Codex threads or documents so Dango can learn about your work.": "Connect a folder, Gmail, Asana, Codex threads or documents so Dango can learn about your work.",
+  "Background work": "Background work",
+  "Starting…": "Starting…",
+  "Stopped": "Stopped",
+  "Stopped {{label}}": "Stopped {{label}}",
+  "Stop {{label}}": "Stop {{label}}",
+  "Add a source…": "Add a source…",
+  "{{label}} started": "{{label}} started",
+  "{{label}} done": "{{label}} done"
 }

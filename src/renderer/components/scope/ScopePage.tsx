@@ -1,7 +1,8 @@
 import type { Scope, SessionMeta } from '@shared/types'
-import type { ReactNode } from 'react'
+import type { DragEvent, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import Page from '@/components/layout/Page'
+import { openAddSourceSheet } from '@/components/sources/AddSourceSheet'
 import { startNewChat } from '@/lib/startNewChat'
 import { ScopeChatsTab } from './ScopeChatsTab'
 import { ScopeKnowledgeTab } from './ScopeKnowledgeTab'
@@ -21,6 +22,15 @@ export type ScopePageViewProps = {
   onOpenChat(id: string): void
   settings: ReactNode
   files: ReactNode
+}
+
+const carriesFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+
+/** True when the drop holds a directory. Read during the drop event; the entry's path is never used. */
+function holdsDirectory(e: DragEvent): boolean {
+  return Array.from(e.dataTransfer?.items ?? []).some(
+    (item) => item.kind === 'file' && item.webkitGetAsEntry?.()?.isDirectory === true
+  )
 }
 
 export function ScopePageView(props: ScopePageViewProps) {
@@ -49,7 +59,20 @@ export function ScopePageView(props: ScopePageViewProps) {
   const tab: ScopeTab = props.tab === 'files' && !props.folderBound ? 'overview' : props.tab
   return (
     <Page title={scope.name}>
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-4">
+      {/* A folder dropped here opens the sheet at Folder; the native picker then chooses the folder, never the dropped
+          path (folders bind only through the picker). */}
+      <div
+        className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-4"
+        onDragOver={(e) => {
+          if (carriesFiles(e)) e.preventDefault()
+        }}
+        onDrop={(e) => {
+          if (!carriesFiles(e)) return
+          // Keeps the webview from opening a dropped file.
+          e.preventDefault()
+          if (holdsDirectory(e)) void openAddSourceSheet({ scopeId: scope.id, kind: 'folder' })
+        }}
+      >
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <h2 className="dg-type-title-2">{scope.name}</h2>

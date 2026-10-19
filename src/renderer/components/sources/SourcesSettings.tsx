@@ -5,20 +5,14 @@ import { useTranslation } from 'react-i18next'
 import { useScopes } from '@/hooks/useScopes'
 import { useSources, useSourcesLoaded } from '@/packages/sources'
 import { openAddSourceSheet } from './AddSourceSheet'
-import { SourceRow, useHiddenSourceIds } from './SourceRow'
+import { focusSourceRow, SourceRow, useHiddenSourceIds } from './SourceRow'
 
 type Group = { scopeId: string; name: string; sources: ConnectedSource[] }
 
 /** Opens the sheet with no scope; the new source's row gets focus once it is listed. */
 async function addSource(): Promise<void> {
   const result = await openAddSourceSheet({})
-  if (!result) return
-  requestAnimationFrame(() => {
-    const row = Array.from(document.querySelectorAll('[data-source-id]')).find(
-      (el): el is HTMLElement => el instanceof HTMLElement && el.dataset.sourceId === result.sourceId
-    )
-    row?.querySelector<HTMLElement>('button')?.focus()
-  })
+  if (result) focusSourceRow(result.sourceId)
 }
 
 /**

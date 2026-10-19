@@ -33,7 +33,8 @@ function syncedText(lastSyncAt: number, now: number): string {
 
 /**
  * One line for a source's row: Paused (a job waits while background work is paused), the running job's progress (or
- * Syncing…/Reviewing…), the latest job's "{label} stopped: {error}" with its fix, "Synced {time}", or Connected.
+ * Syncing…/Reviewing…), the latest job's "{label} stopped: {error}" with its fix (before a running job of the other
+ * kind), "Synced {time}", or Connected.
  * Never a retry count.
  */
 export function sourceStatusLine(
@@ -43,16 +44,17 @@ export function sourceStatusLine(
   paused: boolean
 ): SourceStatusLine {
   const mine = jobs.filter((j) => j.sourceId === source.id).sort((a, b) => b.startedAt - a.startedAt)
+  // The newest needs-you job that is still the latest of its kind: a later run of that kind supersedes it. It comes
+  // before a running job of the other kind, so its fix is never hidden.
+  const stuck = mine.find((j) => j.status === 'needs-you' && mine.find((k) => k.kind === j.kind) === j)
   const running = mine.find((j) => j.status === 'running')
-  if (running) {
+  if (running && !stuck) {
     // A run already in progress finishes while paused, so its progress still shows.
     if (running.progress) return { text: running.progress }
     if (paused) return { text: i18n.t('Paused') }
     if (running.nextRetryAt !== undefined && running.nextRetryAt > now) return { text: i18n.t('Trying again shortly') }
     return { text: running.kind === 'review' ? i18n.t('Reviewing…') : i18n.t('Syncing…') }
   }
-  // The newest needs-you job that is still the latest of its kind: a later run of that kind supersedes it.
-  const stuck = mine.find((j) => j.status === 'needs-you' && mine.find((k) => k.kind === j.kind) === j)
   if (stuck) {
     // The label is stored display text and the error a service's message: both are values, never keys.
     const text = i18n.t('{{label}} stopped: {{reason}}', {
@@ -116,13 +118,23 @@ export function _resetPendingRemovalsForTests(): void {
   hiddenStore.setState({ ids: new Set<string>() })
 }
 
-type WindowRole = 'jobs' | 'quick' | 'other'
+/** Focuses the first button of a listed source's row (after the sheet connected it and the list re-rendered). */
+export function focusSourceRow(sourceId: string): void {
+  requestAnimationFrame(() => {
+    const row = Array.from(document.querySelectorAll('[data-source-id]')).find(
+      (el): el is HTMLElement => el instanceof HTMLElement && el.dataset.sourceId === sourceId
+    )
+    row?.querySelector<HTMLElement>('button')?.focus()
+  })
+}
+
+export type WindowRole = 'jobs' | 'quick' | 'other'
 
 /**
  * Where this row is shown: `jobs` is the window that runs background jobs (main on desktop, the only window on web and
  * mobile, R6); undefined until known.
  */
-function useWindowRole(): WindowRole | undefined {
+export function useWindowRole(): WindowRole | undefined {
   const [role, setRole] = useState<WindowRole | undefined>(() =>
     platformCapabilities.supportsDesktopOnlySettings && platform.getWindowLabel ? undefined : 'jobs'
   )
@@ -143,7 +155,7 @@ function useWindowRole(): WindowRole | undefined {
   return role
 }
 
-function useNow(everyMs = 30_000): number {
+export function useNow(everyMs = 30_000): number {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), everyMs)

@@ -168,6 +168,20 @@ describe('sourceStatusLine', () => {
     expect(line).toEqual({ text: 'Folder sync stopped: the folder is gone', fix, jobId: 'j1' })
   })
 
+  it('a running job of one kind does not hide a needs-you job of the other kind', () => {
+    const fix = { action: 'relink-folder' as const, label: 'Find the folder' }
+    const line = sourceStatusLine(
+      source(),
+      [
+        job({ id: 'r', kind: 'review', progress: 'Reading threads', startedAt: NOW - 100 }),
+        job({ status: 'needs-you', error: 'the folder is gone', fix, startedAt: NOW - 5000, finishedAt: NOW - 4000 }),
+      ],
+      NOW,
+      false
+    )
+    expect(line).toEqual({ text: 'Folder sync stopped: the folder is gone', fix, jobId: 'j1' })
+  })
+
   it('synced 5 min ago', () => {
     const done = job({ status: 'done', finishedAt: NOW - 300_000 })
     expect(sourceStatusLine(source({ lastSyncAt: NOW - 300_000 }), [done], NOW, false).text).toBe('Synced 5 min ago')
