@@ -4,7 +4,14 @@ import { classifyQuotaError } from '@shared/providers/usage'
 import type { Message } from '@shared/types'
 
 /** What went wrong with a model call, by the fix it needs (ER1, ER2, ER3, ER5, CH5). */
-export type ModelErrorKind = 'invalid-key' | 'out-of-credit' | 'rate-limit' | 'too-long' | 'network' | 'provider'
+export type ModelErrorKind =
+  | 'budget'
+  | 'invalid-key'
+  | 'out-of-credit'
+  | 'rate-limit'
+  | 'too-long'
+  | 'network'
+  | 'provider'
 
 const INVALID_KEY_PATTERN = /invalid[_ ]?api[_ ]?key|incorrect api key|unauthori[sz]ed|authentication/i
 
@@ -25,6 +32,19 @@ export function isContextLengthError(errorText: string | null | undefined): bool
   return false
 }
 
+/** Only wording that names the context window: a rate limit counted in tokens also "exceeds" a "token" "limit". */
+function isExplicitContextLengthError(text: string | undefined): boolean {
+  if (!text) return false
+  const lower = text.toLowerCase()
+  return (
+    lower.includes('context_length_exceeded') ||
+    lower.includes('prompt is too long') ||
+    lower.includes('maximum context length')
+  )
+}
+
+const RATE_LIMIT_BODY_PATTERN = /"type"\s*:\s*"rate_limit_error"/
+
 function stringField(extra: Message['errorExtra'], key: string): string | undefined {
   const value = extra?.[key]
   return typeof value === 'string' ? value : undefined
@@ -36,8 +56,8 @@ function numberField(extra: Message['errorExtra'], key: string): number | undefi
 }
 
 /**
- * Sort a failed answer by its fix. Order matters: too long, out of credit, rate limited, bad key, offline, else the
- * provider's own error.
+ * Sort a failed answer by its fix. Order matters: the usage budget (Dango's own stop), too long, out of credit, rate
+ * limited, bad key, offline, else the provider's own error.
  */
 export function classifyModelError(msg: Pick<Message, 'error' | 'errorCode' | 'errorExtra'>): ModelErrorKind {
   const error = msg.error ?? ''
@@ -45,7 +65,11 @@ export function classifyModelError(msg: Pick<Message, 'error' | 'errorCode' | 'e
   const status = numberField(msg.errorExtra, 'status')
   const code = msg.errorCode
 
-  if (isContextLengthError(error) || isContextLengthError(responseBody)) return 'too-long'
+  if (msg.errorExtra?.kind === 'budget') return 'budget'
+
+  const rateLimited = status === 429 || (responseBody !== undefined && RATE_LIMIT_BODY_PATTERN.test(responseBody))
+  const contextCheck = rateLimited ? isExplicitContextLengthError : isContextLengthError
+  if (contextCheck(error) || contextCheck(responseBody)) return 'too-long'
 
   const quota = classifyQuotaError({ message: error, responseBody, status, errorCode: code }).kind
   if (quota === 'exhausted' || code === 10004 || status === 402) return 'out-of-credit'

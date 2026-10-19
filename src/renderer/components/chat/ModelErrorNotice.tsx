@@ -27,6 +27,36 @@ function SettingsLink({ children, onClick }: { children?: ReactNode; onClick: ()
   )
 }
 
+/** Can't paint (10003) and no chat API (10005) fail the same way on every retry. */
+const REPEATING_ERROR_CODES = new Set([10003, 10005])
+
+/**
+ * A legacy Dango error sentence. Keys without component tags go through t(), so React escapes the model name; keys
+ * with tags need Trans, so the model name loses its angle brackets and can never become markup.
+ */
+function LegacySentence({ i18nKey, model }: { i18nKey: string; model?: string }) {
+  const { t } = useTranslation()
+  const supported = 'gemini-2.0-flash(API), perplexity API'
+  if (!/<\w+>/.test(i18nKey)) {
+    return <>{t(i18nKey, { model, supported_web_browsing_models: supported })}</>
+  }
+  return (
+    <Trans
+      i18nKey={i18nKey}
+      values={{ model: (model ?? '').replace(/[<>]/g, ''), supported_web_browsing_models: supported }}
+      components={{
+        OpenSettingButton: <SettingsLink onClick={() => navigateToSettings()} />,
+        OpenExtensionSettingButton: <SettingsLink onClick={() => navigateToSettings('/web-search')} />,
+        OpenMorePlanButton: <SettingsLink onClick={() => navigateToSettings('/provider')} />,
+        LinkToHomePage: <span />,
+        LinkToAdvancedFileProcessing: <span />,
+        LinkToAdvancedUrlProcessing: <span />,
+        OpenDocumentParserSettingButton: <SettingsLink onClick={() => navigateToSettings('/document-parser')} />,
+      }}
+    />
+  )
+}
+
 /** An execution run of an approved plan: its card's Continue is the fix, so the notice offers no Retry. */
 function isPlanRun(msg: Message): boolean {
   return msg.contentParts.some((part) => part.type === 'plan' && part.status === 'approved')
@@ -57,19 +87,26 @@ export function ModelErrorNotice(props: { msg: Message; sessionId: string }) {
   const provider = modelErrorProviderName(providerId, customProviders) ?? t('AI provider')
   const host = typeof msg.errorExtra?.host === 'string' && msg.errorExtra.host ? msg.errorExtra.host : provider
   const openProvider = () => navigateToSettings(providerId ? `/provider/${providerId}` : '/provider')
-  const retry: Fix | undefined = isPlanRun(msg)
-    ? undefined
-    : {
-        label: t('Retry'),
-        run: () =>
-          import('@/stores/session/retry').then(({ retryFailedMessage }) => retryFailedMessage(sessionId, msg)),
-      }
   // A known Dango error (missing search key, model can't read images…) already says what to do; keep that sentence.
   const legacy = kind === 'provider' && msg.errorCode ? ProviderAPIError.getDetail(msg.errorCode) : null
+  // Retrying these would fail the same way: the setting or the model has to change first.
+  const repeats = !!legacy || (msg.errorCode !== undefined && REPEATING_ERROR_CODES.has(msg.errorCode))
+  const retry: Fix | undefined =
+    isPlanRun(msg) || repeats
+      ? undefined
+      : {
+          label: t('Retry'),
+          run: () =>
+            import('@/stores/session/retry').then(({ retryFailedMessage }) => retryFailedMessage(sessionId, msg)),
+        }
 
   let sentence: ReactNode
   let fix: Fix | undefined
   switch (kind) {
+    case 'budget':
+      sentence = t("You've reached your usage budget.")
+      fix = { label: t('Open Usage'), run: () => navigateToSettings('/usage') }
+      break
     case 'invalid-key':
       sentence = t('Your {{provider}} key was rejected.', { provider })
       fix = { label: t('Update key'), run: openProvider }
@@ -95,19 +132,7 @@ export function ModelErrorNotice(props: { msg: Message; sessionId: string }) {
     default:
       // 'provider', and 'rate-limit' until its waiting states land (ER3).
       sentence = legacy ? (
-        <Trans
-          i18nKey={legacy.i18nKey}
-          values={{ model: msg.model, supported_web_browsing_models: 'gemini-2.0-flash(API), perplexity API' }}
-          components={{
-            OpenSettingButton: <SettingsLink onClick={() => navigateToSettings()} />,
-            OpenExtensionSettingButton: <SettingsLink onClick={() => navigateToSettings('/web-search')} />,
-            OpenMorePlanButton: <SettingsLink onClick={() => navigateToSettings('/provider')} />,
-            LinkToHomePage: <span />,
-            LinkToAdvancedFileProcessing: <span />,
-            LinkToAdvancedUrlProcessing: <span />,
-            OpenDocumentParserSettingButton: <SettingsLink onClick={() => navigateToSettings('/document-parser')} />,
-          }}
-        />
+        <LegacySentence i18nKey={legacy.i18nKey} model={msg.model} />
       ) : (
         t('{{provider}} returned an error.', { provider })
       )

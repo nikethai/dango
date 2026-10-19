@@ -166,10 +166,11 @@ vi.mock('@/packages/model-calls/toolsets/file', async (importOriginal) => ({
   getStagedChangeSetId: () => 'cs-plan',
 }))
 
+const globalSettingsMock = vi.hoisted(() => ({ value: {} as Record<string, unknown> }))
 vi.mock('@/stores/settingsStore', () => ({
   settingsStore: {
     getState: () => ({
-      getSettings: () => ({}),
+      getSettings: () => globalSettingsMock.value,
     }),
   },
   useLanguage: () => 'en',
@@ -614,6 +615,23 @@ describe('redo with another model', () => {
       retryAfterMs: 7_000,
       responseBody: '{"error":"rate"}',
     })
+  })
+
+  test('a send blocked by the usage budget is marked as a budget error', async () => {
+    vi.doMock('@/packages/usage-tracking', () => ({
+      providerUsageService: { init: async () => {}, getLocalSnapshot: () => ({}) },
+      evaluateBudget: () => ({ message: 'Monthly cap reached' }),
+      shouldHardStopSend: () => true,
+    }))
+    globalSettingsMock.value = { usageBudget: { enabled: true, pauseWhenExceeded: true, period: 'month' } }
+    try {
+      const blocked = await redo(() => Promise.reject(new Error('the model must not be called')))
+      expect(blocked.saved?.error).toMatch(/^Send blocked: Monthly cap reached/)
+      expect(blocked.saved?.errorExtra).toMatchObject({ kind: 'budget' })
+    } finally {
+      globalSettingsMock.value = {}
+      vi.doUnmock('@/packages/usage-tracking')
+    }
   })
 })
 

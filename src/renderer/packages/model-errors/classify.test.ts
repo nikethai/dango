@@ -65,6 +65,27 @@ describe('classifyModelError', () => {
   })
 })
 
+describe('classifyModelError: budget and rate-limit wording', () => {
+  it('a send blocked by the usage budget is a budget error', () => {
+    const blocked = {
+      error: 'Send blocked: Monthly cap reached. Disable hard-stop in Settings → Usage, or raise your monthly cap.',
+      errorExtra: { kind: 'budget' },
+    }
+    expect(classifyModelError(blocked)).toBe('budget')
+  })
+
+  it('an Anthropic per-minute token rate limit is a rate limit, not too long', () => {
+    const body =
+      '{"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed the rate limit for your organization (abc) of 30,000 input tokens per minute. For details, refer to: https://docs.claude.com/en/api/rate-limits."}}'
+    expect(classifyModelError(apiError(429, body))).toBe('rate-limit')
+    expect(classifyModelError(apiError(undefined, body))).toBe('rate-limit')
+  })
+
+  it('a 429 that names the context window is still too long', () => {
+    expect(classifyModelError(apiError(429, 'context_length_exceeded'))).toBe('too-long')
+  })
+})
+
 describe('isContextLengthError', () => {
   it('matches the wording providers use', () => {
     expect(isContextLengthError('This model maximum context length is 8192 tokens')).toBe(true)

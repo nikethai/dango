@@ -6,13 +6,20 @@ import type { Message } from '@shared/types'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: Record<string, string | number>) =>
-      key.replace(/\{\{(\w+)\}\}/g, (_m, name: string) => String(options?.[name] ?? '')),
-  }),
-  Trans: (props: { i18nKey: string }) => <>{props.i18nKey}</>,
-}))
+// The real Trans over an empty English instance: keys render as themselves, tags become the given components.
+vi.mock('react-i18next', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-i18next')>()
+  const { default: i18next } = await import('i18next')
+  const i18n = i18next.createInstance()
+  await i18n.init({ lng: 'en', resources: { en: { translation: {} } }, interpolation: { escapeValue: false } })
+  return {
+    useTranslation: () => ({
+      t: (key: string, options?: Record<string, string | number>) =>
+        key.replace(/\{\{(\w+)\}\}/g, (_m, name: string) => String(options?.[name] ?? '')),
+    }),
+    Trans: (props: Parameters<typeof actual.Trans>[0]) => <actual.Trans {...props} i18n={i18n} />,
+  }
+})
 
 const navigateToSettings = vi.hoisted(() => vi.fn())
 vi.mock('@/modals/Settings', () => ({ navigateToSettings }))
@@ -140,6 +147,48 @@ describe('ModelErrorNotice', () => {
     expect(screen.getByText('OpenAI returned an error.')).toBeTruthy()
     expect(primaryButtons(container)).toHaveLength(0)
     expect(screen.getByRole('button', { name: 'Show details' })).toBeTruthy()
+  })
+
+  it('a send blocked by the usage budget opens Usage and offers no Retry', () => {
+    const msg = failed(
+      {
+        error: 'Send blocked: Monthly cap reached. Disable hard-stop in Settings → Usage, or raise your monthly cap.',
+        errorCode: undefined,
+      },
+      { kind: 'budget' }
+    )
+    const { container } = render(<ModelErrorNotice msg={msg} sessionId="s1" />)
+    expect(screen.getByText("You've reached your usage budget.")).toBeTruthy()
+    expect(primaryButtons(container).map((b) => b.textContent)).toEqual(['Open Usage'])
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Usage' }))
+    expect(navigateToSettings).toHaveBeenCalledWith('/usage')
+    fireEvent.click(screen.getByRole('button', { name: 'Show details' }))
+    expect(screen.getByText(/Send blocked: Monthly cap reached/)).toBeTruthy()
+  })
+
+  it('a model name is text, never markup, in a known Dango error', () => {
+    // 20014 has component tags (Trans), 20022 has none (t).
+    for (const errorCode of [20014, 20022]) {
+      const { container } = render(
+        <ModelErrorNotice msg={failed({ errorCode, model: '<strong>x</strong>' })} sessionId="s1" />
+      )
+      expect(container.querySelector('strong')).toBeNull()
+      cleanup()
+    }
+    const { container } = render(
+      <ModelErrorNotice msg={failed({ errorCode: 20022, model: '<strong>x</strong>' })} sessionId="s1" />
+    )
+    expect(container.textContent).toContain('<strong>x</strong>')
+  })
+
+  it('errors that would only repeat offer no Retry', () => {
+    for (const errorCode of [10003, 10005, 20014, 20025]) {
+      const { container } = render(<ModelErrorNotice msg={failed({ errorCode })} sessionId="s1" />)
+      expect(primaryButtons(container)).toHaveLength(0)
+      expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+      cleanup()
+    }
   })
 
   it('renders nothing without an error', () => {

@@ -729,6 +729,8 @@ export async function generate(
           generating: false,
           cancel: undefined,
           error: `Send blocked: ${evalResult.message}. Disable hard-stop in Settings → Usage, or raise your monthly cap.`,
+          // Not the provider's error: the notice points to Usage, never to Retry.
+          errorExtra: { kind: 'budget' },
           status: [],
         }
         await modifyMessage(sessionId, targetMsg, true)

@@ -1754,5 +1754,7 @@
   "Hide details": "Hide details",
   "AI provider": "AI provider",
   "{{name}} (continued)": "{{name}} (continued)",
-  "Couldn't summarise this chat. Try again.": "Couldn't summarise this chat. Try again."
+  "Couldn't summarise this chat. Try again.": "Couldn't summarise this chat. Try again.",
+  "You've reached your usage budget.": "You've reached your usage budget.",
+  "Open Usage": "Open Usage"
 }
