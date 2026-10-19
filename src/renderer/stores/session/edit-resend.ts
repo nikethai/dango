@@ -29,6 +29,7 @@ function copyUserMessage(source: Message, text: string): Message {
     commandIds: source.commandIds,
     mentionedAgentIds: source.mentionedAgentIds,
     credentialIds: source.credentialIds,
+    toolsOff: source.toolsOff,
     contentParts: replaceMessageText(source.contentParts, text),
   }
 }

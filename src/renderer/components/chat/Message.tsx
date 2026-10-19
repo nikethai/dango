@@ -81,7 +81,7 @@ import { branchChatFromMessage } from '@/stores/session/branch'
 import { editAndResend } from '@/stores/session/edit-resend'
 import { turnAbilityNeeds } from '@/stores/session/redo-needs'
 import { getLiveGenerationStartedAt } from '@/stores/session/session-live-generation'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import {
   contentPartsRevision,
@@ -90,7 +90,7 @@ import {
   shouldShowAssistantPending,
 } from '@/utils/message-stream-ui'
 import { isNonChatComposerModel } from '@/utils/modelDisplayName'
-import { type ModelNeeds, modelMeetsNeeds } from '@/utils/modelReadiness'
+import { isOcrModelSet, type ModelNeeds, modelMeetsNeeds } from '@/utils/modelReadiness'
 import '../../static/Block.css'
 import { type PlanContinueState, planCardState } from '@/packages/plan/planSteps'
 import {
@@ -716,7 +716,8 @@ const _Message: FC<Props> = (props) => {
     (opened: boolean) => {
       if (opened) {
         const session = peekSession(sessionId)
-        setRedoNeeds(session ? turnAbilityNeeds(session, msg.id) : {})
+        const ocrReady = isOcrModelSet(settingsStore.getState())
+        setRedoNeeds(session ? turnAbilityNeeds(session, msg.id, { ocrReady }) : {})
       }
       setRedoListOpened(opened)
     },

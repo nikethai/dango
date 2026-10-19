@@ -28,6 +28,16 @@ export function turnNeedsTools(s: {
   return Boolean(s.agentMode || s.browserArmed || s.computerArmed || s.roomMode === 'swarm')
 }
 
+/** An OCR model is set (Settings › Default models): a model without vision still reads pictures through it. */
+export function isOcrModelSet(settings: { ocrModel?: { provider?: string; model?: string } }): boolean {
+  return Boolean(settings.ocrModel?.provider && settings.ocrModel?.model)
+}
+
+/** Attachments need a vision model: video always; pictures only when no OCR model reads them for the model. */
+export function attachmentsNeedVision(a: { pictureCount: number; hasVideo: boolean; ocrReady: boolean }): boolean {
+  return a.hasVideo || (a.pictureCount > 0 && !a.ocrReady)
+}
+
 /** The first ability the model is known to lack; a model whose capabilities are unknown lacks nothing. */
 function missingAbility(model: Pick<ProviderModelInfo, 'capabilities'>, needs: ModelNeeds): ModelAbility | null {
   if (!model.capabilities) return null

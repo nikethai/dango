@@ -96,6 +96,7 @@ describe('editAndResend', () => {
           files: [{ id: 'f1', name: 'a.txt' } as NonNullable<Message['files']>[number]],
           quoteAttachment: quote,
           skillIds: ['k1'],
+          toolsOff: true,
           contentParts: [
             { type: 'text', text: 'second' },
             { type: 'image', storageKey: 'img-1' },
@@ -123,6 +124,7 @@ describe('editAndResend', () => {
     expect(sent.files).toEqual([{ id: 'f1', name: 'a.txt' }])
     expect(sent.quoteAttachment).toEqual(quote)
     expect(sent.skillIds).toEqual(['k1'])
+    expect(sent.toolsOff).toBe(true)
     expect(calls.generated).toEqual(['s'])
   })
 

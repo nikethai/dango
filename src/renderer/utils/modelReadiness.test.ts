@@ -1,6 +1,12 @@
 import type { ProviderInfo, ProviderModelInfo } from '@shared/types'
 import { describe, expect, test } from 'vitest'
-import { getModelReadiness, modelMeetsNeeds, turnNeedsTools } from './modelReadiness'
+import {
+  attachmentsNeedVision,
+  getModelReadiness,
+  isOcrModelSet,
+  modelMeetsNeeds,
+  turnNeedsTools,
+} from './modelReadiness'
 
 const model = (modelId: string, capabilities: ProviderModelInfo['capabilities'] = []): ProviderModelInfo => ({
   modelId,
@@ -129,5 +135,23 @@ describe('ability checks before sending', () => {
     [{ agentMode: false, browserArmed: false, computerArmed: false, roomMode: 'discuss' }, false],
   ])('turnNeedsTools(%o) is %s', (input, expected) => {
     expect(turnNeedsTools(input)).toBe(expected)
+  })
+})
+
+describe('attachmentsNeedVision', () => {
+  test('pictures need vision unless an OCR model reads them', () => {
+    expect(attachmentsNeedVision({ pictureCount: 1, hasVideo: false, ocrReady: false })).toBe(true)
+    expect(attachmentsNeedVision({ pictureCount: 1, hasVideo: false, ocrReady: true })).toBe(false)
+  })
+
+  test('video always needs vision; nothing attached needs none', () => {
+    expect(attachmentsNeedVision({ pictureCount: 0, hasVideo: true, ocrReady: true })).toBe(true)
+    expect(attachmentsNeedVision({ pictureCount: 0, hasVideo: false, ocrReady: false })).toBe(false)
+  })
+
+  test('an OCR model counts only when both provider and model are set', () => {
+    expect(isOcrModelSet({ ocrModel: { provider: 'openai', model: 'gpt-4o' } })).toBe(true)
+    expect(isOcrModelSet({ ocrModel: { provider: 'openai', model: '' } })).toBe(false)
+    expect(isOcrModelSet({})).toBe(false)
   })
 })

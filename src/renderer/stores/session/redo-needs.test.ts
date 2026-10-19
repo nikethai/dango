@@ -59,3 +59,22 @@ describe('turnAbilityNeeds (Redo with another model)', () => {
     expect(turnAbilityNeeds(session({ roomMode: 'swarm', agentIds: ['a', 'b'] }, turn), 'a1').requiresTools).toBe(true)
   })
 })
+
+describe('turnAbilityNeeds attachments', () => {
+  const videoTurn = [
+    msg('u1', 'user', {
+      files: [{ id: 'v', name: 'clip.mp4', mediaKind: 'video' } as NonNullable<Message['files']>[number]],
+    }),
+    msg('a1', 'assistant'),
+  ]
+
+  test('a turn with a video needs vision, even with an OCR model', () => {
+    expect(turnAbilityNeeds(session({}, videoTurn), 'a1').requiresVision).toBe(true)
+    expect(turnAbilityNeeds(session({}, videoTurn), 'a1', { ocrReady: true }).requiresVision).toBe(true)
+  })
+
+  test('pictures read by an OCR model need no vision', () => {
+    expect(turnAbilityNeeds(session({}, imageTurn), 'a1', { ocrReady: true }).requiresVision).toBe(false)
+    expect(turnAbilityNeeds(session({}, imageTurn), 'a1', { ocrReady: false }).requiresVision).toBe(true)
+  })
+})

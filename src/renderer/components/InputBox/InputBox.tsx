@@ -105,7 +105,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { delay } from '@/utils'
 import { decideClipboardPaste, extractClipboardNonImageFiles, imagePayloadFingerprint } from '@/utils/clipboardImages'
 import { getModelDisplayName } from '@/utils/modelDisplayName'
-import { getModelReadiness, turnNeedsTools } from '@/utils/modelReadiness'
+import { attachmentsNeedVision, getModelReadiness, isOcrModelSet, turnNeedsTools } from '@/utils/modelReadiness'
 import { trackEvent } from '@/utils/track'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
 import type {
@@ -625,8 +625,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       return modelInfo.capabilities.includes('vision')
     }, [providers, model])
 
-    const showNonVisionVideoBanner = hasVideoAttachments && !modelSupportsVision && !visionBannerDismissed
-
     // ER4: abilities are checked here, before sending, never during a turn.
     const browserArmedForTurn = controlledBrowserArmed ?? currentSession?.browserArmed
     const computerArmedForTurn = controlledComputerArmed ?? currentSession?.computerArmed
@@ -640,14 +638,23 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         computerArmed: computerArmedForTurn,
         roomMode: roomModeForTurn,
       })
+    // Pictures need vision only when no OCR model reads them (stream-text OCRs for models without vision).
+    const ocrReady = useSettingsStore((state) => isOcrModelSet(state))
+    const requiresVision = attachmentsNeedVision({
+      pictureCount: pictureKeys.length,
+      hasVideo: hasVideoAttachments,
+      ocrReady,
+    })
     const modelReadiness = useMemo(
-      () =>
-        getModelReadiness(model, providers, {
-          requiresVision: pictureKeys.length > 0 || hasVideoAttachments,
-          requiresTools,
-        }),
-      [hasVideoAttachments, model, pictureKeys.length, providers, requiresTools]
+      () => getModelReadiness(model, providers, { requiresVision, requiresTools }),
+      [model, providers, requiresVision, requiresTools]
     )
+    const showReadinessNotice =
+      modelReadiness.status !== 'ready' &&
+      (platformCapabilities.isMobileLayout || modelReadiness.status === 'capability-required')
+    // One message at a time: the readiness notice already says the model can't analyze the video.
+    const showNonVisionVideoBanner =
+      hasVideoAttachments && !modelSupportsVision && !visionBannerDismissed && !showReadinessNotice
 
     const videoLimitsForUi = useMemo(() => getVideoLimits(platform.formFactor === 'desktop' ? 'desktop' : 'mobile'), [])
     const videoDropLimitsHint = useMemo(
@@ -3156,12 +3163,19 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
               </div>
             )}
 
-            {(platformCapabilities.isMobileLayout || modelReadiness.status === 'capability-required') && (
+            {showReadinessNotice && (
               <ModelReadinessNotice
                 readiness={modelReadiness}
                 modelName={modelSelectorDisplayText}
                 onAnswerWithoutTools={() => void handleSubmit(true, { toolsOff: true })}
-                answerWithoutToolsDisabled={disableSubmit || isSubmitting || isPreprocessing || hardStopBlocked}
+                answerWithoutToolsDisabled={
+                  disableSubmit ||
+                  isPreprocessing ||
+                  isSubmitting ||
+                  isSamplingVideoFrames ||
+                  isCompactionRunning ||
+                  hardStopBlocked
+                }
                 onSelectModel={onSelectModel}
               />
             )}
