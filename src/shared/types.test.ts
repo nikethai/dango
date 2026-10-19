@@ -10,6 +10,15 @@ describe('defaults', () => {
     expect(providers.length).toBeGreaterThan(0)
     expect(providers.some((provider) => provider.id === 'comfyui')).toBe(true)
   })
+
+  it('opens Quick Chat with CommandOrControl+Shift+Space on new installs', () => {
+    expect(SettingsSchema.parse(defaults.settings()).shortcuts.quickToggle).toBe('CommandOrControl+Shift+Space')
+  })
+
+  it('keeps a stored Quick Chat hotkey unchanged', () => {
+    const stored = { ...defaults.settings(), shortcuts: { ...defaults.settings().shortcuts, quickToggle: 'Alt+`' } }
+    expect(SettingsSchema.parse(stored).shortcuts.quickToggle).toBe('Alt+`')
+  })
 })
 
 describe('copyMessagesWithMapping', () => {

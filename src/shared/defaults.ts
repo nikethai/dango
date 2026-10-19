@@ -119,7 +119,7 @@ export function settings(): Settings {
     backgroundPaused: false,
 
     shortcuts: {
-      quickToggle: 'Alt+`', // Toggle quick window visibility
+      quickToggle: 'CommandOrControl+Shift+Space', // Toggle quick window (new installs; a stored value is kept)
       quickAttachOrOpen: 'Alt+Shift+V', // Open quick chat and attach clipboard
       quickOpen: 'Alt+Shift+Space', // Open quick chat only
       screenshotToChat: 'Alt+Shift+S', // Screenshot and attach to quick chat

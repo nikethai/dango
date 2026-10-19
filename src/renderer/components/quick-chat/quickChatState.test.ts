@@ -1,7 +1,7 @@
 import type { ProviderInfo } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import type { ModelReadiness } from '@/utils/modelReadiness'
-import { isLocalModel, quickChatName, resolveQuickScope, resolveQuickView } from './quickChatState'
+import { isLocalModel, quickChatName, quickErrorSummary, resolveQuickScope, resolveQuickView } from './quickChatState'
 
 describe('resolveQuickScope', () => {
   it('keeps a scope that still exists and drops one that is gone', () => {
@@ -91,5 +91,22 @@ describe('resolveQuickView', () => {
   it('answers when there is an exchange, otherwise empty', () => {
     expect(resolveQuickView({ ...base, hasExchange: true })).toBe('answered')
     expect(resolveQuickView(base)).toBe('empty')
+  })
+})
+
+describe('quickErrorSummary', () => {
+  it('turns raw provider errors into one short sentence', () => {
+    expect(quickErrorSummary('401 Unauthorized: {"error":"invalid_api_key"}')).toBe(
+      "The model didn't accept its sign-in. Check it in Settings."
+    )
+    expect(quickErrorSummary('Request failed', 403)).toBe("The model didn't accept its sign-in. Check it in Settings.")
+    expect(quickErrorSummary('429 Too Many Requests: rate_limit_exceeded')).toBe(
+      'The model is busy or out of quota. Try again in a moment.'
+    )
+    expect(quickErrorSummary('TypeError: Failed to fetch')).toBe("Couldn't reach the model. Check your connection.")
+    expect(quickErrorSummary("This model's maximum context length is 8192 tokens")).toBe(
+      'This chat is too long for the model.'
+    )
+    expect(quickErrorSummary('Something odd {"a":1}')).toBe("The model couldn't answer. Try again.")
   })
 })

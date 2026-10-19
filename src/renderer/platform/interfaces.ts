@@ -201,6 +201,11 @@ export interface Platform extends Storage {
   setQuickWindowHeight?(px: number): Promise<void>
   showMainWindow?(): Promise<void>
   openSessionInMain?(sessionId: string): Promise<void>
+  /**
+   * Hide the quick window, show the main window and route it to `path` (an app path starting with `/`, e.g.
+   * `/settings/provider`). Desktop shell only; absent on web/mobile, where callers navigate their own window.
+   */
+  openInMain?(path: string): Promise<void>
   captureScreenshotRegion?(): Promise<ScreenshotImagePayload | null>
   readClipboardImage?(): Promise<ScreenshotImagePayload | null>
   notifyQuickRendererReady?(): Promise<void>

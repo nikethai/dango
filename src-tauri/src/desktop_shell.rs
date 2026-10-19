@@ -178,6 +178,26 @@ fn clamp_quick_height(raw: &Value) -> Option<f64> {
     Some(height.clamp(QUICK_MIN_HEIGHT, QUICK_MAX_HEIGHT))
 }
 
+/// Longest app path `shell:openInMain` accepts.
+const MAIN_PATH_MAX_LEN: usize = 256;
+
+/// App path the quick window may send the main window to: a string starting with a single `/`, at most
+/// `MAIN_PATH_MAX_LEN` bytes, with no control characters or backslashes. Anything else is rejected.
+fn main_navigate_path(raw: &Value) -> Option<String> {
+    let path = raw.as_str()?;
+    if path.is_empty()
+        || path.len() > MAIN_PATH_MAX_LEN
+        || !path.starts_with('/')
+        || path.starts_with("//")
+    {
+        return None;
+    }
+    if path.chars().any(|c| c.is_control() || c == '\\') {
+        return None;
+    }
+    Some(path.to_string())
+}
+
 fn set_quick_height(app: &AppHandle, height: f64) {
     if let Some(window) = app.get_webview_window(QUICK_LABEL) {
         let _ = window.set_size(LogicalSize::new(QUICK_WIDTH, height));
@@ -914,6 +934,17 @@ pub async fn handle_ipc(app: &AppHandle, channel: &str, args: &[Value]) -> Optio
             }
             Some(Ok(Value::Null))
         }
+        "shell:openInMain" => match args.first().and_then(main_navigate_path) {
+            Some(path) => {
+                hide_quick(app);
+                show_main(app);
+                let _ = app.emit_to(MAIN_LABEL, "navigate-to", path);
+                Some(Ok(Value::Null))
+            }
+            None => Some(Err(
+                "shell:openInMain expects an app path starting with /".to_string()
+            )),
+        },
         "shell:hideMain" => {
             hide_main(app);
             Some(Ok(Value::Null))
@@ -962,6 +993,31 @@ mod tests {
         assert_eq!(clamp_quick_height(&json!(5000)), Some(QUICK_MAX_HEIGHT));
         assert_eq!(clamp_quick_height(&json!(112)), Some(112.0));
         assert_eq!(clamp_quick_height(&json!(640)), Some(640.0));
+    }
+
+    #[test]
+    fn main_navigate_path_accepts_app_paths_only() {
+        assert_eq!(
+            main_navigate_path(&json!("/settings/provider")).as_deref(),
+            Some("/settings/provider")
+        );
+        assert_eq!(
+            main_navigate_path(&json!("/session/abc")).as_deref(),
+            Some("/session/abc")
+        );
+        assert_eq!(main_navigate_path(&json!("/")).as_deref(), Some("/"));
+        assert_eq!(main_navigate_path(&json!("")), None);
+        assert_eq!(main_navigate_path(&json!("settings/provider")), None);
+        assert_eq!(main_navigate_path(&json!("https://example.com")), None);
+        assert_eq!(main_navigate_path(&json!("//example.com")), None);
+        assert_eq!(main_navigate_path(&json!("/a\nb")), None);
+        assert_eq!(main_navigate_path(&json!("/a\\b")), None);
+        assert_eq!(
+            main_navigate_path(&json!(format!("/{}", "a".repeat(MAIN_PATH_MAX_LEN)))),
+            None
+        );
+        assert_eq!(main_navigate_path(&json!(42)), None);
+        assert_eq!(main_navigate_path(&json!(null)), None);
     }
 
     #[test]

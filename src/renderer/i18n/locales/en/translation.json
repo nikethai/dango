@@ -1628,5 +1628,10 @@
   "Open Review": "Open Review",
   "Quick chat": "Quick chat",
   "Open Dango": "Open Dango",
-  "Quit Dango": "Quit Dango"
+  "Quit Dango": "Quit Dango",
+  "The model didn't accept its sign-in. Check it in Settings.": "The model didn't accept its sign-in. Check it in Settings.",
+  "The model is busy or out of quota. Try again in a moment.": "The model is busy or out of quota. Try again in a moment.",
+  "This chat is too long for the model.": "This chat is too long for the model.",
+  "Couldn't reach the model. Check your connection.": "Couldn't reach the model. Check your connection.",
+  "The model couldn't answer. Try again.": "The model couldn't answer. Try again."
 }

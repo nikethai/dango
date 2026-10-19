@@ -212,6 +212,8 @@ export class NotificationService {
 export type NotificationClickDeps = {
   showMainWindow?: () => Promise<void>
   navigate: (to: string) => void
+  /** Set in the quick window: hides it and routes the main window instead of navigating the quick window. */
+  openInMain?: (to: string) => Promise<void>
 }
 
 /** A long run opens its chat; Needs you and grouped notifications (kind only) open Review at `/`. */
@@ -221,6 +223,14 @@ export async function routeNotificationClick(
 ): Promise<void> {
   const to = payload.sessionId ? `/session/${payload.sessionId}` : payload.kind ? '/' : null
   if (!to) return
+  if (deps.openInMain) {
+    try {
+      await deps.openInMain(to)
+      return
+    } catch {
+      // Fall back to showing main and navigating this window.
+    }
+  }
   try {
     await deps.showMainWindow?.()
   } catch {

@@ -86,6 +86,21 @@ async function addCaptureToQuickPanel(payload: ClipboardCapturePayload): Promise
 }
 
 /**
+ * Paths the shell may send the main window to: Review, the quick route, a chat, or Settings (the quick window's
+ * "Sign in to a model" / "Choose a model" open `/settings/provider` there).
+ */
+export function isShellNavigatePath(path: unknown): path is string {
+  if (typeof path !== 'string') return false
+  return (
+    path === '/' ||
+    path === '/quick' ||
+    path.startsWith('/session/') ||
+    path === '/settings' ||
+    path.startsWith('/settings/')
+  )
+}
+
+/**
  * Call once from root layout on desktop.
  */
 export function useDesktopShell() {
@@ -113,7 +128,7 @@ export function useDesktopShell() {
 
     // Also honor generic navigate-to for shell (main window only: the quick window follows shell:navigate)
     const unsubPlatformNav = platform.onNavigate?.(async (path) => {
-      if (path !== '/quick' && !path.startsWith('/session/') && path !== '/') {
+      if (!isShellNavigatePath(path)) {
         return
       }
       const label = await platform.getWindowLabel?.()

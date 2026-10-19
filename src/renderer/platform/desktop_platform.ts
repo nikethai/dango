@@ -662,6 +662,10 @@ export default class DesktopPlatform implements Platform {
     return this.ipc.invoke('shell:openSessionInMain', sessionId)
   }
 
+  public openInMain(path: string): Promise<void> {
+    return this.ipc.invoke('shell:openInMain', path)
+  }
+
   public async captureScreenshotRegion(): Promise<ScreenshotImagePayload | null> {
     try {
       return await this.ipc.invoke('shell:captureScreenshot')

@@ -250,7 +250,14 @@ export const shortcutSendValues = [
 ]
 const ShortcutSendValueSchema = z.enum(shortcutSendValues as [string, ...string[]])
 
-export const shortcutToggleWindowValues = ['', 'Alt+`', 'Alt+Space', 'Ctrl+Alt+Space', 'Ctrl+Space']
+export const shortcutToggleWindowValues = [
+  '',
+  'CommandOrControl+Shift+Space',
+  'Alt+`',
+  'Alt+Space',
+  'Ctrl+Alt+Space',
+  'Ctrl+Space',
+]
 const ShortcutToggleWindowValueSchema = z.enum(shortcutToggleWindowValues as [string, ...string[]])
 
 const ShortcutSettingSchema = z.object({

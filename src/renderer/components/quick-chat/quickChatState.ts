@@ -46,3 +46,28 @@ export function resolveQuickView(input: {
   if (!input.online && !input.local) return 'offline'
   return input.hasExchange ? 'answered' : 'empty'
 }
+
+/** One short sentence (an en translation key) for a raw provider error; the details stay in the chat. */
+export function quickErrorSummary(error: string, errorCode?: number): string {
+  const text = error.toLowerCase()
+  if (
+    errorCode === 401 ||
+    errorCode === 403 ||
+    /\b40[13]\b|unauthori[sz]ed|forbidden|api[ _-]?key|invalid[ _-]?key|authentication/.test(text)
+  ) {
+    return "The model didn't accept its sign-in. Check it in Settings."
+  }
+  if (errorCode === 429 || /\b429\b|rate[ _-]?limit|quota|too many requests|overloaded|insufficient/.test(text)) {
+    return 'The model is busy or out of quota. Try again in a moment.'
+  }
+  if (
+    /context[ _-]length|maximum context|prompt is too long|input token limit/.test(text) ||
+    (text.includes('token') && text.includes('exceed'))
+  ) {
+    return 'This chat is too long for the model.'
+  }
+  if (/failed to fetch|network|econn|enotfound|etimedout|timed? ?out|offline|socket/.test(text)) {
+    return "Couldn't reach the model. Check your connection."
+  }
+  return "The model couldn't answer. Try again."
+}

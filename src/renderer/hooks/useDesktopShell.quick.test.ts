@@ -181,4 +181,17 @@ describe('useDesktopShell in the quick window', () => {
     })
     expect(shell.navigations).toEqual([{ to: '/' }])
   })
+
+  it('main window opens provider settings sent by the quick window, and rejects other paths', async () => {
+    shell.label = 'main'
+    shell.pathname = '/'
+    renderHook(() => useDesktopShell())
+    shell.navigations = []
+    await act(async () => {
+      await shell.navigate?.('/settings/provider')
+      await shell.navigate?.('https://example.com')
+      await shell.navigate?.('/admin')
+    })
+    expect(shell.navigations).toEqual([{ to: '/settings/provider' }])
+  })
 })

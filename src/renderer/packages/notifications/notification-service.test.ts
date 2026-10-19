@@ -306,4 +306,24 @@ describe('routeNotificationClick', () => {
     await routeNotificationClick({}, { navigate })
     expect(navigate).not.toHaveBeenCalled()
   })
+
+  test('in the quick window, session and kind-only clicks open in the main window', async () => {
+    const openInMain = vi.fn(async () => undefined)
+    const navigate = vi.fn()
+    const showMainWindow = vi.fn(async () => undefined)
+    await routeNotificationClick({ sessionId: 's1', kind: 'long_run_done' }, { openInMain, navigate, showMainWindow })
+    await routeNotificationClick({ kind: 'needs_you' }, { openInMain, navigate, showMainWindow })
+    expect(openInMain.mock.calls).toEqual([['/session/s1'], ['/']])
+    expect(navigate).not.toHaveBeenCalled()
+    expect(showMainWindow).not.toHaveBeenCalled()
+  })
+
+  test('a failing openInMain falls back to showing main and navigating', async () => {
+    const navigate = vi.fn()
+    await routeNotificationClick(
+      { kind: 'needs_you' },
+      { openInMain: async () => Promise.reject(new Error('x')), navigate, showMainWindow: async () => undefined }
+    )
+    expect(navigate).toHaveBeenCalledWith('/')
+  })
 })

@@ -101,12 +101,22 @@ function wireClickNavigation() {
   if (!platform.onSystemNotificationClick) return
 
   platform.onSystemNotificationClick((payload) => {
-    void routeNotificationClick(payload, {
-      showMainWindow: () => platform.showMainWindow?.() ?? Promise.resolve(),
-      navigate: (to) => {
-        void import('@/router').then(({ router }) => router.navigate({ to: to as never }))
-      },
-    })
+    void (async () => {
+      // A click raised by the quick window opens the chat or Review in the main window, never in the quick window.
+      let inQuickWindow = false
+      try {
+        inQuickWindow = Boolean(platform.openInMain) && (await platform.getWindowLabel?.()) === 'quick'
+      } catch {
+        inQuickWindow = false
+      }
+      await routeNotificationClick(payload, {
+        showMainWindow: () => platform.showMainWindow?.() ?? Promise.resolve(),
+        navigate: (to) => {
+          void import('@/router').then(({ router }) => router.navigate({ to: to as never }))
+        },
+        openInMain: inQuickWindow ? (to) => platform.openInMain?.(to) ?? Promise.resolve() : undefined,
+      })
+    })()
   })
 }
 

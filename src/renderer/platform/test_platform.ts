@@ -139,6 +139,8 @@ export default class TestPlatform implements Platform {
   public trayStatuses: TrayStatus[] = []
   /** Number of hideQuickWindow calls for tests */
   public quickHidden = 0
+  /** Paths passed to openInMain, for tests */
+  public openedInMain: string[] = []
   private systemNotificationClickHandlers = new Set<(payload: SystemNotificationClickPayload) => void>()
 
   constructor() {
@@ -417,6 +419,11 @@ export default class TestPlatform implements Platform {
 
   public hideQuickWindow(): Promise<void> {
     this.quickHidden += 1
+    return Promise.resolve()
+  }
+
+  public openInMain(path: string): Promise<void> {
+    this.openedInMain.push(path)
     return Promise.resolve()
   }
 
