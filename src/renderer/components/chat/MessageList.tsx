@@ -236,6 +236,8 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
             <EmptyThreadState
               sessionName={currentSession.name}
               onPickStarter={handlePickStarter}
+              scopeName={scope?.name}
+              scopeKind={scope ? scopeKindOf(scope) : null}
               compact={alignToBottom || isSmallScreen}
             />
           ) : (

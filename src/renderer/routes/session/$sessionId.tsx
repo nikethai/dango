@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import BrowserAgentPanel from '@/components/BrowserAgent/BrowserAgentPanel'
 import ComputerUseHud from '@/components/ComputerUse/ComputerUseHud'
 import ChatDockStack from '@/components/chat/ChatDockStack'
+import { ChatDropOverlay } from '@/components/chat/ChatDropOverlay'
 import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
 import SessionStatusBar from '@/components/chat/SessionStatusBar'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
@@ -279,7 +280,8 @@ function RouteComponent() {
           resolved={resolved}
           onDescriptorChange={setDescriptor}
         />
-        <div className="session-main-col">
+        <div className="session-main-col dg-drop-host">
+          <ChatDropOverlay />
           {/* key ensures a fresh MessageList instance per session */}
           <div className="session-thread">
             <MessageList ref={messageListRef} key={`message-list${currentSessionId}`} currentSession={currentSession} />

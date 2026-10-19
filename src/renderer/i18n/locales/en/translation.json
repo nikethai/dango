@@ -1768,5 +1768,15 @@
   "This chat is {{pct}}% full. Early messages may be left out.": "This chat is {{pct}}% full. Early messages may be left out.",
   "This run may cost about {{cost}}": "This run may cost about {{cost}}",
   "{{model}} · about {{tokens}} tokens. You asked to hear about runs over {{limit}}. Change the limit in Settings › Models and keys.": "{{model}} · about {{tokens}} tokens. You asked to hear about runs over {{limit}}. Change the limit in Settings › Models and keys.",
-  "Run": "Run"
+  "Run": "Run",
+  "Suggestions": "Suggestions",
+  "What needs me today?": "What needs me today?",
+  "What changed this week?": "What changed this week?",
+  "Help me write a reply": "Help me write a reply",
+  "What changed in {{scope}} since I last looked?": "What changed in {{scope}} since I last looked?",
+  "Summarise what we know about {{scope}}": "Summarise what we know about {{scope}}",
+  "What's still open in {{scope}}?": "What's still open in {{scope}}?",
+  "What did we promise {{scope}} last?": "What did we promise {{scope}} last?",
+  "Draft a reply to {{scope}}": "Draft a reply to {{scope}}",
+  "What's still open with {{scope}}?": "What's still open with {{scope}}?"
 }

@@ -305,4 +305,6 @@ export const TRIGGER_PATTERNS = {
   skill: /(?:^|[\s([{])\$[a-z0-9-]*$/i,
   account: /(?:^|[\s([{])#[a-z0-9-]*$/i,
   mem: /(?:^|[\s([{])@(?:mem|memory)(?:\s+[^\n@]*)?$/i,
+  /** A skill picked from the / menu replaces the `/partial` it was found with. */
+  slash: /(?:^|[\s([{])\/[a-z0-9-]*$/i,
 } as const

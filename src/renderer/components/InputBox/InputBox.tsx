@@ -54,6 +54,7 @@ import {
   getActiveCommandSlashQuery,
   matchSystemSlashCommand,
   parseRewriteCommand,
+  replaceActiveCommandSlashWithSkillToken,
   stripCommandSlashTokens,
 } from '@/packages/commands'
 import {
@@ -657,15 +658,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const showNonVisionVideoBanner =
       hasVideoAttachments && !modelSupportsVision && !visionBannerDismissed && !showReadinessNotice
 
-    const videoLimitsForUi = useMemo(() => getVideoLimits(platform.formFactor === 'desktop' ? 'desktop' : 'mobile'), [])
-    const videoDropLimitsHint = useMemo(
-      () => ({
-        minutes: Math.floor(videoLimitsForUi.maxDurationSec / 60),
-        size: formatBytesForDisplay(videoLimitsForUi.maxFileBytes),
-      }),
-      [videoLimitsForUi]
-    )
-
     // Re-show banner when a new successful video is attached after dismiss
     useEffect(() => {
       if (!hasVideoAttachments) {
@@ -1155,13 +1147,16 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         memoryMentionPickerDismissed,
       ]
     )
+    const selectedSkillIds = useMemo(() => selectedSkills.map((s) => s.id), [selectedSkills])
     const filteredCommandItems = useMemo(
       () =>
         buildCommandPickerItems(commandSlashQuery || '', enabledCommands, {
           excludePackageIds: selectedCommands.map((c) => c.id),
           includeSystem: true,
+          skills: enabledSkills,
+          excludeSkillIds: selectedSkillIds,
         }),
-      [enabledCommands, selectedCommands, commandSlashQuery]
+      [enabledCommands, selectedCommands, commandSlashQuery, enabledSkills, selectedSkillIds]
     )
     const filteredCommands = useMemo(
       () => filteredCommandItems.filter((i) => i.kind === 'package').map((i) => i.command),
@@ -1377,8 +1372,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       [isNewSession, onDraftRoomModeChange, sessionId]
     )
 
+    /** A skill picked from `$` (default) or from the / menu: same chip and selection, different trigger replaced. */
     const handleSkillSelect = useCallback(
-      (skill: SkillPackage) => {
+      (skill: SkillPackage, from: 'dollar' | 'slash' = 'dollar') => {
         setSelectedSkills((prev) => {
           if (prev.some((s) => s.id === skill.id) || prev.length >= SKILL_EXPLICIT_MAX) return prev
           return [...prev, skill]
@@ -1386,7 +1382,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         const token = `$${skill.name}`
         const chip: ComposerChipData = { kind: 'skill', token, label: skill.name, id: skill.id }
         if (richInputRef.current) {
-          richInputRef.current.insertChipAtTrigger(chip, 'skill')
+          richInputRef.current.insertChipAtTrigger(chip, from === 'slash' ? 'slash' : 'skill')
+        } else if (from === 'slash') {
+          setMessageInput((prev) => replaceActiveCommandSlashWithSkillToken(prev, skill.name))
         } else {
           setMessageInput((prev) => replaceActiveSkillDollarWithToken(prev, skill.name))
         }
@@ -1487,6 +1485,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     const handleCommandPickerItem = useCallback(
       (item: CommandPickerItem) => {
+        if (item.kind === 'skill') {
+          handleSkillSelect(item.skill, 'slash')
+          return
+        }
         if (item.kind === 'system') {
           if (item.command.id === 'compact') {
             void runManualCompact()
@@ -1499,7 +1501,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         }
         handleCommandSelect(item.command)
       },
-      [handleCommandSelect, runManualCompact, setMessageInput]
+      [handleCommandSelect, handleSkillSelect, runManualCompact, setMessageInput]
     )
 
     const handlePresetSelect = useCallback(
@@ -2549,7 +2551,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     // Window-level file DnD so drops work over the whole chat (not only the composer shell).
     // Tauri must set dragDropEnabled:false so HTML5 File events reach the webview.
-    const [isFileDragActive, setIsFileDragActive] = useState(false)
+    // The drag state lives in uiStore so <ChatDropOverlay /> can cover the chat column.
+    const isFileDragActive = useUIStore((s) => s.fileDragActive)
+    const setIsFileDragActive = useUIStore((s) => s.setFileDragActive)
     useEffect(() => {
       if (sessionType === 'picture') {
         return
@@ -2642,8 +2646,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         window.removeEventListener('dragend', onDragEnd)
         window.removeEventListener('keydown', onKeyDown)
         window.removeEventListener('blur', onWindowBlur)
+        // Never leave the chat overlay on after the composer goes away (route change, session switch).
+        setIsFileDragActive(false)
       }
-    }, [sessionType])
+    }, [sessionType, setIsFileDragActive])
 
     const onFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
       if (!event.target.files) {
@@ -2838,19 +2844,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             )}
             gap={0}
           >
-            <div
-              className={cn('composer-drop-overlay', isFileDragActive && 'is-active')}
-              aria-hidden={!isFileDragActive}
-            >
-              <div className="composer-drop-overlay-content">
-                <IconFolder className="composer-drop-overlay-icon" strokeWidth={1.5} size={28} />
-                <span className="composer-drop-overlay-title">{t('Drop to attach')}</span>
-                <span className="composer-drop-overlay-hint">{t('Images · video · PDFs · text · code')}</span>
-                <span className="composer-drop-overlay-limits font-mono tabular-nums">
-                  {t('MP4 · WebM · max {{minutes}} min · {{size}}', videoDropLimitsHint)}
-                </span>
-              </div>
-            </div>
             {showPresetPicker && (
               <PresetPicker
                 anchorRef={composerCardRef}
@@ -2906,6 +2899,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 query={commandSlashQuery || ''}
                 excludeIds={selectedCommands.map((c) => c.id)}
                 includeSystem
+                skills={enabledSkills}
+                excludeSkillIds={selectedSkillIds}
               />
             )}
             {showSkillPicker && (

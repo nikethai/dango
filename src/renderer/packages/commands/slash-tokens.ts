@@ -49,6 +49,24 @@ export function getActiveCommandSlashQuery(text: string, caret?: number): string
   return match[1].toLowerCase()
 }
 
+/**
+ * A skill chosen from the / picker: the active `/partial` before the caret becomes `$skill-name `.
+ * Same token rules as replaceActiveSkillDollarWithToken, so the draft reads exactly as if picked with `$`.
+ */
+export function replaceActiveCommandSlashWithSkillToken(text: string, skillName: string, caret?: number): string {
+  const token = skillName.toLowerCase().replace(/[^a-z0-9-]/g, '')
+  if (!token || /^[0-9]/.test(token)) return text
+  const pos = caret ?? text.length
+  const before = text.slice(0, pos)
+  const after = text.slice(pos)
+  const replaced = before.replace(/(?:^|[\s([{])\/[a-z0-9-]*$/i, (m) => {
+    const boundary = m.length > 0 && /[\s([{]/.test(m[0]) ? m[0] : ''
+    return `${boundary}$${token}`
+  })
+  const needsSpace = after.length === 0 || !/^\s/.test(after)
+  return replaced + (needsSpace ? ' ' : '') + after
+}
+
 export function fuzzyScoreCommand(value: string, query: string): number {
   return fuzzyScoreSkill(value, query)
 }
