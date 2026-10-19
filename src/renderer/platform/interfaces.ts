@@ -181,8 +181,11 @@ export interface Platform extends Storage {
   discardDraftFolderBindings?(): Promise<number>
   /** Counts local Codex threads without reading them. */
   detectCodexThreads?(): Promise<CodexThreadsDetection>
-  /** Codex threads updated after `sinceMs`, newest first. */
-  listCodexThreads?(sinceMs?: number): Promise<CodexThreadSummary[]>
+  /**
+   * Codex threads oldest first by `(updatedAt, id)`, after the thread `(sinceMs, sinceId)` (without `sinceId`, after
+   * every thread updated at `sinceMs`), at most `limit` (default 200).
+   */
+  listCodexThreads?(opts?: { sinceMs?: number; sinceId?: string; limit?: number }): Promise<CodexThreadSummary[]>
   readCodexThread?(id: string): Promise<CodexThread>
   videoYtDlp?(op: 'detect' | 'install'): Promise<unknown>
   /** Test-only: never a renderer authorization path. */

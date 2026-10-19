@@ -33,7 +33,8 @@ vi.mock('@/storage', () => ({
     },
   },
 }))
-// The broker's list: updated after `sinceMs`, newest first, at most 200.
+type ListOpts = { sinceMs?: number; sinceId?: string; limit?: number }
+// The broker's list: oldest first by (updatedAt, id), after (sinceMs, sinceId), at most `limit` (default 200).
 vi.mock('@/platform', () => ({
   default: {
     detectCodexThreads: vi.fn(async () => ({
@@ -41,11 +42,16 @@ vi.mock('@/platform', () => ({
       threadCount: h.threads.length,
       displayPath: '~/.codex/sessions',
     })),
-    listCodexThreads: vi.fn(async (sinceMs?: number) =>
+    listCodexThreads: vi.fn(async (opts?: ListOpts) =>
       h.threads
-        .filter((t) => sinceMs === undefined || t.updatedAt > sinceMs)
-        .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
-        .slice(0, 200)
+        .filter(
+          (t) =>
+            opts?.sinceMs === undefined ||
+            t.updatedAt > opts.sinceMs ||
+            (t.updatedAt === opts.sinceMs && opts.sinceId !== undefined && t.id > opts.sinceId)
+        )
+        .sort((a, b) => a.updatedAt - b.updatedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .slice(0, opts?.limit ?? 200)
     ),
     readCodexThread: vi.fn((id: string) => {
       const t = h.threads.find((x) => x.id === id)
@@ -150,17 +156,19 @@ describe('codex threads', () => {
     h.threads = [thread(1), thread(2), thread(3, ''), thread(4)]
     const source = await connected()
     const read = need(kindOf('codex-threads').read)
+    // A plain time cursor still works: everything updated at or before it was read.
     const result = await read(source, { signal: signal(), cursor: '2000' })
-    expect(p.listCodexThreads).toHaveBeenCalledWith(2000)
+    expect(p.listCodexThreads).toHaveBeenCalledWith({ sinceMs: 2000, sinceId: undefined, limit: 40 })
     expect(result.items).toEqual([
       { ref: 't3', label: 'Untitled thread', text: 'text of t3', updatedAt: 3000 },
       { ref: 't4', label: 'Thread 4', text: 'text of t4', updatedAt: 4000 },
     ])
-    expect(result.cursor).toBe('4000')
+    expect(JSON.parse(result.cursor as string)).toEqual({ at: 4000, id: 't4' })
 
     const again = await read(source, { signal: signal(), cursor: result.cursor })
+    expect(p.listCodexThreads).toHaveBeenLastCalledWith({ sinceMs: 4000, sinceId: 't4', limit: 40 })
     expect(again.items).toEqual([])
-    expect(again.cursor).toBe('4000')
+    expect(again.cursor).toBe(result.cursor)
   })
 
   it('read takes at most 40 threads, oldest first, and continues from there', async () => {
@@ -169,7 +177,6 @@ describe('codex threads', () => {
     const read = need(kindOf('codex-threads').read)
     const first = await read(source, { signal: signal(), cursor: null })
     expect(first.items.map((i) => i.ref)).toEqual(Array.from({ length: 40 }, (_, i) => `t${i + 1}`))
-    expect(first.cursor).toBe('40000')
     const second = await read(source, { signal: signal(), cursor: first.cursor })
     expect(second.items.map((i) => i.ref)).toEqual(Array.from({ length: 10 }, (_, i) => `t${i + 41}`))
   })
@@ -190,27 +197,41 @@ describe('codex threads', () => {
     expect(new Set(refs).size).toBe(41)
   })
 
-  it('a truncated list never moves the cursor past threads it could not see', async () => {
-    // 250 threads newer than the cursor: the broker returns only the newest 200.
-    h.threads = Array.from({ length: 250 }, (_, i) => thread(i + 1))
+  it('450 threads, many sharing a time, are all read once over ceil(450 / 40) runs', async () => {
+    const id = (n: number) => `2026/10/01/rollout-${String(n).padStart(3, '0')}.jsonl`
+    h.threads = Array.from({ length: 450 }, (_, n) => ({
+      id: id(n),
+      title: `T${n}`,
+      updatedAt: Math.floor(n / 7) * 1000,
+    }))
     const source = await connected()
     const read = need(kindOf('codex-threads').read)
     const seen: string[] = []
     let cursor: string | null = null
-    for (let run = 0; run < 5; run++) {
+    for (let run = 0; run < Math.ceil(450 / 40); run++) {
       const result = await read(source, { signal: signal(), cursor })
+      expect(result.items.length).toBeGreaterThan(0)
+      expect(result.items.length).toBeLessThanOrEqual(40)
       seen.push(...result.items.map((i) => i.ref))
       cursor = result.cursor
-      // Every list call still starts from the beginning: the 50 oldest are not skipped.
-      expect(p.listCodexThreads).toHaveBeenLastCalledWith(undefined)
     }
     expect(new Set(seen).size).toBe(seen.length)
-    expect(seen).toHaveLength(200)
+    expect(seen).toEqual(Array.from({ length: 450 }, (_, n) => id(n)))
+    const after = await read(source, { signal: signal(), cursor })
+    expect(after.items).toEqual([])
+    expect(after.cursor).toBe(cursor)
+  })
 
-    // Once the older ones are reachable (the list is no longer full), they are read too.
-    h.threads = h.threads.slice(0, 150)
-    const later = await read(source, { signal: signal(), cursor })
-    const rest = later.items.map((i) => i.ref)
-    expect(rest).toEqual(Array.from({ length: 40 }, (_, i) => `t${i + 1}`))
+  it('a thread updated after it was read is read again; a deleted one still moves the cursor', async () => {
+    h.threads = [thread(1), thread(2), thread(3)]
+    const source = await connected()
+    const read = need(kindOf('codex-threads').read)
+    vi.mocked(need(p.readCodexThread)).mockRejectedValueOnce(new Error('Codex thread not found'))
+    const first = await read(source, { signal: signal(), cursor: null })
+    expect(first.items.map((i) => i.ref)).toEqual(['t2', 't3'])
+    expect(JSON.parse(first.cursor as string)).toEqual({ at: 3000, id: 't3' })
+    h.threads[0] = { ...thread(1), updatedAt: 9000 }
+    const second = await read(source, { signal: signal(), cursor: first.cursor })
+    expect(second.items.map((i) => i.ref)).toEqual(['t1'])
   })
 })

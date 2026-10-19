@@ -1,29 +1,38 @@
-import type { CodexThreadSummary, CodexThreadsDetection, SourceItem } from '@shared/types/sources'
+import type { CodexThreadsDetection, SourceItem } from '@shared/types/sources'
 import { useEffect, useState } from 'react'
 import i18n from '@/i18n'
 import platform, { platformCapabilities } from '@/platform'
 import type { SourceKindDefinition } from '../kinds'
 import { throwIfAborted, UNAVAILABLE_HINT } from './common'
 
-/** The broker lists at most this many threads (newest first); a full list may hide older ones. */
-export const CODEX_LIST_LIMIT = 200
-/** Threads read per `read` run. */
+/** Threads read per `read` run (the broker lists this many per page). */
 export const CODEX_READ_BATCH = 40
 
 const available = () => platformCapabilities.supportsCodexThreads && !!platform.detectCodexThreads
 
 let detection: Promise<CodexThreadsDetection | null> | null = null
 
-/** Counts local Codex threads without reading any (once per window). Null where Codex threads are unavailable. */
+/**
+ * Counts local Codex threads without reading any. Null where Codex threads are unavailable. Only a detection that
+ * found threads is kept for the window's lifetime: after "none found" the next call looks again, so Codex run for the
+ * first time while Dango is open shows up without a restart.
+ */
 export function getCodexDetection(): Promise<CodexThreadsDetection | null> {
   if (!detection) {
-    detection = available()
-      ? (platform.detectCodexThreads?.() ?? Promise.resolve(null)).catch((error) => {
-          console.warn('[sources] Could not look for Codex threads', error)
-          detection = null
-          return null
-        })
+    const lookup: Promise<CodexThreadsDetection | null> = available()
+      ? (platform.detectCodexThreads?.() ?? Promise.resolve(null)).then(
+          (found) => {
+            if (!codexThreadsFound(found) && detection === lookup) detection = null
+            return found
+          },
+          (error) => {
+            console.warn('[sources] Could not look for Codex threads', error)
+            if (detection === lookup) detection = null
+            return null
+          }
+        )
       : Promise.resolve(null)
+    detection = lookup
   }
   return detection
 }
@@ -67,36 +76,23 @@ export function _resetCodexDetectionForTests(): void {
 }
 
 /**
- * Read cursor. Plain: the `updatedAt` (ms, as a string) every thread up to which has been read. While the broker's
- * list is full, older unread threads may be hidden, so `since` must not move: the threads read above it are kept in
- * `read` (id → updatedAt) and stored as JSON `{ since, read }`.
+ * Read cursor: the last thread read, `{ at, id }` (its `updatedAt` and id), stored as JSON. The broker lists threads
+ * oldest first after that pair, so paging reaches every thread once, ties included; a thread written later gets a
+ * newer `updatedAt` and is listed (and read) again. A plain number (ms) means every thread up to that time was read.
  */
-type CodexCursor = { since: number | null; read: Map<string, number> }
+type CodexCursor = { at: number; id?: string } | null
 
 function parseCursor(cursor: string | null): CodexCursor {
-  const empty: CodexCursor = { since: null, read: new Map() }
-  if (!cursor) return empty
-  if (/^\d+$/.test(cursor)) return { since: Number(cursor), read: new Map() }
+  if (!cursor) return null
+  if (/^\d+$/.test(cursor)) return { at: Number(cursor) }
   try {
-    const raw = JSON.parse(cursor) as { since?: unknown; read?: unknown }
-    const since = typeof raw.since === 'number' && Number.isFinite(raw.since) ? raw.since : null
-    const read = new Map<string, number>()
-    if (raw.read && typeof raw.read === 'object') {
-      for (const [id, at] of Object.entries(raw.read)) if (typeof at === 'number') read.set(id, at)
-    }
-    return { since, read }
+    const raw = JSON.parse(cursor) as { at?: unknown; id?: unknown }
+    if (typeof raw.at !== 'number' || !Number.isFinite(raw.at)) return null
+    return typeof raw.id === 'string' ? { at: raw.at, id: raw.id } : { at: raw.at }
   } catch {
-    return empty
+    return null
   }
 }
-
-function serializeCursor({ since, read }: CodexCursor): string | null {
-  if (read.size === 0) return since === null ? null : String(since)
-  return JSON.stringify({ since, read: Object.fromEntries(read) })
-}
-
-const oldestFirst = (a: CodexThreadSummary, b: CodexThreadSummary) =>
-  a.updatedAt - b.updatedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
 async function readThreads(ctx: {
   signal: AbortSignal
@@ -106,16 +102,11 @@ async function readThreads(ctx: {
   const readThread = platform.readCodexThread
   if (!list || !readThread) throw new Error(i18n.t(UNAVAILABLE_HINT))
   const cursor = parseCursor(ctx.cursor)
-  const listed = await list.call(platform, cursor.since ?? undefined)
-  const full = listed.length >= CODEX_LIST_LIMIT
-  const visible = [...listed].sort(oldestFirst)
-  const isRead = (t: CodexThreadSummary, read: Map<string, number>) => read.get(t.id) === t.updatedAt
-  const batch = visible.filter((t) => !isRead(t, cursor.read)).slice(0, CODEX_READ_BATCH)
-
+  // In the broker's order (oldest first); its last item is where the next page starts.
+  const batch = await list.call(platform, { sinceMs: cursor?.at, sinceId: cursor?.id, limit: CODEX_READ_BATCH })
   const items: SourceItem[] = []
-  // Only threads still listed stay in `read`; an updated thread (new updatedAt) is read again.
-  const read = new Map(visible.filter((t) => isRead(t, cursor.read)).map((t) => [t.id, t.updatedAt]))
-  for (const summary of batch) {
+  let last = cursor
+  for (const summary of batch.slice(0, CODEX_READ_BATCH)) {
     throwIfAborted(ctx.signal)
     try {
       const thread = await readThread.call(platform, summary.id)
@@ -130,20 +121,9 @@ async function readThreads(ctx: {
       // Deleted between list and read: nothing to read.
       if (!(error instanceof Error && /not found/i.test(error.message))) throw error
     }
-    read.set(summary.id, summary.updatedAt)
+    last = { at: summary.updatedAt, id: summary.id }
   }
-
-  if (full) return { items, cursor: serializeCursor({ since: cursor.since, read }) }
-
-  // The whole range after `since` was listed: move `since` up to just below the oldest unread thread.
-  const firstUnread = visible.find((t) => !isRead(t, read))
-  let since = cursor.since
-  for (const t of visible) {
-    if (firstUnread && t.updatedAt >= firstUnread.updatedAt) break
-    if (since === null || t.updatedAt > since) since = t.updatedAt
-  }
-  const above = new Map([...read].filter(([, at]) => since === null || at > since))
-  return { items, cursor: serializeCursor({ since, read: above }) }
+  return { items, cursor: last ? JSON.stringify(last) : null }
 }
 
 export const codexThreadsKind: SourceKindDefinition = {

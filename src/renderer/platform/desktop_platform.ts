@@ -539,8 +539,12 @@ export default class DesktopPlatform implements Platform {
     return this.invokeWorkspace<CodexThreadsDetection>('codex:threads', { op: 'detect' })
   }
 
-  public listCodexThreads(sinceMs?: number): Promise<CodexThreadSummary[]> {
-    return this.invokeWorkspace<CodexThreadSummary[]>('codex:threads', { op: 'list', sinceMs })
+  public listCodexThreads(opts?: {
+    sinceMs?: number
+    sinceId?: string
+    limit?: number
+  }): Promise<CodexThreadSummary[]> {
+    return this.invokeWorkspace<CodexThreadSummary[]>('codex:threads', { op: 'list', ...opts })
   }
 
   public readCodexThread(id: string): Promise<CodexThread> {

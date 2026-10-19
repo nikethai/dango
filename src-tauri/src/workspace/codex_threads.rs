@@ -109,7 +109,25 @@ fn display_path_for(root: &Path, home: Option<&Path>, case_insensitive: bool) ->
             }
         }
     }
-    lexical_root.display().to_string()
+    slash_path(&lexical_root)
+}
+
+/// A path with its components joined by `/` (a Windows drive prefix is kept: `C:/Users/...`).
+fn slash_path(path: &Path) -> String {
+    let mut out = String::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => out.push_str(&prefix.as_os_str().to_string_lossy()),
+            Component::RootDir => out.push('/'),
+            other => {
+                if !out.is_empty() && !out.ends_with('/') {
+                    out.push('/');
+                }
+                out.push_str(&other.as_os_str().to_string_lossy());
+            }
+        }
+    }
+    out
 }
 
 fn display_path(root: &Path) -> String {
@@ -221,17 +239,32 @@ fn collect(root: &Path) -> Vec<Entry> {
     out
 }
 
-/// `{ id, title, updatedAt }`, newest first, only threads updated after `since_ms`.
-pub fn list(root: &Path, since_ms: Option<u64>, limit: usize) -> Vec<Value> {
+/// Where a page of `list` starts: after the thread `(ms, id)` in `(updatedAt, id)` order. Without an id, after every
+/// thread updated at `ms`.
+pub struct After<'a> {
+    pub ms: u64,
+    pub id: Option<&'a str>,
+}
+
+impl After<'_> {
+    fn admits(&self, entry: &Entry) -> bool {
+        entry.updated_at > self.ms || (entry.updated_at == self.ms && self.id.is_some_and(|id| entry.id.as_str() > id))
+    }
+}
+
+/// `{ id, title, updatedAt }`, oldest first by `(updatedAt, id)`, only threads after `after`, at most `limit`.
+/// Paging with the last item as the next `after` reaches every thread once, ties included; a thread written later
+/// gets a newer `updatedAt` and is listed again. Titles are scanned only for the threads returned.
+pub fn list(root: &Path, after: Option<After<'_>>, limit: usize) -> Vec<Value> {
     let limit = limit.min(MAX_LIST_LIMIT);
     if limit == 0 || !root.is_dir() {
         return Vec::new();
     }
     let mut entries: Vec<Entry> = collect(root)
         .into_iter()
-        .filter(|e| since_ms.is_none_or(|since| e.updated_at > since))
+        .filter(|e| after.as_ref().is_none_or(|after| after.admits(e)))
         .collect();
-    entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then_with(|| a.id.cmp(&b.id)));
+    entries.sort_by(|a, b| a.updated_at.cmp(&b.updated_at).then_with(|| a.id.cmp(&b.id)));
     entries.truncate(limit);
     entries
         .into_iter()
@@ -287,7 +320,14 @@ fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
 
 #[cfg(not(unix))]
 fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
-    a.len() == b.len() && a.modified().ok() == b.modified().ok()
+    same_created(a, b)
+}
+
+/// Both are regular files created at the same time. Length and mtime are not compared: Codex appends to a thread
+/// while it runs, and that must not make the file look swapped.
+#[cfg_attr(unix, allow(dead_code))]
+fn same_created(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+    a.is_file() && b.is_file() && a.created().ok() == b.created().ok()
 }
 
 /// `{ id, title, updatedAt, text, truncated }`, text capped at `max_chars` characters.
@@ -442,7 +482,15 @@ fn since_of(request: &Value) -> Option<u64> {
     raw.as_f64().filter(|f| f.is_finite() && *f >= 0.0).map(|f| f as u64)
 }
 
-/// `codex:threads` request: `{ op: 'detect' } | { op: 'list', sinceMs?, limit? } | { op: 'read', id }`.
+/// A list request's `sinceId`; anything but a valid thread id is ignored.
+fn since_id_of(request: &Value) -> Option<&str> {
+    request
+        .get("sinceId")
+        .and_then(Value::as_str)
+        .filter(|id| is_valid_id(id))
+}
+
+/// `codex:threads` request: `{ op: 'detect' } | { op: 'list', sinceMs?, sinceId?, limit? } | { op: 'read', id }`.
 pub fn dispatch(root: Option<&Path>, request: Option<&Value>) -> Result<Value, String> {
     let request = request
         .filter(|r| r.is_object())
@@ -462,9 +510,11 @@ pub fn dispatch(root: Option<&Path>, request: Option<&Value>) -> Result<Value, S
                 .and_then(Value::as_u64)
                 .map(|n| n.min(MAX_LIST_LIMIT as u64) as usize)
                 .unwrap_or(DEFAULT_LIST_LIMIT);
-            let items = root
-                .map(|root| list(root, since_of(request), limit))
-                .unwrap_or_default();
+            let after = since_of(request).map(|ms| After {
+                ms,
+                id: since_id_of(request),
+            });
+            let items = root.map(|root| list(root, after, limit)).unwrap_or_default();
             Ok(Value::Array(items))
         }
         "read" => {
@@ -666,8 +716,9 @@ mod tests {
         assert_eq!(items[0]["title"], json!("Plan the launch for Friday"));
         assert!(items[0]["updatedAt"].as_u64().unwrap() > 0);
         let updated = items[0]["updatedAt"].as_u64().unwrap();
-        assert!(list(&root, Some(updated), DEFAULT_LIST_LIMIT).is_empty());
-        assert_eq!(list(&root, Some(updated - 1), DEFAULT_LIST_LIMIT).len(), 1);
+        let after = |ms: u64| Some(After { ms, id: None });
+        assert!(list(&root, after(updated), DEFAULT_LIST_LIMIT).is_empty());
+        assert_eq!(list(&root, after(updated - 1), DEFAULT_LIST_LIMIT).len(), 1);
         assert!(list(&root, None, 0).is_empty());
     }
 
@@ -771,6 +822,153 @@ mod tests {
         fs::remove_file(&path).unwrap();
         std::os::unix::fs::symlink(fx.base.join("other.jsonl"), &path).unwrap();
         assert!(open_checked(&path, &checked).is_none());
+    }
+
+    fn set_mtime(path: &Path, ms: u64) {
+        let file = File::options().write(true).open(path).unwrap();
+        file.set_modified(UNIX_EPOCH + std::time::Duration::from_millis(ms))
+            .unwrap();
+    }
+
+    /// Pages through `list` the way the renderer does: after the last listed `(updatedAt, id)`.
+    fn page_all(root: &Path, limit: usize) -> Vec<Vec<(u64, String)>> {
+        let mut pages = Vec::new();
+        let mut last: Option<(u64, String)> = None;
+        loop {
+            let after = last.as_ref().map(|(ms, id)| After {
+                ms: *ms,
+                id: Some(id.as_str()),
+            });
+            let page: Vec<(u64, String)> = list(root, after, limit)
+                .iter()
+                .map(|v| (v["updatedAt"].as_u64().unwrap(), v["id"].as_str().unwrap().to_string()))
+                .collect();
+            if page.is_empty() {
+                return pages;
+            }
+            last = page.last().cloned();
+            pages.push(page);
+            assert!(pages.len() < 100, "paging never ends");
+        }
+    }
+
+    #[test]
+    fn list_pages_oldest_first_with_tied_times_without_gaps_or_duplicates() {
+        let base = temp_base();
+        let root = base.join("sessions");
+        let day = root.join("2026").join("10").join("01");
+        fs::create_dir_all(&day).unwrap();
+        let mut expected = Vec::new();
+        for i in 0..450u64 {
+            let name = format!("rollout-{i:03}.jsonl");
+            fs::write(day.join(&name), FIXTURE).unwrap();
+            // Seven threads share each time; ids sort within a time.
+            let ms = 1_700_000_000_000 + (i / 7) * 1000;
+            set_mtime(&day.join(&name), ms);
+            expected.push((ms, format!("2026/10/01/{name}")));
+        }
+        expected.sort();
+
+        let pages = page_all(&root, 40);
+        assert_eq!(pages.len(), 12);
+        assert!(pages.iter().all(|p| p.len() <= 40));
+        let seen: Vec<(u64, String)> = pages.concat();
+        assert_eq!(seen, expected);
+
+        // A page boundary inside a tie: the next page starts right after the last id at that time.
+        let first = list(&root, None, 3);
+        let first_ids: Vec<&str> = first.iter().map(|v| v["id"].as_str().unwrap()).collect();
+        assert_eq!(
+            first_ids,
+            [
+                "2026/10/01/rollout-000.jsonl",
+                "2026/10/01/rollout-001.jsonl",
+                "2026/10/01/rollout-002.jsonl"
+            ]
+        );
+        let next = list(
+            &root,
+            Some(After {
+                ms: 1_700_000_000_000,
+                id: Some("2026/10/01/rollout-002.jsonl"),
+            }),
+            2,
+        );
+        assert_eq!(next[0]["id"], json!("2026/10/01/rollout-003.jsonl"));
+        // Without an id, every thread at that time is behind the cursor.
+        let after_time = list(
+            &root,
+            Some(After {
+                ms: 1_700_000_000_000,
+                id: None,
+            }),
+            1,
+        );
+        assert_eq!(after_time[0]["id"], json!("2026/10/01/rollout-007.jsonl"));
+
+        // A thread written after the cursor has a newer time and is listed again.
+        let (last_ms, last_id) = seen.last().cloned().unwrap();
+        let again = day.join("rollout-010.jsonl");
+        set_mtime(&again, last_ms + 5_000);
+        let later = list(
+            &root,
+            Some(After {
+                ms: last_ms,
+                id: Some(&last_id),
+            }),
+            40,
+        );
+        assert_eq!(later.len(), 1);
+        assert_eq!(later[0]["id"], json!("2026/10/01/rollout-010.jsonl"));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn dispatch_list_takes_since_id_and_limit() {
+        let fx = fixture();
+        let root = fx.root.clone();
+        let day = root.join("2026").join("10").join("01");
+        fs::write(day.join("rollout-b.jsonl"), FIXTURE).unwrap();
+        set_mtime(&day.join("rollout-a.jsonl"), 5_000);
+        set_mtime(&day.join("rollout-b.jsonl"), 5_000);
+        let all = dispatch(Some(&root), Some(&json!({ "op": "list", "limit": 1 }))).unwrap();
+        assert_eq!(
+            all,
+            json!([{ "id": "2026/10/01/rollout-a.jsonl", "title": "Plan the launch for Friday", "updatedAt": 5000 }])
+        );
+        let next = dispatch(
+            Some(&root),
+            Some(&json!({ "op": "list", "sinceMs": 5000, "sinceId": "2026/10/01/rollout-a.jsonl" })),
+        )
+        .unwrap();
+        assert_eq!(next[0]["id"], json!("2026/10/01/rollout-b.jsonl"));
+        assert_eq!(next.as_array().unwrap().len(), 1);
+        // A bad sinceId is ignored (as if absent), never an error.
+        let odd = dispatch(
+            Some(&root),
+            Some(&json!({ "op": "list", "sinceMs": 4999, "sinceId": 7 })),
+        )
+        .unwrap();
+        assert_eq!(odd.as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn same_created_survives_an_append() {
+        let fx = fixture();
+        let path = fx.root.join("2026").join("10").join("01").join("rollout-a.jsonl");
+        let before = fs::symlink_metadata(&path).unwrap();
+        let mut file = File::options().append(true).open(&path).unwrap();
+        std::io::Write::write_all(&mut file, b"more\n").unwrap();
+        let after = file.metadata().unwrap();
+        assert_ne!(before.len(), after.len());
+        assert!(same_created(&before, &after));
+    }
+
+    #[test]
+    fn slash_path_joins_components_with_forward_slashes() {
+        assert_eq!(slash_path(Path::new("/opt/codex/sessions")), "/opt/codex/sessions");
+        assert_eq!(slash_path(Path::new("codex/sessions")), "codex/sessions");
+        assert_eq!(slash_path(Path::new("/")), "/");
     }
 
     #[test]
