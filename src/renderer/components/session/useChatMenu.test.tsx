@@ -29,8 +29,13 @@ const actions = vi.hoisted(() => ({
 vi.mock('@/stores/session/chat-menu-actions', () => actions)
 const startNewChat = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/startNewChat', () => ({ startNewChat }))
-vi.mock('@/stores/chatStore', () => ({ updateSession: vi.fn(() => Promise.resolve()) }))
-vi.mock('@/stores/sessionActions', () => ({ _copySession: vi.fn(), switchCurrentSession: vi.fn() }))
+vi.mock('@/stores/chatStore', () => ({
+  updateSession: vi.fn(() => Promise.resolve()),
+  getSession: vi.fn(() => Promise.resolve({ id: 's1', messages: [{ id: 'm1' }, { id: 'm2' }] })),
+}))
+const branchChatFromMessage = vi.hoisted(() => vi.fn(() => Promise.resolve('copy')))
+vi.mock('@/stores/session/branch', () => ({ branchChatFromMessage }))
+vi.mock('@/stores/sessionActions', () => ({ switchCurrentSession: vi.fn() }))
 vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 vi.mock('@/stores/atoms', () => ({ currentSessionIdAtom: {} }))
 vi.mock('@ebay/nice-modal-react', () => ({ default: { show: vi.fn() } }))
@@ -56,6 +61,12 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('useChatMenu', () => {
+  it('Branch branches the chat from its latest message', async () => {
+    render(<Harness session={session} selected={false} onRename={vi.fn()} />)
+    await act(async () => row('Branch')?.onClick?.({} as never))
+    expect(branchChatFromMessage).toHaveBeenCalledWith('s1', 'm2')
+  })
+
   it('Move to scope… opens a sheet: None first, then scopes without Everywhere, the current one marked', () => {
     render(<Harness session={session} selected={false} onRename={vi.fn()} />)
     act(() => row('Move to scope…')?.onClick?.({} as never))

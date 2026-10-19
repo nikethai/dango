@@ -23,6 +23,7 @@ import {
   IconBrain,
   IconCopy,
   IconDotsVertical,
+  IconGitBranch,
   IconInfoCircle,
   IconMessageReport,
   IconPencil,
@@ -74,6 +75,8 @@ import {
 import platform from '@/platform'
 import { router } from '@/router'
 import storage from '@/storage'
+import { branchChatFromMessage } from '@/stores/session/branch'
+import { editAndResend } from '@/stores/session/edit-resend'
 import { getLiveGenerationStartedAt } from '@/stores/session/session-live-generation'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
@@ -132,6 +135,7 @@ import MessageStatuses from './MessageLoading'
 import MessageQuoteBar from './MessageQuoteBar'
 import { saveAsKnowledgeFromMessage } from './save-as-knowledge'
 import TextSelectionToolbar from './TextSelectionToolbar'
+import { UserMessageEditor } from './UserMessageEditor'
 
 interface Props {
   id?: string
@@ -318,9 +322,33 @@ const _Message: FC<Props> = (props) => {
     removeMessage(sessionId, msg.id)
   }, [msg.id, sessionId])
 
+  // A question is edited in place and sent again (the old answer stays as a branch); an answer keeps the edit modal.
+  const [editing, setEditing] = useState(false)
   const onEditClick = useCallback(async () => {
+    if (msg.role === 'user') {
+      setEditing(true)
+      return
+    }
     await NiceModal.show('message-edit', { sessionId, msg: msg })
   }, [msg, sessionId])
+
+  const onEditSend = useCallback(
+    (text: string) => {
+      setEditing(false)
+      void editAndResend(sessionId, msg.id, text).catch((error: unknown) => {
+        console.error('Edit and resend failed', error)
+        toastActions.add(t("Couldn't send that. Try again."))
+      })
+    },
+    [sessionId, msg.id, t]
+  )
+
+  const onBranchFromHere = useCallback(() => {
+    void branchChatFromMessage(sessionId, msg.id).catch((error: unknown) => {
+      console.error('Branch failed', error)
+      toastActions.add(t("Couldn't save that. Try again."))
+    })
+  }, [sessionId, msg.id, t])
 
   const onSaveAsKnowledge = useCallback(() => saveAsKnowledgeFromMessage(msg, sessionId), [msg, sessionId])
 
@@ -571,6 +599,12 @@ const _Message: FC<Props> = (props) => {
         },
       msg.role === 'assistant' &&
         isComfyUIReady && { text: t('Send to Image Creator'), icon: IconPhoto, onClick: handleSendToImageCreator },
+      !msg.generating &&
+        (msg.role === 'user' || msg.role === 'assistant') && {
+          text: t('Branch from here'),
+          icon: IconGitBranch,
+          onClick: onBranchFromHere,
+        },
       { divider: true },
       msg.role === 'assistant' &&
         platform.formFactor === 'mobile' && { text: t('Report'), icon: IconMessageReport, onClick: onReport },
@@ -587,6 +621,7 @@ const _Message: FC<Props> = (props) => {
     onSaveAsKnowledge,
     isComfyUIReady,
     handleSendToImageCreator,
+    onBranchFromHere,
     onReport,
     deleteItem,
   ])
@@ -739,7 +774,14 @@ const _Message: FC<Props> = (props) => {
             <MessageQuoteBar quote={msg.quoteAttachment} />
           </div>
         ) : null}
-        <div className={cn('msg-bubble', isUser ? 'inline-block' : 'w-full')}>
+        {editing && isUser ? (
+          <UserMessageEditor
+            initialText={contentParts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n')}
+            onSend={onEditSend}
+            onCancel={() => setEditing(false)}
+          />
+        ) : null}
+        <div className={cn('msg-bubble', isUser ? 'inline-block' : 'w-full', editing && isUser && 'hidden')}>
           <div
             ref={messageContentRef}
             className={cn('msg-content', { 'msg-content-small': small })}
@@ -993,6 +1035,7 @@ const _Message: FC<Props> = (props) => {
 
         {/* actions — hover-only; last assistant reserves height so settle does not shove the thread */}
         {buttonGroup !== 'none' &&
+          !(editing && isUser) &&
           !(isAssistant && !msg.error && !hasVisibleAssistantReply(contentParts) && !msg.generating) && (
             <div className={clsx('msg-actions-slot', buttonGroup === 'always' && 'is-reserved')}>
               {settledReady && !msg.generating && (

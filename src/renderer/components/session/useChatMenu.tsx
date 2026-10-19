@@ -9,9 +9,10 @@ import { startNewChat } from '@/lib/startNewChat'
 import { getLogger } from '@/lib/utils'
 import { getEffectiveProjectId } from '@/projects/project-context'
 import { currentSessionIdAtom } from '@/stores/atoms'
-import { updateSession } from '@/stores/chatStore'
+import { getSession, updateSession } from '@/stores/chatStore'
+import { branchChatFromMessage } from '@/stores/session/branch'
 import { archiveChatWithUndo, deleteChatWithUndo, moveChatWithUndoOrToast } from '@/stores/session/chat-menu-actions'
-import { _copySession, switchCurrentSession } from '@/stores/sessionActions'
+import { switchCurrentSession } from '@/stores/sessionActions'
 import * as toastActions from '@/stores/toastActions'
 import type { ActionMenuItemProps } from '../ActionMenu'
 import { buildChatMenuItems } from './chatMenu'
@@ -52,14 +53,13 @@ export function useChatMenu(
         },
         onMoveToScope: () => setMoveOpen(true),
         onBranch: () => {
-          // Interim branch of the whole chat (no threads, no forks); Task 3 swaps in branchChatFromMessage.
-          void _copySession({
-            ...session,
-            name: t('{{name}} (branch)', { name: session.name }),
-            threads: [],
-            compactionPoints: undefined,
-          })
-            .then((copy) => switchCurrentSession(copy.id))
+          // Branch the whole chat: everything up to its latest message.
+          void getSession(sessionId)
+            .then((full) => {
+              const last = full?.messages.at(-1)
+              if (!last) return
+              return branchChatFromMessage(sessionId, last.id)
+            })
             .catch(fail('Branch failed'))
         },
         onExport: () => {

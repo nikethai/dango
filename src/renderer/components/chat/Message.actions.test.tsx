@@ -53,6 +53,9 @@ vi.mock('@/router', () => ({ router: { navigate: vi.fn() } }))
 vi.mock('@/platform', () => ({ default: { formFactor: 'desktop' } }))
 vi.mock('@/components/chat/AgentSpeakerHeader', () => ({ default: () => null }))
 vi.mock('./save-as-knowledge', () => ({ saveAsKnowledgeFromMessage: vi.fn() }))
+const editAndResend = vi.hoisted(() => vi.fn(() => Promise.resolve()))
+vi.mock('@/stores/session/edit-resend', () => ({ editAndResend }))
+vi.mock('@/stores/session/branch', () => ({ branchChatFromMessage: vi.fn(() => Promise.resolve('copy')) }))
 
 import Message from './Message'
 
@@ -100,5 +103,27 @@ describe('Message answer row', () => {
 
     act(() => fireEvent.click(screen.getByTestId('close-models')))
     expect(row().classList.contains('is-visible')).toBe(false)
+  })
+})
+
+describe('Message question edit', () => {
+  const question = { id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'Old question' }] } as MessageType
+
+  it('Edit opens the inline editor in place of the bubble; Send edits and resends', async () => {
+    render(
+      <MantineProvider>
+        <Message sessionId="s1" sessionType="chat" msg={question} />
+      </MantineProvider>
+    )
+    const edit = await screen.findByRole('button', { name: 'Edit' })
+    act(() => fireEvent.click(edit))
+    const field = screen.getByRole('textbox', { name: 'Edit message' }) as HTMLTextAreaElement
+    expect(field.value).toBe('Old question')
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
+
+    fireEvent.change(field, { target: { value: 'New question' } })
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'Send' })))
+    expect(editAndResend).toHaveBeenCalledWith('s1', 'u1', 'New question')
+    expect(screen.queryByRole('textbox', { name: 'Edit message' })).toBeNull()
   })
 })

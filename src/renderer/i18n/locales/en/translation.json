@@ -1738,5 +1738,8 @@
   "Good answer": "Good answer",
   "Bad answer": "Bad answer",
   "{{amount}} tokens_one": "{{amount}} token",
-  "{{amount}} tokens_other": "{{amount}} tokens"
+  "{{amount}} tokens_other": "{{amount}} tokens",
+  "Branch from here": "Branch from here",
+  "Edit message": "Edit message",
+  "Couldn't send that. Try again.": "Couldn't send that. Try again."
 }
