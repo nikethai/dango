@@ -10,6 +10,7 @@
 import * as defaults from '@shared/defaults'
 import type { Config, Language, Settings, ShortcutSetting } from '@shared/types'
 import { v4 as uuidv4 } from 'uuid'
+import type { TrayStatus } from '@/packages/menu-bar/tray-status'
 import { type ImageGenerationStorage, IndexedDBImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import type {
   Exporter,
@@ -132,6 +133,14 @@ export default class TestPlatform implements Platform {
   /** Recorded system notifications for tests */
   public systemNotifications: SystemNotificationPayload[] = []
   public systemNotificationPermission: SystemNotificationPermission = 'granted'
+  /** Recorded quick window heights (setQuickWindowHeight) for tests */
+  public quickWindowHeights: number[] = []
+  /** Recorded tray statuses (setTrayStatus) for tests */
+  public trayStatuses: TrayStatus[] = []
+  /** Number of hideQuickWindow calls for tests */
+  public quickHidden = 0
+  /** Paths passed to openInMain, for tests */
+  public openedInMain: string[] = []
   private systemNotificationClickHandlers = new Set<(payload: SystemNotificationClickPayload) => void>()
 
   constructor() {
@@ -406,6 +415,26 @@ export default class TestPlatform implements Platform {
 
   public getWindowLabel(): Promise<string> {
     return Promise.resolve('test')
+  }
+
+  public hideQuickWindow(): Promise<void> {
+    this.quickHidden += 1
+    return Promise.resolve()
+  }
+
+  public openInMain(path: string): Promise<void> {
+    this.openedInMain.push(path)
+    return Promise.resolve()
+  }
+
+  public setTrayStatus(status: TrayStatus): Promise<void> {
+    this.trayStatuses.push(status)
+    return Promise.resolve()
+  }
+
+  public setQuickWindowHeight(px: number): Promise<void> {
+    this.quickWindowHeights.push(px)
+    return Promise.resolve()
   }
 
   public async getSystemNotificationPermission(): Promise<SystemNotificationPermission> {

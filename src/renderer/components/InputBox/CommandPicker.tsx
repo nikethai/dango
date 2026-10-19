@@ -129,7 +129,9 @@ function CommandPicker({
           item.kind === 'system'
             ? item.command.id === 'compact'
               ? t('Summarize older messages to free context space')
-              : item.command.description
+              : item.command.id === 'rewrite'
+                ? t('Rewrite text: clearer, friendlier, shorter, formal or translated')
+                : item.command.description
             : item.command.description
         return (
           <Box

@@ -36,6 +36,7 @@ const fixtureSchema = z
   .object({
     id: z.string().regex(/^[a-z]+(?:-[a-z]+)+$/),
     style: WritingStyleSchema,
+    targetLanguage: z.string().optional(),
     tags: z.array(z.enum(coverageTags)).min(1),
     draft: z.string().min(1).max(MAX_WRITING_INPUT_CHARS),
     referenceRewrite: z.string().min(1).max(MAX_WRITING_OUTPUT_CHARS),
@@ -71,6 +72,7 @@ describe('synthetic writing evaluation corpus', () => {
     const request = WritingRequestSchema.parse({
       draft: fixture.draft,
       style: fixture.style,
+      ...(fixture.targetLanguage ? { targetLanguage: fixture.targetLanguage } : {}),
       model: { provider: 'synthetic', modelId: 'offline-fixture' },
     })
     const signal = new AbortController().signal

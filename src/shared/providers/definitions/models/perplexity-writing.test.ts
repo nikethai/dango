@@ -39,7 +39,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('Perplexity writing wire policy (real SDK, mocked HTTP)', () => {
   it.each(perplexityModels)('%s: serializes disable_search with only the editing policy and draft', async (modelId) => {
-    const request = { draft: 'Original draft', style: 'grammar' as const, model: { provider: 'perplexity', modelId } }
+    const request = { draft: 'Original draft', style: 'clearer' as const, model: { provider: 'perplexity', modelId } }
     const result = await rewriteDraft(model(modelId), request, { signal: new AbortController().signal })
 
     expect(result.text).toBe('Revised draft')
@@ -70,7 +70,7 @@ describe('Perplexity writing wire policy (real SDK, mocked HTTP)', () => {
     await expect(
       rewriteDraft(
         model(),
-        { draft: 'Original draft', style: 'grammar', model: { provider: 'perplexity', modelId: 'sonar' } },
+        { draft: 'Original draft', style: 'clearer', model: { provider: 'perplexity', modelId: 'sonar' } },
         { signal: new AbortController().signal }
       )
     ).rejects.toThrow()

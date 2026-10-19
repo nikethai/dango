@@ -9,6 +9,7 @@ import type {
   WorkspaceTrustCategory,
   WorkspaceTrustValue,
 } from '@shared/types/workspace'
+import type { TrayStatus } from '@/packages/menu-bar/tray-status'
 import type { ImageGenerationStorage } from '@/storage/ImageGenerationStorage'
 import type { KnowledgeBaseController } from './knowledge-base/interface'
 
@@ -194,8 +195,17 @@ export interface Platform extends Storage {
   setKeepInTray?(enabled: boolean): Promise<void>
   setQuickWindowAlwaysOnTop?(enabled: boolean): Promise<void>
   showQuickWindow?(): Promise<void>
+  /** Hide the quick window (desktop shell only; absent on web/mobile). */
+  hideQuickWindow?(): Promise<void>
+  /** Resize the quick window to this height in logical px; the shell clamps to 112–640 and keeps the 620 px width. */
+  setQuickWindowHeight?(px: number): Promise<void>
   showMainWindow?(): Promise<void>
   openSessionInMain?(sessionId: string): Promise<void>
+  /**
+   * Hide the quick window, show the main window and route it to `path` (an app path starting with `/`, e.g.
+   * `/settings/provider`). Desktop shell only; absent on web/mobile, where callers navigate their own window.
+   */
+  openInMain?(path: string): Promise<void>
   captureScreenshotRegion?(): Promise<ScreenshotImagePayload | null>
   readClipboardImage?(): Promise<ScreenshotImagePayload | null>
   notifyQuickRendererReady?(): Promise<void>
@@ -207,6 +217,10 @@ export interface Platform extends Storage {
   onClipboardCaptured?(callback: (payload: ClipboardCapturePayload) => void): () => void
   onScreenshotError?(callback: (message: string) => void): () => void
   onHiddenToTray?(callback: () => void): () => void
+  /** Push the menu bar / tray status to the native shell (desktop shell only; absent elsewhere). */
+  setTrayStatus?(status: TrayStatus): Promise<void>
+  /** The tray's Pause / Resume row was clicked (`shell:tray-pause-toggle`). */
+  onTrayPauseToggle?(callback: () => void): () => void
 
   // Terminal command execution (Desktop only)
   executeCommand?(

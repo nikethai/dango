@@ -16,6 +16,7 @@ import { SettingsPageHeader } from '@/components/settings/SettingsPageHeader'
 import { SettingsPrefRow } from '@/components/settings/SettingsPrefRow'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { languageNameMap, languages } from '@/i18n/locales'
+import { DEFAULT_NOTIFICATIONS_CONFIG } from '@/packages/notifications/types'
 import platform, { platformCapabilities } from '@/platform'
 import storage, { StorageKey } from '@/storage'
 import { recoverSessionList } from '@/stores/chatStore'
@@ -166,7 +167,7 @@ export function RouteComponent() {
       <SettingsSection
         title={t('System Notifications')}
         description={t(
-          'Local OS alerts when a reply finishes while the app is in the background. Never includes message content. Not remote push.'
+          'Alerts on this device when something needs you or a long run finishes while Dango is in the background. Never includes message content.'
         )}
       >
         <SystemNotificationsSection />
@@ -256,9 +257,8 @@ function SystemNotificationsSection() {
   const setSettings = useSettingsStore((state) => state.setSettings)
   const notifications = useSettingsStore((state) => state.extension.notifications)
   const enabled = notifications?.enabled === true
+  const notifyOnNeedsYou = notifications?.notifyOnNeedsYou !== false
   const notifyOnGenerationComplete = notifications?.notifyOnGenerationComplete !== false
-  const notifyOnRoomComplete = notifications?.notifyOnRoomComplete !== false
-  const notifyOnUpdateAvailable = notifications?.notifyOnUpdateAvailable !== false
   const [permission, setPermission] = useState<string>('default')
   const [permissionBusy, setPermissionBusy] = useState(false)
 
@@ -271,17 +271,11 @@ function SystemNotificationsSection() {
 
   const patchNotifications = (patch: {
     enabled?: boolean
+    notifyOnNeedsYou?: boolean
     notifyOnGenerationComplete?: boolean
-    notifyOnRoomComplete?: boolean
-    notifyOnUpdateAvailable?: boolean
   }) => {
     setSettings((state) => {
-      const current = state.extension.notifications ?? {
-        enabled: false,
-        notifyOnGenerationComplete: true,
-        notifyOnRoomComplete: true,
-        notifyOnUpdateAvailable: true,
-      }
+      const current = state.extension.notifications ?? DEFAULT_NOTIFICATIONS_CONFIG
       state.extension.notifications = { ...current, ...patch }
     })
   }
@@ -321,7 +315,9 @@ function SystemNotificationsSection() {
     <SettingsCard divided>
       <SettingsPrefRow
         title={t('Enable system notifications')}
-        description={t('Show an OS notification when generation finishes while Dango is unfocused.')}
+        description={t(
+          'Only for things that need you and long runs that finish while Dango is in the background. At most one every 10 minutes.'
+        )}
         control={
           <Switch
             checked={enabled}
@@ -346,32 +342,22 @@ function SystemNotificationsSection() {
         }
       />
       <SettingsPrefRow
-        title={t('When reply is ready')}
+        title={t('When something needs you')}
+        control={
+          <Switch
+            checked={notifyOnNeedsYou}
+            disabled={!enabled}
+            onChange={(e) => patchNotifications({ notifyOnNeedsYou: e.currentTarget.checked })}
+          />
+        }
+      />
+      <SettingsPrefRow
+        title={t('When a long run finishes in the background')}
         control={
           <Switch
             checked={notifyOnGenerationComplete}
             disabled={!enabled}
             onChange={(e) => patchNotifications({ notifyOnGenerationComplete: e.currentTarget.checked })}
-          />
-        }
-      />
-      <SettingsPrefRow
-        title={t('When team room finishes')}
-        control={
-          <Switch
-            checked={notifyOnRoomComplete}
-            disabled={!enabled}
-            onChange={(e) => patchNotifications({ notifyOnRoomComplete: e.currentTarget.checked })}
-          />
-        }
-      />
-      <SettingsPrefRow
-        title={t('When an update is ready')}
-        control={
-          <Switch
-            checked={notifyOnUpdateAvailable}
-            disabled={!enabled}
-            onChange={(e) => patchNotifications({ notifyOnUpdateAvailable: e.currentTarget.checked })}
           />
         }
       />

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+  <!-- Menu bar template: Mascot BODY dome and −7° eyes (Mascot.tsx, 64 → 36 viewBox). Black on transparent only. -->
+  <path d="M2 21.67C2 10.33 9.33 3.67 18 3.67S34 10.33 34 21.67C34 29 28 32.33 18 32.33S2 29 2 21.67Z" fill="none" stroke="#000" stroke-width="3" stroke-linejoin="round"/>
+  <ellipse cx="14" cy="20.33" rx="2" ry="3.07" transform="rotate(-7 14 20.33)" fill="#000"/>
+  <ellipse cx="22.67" cy="19.67" rx="2" ry="3.07" transform="rotate(-7 22.67 19.67)" fill="#000"/>
+</svg>

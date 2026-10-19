@@ -11,6 +11,7 @@
   "scripts": {
     "backlog:browser": "node ./scripts/backlog-browser.mjs",
     "whats-changed": "tsx scripts/whats-changed.ts",
+    "tray-icons:render": "node scripts/render-tray-icons.mjs",
     "build": "pnpm tauri:build",
     "build:renderer": "vite build --config vite.renderer.config.mts",
     "build:web": "cross-env CHATBOX_BUILD_PLATFORM=web vite build --config vite.renderer.config.mts && pnpm run delete-sourcemaps",
@@ -249,6 +250,7 @@
     "rollup-plugin-visualizer": "^6.0.5",
     "sass": "^1.62.1",
     "sass-loader": "^13.3.1",
+    "sharp": "0.32.6",
     "shell-env": "^4.0.1",
     "shell-quote": "^1.8.2",
     "sonner": "^2.0.3",

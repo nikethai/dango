@@ -799,7 +799,7 @@ fn default_settings() -> Value {
         "servers": []
       },
       "shortcuts": {
-        "quickToggle": "Alt+`"
+        "quickToggle": "CommandOrControl+Shift+Space"
       }
     })
 }

@@ -20,7 +20,7 @@ import { requestWritingRewrite } from './runtime'
 
 const request: WritingRequest = {
   draft: 'PRIVATE_DRAFT_SENTINEL',
-  style: 'grammar',
+  style: 'clearer',
   model: { provider: 'gemini', modelId: 'gemini-test' },
 }
 

@@ -19,6 +19,7 @@ function formatKey(key: string) {
   const COMMON_KEY_MAPS: Record<string, string> = {
     ctrl: 'Ctrl',
     command: 'Ctrl',
+    commandorcontrol: 'Ctrl',
     mod: 'Ctrl',
     option: 'Alt',
     alt: 'Alt',
@@ -37,6 +38,8 @@ function formatKey(key: string) {
     meta: '⌘',
     mod: '⌘',
     command: '⌘',
+    commandorcontrol: '⌘',
+    shift: '⇧',
     option: '⌥',
     alt: '⌥',
     tab: '⇥',

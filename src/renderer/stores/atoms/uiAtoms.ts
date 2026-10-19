@@ -33,6 +33,17 @@ export const inputBoxPreConstructedMessageFamily = atomFamily((_sessionId: strin
 /** One-shot text prefill requested by the desktop clipboard shortcut. */
 export const inputBoxPrefillTextFamily = atomFamily((_sessionId: string) => atom<string | null>(null))
 
+/** Most picture keys a quick-window capture keeps (oldest dropped first). */
+export const QUICK_CAPTURE_MAX_PICTURES = 8
+
+export type QuickPendingCapture = { text: string | null; pictureKeys: string[] }
+
+/**
+ * Clipboard text / screenshots captured by the desktop shell while the quick window is the target.
+ * The quick panel consumes and clears it; the main window's composer atoms are never touched.
+ */
+export const quickPendingCaptureAtom = atom<QuickPendingCapture>({ text: null, pictureKeys: [] })
+
 /**
  * Composer → statusline bridge for token menu (compress / auto-compaction / breakdown).
  * Written by InputBox; read by SessionStatusBar so telemetry lives on the statusline only.

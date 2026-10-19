@@ -12,7 +12,7 @@ import { useWritingRewrite, WRITING_TIMEOUT_MS } from './useWritingRewrite'
 
 const request: WritingRequest = {
   draft: 'Original draft',
-  style: 'grammar',
+  style: 'clearer',
   model: { provider: 'gemini', modelId: 'test' },
 }
 

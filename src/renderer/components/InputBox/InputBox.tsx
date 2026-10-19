@@ -53,6 +53,7 @@ import {
   extractCommandNamesFromText,
   getActiveCommandSlashQuery,
   matchSystemSlashCommand,
+  parseRewriteCommand,
   stripCommandSlashTokens,
 } from '@/packages/commands'
 import {
@@ -1454,12 +1455,16 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         if (item.kind === 'system') {
           if (item.command.id === 'compact') {
             void runManualCompact()
+          } else if (item.command.id === 'rewrite') {
+            setMessageInput('/rewrite ')
+            dom.focusMessageInput()
+            setTimeout(() => dom.setMessageInputCursorToEnd(), 0)
           }
           return
         }
         handleCommandSelect(item.command)
       },
-      [handleCommandSelect, runManualCompact]
+      [handleCommandSelect, runManualCompact, setMessageInput]
     )
 
     const handlePresetSelect = useCallback(
@@ -1505,6 +1510,18 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             message: hardStopMessage,
           })
         )
+        return
+      }
+
+      // /rewrite opens the rewrite sheet — not a chat message
+      const rewriteCommand = parseRewriteCommand(messageInput)
+      if (rewriteCommand) {
+        void NiceModal.show('rewrite', {
+          text: rewriteCommand.text,
+          option: rewriteCommand.option,
+          model,
+          onUse: (text: string) => setMessageInput(text),
+        })
         return
       }
 
@@ -3113,12 +3130,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 <ComposerToolsMenu
                   isOpenClawModel={isOpenClawModel}
                   sessionType={sessionType}
-                  onImproveWriting={() => {
-                    void NiceModal.show('writing-assistant', {
-                      initialDraft: messageInput,
-                      initialModel: model,
-                    })
-                  }}
                   webBrowsingMode={webBrowsingMode}
                   webSearchConfigured={webSearchConfigured}
                   onWebBrowsingChange={(enabled) => {

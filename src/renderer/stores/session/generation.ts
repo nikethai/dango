@@ -648,6 +648,8 @@ export async function generate(
     resumePlanRun?: boolean
   }
 ) {
+  // Long-run notifications time the run itself (send, regenerate, plan run, resume), not the message's age.
+  const runStartedAt = Date.now()
   // Process the send-queue unless multi-agent intermediate turns opt out, or plan mode
   // is waiting for user approval. Use finally so early exits still drain.
   let shouldProcessQueuedMessages = !options?.skipQueuedMessages
@@ -1594,10 +1596,10 @@ export async function generate(
               const { notifySystemEvent } = await import('@/packages/notifications')
               const sessionName = (await chatStore.getSession(sessionId))?.name || session.name || undefined
               void notifySystemEvent({
-                kind: 'generation_complete',
+                kind: 'long_run_done',
                 sessionId,
-                messageId: targetMsg.id,
                 sessionName,
+                startedAt: runStartedAt,
               })
             } catch {
               // non-fatal
@@ -1711,10 +1713,10 @@ export async function generate(
         try {
           const { notifySystemEvent } = await import('@/packages/notifications')
           void notifySystemEvent({
-            kind: 'generation_complete',
+            kind: 'long_run_done',
             sessionId,
-            messageId: targetMsg.id,
             sessionName: session.name || undefined,
+            startedAt: runStartedAt,
           })
         } catch {
           // non-fatal

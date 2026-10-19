@@ -64,17 +64,40 @@ export async function attachScreenshotToComposer(payload: ScreenshotImagePayload
   })
 }
 
-async function applyClipboardCaptureToComposer(payload: ClipboardCapturePayload): Promise<void> {
-  const sessionId = await resolveTargetSessionId()
-  const store = getDefaultStore()
-  if (payload.type === 'text') {
-    if (payload.text) {
-      store.set(atoms.inputBoxPrefillTextFamily(sessionId), payload.text)
-    }
+/** Quick window: a screenshot goes to the quick panel's pending atom, never to a session composer. */
+async function addPictureToQuickPanel(payload: ScreenshotImagePayload): Promise<void> {
+  const key = await base64PayloadToStorageKey(payload)
+  getDefaultStore().set(atoms.quickPendingCaptureAtom, (prev) => ({
+    ...prev,
+    pictureKeys: [...prev.pictureKeys, key].slice(-atoms.QUICK_CAPTURE_MAX_PICTURES),
+  }))
+}
+
+/** Quick window: clipboard text or image goes to the quick panel's pending atom. */
+async function addCaptureToQuickPanel(payload: ClipboardCapturePayload): Promise<void> {
+  if (payload.type === 'image') {
+    await addPictureToQuickPanel(payload)
     return
   }
-  await attachScreenshotToComposer(payload)
-  document.getElementById('message-input')?.focus()
+  if (payload.text) {
+    const text = payload.text
+    getDefaultStore().set(atoms.quickPendingCaptureAtom, (prev) => ({ ...prev, text }))
+  }
+}
+
+/**
+ * Paths the shell may send the main window to: Review, the quick route, a chat, or Settings (the quick window's
+ * "Sign in to a model" / "Choose a model" open `/settings/provider` there).
+ */
+export function isShellNavigatePath(path: unknown): path is string {
+  if (typeof path !== 'string') return false
+  return (
+    path === '/' ||
+    path === '/quick' ||
+    path.startsWith('/session/') ||
+    path === '/settings' ||
+    path.startsWith('/settings/')
+  )
 }
 
 /**
@@ -103,10 +126,19 @@ export function useDesktopShell() {
       void router.navigate({ to: path })
     })
 
-    // Also honor generic navigate-to for shell
-    const unsubPlatformNav = platform.onNavigate?.((path) => {
-      if (path === '/quick' || path.startsWith('/session/') || path === '/') {
-        void router.navigate({ to: path })
+    // Also honor generic navigate-to for shell (main window only: the quick window follows shell:navigate)
+    const unsubPlatformNav = platform.onNavigate?.(async (path) => {
+      if (!isShellNavigatePath(path)) {
+        return
+      }
+      try {
+        const label = await platform.getWindowLabel?.()
+        if (label === 'quick') {
+          return
+        }
+        await router.navigate({ to: path })
+      } catch (err) {
+        console.error('[shell] navigate failed', err)
       }
     })
 
@@ -118,22 +150,19 @@ export function useDesktopShell() {
       }
     })()
 
+    // Every screenshot the shell emits (the screenshot hotkey, the pending replay) is for the quick window. Tauri's
+    // global listen() hears events sent to any window, so main ignores them: it stays where it is (Review) and no
+    // chat composer gets the picture.
     const unsubShot = platform.onScreenshotCaptured?.(async (payload) => {
       try {
         const label = await platform.getWindowLabel?.()
-        if (label === 'quick' || router.state.location.pathname === '/quick') {
-          if (router.state.location.pathname !== '/quick') {
-            await router.navigate({ to: '/quick' as never })
-          }
-        } else {
-          const sid = await resolveTargetSessionId()
-          if (sid !== 'new') {
-            await router.navigate({ to: `/session/${sid}` })
-          } else {
-            await router.navigate({ to: '/new' })
-          }
+        if (label !== 'quick') {
+          return
         }
-        await attachScreenshotToComposer(payload)
+        if (router.state.location.pathname !== '/quick') {
+          await router.navigate({ to: '/quick' as never })
+        }
+        await addPictureToQuickPanel(payload)
         toastActions.add(t('Screenshot attached to chat'))
       } catch (err) {
         console.error('[shell] attach screenshot failed', err)
@@ -150,7 +179,7 @@ export function useDesktopShell() {
         if (router.state.location.pathname !== '/quick') {
           await router.navigate({ to: '/quick' as never })
         }
-        await applyClipboardCaptureToComposer(payload)
+        await addCaptureToQuickPanel(payload)
         toastActions.add(t('Clipboard content added to chat'))
       } catch (err) {
         console.error('[shell] apply clipboard content failed', err)

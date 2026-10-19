@@ -141,11 +141,15 @@ export async function showWebOrCapacitorNotification(
   if (Notification.permission !== 'granted') {
     return
   }
-  const n = new Notification(payload.title, {
+  // One tag: a new notification replaces the previous one instead of stacking; renotify alerts again on replace.
+  // `renotify` is missing from TypeScript's DOM lib but supported by Chromium browsers (others ignore it).
+  const options: NotificationOptions & { renotify?: boolean } = {
     body: payload.body,
     data: payload.data,
-    tag: payload.data?.sessionId ? `dango-${payload.data.kind ?? 'event'}-${payload.data.sessionId}` : undefined,
-  })
+    tag: 'dango',
+    renotify: true,
+  }
+  const n = new Notification(payload.title, options)
   n.onclick = () => {
     window.focus()
     const data = (n.data ?? payload.data) as SystemNotificationClickPayload | undefined

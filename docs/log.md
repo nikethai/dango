@@ -2,6 +2,10 @@
 
 Newest first. Add a line when you create, accept, supersede or move a decision, spec or research note.
 
+## 2026-10-19
+* **Implementation**: [slice 08 Quick Chat and menu bar](specs/2026-10-17-slice-08-quick-chat-menu-bar.md) built on `feat/redesign-08-quick-chat-menu-bar`: a 620 px frameless Quick Chat that creates its chat on the first Enter, keeps streaming after Esc (Stop ends it), reopens within 3 minutes and continues in the main window; Rewrite (Clearer, Friendlier, Shorter, Formal, Translate) replaces the Writing assistant, in Quick Chat and as `/rewrite`; a menu bar mascot with idle, needs-you and paused states and the MB1 dropdown; notifications only for Needs you and long runs, at most one every 10 minutes, grouped. Rust has been reviewed but not compiled here, and the desktop manual check has not been run; both are in the PR.
+* **Update**: [roadmap](specs/2026-10-17-redesign-roadmap.md) contract register — slice 8 adds `Platform.openInMain?(path)` (Rust `shell:openInMain`): the quick window opens Settings and its notification clicks in the main window, per the maintainer's ruling that anything to configure opens the big window.
+
 ## 2026-10-18
 * **Implementation**: [slice 06a chat thread](specs/2026-10-17-slice-06a-chat-thread.md) built on `feat/redesign-06a-chat-thread` — thinking live line with Stop, tool calls fold to one line, artifact inspector download and 380–460 px width. The plan card (versions, progress, Continue, a Change entry in Review) renders when a chat's plan mode is set; no UI control sets plan mode yet, so the plan flow is built and unit-tested but not reachable from the app, and its live states are unverified with a streaming model. A revised plan is stored as `rejected` + `revised: true` so older builds still read synced sessions.
 * **Update**: [roadmap](specs/2026-10-17-redesign-roadmap.md) contract register — `ReviewEntry` gains optional `chatId?` (the chat a Change entry came from) and `registerReviewOpener` an optional `canOpen` predicate; slice 6a files one Change per finished plan with staged edits, and its opener opens that chat.
