@@ -130,9 +130,9 @@ import FollowUpSuggestions from '../search/FollowUpSuggestions'
 import { SourceCardList } from '../search/SourceCardList'
 import { MessageActionRow } from './MessageActionRow'
 import { MessageAttachmentGrid } from './MessageAttachmentGrid'
-import MessageErrTips from './MessageErrTips'
 import MessageStatuses from './MessageLoading'
 import MessageQuoteBar from './MessageQuoteBar'
+import { ModelErrorNotice } from './ModelErrorNotice'
 import { saveAsKnowledgeFromMessage } from './save-as-knowledge'
 import TextSelectionToolbar from './TextSelectionToolbar'
 import { UserMessageEditor } from './UserMessageEditor'
@@ -983,7 +983,7 @@ const _Message: FC<Props> = (props) => {
               />
             </Flex>
           )}
-          <MessageErrTips msg={msg} />
+          <ModelErrorNotice msg={msg} sessionId={sessionId} />
           {needCollapse && !isCollapsed && CollapseButton}
           {msg.citations?.length ? <SourceCardList citations={msg.citations} /> : null}
           {msg.role === 'assistant' && !msg.generating ? (

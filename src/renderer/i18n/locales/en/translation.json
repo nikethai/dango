@@ -1741,5 +1741,18 @@
   "{{amount}} tokens_other": "{{amount}} tokens",
   "Branch from here": "Branch from here",
   "Edit message": "Edit message",
-  "Couldn't send that. Try again.": "Couldn't send that. Try again."
+  "Couldn't send that. Try again.": "Couldn't send that. Try again.",
+  "Your {{provider}} key was rejected.": "Your {{provider}} key was rejected.",
+  "Update key": "Update key",
+  "Your {{provider}} account is out of credit.": "Your {{provider}} account is out of credit.",
+  "Add credit": "Add credit",
+  "This chat is too long for {{model}}.": "This chat is too long for {{model}}.",
+  "Start a new chat with a summary": "Start a new chat with a summary",
+  "Couldn't reach {{host}}.": "Couldn't reach {{host}}.",
+  "{{provider}} returned an error.": "{{provider}} returned an error.",
+  "Show details": "Show details",
+  "Hide details": "Hide details",
+  "AI provider": "AI provider",
+  "{{name}} (continued)": "{{name}} (continued)",
+  "Couldn't summarise this chat. Try again.": "Couldn't summarise this chat. Try again."
 }

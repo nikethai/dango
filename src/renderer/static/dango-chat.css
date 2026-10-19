@@ -116,3 +116,12 @@ button.dg-tool {
   color: var(--dango-muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* Model error under an answer (06b ER1/ER2/ER5/CH5): the sentence, then the fix as the button, then details. */
+.dg-model-error__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dango-space-2);
+  margin-top: var(--dango-space-2);
+}

@@ -603,6 +603,18 @@ describe('redo with another model', () => {
     // A retry of the failed redo keeps the picked model.
     expect(failed.saved?.errorExtra?.modelOverride).toEqual(modelOverride)
   })
+
+  test('a failed call keeps its HTTP status and Retry-After on the message', async () => {
+    const { ApiError } = await import('../../shared/models/errors')
+    const failed = await redo(() =>
+      Promise.reject(new ApiError('Error from Claude', '{"error":"rate"}', { status: 429, retryAfterMs: 7_000 }))
+    )
+    expect(failed.saved?.errorExtra).toMatchObject({
+      status: 429,
+      retryAfterMs: 7_000,
+      responseBody: '{"error":"rate"}',
+    })
+  })
 })
 
 describe('plan lifecycle actions', () => {

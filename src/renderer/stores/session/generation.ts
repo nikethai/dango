@@ -502,7 +502,7 @@ async function getReadOnlyToolsForPlanning(
  * Run overflow handling and return truncateTokenLimit if applicable.
  * Used by regenerate flows to apply the same truncation as send-message.
  */
-async function getOverflowTruncateLimit(sessionId: string): Promise<number | undefined> {
+export async function getOverflowTruncateLimit(sessionId: string): Promise<number | undefined> {
   const session = await chatStore.getSession(sessionId)
   if (!session || (session.type !== 'chat' && session.type !== undefined)) {
     return undefined
@@ -1758,6 +1758,8 @@ export async function generate(
     }
     const ocrError = error instanceof OCRError ? error : undefined
     const causeError = ocrError?.cause
+    // HTTP status and Retry-After of the failed call: they sort the error by its fix (bad key, credit, rate limit).
+    const apiError = error instanceof ApiError ? error : causeError instanceof ApiError ? causeError : undefined
     clearGenerationCancel(sessionId, targetMsg.id)
     clearGenerationCancelled(sessionId, targetMsg.id)
     clearSessionGenerationLive(sessionId, targetMsg.id)
@@ -1777,12 +1779,9 @@ export async function generate(
         aiProvider: ocrError ? ocrError.ocrProvider : effectiveSettings.provider,
         host:
           error instanceof NetworkError ? error.host : causeError instanceof NetworkError ? causeError.host : undefined,
-        responseBody:
-          error instanceof ApiError
-            ? error.responseBody
-            : causeError instanceof ApiError
-              ? causeError.responseBody
-              : undefined,
+        responseBody: apiError?.responseBody,
+        ...(apiError?.status !== undefined ? { status: apiError.status } : {}),
+        ...(apiError?.retryAfterMs !== undefined ? { retryAfterMs: apiError.retryAfterMs } : {}),
         // A retry of a failed Redo ▾ answers with the same picked model.
         ...(modelOverride ? { modelOverride } : {}),
       },
@@ -1800,12 +1799,7 @@ export async function generate(
           providerId: pid,
           modelId: effectiveSettings.modelId,
           message: error.message,
-          responseBody:
-            error instanceof ApiError
-              ? error.responseBody
-              : causeError instanceof ApiError
-                ? causeError.responseBody
-                : undefined,
+          responseBody: apiError?.responseBody,
           errorCode,
         })
       }
