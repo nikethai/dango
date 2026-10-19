@@ -184,6 +184,8 @@ describe('QuickChatPanel', () => {
     render(<QuickChatPanel {...p} />)
     const range = document.createRange()
     range.selectNodeContents(screen.getByText('Keyboard text'))
+    // jsdom puts a range in the document for the focused input; a browser keeps it inside the text control.
+    window.getSelection()?.removeAllRanges()
     window.getSelection()?.addRange(range)
     const rewrite = screen.getByRole('button', { name: 'Rewrite' })
     fireEvent.keyDown(rewrite, { key: 'ArrowDown' })
@@ -444,6 +446,80 @@ describe('QuickChatPanel', () => {
       expect(onEsc).not.toHaveBeenCalled()
     })
   }
+
+  it('focuses the input on first render and on every show', () => {
+    const p = props()
+    const { rerender } = render(<QuickChatPanel {...p} focusKey={0} />)
+    const input = screen.getByRole('textbox', { name: 'Ask anything' })
+    expect(document.activeElement).toBe(input)
+    const rewrite = screen.getByRole('button', { name: 'Rewrite' })
+    rewrite.focus()
+    rerender(<QuickChatPanel {...p} focusKey={1} />)
+    expect(document.activeElement).toBe(input)
+  })
+
+  it('focuses the input of an answered view on show', () => {
+    const p = props({ view: 'answered', answer: answer('Done', { id: 'a9' }), askedQuestion: 'Q' })
+    const { rerender } = render(<QuickChatPanel {...p} focusKey={0} />)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    rerender(<QuickChatPanel {...p} focusKey={1} />)
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Ask anything' }))
+  })
+
+  it('a show never takes focus from an open rewrite view', () => {
+    const p = props({ view: 'rewrite', rewrite: { option: null, text: 'draft' } })
+    const { rerender } = render(<QuickChatPanel {...p} focusKey={0} />)
+    const rewriteText = screen.getByRole('textbox', { name: 'Text to rewrite' })
+    rewriteText.focus()
+    rerender(<QuickChatPanel {...p} focusKey={1} />)
+    expect(document.activeElement).toBe(rewriteText)
+  })
+
+  it('Stop on the live thinking line stops the answer', () => {
+    const onStop = vi.fn()
+    render(
+      <QuickChatPanel
+        {...props({ view: 'answered', generating: true, answer: answer(''), askedQuestion: 'Why?', onStop })}
+      />
+    )
+    const stops = screen.getAllByRole('button', { name: 'Stop' })
+    expect(stops).toHaveLength(1)
+    fireEvent.click(stops[0])
+    expect(onStop).toHaveBeenCalledTimes(1)
+  })
+
+  it('Stop stays while the answer streams and goes when it is done', () => {
+    const onStop = vi.fn()
+    const p = props({ view: 'answered', generating: true, answer: answer('Partial', { id: 'a5' }), onStop })
+    const { rerender, container } = render(<QuickChatPanel {...p} />)
+    expect(container.querySelector('.dg-think__title')).toBeNull()
+    const stops = screen.getAllByRole('button', { name: 'Stop' })
+    expect(stops).toHaveLength(1)
+    fireEvent.click(stops[0])
+    expect(onStop).toHaveBeenCalledTimes(1)
+    rerender(<QuickChatPanel {...p} generating={false} answer={answer('Partial, done.', { id: 'a5' })} />)
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+  })
+
+  it('the foot Esc is a Close button that does what Esc does', () => {
+    const p = props()
+    const { container } = render(<QuickChatPanel {...p} />)
+    const foot = container.querySelector('.dg-qc__foot') as HTMLElement
+    const close = within(foot).getByRole('button', { name: 'Close' })
+    expect(within(close).getByText('Esc').className).toContain('dg-kbd')
+    fireEvent.click(close)
+    expect(p.onEsc).toHaveBeenCalledTimes(1)
+    expect(p.onRewriteBack).not.toHaveBeenCalled()
+  })
+
+  it('announces without button text or hidden decorations', () => {
+    const p = props({ view: 'answered', generating: true, answer: answer('', { id: 'a6' }), question: 'q' })
+    const { rerender, container } = render(<QuickChatPanel {...p} />)
+    const html =
+      '<p>Run this</p><div><button>Copy</button><pre><code>npm test</code></pre></div><p><span aria-hidden="true">#</span>Done</p>'
+    act(() => rerender(<QuickChatPanel {...p} generating={false} answer={answer(html, { id: 'a6' })} />))
+    expect(container.querySelector('[data-quick-answer-live]')?.textContent).toBe('Run this\nnpm test\nDone')
+  })
 
   it('Esc in the rewrite view outside the RewritePanel goes back, not away', () => {
     const p = props({ view: 'rewrite', rewrite: { option: null, text: 'draft' } })

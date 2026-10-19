@@ -14,6 +14,8 @@ const h = vi.hoisted(() => ({
   scopes: [] as { id: string; name: string }[],
   caps: { supportsDesktopOnlySettings: true },
   shown: undefined as undefined | (() => void),
+  rehydrateSettings: (() => Promise.resolve()) as () => Promise<void>,
+  reloadScopes: (() => Promise.resolve()) as () => Promise<void>,
   platform: null as null | {
     quickHidden: number
     quickWindowHeights: number[]
@@ -53,10 +55,14 @@ vi.mock('@/stores/sessionHelpers', () => ({
   getAllMessageList: (session: Session) => session.messages,
 }))
 vi.mock('@/stores/settingsStore', () => ({
+  settingsStore: { persist: { rehydrate: () => h.rehydrateSettings() } },
   useSettingsStore: (select: (s: Record<string, unknown>) => unknown) => select({}),
 }))
 vi.mock('@/hooks/useProviders', () => ({ useProviders: () => ({ providers: h.providers }) }))
-vi.mock('@/hooks/useScopes', () => ({ useScopes: () => ({ scopes: h.scopes }) }))
+vi.mock('@/hooks/useScopes', () => ({
+  useScopes: () => ({ scopes: h.scopes }),
+  reloadScopes: () => h.reloadScopes(),
+}))
 vi.mock('@/router', () => ({ router: { navigate: vi.fn() } }))
 vi.mock('@/modals/Settings', () => ({ navigateToSettings: vi.fn() }))
 
@@ -111,6 +117,8 @@ beforeEach(() => {
     delete (h.platform as { openInMain?: unknown }).openInMain
   }
   h.caps.supportsDesktopOnlySettings = true
+  h.rehydrateSettings = vi.fn(() => Promise.resolve())
+  h.reloadScopes = vi.fn(() => Promise.resolve())
   setOnline(true)
   localStorage.clear()
   lastUsedModelStore.getState().setChatModel('openai', 'gpt-4o')
@@ -407,5 +415,65 @@ describe('useQuickChat', () => {
     })
     expect(result.current.view).toBe('answered')
     expect(result.current.rewrite).toBeNull()
+  })
+
+  it('a show focuses the input again, after the panel state is settled', async () => {
+    const { result } = await renderQuick()
+    const before = result.current.focusKey
+    await act(async () => {
+      h.shown?.()
+      await flush()
+    })
+    expect(result.current.focusKey).not.toBe(before)
+  })
+
+  it('a show re-reads settings, the last model and scopes changed in the main window', async () => {
+    h.providers = []
+    const { result } = await renderQuick()
+    expect(result.current.view).toBe('no-model')
+    const lastModel = vi.spyOn(lastUsedModelStore.persist, 'rehydrate')
+    // The user configured a provider in main; the shared store now has it.
+    h.rehydrateSettings = vi.fn(() => {
+      h.providers = [openai]
+      return Promise.resolve()
+    })
+    await act(async () => {
+      h.shown?.()
+      await flush()
+    })
+    expect(h.rehydrateSettings).toHaveBeenCalledTimes(1)
+    expect(lastModel).toHaveBeenCalledTimes(1)
+    expect(h.reloadScopes).toHaveBeenCalledTimes(1)
+    expect(result.current.view).toBe('empty')
+    lastModel.mockRestore()
+  })
+
+  it('a failing re-read still shows the panel', async () => {
+    h.rehydrateSettings = vi.fn(() => Promise.reject(new Error('disk')))
+    const { result } = await renderQuick()
+    const before = result.current.focusKey
+    await act(async () => {
+      h.shown?.()
+      await flush()
+    })
+    expect(result.current.view).toBe('empty')
+    expect(result.current.focusKey).not.toBe(before)
+  })
+
+  it('Stop ends the quick chat answer in this window', async () => {
+    const { result } = await renderQuick()
+    await ask(result, 'Hello')
+    const streaming = message('assistant', 'Part', { generating: true })
+    h.sessions.set('chat-1', {
+      ...(h.sessions.get('chat-1') as Session),
+      messages: [message('user', 'Hello'), streaming],
+    })
+    await act(async () => {
+      h.shown?.()
+      await flush()
+    })
+    expect(result.current.generating).toBe(true)
+    act(() => result.current.onStop?.())
+    expect(stopSessionGeneration).toHaveBeenCalledWith('chat-1', expect.objectContaining({ id: streaming.id }))
   })
 })

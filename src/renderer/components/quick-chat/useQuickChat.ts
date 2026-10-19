@@ -6,7 +6,7 @@ import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import { useProviders } from '@/hooks/useProviders'
-import { useScopes } from '@/hooks/useScopes'
+import { reloadScopes, useScopes } from '@/hooks/useScopes'
 import { navigateToSettings } from '@/modals/Settings'
 import platform, { platformCapabilities } from '@/platform'
 import { router } from '@/router'
@@ -19,9 +19,10 @@ import {
   useSession,
 } from '@/stores/chatStore'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
+import { stopSessionGeneration } from '@/stores/session/stop-generation'
 import { regenerateInNewFork, submitNewUserMessage } from '@/stores/sessionActions'
 import { getAllMessageList, initEmptyChatSession } from '@/stores/sessionHelpers'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { getModelDisplayName } from '@/utils/modelDisplayName'
 import { getModelReadiness, type SelectedModel } from '@/utils/modelReadiness'
 import { readQuickSessionSnapshot, resolveQuickSessionId, writeQuickSessionSnapshot } from '@/utils/quickSession'
@@ -51,6 +52,22 @@ async function openProviderSettings() {
 }
 
 /**
+ * The quick window is created once and then only hidden, so its stores keep what they read at creation. On show it
+ * reads again what the main window may have changed meanwhile: settings (providers, default model, notification
+ * switches), the last-used model and the scope list. A read that fails keeps what this window had.
+ */
+async function reloadSharedState() {
+  const results = await Promise.allSettled([
+    Promise.resolve().then(() => settingsStore.persist.rehydrate()),
+    Promise.resolve().then(() => lastUsedModelStore.persist.rehydrate()),
+    reloadScopes(),
+  ])
+  for (const result of results) {
+    if (result.status === 'rejected') console.error('[quick-chat] reload shared state failed', result.reason)
+  }
+}
+
+/**
  * Quick Chat state. No chat exists until the first Enter; it is created in the chosen scope with the quick model and
  * reused for follow-ups until the scope changes. Reopening within three minutes shows the same chat.
  */
@@ -69,6 +86,8 @@ export function useQuickChat(): UseQuickChat {
   const [question, setQuestion] = useState('')
   const [rewrite, setRewrite] = useState<{ option: WritingStyle | null; text: string } | null>(null)
   const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine))
+  // Changes each time the panel is shown and settled; the panel then puts focus in the input.
+  const [focusKey, setFocusKey] = useState(0)
   const { session } = useSession(sessionId)
 
   // The scope the current chat was created in: a different scope at the next Enter starts a new chat.
@@ -102,18 +121,19 @@ export function useQuickChat(): UseQuickChat {
       setRewrite(null)
       chatScopeRef.current = reuseScope
       writeQuickSessionSnapshot({ sessionId: reuse, lastOpenedAt: Date.now(), lastScopeId: lastScope })
-      return
+    } else {
+      setSessionId(null)
+      setScopeId(lastScope)
+      setRewrite(null)
+      chatScopeRef.current = null
     }
-    setSessionId(null)
-    setScopeId(lastScope)
-    setRewrite(null)
-    chatScopeRef.current = null
+    setFocusKey((key) => key + 1)
   }, [setCachedSessionId])
 
   useEffect(() => {
     void loadSnapshot()
     const unsubscribe = platform.onQuickShown?.(() => {
-      void loadSnapshot()
+      void reloadSharedState().then(loadSnapshot)
     })
     return () => unsubscribe?.()
   }, [loadSnapshot])
@@ -256,6 +276,20 @@ export function useQuickChat(): UseQuickChat {
     setOnline(navigator.onLine)
   }, [sessionId, rawAnswer])
 
+  // Stop runs here: the stream lives in this window's renderer, so only this window can abort it.
+  const onStop = useCallback(() => {
+    if (!sessionId) return
+    const id = sessionId
+    const message = rawAnswer
+    void (async () => {
+      try {
+        await stopSessionGeneration(id, message)
+      } catch (error) {
+        console.error('[quick-chat] stop failed', error)
+      }
+    })()
+  }, [sessionId, rawAnswer])
+
   const onContinue = useCallback(() => {
     if (!sessionId) return
     const id = sessionId
@@ -310,6 +344,8 @@ export function useQuickChat(): UseQuickChat {
     },
     answer,
     generating,
+    onStop,
+    focusKey,
     modelName: getModelDisplayName(providers, model) || model?.modelId || '',
     pictureCount: capture.pictureKeys.length,
     rewrite,

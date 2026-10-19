@@ -160,15 +160,49 @@ describe('useDesktopShell in the quick window', () => {
     expect(shell.navigations).toEqual([])
   })
 
-  it('main window keeps composer routing for screenshots', async () => {
+  it('main window ignores screenshots, which are always meant for the quick window', async () => {
     shell.label = 'main'
-    shell.pathname = '/session/s1'
+    shell.pathname = '/'
     renderHook(() => useDesktopShell())
+    shell.navigations = []
+    const before = getDefaultStore().get(atoms.inputBoxPreConstructedMessageFamily('s1'))
     await act(async () => {
       await shell.screenshot?.({ base64: 'BBBB', mimeType: 'image/png', fileName: 'main.png' })
     })
+    // Main stays on Review and no composer gets the picture.
+    expect(shell.navigations).toEqual([])
+    expect(shell.blobs.size).toBe(0)
+    expect(getDefaultStore().get(atoms.inputBoxPreConstructedMessageFamily('s1'))).toBe(before)
+    expect(getDefaultStore().get(atoms.inputBoxPreConstructedMessageFamily('new')).pictureKeys ?? []).toEqual([])
     expect(getDefaultStore().get(atoms.quickPendingCaptureAtom).pictureKeys).toEqual([])
-    expect(getDefaultStore().get(atoms.inputBoxPreConstructedMessageFamily('s1')).pictureKeys).toHaveLength(1)
+  })
+
+  it('routes a clipboard image to the quick panel and keeps the newest 8', async () => {
+    renderHook(() => useDesktopShell())
+    for (let i = 0; i < 10; i++) {
+      await act(async () => {
+        await shell.clipboard?.({ type: 'image', base64: `clip${i}`, mimeType: 'image/png', fileName: `${i}.png` })
+      })
+    }
+    const capture = getDefaultStore().get(atoms.quickPendingCaptureAtom)
+    expect(capture.text).toBeNull()
+    expect(capture.pictureKeys).toHaveLength(8)
+    expect(capture.pictureKeys.map((key) => shell.blobs.get(key))).toEqual(
+      [2, 3, 4, 5, 6, 7, 8, 9].map((i) => `data:image/png;base64,clip${i}`)
+    )
+  })
+
+  it('a navigate-to whose window label cannot be read does nothing and does not throw', async () => {
+    shell.label = 'main'
+    renderHook(() => useDesktopShell())
+    shell.navigations = []
+    const { default: platform } = await import('@/platform')
+    const getWindowLabel = platform.getWindowLabel as ReturnType<typeof vi.fn>
+    getWindowLabel.mockRejectedValueOnce(new Error('gone'))
+    await act(async () => {
+      await expect(shell.navigate?.('/')).resolves.toBeUndefined()
+    })
+    expect(shell.navigations).toEqual([])
   })
 
   it('main window still follows navigate-to', async () => {

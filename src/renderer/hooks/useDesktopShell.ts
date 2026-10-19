@@ -131,11 +131,15 @@ export function useDesktopShell() {
       if (!isShellNavigatePath(path)) {
         return
       }
-      const label = await platform.getWindowLabel?.()
-      if (label === 'quick') {
-        return
+      try {
+        const label = await platform.getWindowLabel?.()
+        if (label === 'quick') {
+          return
+        }
+        await router.navigate({ to: path })
+      } catch (err) {
+        console.error('[shell] navigate failed', err)
       }
-      void router.navigate({ to: path })
     })
 
     // Quick window should land on /quick once label is known
@@ -146,26 +150,19 @@ export function useDesktopShell() {
       }
     })()
 
+    // Every screenshot the shell emits (the screenshot hotkey, the pending replay) is for the quick window. Tauri's
+    // global listen() hears events sent to any window, so main ignores them: it stays where it is (Review) and no
+    // chat composer gets the picture.
     const unsubShot = platform.onScreenshotCaptured?.(async (payload) => {
       try {
         const label = await platform.getWindowLabel?.()
-        if (label === 'quick') {
-          if (router.state.location.pathname !== '/quick') {
-            await router.navigate({ to: '/quick' as never })
-          }
-          await addPictureToQuickPanel(payload)
-          toastActions.add(t('Screenshot attached to chat'))
+        if (label !== 'quick') {
           return
         }
         if (router.state.location.pathname !== '/quick') {
-          const sid = await resolveTargetSessionId()
-          if (sid !== 'new') {
-            await router.navigate({ to: `/session/${sid}` })
-          } else {
-            await router.navigate({ to: '/new' })
-          }
+          await router.navigate({ to: '/quick' as never })
         }
-        await attachScreenshotToComposer(payload)
+        await addPictureToQuickPanel(payload)
         toastActions.add(t('Screenshot attached to chat'))
       } catch (err) {
         console.error('[shell] attach screenshot failed', err)

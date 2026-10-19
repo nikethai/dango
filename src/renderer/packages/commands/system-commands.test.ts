@@ -33,6 +33,21 @@ describe('system-commands', () => {
     expect(parseRewriteCommand('say /rewrite')).toBe(null)
   })
 
+  it('parses translate, a bare option and a newline right after the option', () => {
+    expect(parseRewriteCommand('/rewrite translate Hola a todos')).toEqual({
+      option: 'translate',
+      text: 'Hola a todos',
+    })
+    expect(parseRewriteCommand('/rewrite shorter')).toEqual({ option: 'shorter', text: '' })
+    expect(parseRewriteCommand('/rewrite Formal  ')).toEqual({ option: 'formal', text: '' })
+    expect(parseRewriteCommand('/rewrite clearer\nFirst line\nSecond line')).toEqual({
+      option: 'clearer',
+      text: 'First line\nSecond line',
+    })
+    // An option word that only starts a longer word is text, not an option.
+    expect(parseRewriteCommand('/rewrite shortest path')).toEqual({ option: null, text: 'shortest path' })
+  })
+
   it('lists rewrite in the picker and keeps /compact', () => {
     expect(filterSystemCommands('rew').map((c) => c.id)).toEqual(['rewrite'])
     expect(matchSystemSlashCommand('/compact')?.id).toBe('compact')

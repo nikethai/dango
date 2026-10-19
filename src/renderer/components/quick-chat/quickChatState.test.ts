@@ -50,6 +50,13 @@ describe('isLocalModel', () => {
     expect(isLocalModel({ provider: 'lmstudio', modelId: 'm' }, providers)).toBe(true)
   })
 
+  it('falls back to the default host when the host was emptied', () => {
+    const emptied = [
+      { id: 'ollama', name: 'Ollama', apiHost: '', defaultSettings: { apiHost: 'http://127.0.0.1:11434' } },
+    ] as unknown as ProviderInfo[]
+    expect(isLocalModel({ provider: 'ollama', modelId: 'm' }, emptied)).toBe(true)
+  })
+
   it('is false without a model or provider', () => {
     expect(isLocalModel(undefined, providers)).toBe(false)
     expect(isLocalModel({ provider: 'nope', modelId: 'm' }, providers)).toBe(false)
@@ -115,5 +122,18 @@ describe('quickErrorSummary', () => {
       'This chat is too long for the model.'
     )
     expect(quickErrorSummary('Something odd {"a":1}')).toBe("The model couldn't answer. Try again.")
+  })
+
+  it('reads the status code before the keywords', () => {
+    // A rejected sign-in whose body mentions quota is a sign-in problem.
+    expect(quickErrorSummary('Your plan has no quota for this key', 401)).toBe(
+      "The model didn't accept its sign-in. Check it in Settings."
+    )
+    expect(quickErrorSummary('403 Forbidden: insufficient permissions for quota')).toBe(
+      "The model didn't accept its sign-in. Check it in Settings."
+    )
+    expect(quickErrorSummary('Invalid API key format', 429)).toBe(
+      'The model is busy or out of quota. Try again in a moment.'
+    )
   })
 })

@@ -7,16 +7,24 @@ import { createStore, Provider, useAtomValue } from 'jotai'
 import { type ReactNode, Suspense } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-const stored = vi.hoisted(() => ({ value: null as unknown }))
+const stored = vi.hoisted(() => ({ value: null as unknown, writes: [] as unknown[] }))
 
 vi.mock('@/storage', () => ({
-  default: { getItem: async () => stored.value, setItem: async () => {}, removeItem: async () => {} },
+  default: {
+    getItem: async () => stored.value,
+    readItem: async () => stored.value,
+    setItem: (_key: string, value: unknown) => {
+      stored.writes.push(value)
+      return Promise.resolve()
+    },
+    removeItem: async () => {},
+  },
   StorageKey: { MyProjects: 'myProjects', MyFolders: 'myFolders' },
 }))
 
 import { parseScopes } from '@/projects/scope-store'
 import { myProjectsAtom } from './useFolders'
-import { readScopes, useScopes } from './useScopes'
+import { readScopes, reloadScopes, useScopes } from './useScopes'
 
 describe('useScopes writes', () => {
   it('two writes in one tick both land', () => {
@@ -133,5 +141,37 @@ describe('readScopes', () => {
     } finally {
       stored.value = null
     }
+  })
+})
+
+describe('reloadScopes', () => {
+  const a = { id: 'a', name: 'A', kind: 'client', order: 0 }
+  const b = { id: 'b', name: 'B', kind: 'project', order: 1 }
+
+  it('picks up scopes another window added', async () => {
+    const store = createStore()
+    store.set(myProjectsAtom, [a] as never)
+    stored.value = [a, b]
+    stored.writes = []
+    try {
+      await reloadScopes(store)
+      expect(parseScopes(store.get(myProjectsAtom)).map((scope) => scope.name)).toEqual(['A', 'B'])
+    } finally {
+      stored.value = null
+    }
+  })
+
+  it('leaves the list alone when storage has nothing or the same list', async () => {
+    const store = createStore()
+    store.set(myProjectsAtom, [a] as never)
+    const before = store.get(myProjectsAtom)
+    stored.writes = []
+    stored.value = null
+    await reloadScopes(store)
+    stored.value = [a]
+    await reloadScopes(store)
+    stored.value = null
+    expect(store.get(myProjectsAtom)).toBe(before)
+    expect(stored.writes).toEqual([])
   })
 })

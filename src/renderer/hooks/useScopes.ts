@@ -26,6 +26,19 @@ export async function readScopes(
   return parseScopes(value)
 }
 
+/**
+ * Read the stored scope list again, for a window that stays open while another one edits scopes (the quick window is
+ * created once and then only hidden). Sets the atom only when storage holds a different list, and never writes a
+ * default for a missing key.
+ */
+export async function reloadScopes(store: ReturnType<typeof getDefaultStore> = getDefaultStore()): Promise<void> {
+  const stored = await storage.readItem(StorageKey.MyProjects)
+  if (!Array.isArray(stored)) return
+  const live: unknown = store.get(myProjectsAtom)
+  if (!isPromiseLike(live) && JSON.stringify(live) === JSON.stringify(stored)) return
+  store.set(myProjectsAtom, stored as Scope[])
+}
+
 // Last scope list each store rendered or committed. After an unmount/remount the atom is a fresh
 // storage Promise again, so a write from an older closure must not fall back to that closure's `raw`.
 const lastKnown = new WeakMap<object, Scope[]>()

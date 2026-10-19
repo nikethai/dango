@@ -161,8 +161,12 @@ export const initSettingsStore = async () => {
 }
 
 settingsStore.subscribe((state, prevState) => {
-  // (legacy comment removed)
-  if (state.shortcuts !== prevState.shortcuts) {
+  // Compared by value: a rehydrate (the quick window re-reads settings on every show) gives equal shortcuts a new
+  // object, and re-registering the global hotkeys each time is not wanted.
+  if (
+    state.shortcuts !== prevState.shortcuts &&
+    JSON.stringify(state.shortcuts) !== JSON.stringify(prevState.shortcuts)
+  ) {
     platform.ensureShortcutConfig(state.shortcuts)
   }
   // (legacy comment removed)

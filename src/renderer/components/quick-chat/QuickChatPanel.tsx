@@ -34,6 +34,10 @@ export type QuickChatPanelProps = {
   onSubmit: () => void
   answer?: Message
   generating: boolean
+  /** Stops the running answer (Stop on the live thinking line, then in the foot while the answer streams). */
+  onStop?: () => void
+  /** Changes on every show; the input then takes focus unless the rewrite view is open. */
+  focusKey?: number
   modelName: string
   pictureCount: number
   rewrite: { option: WritingStyle | null; text: string } | null
@@ -73,6 +77,8 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
     onSubmit,
     answer,
     generating,
+    onStop,
+    focusKey,
     modelName,
     pictureCount,
     rewrite,
@@ -151,6 +157,16 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [])
+
+  // Hotkey → type: the input has focus on first render and on every show. The rewrite view keeps its own focus.
+  const hasInput = view !== 'no-model'
+  const focusView = useRef(view)
+  focusView.current = view
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focusKey is the show signal
+  useEffect(() => {
+    if (!hasInput || focusView.current === 'rewrite') return
+    inputRef.current?.focus()
+  }, [focusKey, hasInput])
 
   // Choosing a rewrite option lands focus in the RewritePanel's text, so typing and Esc work there.
   useEffect(() => {
@@ -303,7 +319,14 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
                 </p>
               ) : null}
               {waitingForFirstToken ? (
-                <ThinkingLine live text="" defaultOpen={false} showMascot startedAt={answer?.timestamp} />
+                <ThinkingLine
+                  live
+                  text=""
+                  defaultOpen={false}
+                  showMascot
+                  startedAt={answer?.timestamp}
+                  onStop={onStop}
+                />
               ) : null}
               {answerText.trim() ? (
                 <div ref={answerRef}>
@@ -329,7 +352,9 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
       )}
 
       <div className="dg-qc__foot" data-tauri-drag-region>
-        <kbd className="dg-kbd">{t('Esc')}</kbd>
+        <button type="button" className="dg-btn dg-btn--ghost" aria-label={t('Close')} onClick={onEsc}>
+          <kbd className="dg-kbd">{t('Esc')}</kbd>
+        </button>
         <span style={{ position: 'relative', display: 'inline-flex' }}>
           <button
             ref={rewriteTriggerRef}
@@ -368,6 +393,11 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
           ) : null}
         </span>
         <span style={{ flexGrow: 1, alignSelf: 'stretch' }} data-tauri-drag-region />
+        {generating && !waitingForFirstToken && onStop ? (
+          <button type="button" className="dg-btn dg-btn--ghost" onClick={onStop}>
+            {t('Stop')}
+          </button>
+        ) : null}
         <button type="button" className="dg-btn dg-btn--ghost" disabled={!answer} onClick={onContinue}>
           {t('Continue in Chat')}
         </button>
@@ -400,7 +430,10 @@ const BLOCK_TAGS = new Set([
   'DIV',
 ])
 
-/** Rendered answer as plain text for the live region: blocks on their own lines, KaTeX's MathML copy skipped. */
+/**
+ * Rendered answer as plain text for the live region: blocks on their own lines; KaTeX's MathML copy, buttons and
+ * `aria-hidden` parts skipped.
+ */
 export function announcedText(root: Element): string {
   const parts: string[] = []
   const walk = (node: Node) => {
@@ -409,7 +442,9 @@ export function announcedText(root: Element): string {
       return
     }
     if (!(node instanceof Element)) return
-    if (node.classList.contains('katex-mathml')) return
+    // KaTeX's MathML copy, controls (a code block's Copy) and decorations are not part of the answer.
+    if (node.classList.contains('katex-mathml') || node.tagName === 'BUTTON') return
+    if (node.getAttribute('aria-hidden') === 'true') return
     if (node.tagName === 'BR') {
       parts.push('\n')
       return
