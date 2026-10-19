@@ -455,6 +455,19 @@ describe('due jobs', () => {
     expect(dueSyncs([sourceOf({ kind: 'gmail', lastSyncAt: now - 30_000 })], [], now)).toEqual([])
     expect(dueSyncs([synced2MinAgo], [jobOf({ kind: 'sync', status: 'running' })], now)).toEqual([])
   })
+  it('dueSyncs starts the first sync of a never-synced source whatever its pollMs', () => {
+    const never = folder({ lastSyncAt: undefined })
+    expect(dueSyncs([never], [], now)).toEqual(['s1'])
+    const sync = (over: Partial<BackgroundJob>) => jobOf({ kind: 'sync', ...over })
+    expect(dueSyncs([never], [sync({ status: 'running' })], now)).toEqual([])
+    expect(dueSyncs([never], [sync({ status: 'needs-you' })], now)).toEqual([])
+    // A first sync the user stopped waits a review interval before it is started again.
+    const stopped = sync({ status: 'failed', stoppedAt: now - HOUR, finishedAt: now - HOUR })
+    expect(dueSyncs([never], [stopped], now)).toEqual([])
+    expect(dueSyncs([never], [stopped], now + REVIEW_INTERVAL_MS)).toEqual(['s1'])
+    // A kind that cannot sync never gets one.
+    expect(dueSyncs([sourceOf({ kind: 'gmail' })], [], now)).toEqual([])
+  })
 })
 
 describe('initBackgroundJobs', () => {
@@ -534,12 +547,14 @@ describe('initBackgroundJobs', () => {
     expect(startJob).toHaveBeenCalledWith(expect.objectContaining({ kind: 'review', sourceId: 's1' }))
   })
 
-  it('checks due reviews again when a sync finishes', async () => {
+  it('an adopted folder with background review on syncs first, then is reviewed', async () => {
     const { subscribeBackgroundJobs } = await import('@/packages/background')
+    // Adopted at launch: no job and no lastSyncAt. No built-in kind sets pollMs.
     storeSources(sourceOf({ kind: 'folder' }))
     await initBackgroundJobs()
     await vi.waitFor(() => expect(subscribeBackgroundJobs).toHaveBeenCalled())
-    expect(startJob).not.toHaveBeenCalled()
+    expect(startJob).toHaveBeenCalledTimes(1)
+    expect(startJob).toHaveBeenCalledWith(expect.objectContaining({ kind: 'sync', sourceId: 's1' }))
     const listener = vi.mocked(subscribeBackgroundJobs).mock.calls[0][0]
     const running = jobOf({ id: 'j-sync', kind: 'sync', status: 'running' })
     listener([running])
