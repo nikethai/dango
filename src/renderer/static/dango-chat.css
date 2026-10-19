@@ -99,3 +99,20 @@ button.dg-tool {
   align-items: center;
   padding: var(--dango-space-1) 0;
 }
+
+/* Answer row (06b MA1): icon buttons, then model · tokens · time. Pressed thumbs read green. */
+.dg-msg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.dg-msg-actions .dg-btn[aria-pressed="true"] {
+  color: var(--dango-green);
+}
+.dg-msg-actions__meta {
+  margin-left: var(--dango-space-2);
+  color: var(--dango-muted);
+  font-variant-numeric: tabular-nums;
+}

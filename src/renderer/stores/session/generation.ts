@@ -125,6 +125,9 @@ function withPlanPart(
   return [...withoutPlan, planPart]
 }
 
+/** The model a single turn answers with instead of the chat's (Redo ▾). */
+export type ModelOverride = { provider: string; modelId: string }
+
 type PlanDecisionFields = Partial<Pick<MessagePlanPart, 'startedAt' | 'revised' | 'runStartedAt'>>
 
 function withPlanFields(
@@ -646,6 +649,8 @@ export async function generate(
     skipQueuedMessages?: boolean
     /** Continue a stopped plan run in place: keep its visible work and tell the model where it stopped. */
     resumePlanRun?: boolean
+    /** Answer this turn with another model (Redo ▾). Never written to the chat's settings. */
+    modelOverride?: ModelOverride
   }
 ) {
   // Long-run notifications time the run itself (send, regenerate, plan run, resume), not the message's age.
@@ -686,7 +691,7 @@ export async function generate(
   // Overlay agent/copilot model settings. Prefer explicit speaker → message.agentId → room primary.
   const speakerAgentId = options?.speakerAgentId ?? targetMsg.agentId ?? session.agentIds?.[0] ?? session.copilotId
   const copilotOverrides = getCopilotSettings(speakerAgentId)
-  const effectiveSettings: SessionSettings = copilotOverrides
+  const overlaidSettings: SessionSettings = copilotOverrides
     ? {
         ...settings,
         temperature: copilotOverrides.temperature ?? settings.temperature,
@@ -694,6 +699,11 @@ export async function generate(
         maxTokens: copilotOverrides.maxTokens ?? settings.maxTokens,
       }
     : settings
+  // Redo ▾ answers this one turn with the picked model; the chat's stored settings keep their own.
+  const modelOverride = options?.modelOverride
+  const effectiveSettings: SessionSettings = modelOverride
+    ? { ...overlaidSettings, provider: modelOverride.provider, modelId: modelOverride.modelId }
+    : overlaidSettings
 
   // Track generation event
   trackGenerateEvent(sessionId, effectiveSettings, globalSettings, session.type, options)
@@ -1548,6 +1558,7 @@ export async function generate(
           searchProvider: streamResult.searchProvider ?? targetMsg.searchProvider,
           groundingMetadata: streamResult.groundingMetadata ?? targetMsg.groundingMetadata,
           error: emptyCompletionError,
+          durationMs: Date.now() - runStartedAt,
         }
         await settleStreamUi(targetMsg)
         // The answer and the plan part (with finishedAt) are saved: from here the error path must keep this plan,
@@ -1760,6 +1771,8 @@ export async function generate(
       cancel: undefined,
       errorCode: ocrError ? (causeError instanceof BaseError ? causeError.code : errorCode) : errorCode,
       error: `${error.message}`,
+      // Only a finished answer has a duration.
+      durationMs: undefined,
       errorExtra: {
         aiProvider: ocrError ? ocrError.ocrProvider : effectiveSettings.provider,
         host:
@@ -1770,6 +1783,8 @@ export async function generate(
             : causeError instanceof ApiError
               ? causeError.responseBody
               : undefined,
+        // A retry of a failed Redo ▾ answers with the same picked model.
+        ...(modelOverride ? { modelOverride } : {}),
       },
       status: [],
     }
@@ -1812,12 +1827,16 @@ export async function generate(
  * @param sessionId Session ID
  * @param msgId Message ID
  */
-export async function generateMore(sessionId: string, msgId: string) {
+export async function generateMore(sessionId: string, msgId: string, options?: { modelOverride?: ModelOverride }) {
   const newAssistantMsg = createMessage('assistant', '')
   newAssistantMsg.generating = true // prevent estimating token count before generating done
   await insertMessageAfter(sessionId, newAssistantMsg, msgId)
   const truncateTokenLimit = await getOverflowTruncateLimit(sessionId)
-  await generate(sessionId, newAssistantMsg, { operationType: 'regenerate', truncateTokenLimit })
+  await generate(sessionId, newAssistantMsg, {
+    operationType: 'regenerate',
+    truncateTokenLimit,
+    modelOverride: options?.modelOverride,
+  })
 }
 
 export async function generateMoreInNewFork(sessionId: string, msgId: string) {
@@ -1825,14 +1844,15 @@ export async function generateMoreInNewFork(sessionId: string, msgId: string) {
   await generateMore(sessionId, msgId)
 }
 
-type GenerateMoreFn = (sessionId: string, msgId: string) => Promise<void>
+type GenerateMoreFn = (sessionId: string, msgId: string, options?: { modelOverride?: ModelOverride }) => Promise<void>
 
 export async function regenerateInNewFork(
   sessionId: string,
   msg: Message,
-  options?: { runGenerateMore?: GenerateMoreFn }
+  options?: { runGenerateMore?: GenerateMoreFn; modelOverride?: ModelOverride }
 ) {
   const runGenerateMore = options?.runGenerateMore ?? generateMore
+  const modelOverride = options?.modelOverride
   const session = await chatStore.getSession(sessionId)
   if (!session) {
     return
@@ -1840,19 +1860,21 @@ export async function regenerateInNewFork(
   const location = findMessageLocation(session, msg.id)
   if (!location) {
     const truncateTokenLimit = await getOverflowTruncateLimit(sessionId)
-    await generate(sessionId, msg, { operationType: 'regenerate', truncateTokenLimit })
+    await generate(sessionId, msg, { operationType: 'regenerate', truncateTokenLimit, modelOverride })
     return
   }
   const previousMessageIndex = location.index - 1
   if (previousMessageIndex < 0) {
     // If target message is the first message, regenerate directly
     const truncateTokenLimit = await getOverflowTruncateLimit(sessionId)
-    await generate(sessionId, msg, { operationType: 'regenerate', truncateTokenLimit })
+    await generate(sessionId, msg, { operationType: 'regenerate', truncateTokenLimit, modelOverride })
     return
   }
   const forkMessage = location.list[previousMessageIndex]
   await createNewFork(sessionId, forkMessage.id)
-  return runGenerateMore(sessionId, forkMessage.id)
+  return modelOverride
+    ? runGenerateMore(sessionId, forkMessage.id, { modelOverride })
+    : runGenerateMore(sessionId, forkMessage.id)
 }
 
 /**

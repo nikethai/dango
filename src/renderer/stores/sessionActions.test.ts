@@ -24,6 +24,8 @@ const {
   getSessionSettingsMock,
   updateMessageCacheMock,
   addReviewEntryMock,
+  getModelMock,
+  insertMessageMock,
 } = vi.hoisted(() => ({
   updateSessionWithMessages: vi.fn(),
   useSessionMock: vi.fn(),
@@ -33,6 +35,8 @@ const {
   getSessionSettingsMock: vi.fn(),
   updateMessageCacheMock: vi.fn(),
   addReviewEntryMock: vi.fn(async (input: unknown) => input),
+  getModelMock: vi.fn(),
+  insertMessageMock: vi.fn(),
 }))
 
 vi.hoisted(() => {
@@ -66,15 +70,20 @@ vi.hoisted(() => {
 
 vi.mock('@shared/models', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@shared/models')>()),
-  getModel: () => ({
-    name: 'test',
-    modelId: 'test',
-    isSupportToolUse: () => false,
-    isSupportVision: () => false,
-    isSupportReasoning: () => false,
-    isSupportSystemMessage: () => true,
-  }),
+  getModel: (...args: unknown[]) => {
+    getModelMock(...args)
+    return testModel
+  },
 }))
+
+const testModel = {
+  name: 'test',
+  modelId: 'test',
+  isSupportToolUse: () => false,
+  isSupportVision: () => false,
+  isSupportReasoning: () => false,
+  isSupportSystemMessage: () => true,
+}
 
 vi.mock('./session/session-web-browsing', () => ({ getSessionWebBrowsing: () => false }))
 
@@ -90,6 +99,12 @@ vi.mock('./chatStore', () => ({
   getSessionSettings: getSessionSettingsMock,
   getSession: getSessionMock,
   useSession: useSessionMock,
+  insertMessage: insertMessageMock,
+}))
+
+vi.mock('@/packages/context-management', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/packages/context-management')>()),
+  runCompactionWithUIState: async () => ({ success: true, truncateTokenLimit: undefined }),
 }))
 
 vi.mock('../platform', () => ({
@@ -203,6 +218,8 @@ beforeEach(() => {
   getSessionSettingsMock.mockReset()
   updateMessageCacheMock.mockReset()
   addReviewEntryMock.mockClear()
+  getModelMock.mockClear()
+  insertMessageMock.mockReset()
 })
 
 describe('fork actions', () => {
@@ -499,6 +516,92 @@ describe('fork actions', () => {
     expect(fork!.lists).toHaveLength(2)
     expect(fork!.lists[0].messages).toEqual([target])
     expect(runGenerateMore).toHaveBeenCalledWith(session.id, pivot.id)
+  })
+})
+
+describe('redo with another model', () => {
+  const modelOverride = { provider: 'claude', modelId: 'claude-opus' }
+  const chatSession = (): Session => ({
+    id: 'redo-session',
+    name: 'Redo',
+    type: 'chat',
+    messages: [
+      { ...makeMessage('u1', 'user'), contentParts: [{ type: 'text', text: 'Hi' }] },
+      { ...makeMessage('a1', 'assistant'), contentParts: [{ type: 'text', text: 'Old answer' }] },
+    ],
+  })
+  const storedSettings = () => ({ provider: 'openai', modelId: 'gpt', maxContextMessageCount: 20 })
+
+  async function redo(stream: () => Promise<unknown>) {
+    const { streamText } = await import('@/packages/model-calls')
+    vi.mocked(streamText).mockImplementation(stream as never)
+    uuidQueue.push(...Array.from({ length: 50 }, (_, i) => `redo-${i}`))
+    let current = chatSession()
+    getSessionMock.mockImplementation(async () => current)
+    updateSessionWithMessages.mockImplementation(async (_, updater) => {
+      current = updater(current)
+      return current
+    })
+    insertMessageMock.mockImplementation(async (_sid: string, msg: Message, afterId: string) => {
+      const at = current.messages.findIndex((m) => m.id === afterId)
+      current = { ...current, messages: [...current.messages.slice(0, at + 1), msg, ...current.messages.slice(at + 1)] }
+    })
+    const settings = storedSettings()
+    getSessionSettingsMock.mockResolvedValue(settings)
+    try {
+      await sessionActions.regenerateInNewFork(current.id, current.messages[1], { modelOverride })
+    } finally {
+      vi.mocked(streamText).mockReset()
+    }
+    return { settings, saved: updateMessageMock.mock.calls.at(-1)?.[2] as Message | undefined }
+  }
+
+  test('regenerateInNewFork forwards the model override to generateMore', async () => {
+    uuidQueue.push('fork-1', 'fork-2', 'fork-3', 'fork-4')
+    const session = chatSession()
+    getSessionMock.mockResolvedValue(session)
+    updateSessionWithMessages.mockImplementation(async (_, updater) => updater(session))
+    const runGenerateMore = vi.fn().mockResolvedValue(undefined)
+
+    await sessionActions.regenerateInNewFork(session.id, session.messages[1], { modelOverride, runGenerateMore })
+
+    expect(runGenerateMore).toHaveBeenCalledWith(session.id, 'u1', { modelOverride })
+  })
+
+  test('the redo answers with the picked model and never switches the chat model', async () => {
+    const { settings, saved } = await redo(async () => {
+      return {
+        result: { contentParts: [{ type: 'text', text: 'Redone' }], text: 'Redone', finishReason: 'stop' },
+        knowledgeIds: [],
+      }
+    })
+    expect(getModelMock).toHaveBeenCalled()
+    expect(getModelMock.mock.calls[0][0]).toMatchObject({ provider: 'claude', modelId: 'claude-opus' })
+    expect(saved?.aiProvider).toBe('claude')
+    // The chat keeps its own model: nothing rewrote the stored settings.
+    expect(settings).toEqual(storedSettings())
+    for (const call of updateSessionMock.mock.calls) {
+      expect(call[1]).not.toHaveProperty('settings')
+    }
+  })
+
+  test('a finished answer records how long it took; a failed one does not', async () => {
+    const ok = await redo(async () => ({
+      result: { contentParts: [{ type: 'text', text: 'Redone' }], text: 'Redone', finishReason: 'stop' },
+      knowledgeIds: [],
+    }))
+    expect(ok.saved?.error).toBeUndefined()
+    expect(typeof ok.saved?.durationMs).toBe('number')
+    expect(ok.saved?.durationMs).toBeGreaterThanOrEqual(0)
+
+    updateMessageMock.mockReset()
+    const failed = await redo(async () => {
+      throw new Error('boom')
+    })
+    expect(failed.saved?.error).toBe('boom')
+    expect(failed.saved?.durationMs).toBeUndefined()
+    // A retry of the failed redo keeps the picked model.
+    expect(failed.saved?.errorExtra?.modelOverride).toEqual(modelOverride)
   })
 })
 

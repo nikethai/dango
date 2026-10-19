@@ -1732,5 +1732,11 @@
   "Moved to {{scope}}": "Moved to {{scope}}",
   "Moved out of {{scope}}": "Moved out of {{scope}}",
   "{{name}} (branch)": "{{name}} (branch)",
-  "Moved \"{{name}}\"": "Moved \"{{name}}\""
+  "Moved \"{{name}}\"": "Moved \"{{name}}\"",
+  "Redo": "Redo",
+  "Redo with another model": "Redo with another model",
+  "Good answer": "Good answer",
+  "Bad answer": "Bad answer",
+  "{{amount}} tokens_one": "{{amount}} token",
+  "{{amount}} tokens_other": "{{amount}} tokens"
 }

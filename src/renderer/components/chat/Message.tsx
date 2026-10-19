@@ -39,7 +39,6 @@ import {
 } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import * as dateFns from 'date-fns'
 import { concat, isEqual } from 'lodash'
 import type { UIElementData } from 'photoswipe'
 import type React from 'react'
@@ -72,7 +71,6 @@ import {
   isTaskTrackingTool,
   snapshotTasksFromContentParts,
 } from '@/packages/tools/task-tools'
-import { countWord } from '@/packages/word-count'
 import platform from '@/platform'
 import { router } from '@/router'
 import storage from '@/storage'
@@ -127,6 +125,7 @@ const PlanCard = isAgentEnabled ? lazy(() => import('../plan/PlanCard')) : null
 
 import FollowUpSuggestions from '../search/FollowUpSuggestions'
 import { SourceCardList } from '../search/SourceCardList'
+import { MessageActionRow } from './MessageActionRow'
 import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageErrTips from './MessageErrTips'
 import MessageStatuses from './MessageLoading'
@@ -181,9 +180,6 @@ const _Message: FC<Props> = (props) => {
   const isSamllScreen = useIsSmallScreen()
   const {
     userAvatarKey: _userAvatarKey,
-    showMessageTimestamp,
-    showWordCount,
-    showFirstTokenLatency,
     enableMarkdownRendering,
     enableLaTeXRendering,
     enableMermaidRendering,
@@ -468,37 +464,10 @@ const _Message: FC<Props> = (props) => {
     })
   }, [clearSelectionToolbar, msg.role])
 
-  // Per-message token/model chrome removed — session totals live in SessionStatusBar (dock statusline).
-  // Keep only critical finish-reason signals under the message.
+  // Model · tokens · time live in the answer row (MessageActionRow); only finish-reason signals stay here.
   const tips: string[] = []
   if (msg.finishReason && ['content-filter', 'length', 'error'].includes(msg.finishReason)) {
     tips.push(`finish reason: ${msg.finishReason}`)
-  }
-  // Optional debug metrics (settings) — still not the noisy default "tokens used / model" line
-  if (showWordCount && !msg.generating && (props.sessionType === 'chat' || !props.sessionType)) {
-    tips.push(`word count: ${msg.wordCount !== undefined ? msg.wordCount : countWord(getMessageText(msg))}`)
-  }
-  if (showFirstTokenLatency && msg.role === 'assistant' && !msg.generating) {
-    const latency = msg.firstTokenLatency ? `${msg.firstTokenLatency}ms` : 'unknown'
-    tips.push(`first token latency: ${latency}`)
-  }
-
-  // (legacy comment removed)
-  if (showMessageTimestamp && msg.timestamp !== undefined) {
-    const date = new Date(msg.timestamp)
-    let messageTimestamp: string
-    if (dateFns.isToday(date)) {
-      // - ， HH:mm
-      messageTimestamp = dateFns.format(date, 'HH:mm')
-    } else if (dateFns.isThisYear(date)) {
-      // - ， MM-dd HH:mm
-      messageTimestamp = dateFns.format(date, 'MM-dd HH:mm')
-    } else {
-      // - other：yyyy-MM-dd HH:mm
-      messageTimestamp = dateFns.format(date, 'yyyy-MM-dd HH:mm')
-    }
-
-    tips.push(`time: ${messageTimestamp}`)
   }
 
   // Aritfact
@@ -566,7 +535,63 @@ const _Message: FC<Props> = (props) => {
     </button>
   )
 
-  const actionMenuItems = useMemo<ActionMenuItemProps[]>(
+  // Chat messages get the MA1 row on every layout; picture sessions keep their own row.
+  const isChatSession = props.sessionType === 'chat'
+
+  const handleRedoWithModel = useCallback(
+    (provider: string, modelId: string) => {
+      handleStop()
+      void regenerateInNewFork(sessionId, msg, { modelOverride: { provider, modelId } })
+    },
+    [handleStop, sessionId, msg]
+  )
+
+  const deleteItem = useMemo<ActionMenuItemProps>(
+    () => ({
+      doubleCheck: true,
+      text: t('Delete'),
+      icon: IconTrash,
+      color: 'chatbox-error' as const,
+      onClick: onDelMsg,
+    }),
+    [t, onDelMsg]
+  )
+
+  // More for chat messages: the row already has Copy, Redo and Edit (user), so they are not repeated here.
+  const chatMenuItems = useMemo<ActionMenuItemProps[]>(() => {
+    const items: Array<ActionMenuItemProps | false> = [
+      msg.role !== 'assistant' && { text: t('Reply Again Below'), icon: IconArrowDown, onClick: onGenerateMore },
+      { text: t('Quote'), icon: IconQuoteFilled, onClick: quoteMsg },
+      msg.role === 'assistant' && { text: t('Edit'), icon: IconPencil, onClick: onEditClick },
+      !msg.generating &&
+        (msg.role === 'user' || msg.role === 'assistant') && {
+          text: t('Save as knowledge'),
+          icon: IconBrain,
+          onClick: () => void onSaveAsKnowledge(),
+        },
+      msg.role === 'assistant' &&
+        isComfyUIReady && { text: t('Send to Image Creator'), icon: IconPhoto, onClick: handleSendToImageCreator },
+      { divider: true },
+      msg.role === 'assistant' &&
+        platform.formFactor === 'mobile' && { text: t('Report'), icon: IconMessageReport, onClick: onReport },
+      deleteItem,
+    ]
+    return items.filter((i): i is ActionMenuItemProps => !!i)
+  }, [
+    t,
+    msg.role,
+    msg.generating,
+    onGenerateMore,
+    quoteMsg,
+    onEditClick,
+    onSaveAsKnowledge,
+    isComfyUIReady,
+    handleSendToImageCreator,
+    onReport,
+    deleteItem,
+  ])
+
+  const pictureMenuItems = useMemo<ActionMenuItemProps[]>(
     () => [
       ...(isSamllScreen
         ? [
@@ -581,19 +606,17 @@ const _Message: FC<Props> = (props) => {
               icon: IconArrowDown,
               onClick: onGenerateMore,
             },
-            !msg.model?.startsWith('chatboxai') &&
-              !(msg.role === 'assistant' && props.sessionType === 'picture') && {
-                text: t('Edit'),
-                icon: IconPencil,
-                onClick: onEditClick,
-              },
-            !(props.sessionType === 'picture' && msg.role === 'assistant') && {
+            msg.role !== 'assistant' && {
+              text: t('Edit'),
+              icon: IconPencil,
+              onClick: onEditClick,
+            },
+            msg.role !== 'assistant' && {
               text: t('Copy'),
               icon: IconCopy,
               onClick: onCopyMsg,
             },
             !msg.generating &&
-              props.sessionType === 'picture' &&
               msg.role === 'assistant' && {
                 text: t('Generate More Images Below'),
                 icon: IconPhotoPlus,
@@ -626,20 +649,13 @@ const _Message: FC<Props> = (props) => {
             },
           ]
         : []),
-      {
-        doubleCheck: true,
-        text: t('Delete'),
-        icon: IconTrash,
-        color: 'chatbox-error' as const,
-        onClick: onDelMsg,
-      },
+      deleteItem,
     ],
     [
       t,
       msg.role,
       onReport,
       quoteMsg,
-      onDelMsg,
       isSamllScreen,
       handleRefresh,
       msg.generating,
@@ -647,10 +663,10 @@ const _Message: FC<Props> = (props) => {
       onEditClick,
       onCopyMsg,
       onSaveAsKnowledge,
-      msg.model,
-      props.sessionType,
+      deleteItem,
     ]
   )
+  const actionMenuItems = isChatSession ? chatMenuItems : pictureMenuItems
   const [actionMenuOpened, setActionMenuOpened] = useState(false)
   const isUser = msg.role === 'user'
   const isAssistant = msg.role === 'assistant'
@@ -997,89 +1013,105 @@ const _Message: FC<Props> = (props) => {
                         : ''
                     }
                   >
-                    {/* Mock action order (assistant): copy · up · down · reload · more */}
-                    {!isSamllScreen && !(props.sessionType === 'picture' && msg.role === 'assistant') && (
-                      <MessageActionIcon icon={IconCopy} tooltip={t('copy')} onClick={onCopyMsg} />
-                    )}
-
-                    {!isSamllScreen && msg.role === 'assistant' && (
-                      <MessageActionIcon
-                        icon={msg.feedback?.rating === 'up' ? IconThumbUpFilled : IconThumbUp}
-                        tooltip={t('Thumbs Up')}
-                        color={msg.feedback?.rating === 'up' ? 'chatbox-success' : 'chatbox-tertiary'}
-                        onClick={() => toggleFeedbackRating('up')}
+                    {isChatSession ? (
+                      <MessageActionRow
+                        msg={msg}
+                        onCopy={onCopyMsg}
+                        onRedo={handleRefresh}
+                        onRedoWithModel={handleRedoWithModel}
+                        onFeedback={toggleFeedbackRating}
+                        onEdit={isUser ? onEditClick : undefined}
+                        menu={actionMenuItems}
+                        menuOpened={actionMenuOpened}
+                        onMenuChange={setActionMenuOpened}
                       />
+                    ) : (
+                      <>
+                        {/* Mock action order (assistant): copy · up · down · reload · more */}
+                        {!isSamllScreen && !(props.sessionType === 'picture' && msg.role === 'assistant') && (
+                          <MessageActionIcon icon={IconCopy} tooltip={t('copy')} onClick={onCopyMsg} />
+                        )}
+
+                        {!isSamllScreen && msg.role === 'assistant' && (
+                          <MessageActionIcon
+                            icon={msg.feedback?.rating === 'up' ? IconThumbUpFilled : IconThumbUp}
+                            tooltip={t('Thumbs Up')}
+                            color={msg.feedback?.rating === 'up' ? 'chatbox-success' : 'chatbox-tertiary'}
+                            onClick={() => toggleFeedbackRating('up')}
+                          />
+                        )}
+
+                        {!isSamllScreen && msg.role === 'assistant' && (
+                          <MessageActionIcon
+                            icon={msg.feedback?.rating === 'down' ? IconThumbDownFilled : IconThumbDown}
+                            tooltip={t('Thumbs Down')}
+                            color={msg.feedback?.rating === 'down' ? 'chatbox-error' : 'chatbox-tertiary'}
+                            onClick={() => toggleFeedbackRating('down')}
+                          />
+                        )}
+
+                        {!isSamllScreen && !msg.generating && msg.role === 'assistant' && (
+                          <MessageActionIcon icon={IconReload} tooltip={t('Reply Again')} onClick={handleRefresh} />
+                        )}
+
+                        {!isSamllScreen && msg.role !== 'assistant' && (
+                          <MessageActionIcon
+                            icon={IconArrowDown}
+                            tooltip={t('Reply Again Below')}
+                            onClick={onGenerateMore}
+                          />
+                        )}
+
+                        {
+                          // legacy cloud model prefix
+                          !isSamllScreen &&
+                            !msg.model?.startsWith('chatboxai') &&
+                            // (legacy comment removed)
+                            !(msg.role === 'assistant' && props.sessionType === 'picture') && (
+                              <MessageActionIcon icon={IconPencil} tooltip={t('edit')} onClick={onEditClick} />
+                            )
+                        }
+
+                        {/* Save as knowledge — toolbar (same row as copy / edit / more) */}
+                        {!isSamllScreen &&
+                          !msg.generating &&
+                          (msg.role === 'user' || msg.role === 'assistant') &&
+                          !(props.sessionType === 'picture' && msg.role === 'assistant') && (
+                            <MessageActionIcon
+                              icon={IconBrain}
+                              tooltip={t('Save as knowledge')}
+                              onClick={() => void onSaveAsKnowledge()}
+                            />
+                          )}
+
+                        {!isSamllScreen && msg.role === 'assistant' && isComfyUIReady && (
+                          <MessageActionIcon
+                            icon={IconPhoto}
+                            tooltip={t('Send to Image Creator')}
+                            onClick={handleSendToImageCreator}
+                          />
+                        )}
+
+                        {!isSamllScreen &&
+                          !msg.generating &&
+                          props.sessionType === 'picture' &&
+                          msg.role === 'assistant' && (
+                            <MessageActionIcon
+                              icon={IconPhotoPlus}
+                              tooltip={t('Generate More Images Below')}
+                              onClick={onGenerateMore}
+                            />
+                          )}
+
+                        <ActionMenu
+                          items={actionMenuItems}
+                          opened={actionMenuOpened}
+                          onChange={(opened) => setActionMenuOpened(opened)}
+                        >
+                          <MessageActionIcon icon={IconDotsVertical} tooltip={t('More')} />
+                        </ActionMenu>
+                      </>
                     )}
-
-                    {!isSamllScreen && msg.role === 'assistant' && (
-                      <MessageActionIcon
-                        icon={msg.feedback?.rating === 'down' ? IconThumbDownFilled : IconThumbDown}
-                        tooltip={t('Thumbs Down')}
-                        color={msg.feedback?.rating === 'down' ? 'chatbox-error' : 'chatbox-tertiary'}
-                        onClick={() => toggleFeedbackRating('down')}
-                      />
-                    )}
-
-                    {!isSamllScreen && !msg.generating && msg.role === 'assistant' && (
-                      <MessageActionIcon icon={IconReload} tooltip={t('Reply Again')} onClick={handleRefresh} />
-                    )}
-
-                    {!isSamllScreen && msg.role !== 'assistant' && (
-                      <MessageActionIcon
-                        icon={IconArrowDown}
-                        tooltip={t('Reply Again Below')}
-                        onClick={onGenerateMore}
-                      />
-                    )}
-
-                    {
-                      // legacy cloud model prefix
-                      !isSamllScreen &&
-                        !msg.model?.startsWith('chatboxai') &&
-                        // (legacy comment removed)
-                        !(msg.role === 'assistant' && props.sessionType === 'picture') && (
-                          <MessageActionIcon icon={IconPencil} tooltip={t('edit')} onClick={onEditClick} />
-                        )
-                    }
-
-                    {/* Save as knowledge — toolbar (same row as copy / edit / more) */}
-                    {!isSamllScreen &&
-                      !msg.generating &&
-                      (msg.role === 'user' || msg.role === 'assistant') &&
-                      !(props.sessionType === 'picture' && msg.role === 'assistant') && (
-                        <MessageActionIcon
-                          icon={IconBrain}
-                          tooltip={t('Save as knowledge')}
-                          onClick={() => void onSaveAsKnowledge()}
-                        />
-                      )}
-
-                    {!isSamllScreen && msg.role === 'assistant' && isComfyUIReady && (
-                      <MessageActionIcon
-                        icon={IconPhoto}
-                        tooltip={t('Send to Image Creator')}
-                        onClick={handleSendToImageCreator}
-                      />
-                    )}
-
-                    {!isSamllScreen &&
-                      !msg.generating &&
-                      props.sessionType === 'picture' &&
-                      msg.role === 'assistant' && (
-                        <MessageActionIcon
-                          icon={IconPhotoPlus}
-                          tooltip={t('Generate More Images Below')}
-                          onClick={onGenerateMore}
-                        />
-                      )}
-
-                    <ActionMenu
-                      items={actionMenuItems}
-                      opened={actionMenuOpened}
-                      onChange={(opened) => setActionMenuOpened(opened)}
-                    >
-                      <MessageActionIcon icon={IconDotsVertical} tooltip={t('More')} />
-                    </ActionMenu>
                   </Flex>
                 </Flex>
               )}
