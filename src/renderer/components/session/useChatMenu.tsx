@@ -87,7 +87,8 @@ export function useChatMenu(
       },
       t
     )
-    return onRename ? all : all.filter((item) => item.divider || item.text !== t('Rename'))
+    // Rename is always buildChatMenuItems' first row.
+    return onRename ? all : all.slice(1)
   }, [session, sessionId, selected, onRename, t])
 
   const currentScopeId = getEffectiveProjectId(session)

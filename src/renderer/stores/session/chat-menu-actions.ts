@@ -14,10 +14,21 @@ const log = getLogger('chat-menu-actions')
  * task checklist. Resolves null when the chat no longer exists.
  */
 export async function deleteChatWithUndo(sessionId: string): Promise<{ name: string } | null> {
-  const session = await chatStore.getSession(sessionId)
-  if (!session) {
+  const live = await chatStore.getSession(sessionId)
+  if (!live) {
     return null
   }
+  // Stop a running answer first: otherwise the stream keeps writing into the deleted chat, and undo would bring back
+  // a message still marked generating (a spinner nothing will ever clear). The partial text is kept.
+  const generating = [...live.messages].reverse().find((m) => m.generating)
+  const { getActiveGenerationMessageId } = await import('./generation-cancel')
+  const running = Boolean(generating) || Boolean(getActiveGenerationMessageId(sessionId))
+  if (running) {
+    const { stopSessionGeneration } = await import('./stop-generation')
+    await stopSessionGeneration(sessionId, generating ?? null)
+  }
+  // Snapshot after Stop, so undo restores the chat stopped.
+  const session = (running ? await chatStore.getSession(sessionId) : live) ?? live
   // deleteSession clears the chat's checklist from memory and disk; keep a copy for undo.
   const { taskStore, flushSessionTasks } = await import('@/stores/taskStore')
   await taskStore.getState().hydrateSessionTasks(sessionId)
@@ -79,12 +90,15 @@ export async function moveChatWithUndo(
   const nameOf = (id: string | undefined) => (id ? scopes.find((scope) => scope.id === id)?.name : undefined)
   const targetName = nameOf(scopeId)
   const previousName = nameOf(previousId)
-  const scopeName = targetName ?? t('No scope')
+  // A scope removed meanwhile has no name to show: say only that the chat moved, never "Moved to No scope".
+  const scopeName = targetName ?? (scopeId ? '' : t('No scope'))
+  const message = targetName
+    ? t('Moved to {{scope}}', { scope: targetName })
+    : !scopeId && previousName
+      ? t('Moved out of {{scope}}', { scope: previousName })
+      : t('Moved "{{name}}"', { name: session.name })
   pushUndo({
-    message:
-      !scopeId && previousName
-        ? t('Moved out of {{scope}}', { scope: previousName })
-        : t('Moved to {{scope}}', { scope: scopeName }),
+    message,
     undo: async () => {
       await moveSessionToScope(sessionId, previousId)
     },

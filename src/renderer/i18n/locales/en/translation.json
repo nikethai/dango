@@ -1731,5 +1731,6 @@
   "Unarchived \"{{name}}\"": "Unarchived \"{{name}}\"",
   "Moved to {{scope}}": "Moved to {{scope}}",
   "Moved out of {{scope}}": "Moved out of {{scope}}",
-  "{{name}} (branch)": "{{name}} (branch)"
+  "{{name}} (branch)": "{{name}} (branch)",
+  "Moved \"{{name}}\"": "Moved \"{{name}}\""
 }

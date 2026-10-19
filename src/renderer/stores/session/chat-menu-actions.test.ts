@@ -70,6 +70,18 @@ vi.mock('@/packages/undo', async () => {
   const real = await vi.importActual<typeof import('@/packages/undo/undo')>('@/packages/undo/undo')
   return { ...real, pushUndo: vi.fn(real.pushUndo) }
 })
+// Stop marks the generating message done (partial text kept), as the real stopSessionGeneration does.
+const stopSessionGeneration = vi.hoisted(() =>
+  vi.fn(async (sessionId: string, live?: Message | null) => {
+    await Promise.resolve()
+    const session = store.list.find((s) => s.id === sessionId)
+    if (!session) return false
+    session.messages = session.messages.map((m) => (m.generating ? { ...m, generating: false } : m))
+    return Boolean(live)
+  })
+)
+vi.mock('./stop-generation', () => ({ stopSessionGeneration }))
+
 const toastAdd = vi.hoisted(() => vi.fn())
 vi.mock('@/stores/toastActions', () => ({ add: toastAdd }))
 vi.mock('@/lib/utils', () => ({ getLogger: () => ({ error: vi.fn(), info: vi.fn(), debug: vi.fn() }) }))
@@ -95,6 +107,7 @@ beforeEach(() => {
   resetUndoForTests()
   vi.mocked(pushUndo).mockClear()
   moveSessionToScope.mockClear()
+  stopSessionGeneration.mockClear()
   for (const fn of Object.values(tasks)) fn.mockClear()
   store.list = [chat('a', 'A', { projectId: 'p1', folderId: 'p1' }), chat('b', 'B'), chat('c', 'C')]
 })
@@ -132,6 +145,36 @@ describe('deleteChatWithUndo', () => {
     vi.advanceTimersByTime(5_001)
     expect(await undoLatest()).toBe(false)
     expect(store.list.map((s) => s.id)).toEqual(['a', 'c'])
+  })
+
+  it('deleting a generating chat stops it first and undo restores it stopped', async () => {
+    const answer = { ...msg('b-a1', 'partial answer'), role: 'assistant', generating: true } as Message
+    store.list[1].messages.push(answer)
+    await deleteChatWithUndo('b')
+    expect(stopSessionGeneration).toHaveBeenCalledTimes(1)
+    expect(stopSessionGeneration.mock.calls[0][0]).toBe('b')
+    expect(stopSessionGeneration.mock.calls[0][1]?.id).toBe('b-a1')
+    expect(store.list.map((s) => s.id)).toEqual(['a', 'c'])
+
+    await lastUndo()?.undo()
+    const restored = store.list[1]
+    expect(restored.id).toBe('b')
+    const restoredAnswer = restored.messages.find((m) => m.id === 'b-a1')
+    expect(restoredAnswer?.generating).toBe(false)
+    expect(restoredAnswer?.contentParts).toEqual(answer.contentParts)
+  })
+
+  it('stops a run the cancel registry still knows about, even with no generating message stored', async () => {
+    const { registerGenerationCancel, clearGenerationCancel } = await import('./generation-cancel')
+    registerGenerationCancel('b', 'b-a9', () => undefined)
+    await deleteChatWithUndo('b')
+    expect(stopSessionGeneration).toHaveBeenCalledWith('b', null)
+    clearGenerationCancel('b', 'b-a9')
+  })
+
+  it('does not call Stop for an idle chat', async () => {
+    await deleteChatWithUndo('b')
+    expect(stopSessionGeneration).not.toHaveBeenCalled()
   })
 
   it('returns null and offers no undo for a chat that is gone', async () => {
@@ -177,6 +220,13 @@ describe('moveChatWithUndo', () => {
     await moveChatWithUndo('a', undefined)
     expect(moveSessionToScope).toHaveBeenCalledWith('a', undefined)
     expect(lastUndo()?.message).toBe('Moved out of Alpha')
+  })
+
+  it('a scope missing from the list (removed meanwhile) never reads "Moved to No scope"', async () => {
+    expect(await moveChatWithUndo('b', 'gone')).not.toBeNull()
+    const message = lastUndo()?.message
+    expect(message).not.toContain('No scope')
+    expect(message).toBe('Moved "B"')
   })
 
   it('a refused move (Everywhere) pushes no undo', async () => {

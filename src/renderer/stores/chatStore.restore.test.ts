@@ -36,7 +36,8 @@ vi.mock('../utils/session-utils', () => ({
   sortSessions: (list: unknown[]) => list,
 }))
 
-import { deleteSession, getSession, restoreSession } from './chatStore'
+import { ChatQueryKeys, deleteSession, getSession, restoreSession } from './chatStore'
+import queryClient from './queryClient'
 
 const chat = (id: string): Session =>
   ({
@@ -67,6 +68,8 @@ describe('restoreSession', () => {
 
     await restoreSession(b, index)
     expect(listIds()).toEqual(['a', 'b', 'c'])
+    // The React Query cache is primed, so the chat paints without a storage read.
+    expect(queryClient.getQueryData(ChatQueryKeys.ChatSession('b'))).toEqual(b)
     expect(disk.get('session:b')).toEqual(b)
     expect((await getSession('b'))?.messages).toEqual(b.messages)
   })
