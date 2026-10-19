@@ -18,6 +18,10 @@ export function syncJobLabel(kind: SourceKind): string {
   return i18n.t(SYNC_LABELS[kind])
 }
 
+/** English key: what Background review does, under its switch in the sheet and in each source's row. */
+export const BACKGROUND_REVIEW_LINE =
+  'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.'
+
 /** The Add a source sheet's MCP row (English keys): MCP servers are set up in Settings, not connected here. */
 export const MCP_SOURCE_OPTION = {
   name: 'MCP server',

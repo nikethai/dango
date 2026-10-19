@@ -147,6 +147,12 @@ function useLoadJobs(): void {
   }, [loaded])
 }
 
+/** True once this window has read the stored jobs (it starts reading them if it has not yet). */
+export function useBackgroundJobsLoaded(): boolean {
+  useLoadJobs()
+  return useStore(jobsStore, (s) => s.loaded)
+}
+
 export function useBackgroundJob(id: string): BackgroundJob | undefined {
   useLoadJobs()
   return useStore(jobsStore, (s) => s.jobs.find((j) => j.id === id))

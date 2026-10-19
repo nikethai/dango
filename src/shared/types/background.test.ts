@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { JOB_FIX_LABELS, parseJobs, RETRY_DELAYS_MS, retryDelayAfter } from './background'
+import { isWaitingToRetry, JOB_FIX_LABELS, parseJobs, RETRY_DELAYS_MS, retryDelayAfter } from './background'
 import { parseSources } from './sources'
 
 it('RETRY_DELAYS_MS matches the roadmap', () => {
@@ -58,5 +58,26 @@ describe('parseJobs', () => {
 
   it('returns [] for a non-array', () => {
     expect(parseJobs({})).toEqual([])
+  })
+})
+
+describe('isWaitingToRetry', () => {
+  const job = (nextRetryAt?: number) =>
+    ({
+      id: 'j',
+      scopeId: 's',
+      kind: 'sync',
+      label: 'x',
+      status: 'running',
+      attempts: 1,
+      startedAt: 0,
+      nextRetryAt,
+    }) as const
+
+  it('is true only while the next retry is still ahead', () => {
+    expect(isWaitingToRetry(job(2000), 1000)).toBe(true)
+    expect(isWaitingToRetry(job(1000), 1000)).toBe(false)
+    expect(isWaitingToRetry(job(500), 1000)).toBe(false)
+    expect(isWaitingToRetry(job(), 1000)).toBe(false)
   })
 })

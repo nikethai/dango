@@ -18,6 +18,9 @@ const h = vi.hoisted(() => {
     jobs: [] as BackgroundJob[],
     paused: false,
     windowLabel: 'main' as string,
+    // The window label lookup never settles while true.
+    labelPending: false,
+    jobsLoaded: true,
   }
 })
 
@@ -37,10 +40,13 @@ vi.mock('@/packages/sources', () => {
     updateSource: vi.fn(async () => undefined),
     revokeSource: vi.fn(async () => undefined),
     syncJobLabel: (k: string) => `${k} sync`,
+    BACKGROUND_REVIEW_LINE:
+      'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.',
   }
 })
 vi.mock('@/packages/background', () => ({
   useBackgroundJobs: (scopeId?: string) => h.jobs.filter((j) => scopeId === undefined || j.scopeId === scopeId),
+  useBackgroundJobsLoaded: () => h.jobsLoaded,
   startJob: vi.fn(),
   stopJob: vi.fn(async () => undefined),
   runJobFix: vi.fn(async () => undefined),
@@ -51,7 +57,7 @@ vi.mock('@/stores/settingsStore', () => ({
 vi.mock('@/packages/undo', () => ({ pushUndo: vi.fn() }))
 vi.mock('@/platform', () => ({
   default: {
-    getWindowLabel: vi.fn(async () => h.windowLabel),
+    getWindowLabel: vi.fn(() => (h.labelPending ? new Promise<string>(() => {}) : Promise.resolve(h.windowLabel))),
     openInMain: vi.fn(async () => undefined),
   },
   platformCapabilities: { supportsDesktopOnlySettings: true },
@@ -119,6 +125,8 @@ beforeEach(() => {
   h.jobs = []
   h.paused = false
   h.windowLabel = 'main'
+  h.labelPending = false
+  h.jobsLoaded = true
   vi.clearAllMocks()
 })
 
@@ -221,11 +229,68 @@ describe('BackgroundWork', () => {
     expect(screen.queryByText('Old 4')).toBeNull()
   })
 
-  it('renders nothing for a scope without jobs', async () => {
+  it('renders only its empty live region for a scope without jobs', async () => {
     h.jobs = [job({ scopeId: 'other' })]
     const { container } = render(<BackgroundWork scopeId="dango" />)
     await settle()
-    expect(container.innerHTML).toBe('')
+    expect(screen.queryByRole('heading', { name: 'Background work' })).toBeNull()
+    expect(container.textContent).toBe('')
+    expect(container.querySelector('[aria-live="polite"]')).toBeTruthy()
+  })
+
+  it('the live region is there before the first job, which it then announces', async () => {
+    const { container, rerender } = render(<BackgroundWork scopeId="dango" />)
+    await settle()
+    const live = container.querySelector('[aria-live="polite"]') as HTMLElement
+    expect(live).toBeTruthy()
+    h.jobs = [job()]
+    rerender(<BackgroundWork scopeId="dango" />)
+    expect(container.querySelector('[aria-live="polite"]')).toBe(live)
+    expect(live.textContent).toBe('Folder sync started')
+  })
+
+  it('stored jobs that load late are not announced; later changes are', async () => {
+    h.jobsLoaded = false
+    const { container, rerender } = render(<BackgroundWork scopeId="dango" />)
+    await settle()
+    const live = container.querySelector('[aria-live="polite"]') as HTMLElement
+    h.jobsLoaded = true
+    h.jobs = [job(), job({ id: 'j0', status: 'done', outcome: 'Read 3 files', startedAt: NOW - 9000, finishedAt: NOW })]
+    rerender(<BackgroundWork scopeId="dango" />)
+    expect(live.textContent).toBe('')
+    h.jobs = [job({ status: 'done', finishedAt: NOW }), h.jobs[1]]
+    rerender(<BackgroundWork scopeId="dango" />)
+    expect(live.textContent).toBe('Folder sync done')
+  })
+
+  it('a retry that is due no longer says Trying again shortly', async () => {
+    h.jobs = [job({ attempts: 1, nextRetryAt: NOW - 1 })]
+    render(<BackgroundWork scopeId="dango" />)
+    await settle()
+    expect(screen.queryByText('Trying again shortly')).toBeNull()
+    expect(screen.getByText('Starting…')).toBeTruthy()
+  })
+
+  it('shows no Stop or fix until the window role is known', async () => {
+    h.labelPending = true
+    h.jobs = [
+      job(),
+      job({
+        id: 'stuck',
+        kind: 'review',
+        status: 'needs-you',
+        error: 'sign in again',
+        fix: { action: 'reconnect', label: 'Sign in again' },
+        startedAt: NOW - 5000,
+        finishedAt: NOW - 10,
+      }),
+    ]
+    render(<BackgroundWork scopeId="dango" />)
+    await settle()
+    expect(screen.getByText('Folder sync')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Stop/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Sign in again' })).toBeNull()
+    expect(openConfiguration).not.toHaveBeenCalled()
   })
 
   it('announces status changes, not progress ticks', async () => {

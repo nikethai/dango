@@ -11,6 +11,7 @@ import { markSourceRemoved } from '@/packages/knowledge'
 import { loadReviewEntries, reviewStore, setReviewEntryState } from '@/packages/review'
 import platform from '@/platform'
 import { getSourceKind } from './kinds'
+import { lastPathSegment } from './kinds/common'
 import { forgetReviewState } from './review-state'
 
 /*
@@ -299,12 +300,6 @@ export async function revokeSource(id: string): Promise<void> {
   await dismissJobEntries(new Set([...jobs, ...after].map((j) => j.id)))
 }
 
-const lastSegment = (path: string) =>
-  path
-    .split(/[\\/]/)
-    .filter((part) => part.length > 0)
-    .pop() ?? path
-
 /**
  * For scopes without a folder source, turns a folder binding made before sources existed into a folder source
  * (no background review, no job). Returns how many were added.
@@ -328,7 +323,7 @@ export async function adoptExistingFolderBindings(scopeIds: string[]): Promise<n
       await addSource({
         kind: 'folder',
         scopeId,
-        label: lastSegment(displayPath),
+        label: lastPathSegment(displayPath),
         backgroundReview: false,
         localOnly: false,
         config: { displayPath },

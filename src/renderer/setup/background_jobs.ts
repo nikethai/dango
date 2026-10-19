@@ -17,7 +17,8 @@ import {
   startDueJobs,
   syncJobHandler,
 } from '@/packages/sources'
-import platform, { platformCapabilities } from '@/platform'
+import platform from '@/platform'
+import { getWindowRole } from '@/platform/windowRole'
 
 const CHECK_EVERY_MS = 15 * 60 * 1000
 
@@ -26,12 +27,7 @@ let stop: (() => void) | null = null
 
 /** Jobs run in one window: `main` on desktop (never the quick window), the only window on web and mobile (R6). */
 async function isJobWindow(): Promise<boolean> {
-  if (!platformCapabilities.supportsDesktopOnlySettings) return true
-  try {
-    return (await platform.getWindowLabel?.()) === 'main'
-  } catch {
-    return false
-  }
+  return (await getWindowRole()) === 'jobs'
 }
 
 /**

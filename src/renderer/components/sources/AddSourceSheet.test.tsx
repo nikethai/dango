@@ -5,6 +5,7 @@
 import NiceModal from '@ebay/nice-modal-react'
 import type { SourceDraft, SourceKind } from '@shared/types/sources'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => {
@@ -88,6 +89,8 @@ vi.mock('@/packages/sources', () => {
     isOAuthClientIdError: (e: unknown) => e instanceof h.OAuthClientIdError,
     SourceRuleError: h.SourceRuleError,
     sourceRuleErrorText: (e: Error) => e.message,
+    BACKGROUND_REVIEW_LINE:
+      'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.',
   }
 })
 vi.mock('@/packages/undo', () => ({ pushUndo: vi.fn() }))
@@ -99,7 +102,9 @@ vi.mock('@/hooks/useScopes', () => ({
     ],
   }),
 }))
-vi.mock('@/hooks/knowledge-base', () => ({ useKnowledgeBases: () => ({ data: h.kbs }) }))
+vi.mock('@/hooks/knowledge-base', () => ({
+  useKnowledgeBases: vi.fn((opts?: { enabled?: boolean }) => ({ data: opts?.enabled === false ? undefined : h.kbs })),
+}))
 vi.mock('@/stores/integrationsStore', () => ({
   ensureIntegrationsStoreInit: vi.fn(async () => undefined),
   useIntegrationsStore: <T,>(selector: (s: unknown) => T) =>
@@ -110,14 +115,17 @@ vi.mock('@/platform', () => ({
     getWindowLabel: vi.fn(async () => h.windowLabel),
     openInMain: vi.fn(async () => undefined),
   },
+  platformCapabilities: { supportsDesktopOnlySettings: true },
 }))
 vi.mock('@/router', () => ({ router: { navigate: vi.fn(async () => undefined) } }))
 
+import { useKnowledgeBases } from '@/hooks/knowledge-base'
 import { connectSource, discardSourceDraft, pickSource, revokeSource } from '@/packages/sources'
 import { pushUndo } from '@/packages/undo'
 import platform from '@/platform'
 import { router } from '@/router'
 import AddSourceSheet, { openAddSourceSheet } from './AddSourceSheet'
+import { SourceKindPicker } from './SourceKindPicker'
 
 const BACKGROUND_LINE =
   'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.'
@@ -500,5 +508,81 @@ describe('AddSourceSheet', () => {
     expect(platform.openInMain).toHaveBeenCalledWith('/settings/sources')
     expect(router.navigate).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('any other desktop window also opens Sources in the main window', async () => {
+    h.windowLabel = 'settings'
+    const result = open()
+    await expect(result).resolves.toBeNull()
+    expect(platform.openInMain).toHaveBeenCalledWith('/settings/sources')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('closing the sheet mid-pick aborts the pick', async () => {
+    pick.mockReturnValueOnce(new Promise(() => {}))
+    open()
+    fireEvent.click(await screen.findByRole('button', { name: /^Folder/ }))
+    await screen.findByText('Choose a folder in the window that opened.')
+    const signal = pick.mock.calls[0][1]?.signal as AbortSignal
+    expect(signal.aborted).toBe(false)
+    cleanup()
+    await waitFor(() => expect(signal.aborted).toBe(true))
+  })
+
+  it('a StrictMode remount keeps a pick started at once', async () => {
+    pick.mockReturnValueOnce(new Promise(() => {}))
+    render(
+      <StrictMode>
+        <NiceModal.Provider>
+          <div />
+        </NiceModal.Provider>
+      </StrictMode>
+    )
+    act(() => {
+      void openAddSourceSheet({ kind: 'folder' })
+    })
+    await screen.findByText('Choose a folder in the window that opened.')
+    await act(async () => {})
+    const signal = pick.mock.calls[0][1]?.signal as AbortSignal
+    expect(signal.aborted).toBe(false)
+  })
+
+  it('using an account already signed in does not wait for the browser', async () => {
+    h.accounts = [
+      { id: 'a1', connectorId: 'google_workspace', label: 'Work', accountHint: 'me@example.com', status: 'active' },
+    ]
+    pick.mockReturnValueOnce(new Promise(() => {}))
+    open()
+    fireEvent.click(await screen.findByRole('button', { name: /^Gmail/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Use me@example.com' }))
+    await waitFor(() => expect(pick).toHaveBeenCalled())
+    expect(screen.queryByText('Waiting for the browser…')).toBeNull()
+  })
+
+  it('does not ask for collections when Documents is unavailable', async () => {
+    h.available.documents = false
+    open()
+    await screen.findByRole('heading', { name: 'Add a source' })
+    expect(vi.mocked(useKnowledgeBases).mock.calls.length).toBeGreaterThan(0)
+    for (const call of vi.mocked(useKnowledgeBases).mock.calls) expect(call[0]).toEqual({ enabled: false })
+  })
+
+  it('the scope select is sized with design tokens, not pixels', async () => {
+    await toConnectStep(folderDraft, 'Folder', { scopeId: 'dango' })
+    const select = screen.getByRole('combobox') as HTMLSelectElement
+    expect(select.style.height).toBe('')
+    expect(select.style.minHeight).toMatch(/^var\(--dango-/)
+  })
+})
+
+describe('SourceKindPicker on its own', () => {
+  it('offers Add documents and opens Documents settings by default', async () => {
+    h.kbs = []
+    render(<SourceKindPicker onPick={vi.fn()} onMcp={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Documents/ }))
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Documents' })).getByRole('button', { name: 'Add documents' })
+    )
+    await waitFor(() => expect(router.navigate).toHaveBeenCalledWith({ to: '/settings/knowledge-base' }))
   })
 })

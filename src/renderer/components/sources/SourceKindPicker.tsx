@@ -12,6 +12,7 @@ import {
   useCodexDetection,
 } from '@/packages/sources'
 import { ensureIntegrationsStoreInit, useIntegrationsStore } from '@/stores/integrationsStore'
+import { openConfiguration } from './openConfiguration'
 
 /** Where "Add documents" goes. */
 export const KNOWLEDGE_BASE_ROUTE = '/settings/knowledge-base'
@@ -19,7 +20,7 @@ export const KNOWLEDGE_BASE_ROUTE = '/settings/knowledge-base'
 export type SourceKindPickerProps = {
   onPick(kind: SourceKind, choice?: SourceChoice): void
   onMcp(): void
-  /** "Add documents": opens Documents settings. Without it the button is not shown. */
+  /** "Add documents": opens Documents settings; by default where configuring happens (the main window). */
   onOpenSettings?(to: string): void
   /** Activates this kind once what it needs is known: picks it, or opens its accounts or collections. */
   autoActivate?: SourceKind
@@ -82,13 +83,20 @@ function Row(props: {
  * The Add a source list: one row per kind with its hint (unavailable kinds disabled with theirs), then MCP server.
  * Gmail and Asana with active accounts open "Use {account}" / "Another account"; Documents opens its collections.
  */
-export function SourceKindPicker({ onPick, onMcp, onOpenSettings, autoActivate }: SourceKindPickerProps) {
+export function SourceKindPicker({
+  onPick,
+  onMcp,
+  onOpenSettings = (to) => void openConfiguration(to).catch((e) => console.error('[sources] Could not open', e)),
+  autoActivate,
+}: SourceKindPickerProps) {
   const { t } = useTranslation()
   const kinds = listSourceKinds()
   const codex = useCodexDetection()
   const accounts = useIntegrationsStore((s) => s.catalog.accounts)
   const accountsReady = useIntegrationsStore((s) => s.ready)
-  const { data: collections } = useKnowledgeBases()
+  // Collections are listed only where Documents can be connected.
+  const documentsAvailable = kinds.find((k) => k.kind === 'documents')?.isAvailable() ?? false
+  const { data: collections } = useKnowledgeBases({ enabled: documentsAvailable })
   const [expanded, setExpanded] = useState<SourceKind | null>(null)
 
   useEffect(() => {
@@ -140,11 +148,9 @@ export function SourceKindPicker({ onPick, onMcp, onOpenSettings, autoActivate }
               <span className="dg-type-caption" style={{ color: 'var(--dango-muted)' }}>
                 {t('No documents yet')}
               </span>
-              {onOpenSettings ? (
-                <button type="button" className="dg-btn" onClick={() => onOpenSettings(KNOWLEDGE_BASE_ROUTE)}>
-                  {t('Add documents')}
-                </button>
-              ) : null}
+              <button type="button" className="dg-btn" onClick={() => onOpenSettings(KNOWLEDGE_BASE_ROUTE)}>
+                {t('Add documents')}
+              </button>
             </>
           ) : (
             collections.map((kb) => (

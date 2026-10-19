@@ -13,6 +13,7 @@ import {
   _resetSourceKindsForTests,
   _resetSourcesForTests,
   addSource,
+  BACKGROUND_REVIEW_LINE,
   connectSource,
   discardSourceDraft,
   draftWasDiscarded,
@@ -686,4 +687,10 @@ describe('fix handlers', () => {
     expect(await chooseModel(job())).toBe(true)
     expect(router.navigate).not.toHaveBeenCalled()
   })
+})
+
+it('one Background review line, shared by the sheet and the Sources rows', () => {
+  expect(BACKGROUND_REVIEW_LINE).toBe(
+    'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.'
+  )
 })

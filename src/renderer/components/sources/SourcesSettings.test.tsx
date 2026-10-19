@@ -17,6 +17,8 @@ const h = vi.hoisted(() => {
     jobs: [] as BackgroundJob[],
     paused: false,
     windowLabel: 'main' as string,
+    // The window label lookup never settles while true.
+    labelPending: false,
   }
 })
 
@@ -49,6 +51,8 @@ vi.mock('@/packages/sources', () => {
     updateSource: vi.fn(async () => undefined),
     revokeSource: vi.fn(async () => undefined),
     syncJobLabel: (k: string) => `${k} sync`,
+    BACKGROUND_REVIEW_LINE:
+      'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.',
   }
 })
 vi.mock('@/packages/background', () => ({
@@ -71,7 +75,7 @@ vi.mock('@/hooks/useScopes', () => ({
 }))
 vi.mock('@/platform', () => ({
   default: {
-    getWindowLabel: vi.fn(async () => h.windowLabel),
+    getWindowLabel: vi.fn(() => (h.labelPending ? new Promise<string>(() => {}) : Promise.resolve(h.windowLabel))),
     openInMain: vi.fn(async () => undefined),
   },
   platformCapabilities: { supportsDesktopOnlySettings: true },
@@ -135,6 +139,7 @@ beforeEach(() => {
   h.jobs = []
   h.paused = false
   h.windowLabel = 'main'
+  h.labelPending = false
   vi.clearAllMocks()
 })
 
@@ -331,6 +336,33 @@ describe('SourcesSettings', () => {
     await act(async () => {})
     expect(runJobFix).not.toHaveBeenCalled()
     expect(openConfiguration).toHaveBeenCalledWith('/settings/sources')
+  })
+
+  it('until the window role is known, the fix is hidden and Remove and the switch are disabled', async () => {
+    h.labelPending = true
+    h.sources = [source()]
+    h.jobs = [
+      job({
+        status: 'needs-you',
+        error: 'the folder is gone',
+        fix: { action: 'relink-folder', label: 'Find the folder' },
+        finishedAt: NOW - 10,
+      }),
+    ]
+    await renderPage()
+    expect(screen.getByText('Folder sync stopped: the folder is gone')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Find the folder' })).toBeNull()
+    const toggle = screen.getByRole('switch', { name: 'Background review' }) as HTMLButtonElement
+    expect(toggle.disabled).toBe(true)
+    await openMenu('chaeboxi')
+    expect((screen.getByRole('menuitem', { name: 'Remove' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(openConfiguration).not.toHaveBeenCalled()
+    expect(updateSource).not.toHaveBeenCalled()
+  })
+
+  it('a running job whose retry is due no longer says Trying again shortly', () => {
+    const line = sourceStatusLine(source(), [job({ attempts: 1, nextRetryAt: NOW })], NOW, false)
+    expect(line.text).toBe('Syncing…')
   })
 
   it('Add a source opens the sheet with no scope', async () => {

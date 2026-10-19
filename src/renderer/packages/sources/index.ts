@@ -13,6 +13,7 @@ registerBuiltinSourceKinds()
 
 // `initBackgroundJobs` (setup/background_jobs.ts) registers the resolver, handlers and job opener; not done here.
 export {
+  BACKGROUND_REVIEW_LINE,
   connectSource,
   discardSourceDraft,
   draftWasDiscarded,

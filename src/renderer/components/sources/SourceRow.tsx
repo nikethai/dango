@@ -1,4 +1,4 @@
-import type { BackgroundJob, JobFix } from '@shared/types/background'
+import { type BackgroundJob, isWaitingToRetry, type JobFix } from '@shared/types/background'
 import { readBackgroundPaused } from '@shared/types/settings'
 import type { ConnectedSource } from '@shared/types/sources'
 import { IconDots } from '@tabler/icons-react'
@@ -6,17 +6,16 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
+import { useNow } from '@/hooks/useNow'
+import { useWindowRole } from '@/hooks/useWindowRole'
 import i18n from '@/i18n'
 import { runJobFix, startJob, useBackgroundJobs } from '@/packages/background'
-import { getSourceKind, revokeSource, syncJobLabel, updateSource } from '@/packages/sources'
+import { BACKGROUND_REVIEW_LINE, getSourceKind, revokeSource, syncJobLabel, updateSource } from '@/packages/sources'
 import { pushUndo } from '@/packages/undo'
-import platform, { platformCapabilities } from '@/platform'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
 import { openConfiguration, SOURCES_SETTINGS_ROUTE } from './AddSourceSheet'
 
-const BACKGROUND_REVIEW_LINE =
-  'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.'
 const REMOVE_DELAY_MS = 5_000
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -53,7 +52,7 @@ export function sourceStatusLine(
     // A run already in progress finishes while paused, so its progress still shows.
     if (running.progress) return { text: running.progress }
     if (paused) return { text: i18n.t('Paused') }
-    if (running.nextRetryAt !== undefined && running.nextRetryAt > now) return { text: i18n.t('Trying again shortly') }
+    if (isWaitingToRetry(running, now)) return { text: i18n.t('Trying again shortly') }
     return { text: running.kind === 'review' ? i18n.t('Reviewing…') : i18n.t('Syncing…') }
   }
   if (stuck) {
@@ -133,46 +132,11 @@ export function focusSourceRow(sourceId: string): void {
   })
 }
 
-export type WindowRole = 'jobs' | 'quick' | 'other'
-
-/**
- * Where this row is shown: `jobs` is the window that runs background jobs (main on desktop, the only window on web and
- * mobile, R6); undefined until known.
- */
-export function useWindowRole(): WindowRole | undefined {
-  const [role, setRole] = useState<WindowRole | undefined>(() =>
-    platformCapabilities.supportsDesktopOnlySettings && platform.getWindowLabel ? undefined : 'jobs'
-  )
-  useEffect(() => {
-    if (role !== undefined) return
-    let live = true
-    Promise.resolve(platform.getWindowLabel?.())
-      .then((label) => {
-        if (live) setRole(label === 'main' ? 'jobs' : label === 'quick' ? 'quick' : 'other')
-      })
-      .catch(() => {
-        if (live) setRole('other')
-      })
-    return () => {
-      live = false
-    }
-  }, [role])
-  return role
-}
-
-export function useNow(everyMs = 30_000): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), everyMs)
-    return () => clearInterval(timer)
-  }, [everyMs])
-  return now
-}
-
 /**
  * A connected source: kind and label, status line (with the fix button when a job needs you), the Background review
  * switch for kinds that support it, and a menu with Sync now (kinds that sync, main window only) and Remove.
- * Outside the jobs window, changes open Sources in the main window instead.
+ * Outside the jobs window, changes open Sources in the main window instead. Until the window's role is known, the fix
+ * is hidden and Remove and the switch are disabled, so a click never navigates where it should have acted.
  */
 export function SourceRow({ source, scopeName }: { source: ConnectedSource; scopeName?: string }) {
   const { t } = useTranslation()
@@ -206,8 +170,11 @@ export function SourceRow({ source, scopeName }: { source: ConnectedSource; scop
   // Jobs start only in the jobs window (R6); a source that never synced can still be synced now.
   const canSyncNow = role === 'jobs' && !!def?.sync
 
+  const roleKnown = role !== undefined
+
   /** Runs `fn` in the jobs window; anywhere else opens Sources in the main window, where configuring happens. */
   const inJobsWindow = (fn: () => void | Promise<void>) => {
+    if (!roleKnown) return
     if (role === 'jobs') return void Promise.resolve(fn()).catch((e) => console.warn('[sources] Action failed', e))
     void openConfiguration(SOURCES_SETTINGS_ROUTE)
   }
@@ -241,7 +208,7 @@ export function SourceRow({ source, scopeName }: { source: ConnectedSource; scop
           {scopeName ? <span>{scopeName} · </span> : null}
           <span>{status.text}</span>
         </div>
-        {status.fix && status.jobId ? (
+        {status.fix && status.jobId && roleKnown ? (
           <div className="dg-item__actions" style={{ justifyContent: 'flex-start' }}>
             <button
               type="button"
@@ -262,6 +229,7 @@ export function SourceRow({ source, scopeName }: { source: ConnectedSource; scop
                 aria-checked={source.backgroundReview ? 'true' : 'false'}
                 aria-labelledby={switchLabelId}
                 aria-describedby={switchHintId}
+                disabled={!roleKnown}
                 onClick={() =>
                   inJobsWindow(() => updateSource(source.id, { backgroundReview: !source.backgroundReview }))
                 }
@@ -307,7 +275,7 @@ export function SourceRow({ source, scopeName }: { source: ConnectedSource; scop
               {t('Sync now')}
             </button>
           ) : null}
-          <button type="button" role="menuitem" className="is-danger" onClick={remove}>
+          <button type="button" role="menuitem" className="is-danger" disabled={!roleKnown} onClick={remove}>
             {t('Remove')}
           </button>
         </div>

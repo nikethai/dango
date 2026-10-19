@@ -35,6 +35,11 @@ export function retryDelayAfter(failedRuns: number): number | null {
   return RETRY_DELAYS_MS[failedRuns - 1] ?? null
 }
 
+/** True while a running job waits out a retry delay that has not ended yet (UI: "Trying again shortly"). */
+export function isWaitingToRetry(job: Pick<BackgroundJob, 'nextRetryAt'>, now: number): boolean {
+  return job.nextRetryAt !== undefined && job.nextRetryAt > now
+}
+
 export const JOB_HISTORY_PER_SCOPE = 50
 export const REVIEW_INTERVAL_MS = 6 * 60 * 60 * 1000
 

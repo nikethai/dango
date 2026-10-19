@@ -1,11 +1,12 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import type { SourceDraft, SourceKind } from '@shared/types/sources'
-import { type ReactNode, useId, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Sheet } from '@/components/ui/Sheet'
 import { useScopes } from '@/hooks/useScopes'
 import {
+  BACKGROUND_REVIEW_LINE,
   connectSource,
   discardSourceDraft,
   draftWasDiscarded,
@@ -20,7 +21,11 @@ import {
 } from '@/packages/sources'
 import { pushUndo } from '@/packages/undo'
 import platform from '@/platform'
+import { getWindowRole } from '@/platform/windowRole'
+import { openConfiguration } from './openConfiguration'
 import { SourceKindPicker } from './SourceKindPicker'
+
+export { openConfiguration }
 
 export const ADD_SOURCE_MODAL_ID = 'add-source'
 /** Where the quick window sends "Add a source": connecting is configuring, which happens in the main window. */
@@ -29,39 +34,13 @@ export const SOURCES_SETTINGS_ROUTE = '/settings/sources'
 export type AddSourceSheetProps = { scopeId?: string; kind?: SourceKind }
 export type AddSourceResult = { sourceId: string } | null
 
-const BACKGROUND_REVIEW_LINE =
-  'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.'
-
-async function inQuickWindow(): Promise<boolean> {
-  if (!platform.openInMain || !platform.getWindowLabel) return false
-  try {
-    return (await platform.getWindowLabel()) === 'quick'
-  } catch {
-    return false
-  }
-}
-
-/** Opens a settings route: in the main window when called from the quick window, else here. */
-export async function openConfiguration(to: string): Promise<void> {
-  if (await inQuickWindow()) {
-    try {
-      await platform.openInMain?.(to)
-      return
-    } catch (error) {
-      console.error('[sources] Could not open the main window', error)
-    }
-  }
-  // Loaded on demand: the router pulls in every route.
-  const { router } = await import('@/router')
-  await router.navigate({ to: to as never })
-}
-
 /**
  * Opens the Add a source sheet. Resolves to the connected source, or null when nothing was connected. `kind` starts
- * that kind at once. From the quick window it opens Sources in the main window instead and resolves null.
+ * that kind at once. Connecting happens only in the window that runs jobs (R6): from any other desktop window it
+ * opens Sources in the main window instead and resolves null.
  */
 export async function openAddSourceSheet(opts: AddSourceSheetProps = {}): Promise<AddSourceResult> {
-  if (await inQuickWindow()) {
+  if (platform.openInMain && (await getWindowRole()) !== 'jobs') {
     await openConfiguration(SOURCES_SETTINGS_ROUTE)
     return null
   }
@@ -72,7 +51,7 @@ type ErrorLine = { text: string; action?: { label: string; to: string } }
 
 type Step =
   | { name: 'pick'; error?: ErrorLine; expand?: SourceKind }
-  | { name: 'waiting'; kind: SourceKind }
+  | { name: 'waiting'; kind: SourceKind; choice?: SourceChoice }
   | { name: 'connect'; draft: SourceDraft; error?: ErrorLine }
 
 /** One line: the first line of the message, clipped. Service messages are external text, shown as is. */
@@ -104,6 +83,19 @@ const AddSourceSheet = NiceModal.create(({ scopeId: openedFrom, kind: startKind 
   // `kind` starts the pick only once, not again when the list comes back.
   const pickedOnce = useRef(false)
 
+  // Closing the sheet any other way (unmounted while a pick is open) aborts the pick too. Checked a tick later, so a
+  // StrictMode remount (cleanup, then setup again at once) keeps the pick.
+  const mounted = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      queueMicrotask(() => {
+        if (!mounted.current && !settled.current) pickController.current?.abort()
+      })
+    }
+  }, [])
+
   const finish = (result: AddSourceResult) => {
     if (settled.current) return
     settled.current = true
@@ -123,7 +115,7 @@ const AddSourceSheet = NiceModal.create(({ scopeId: openedFrom, kind: startKind 
   const startPick = async (kind: SourceKind, choice?: SourceChoice) => {
     const controller = new AbortController()
     pickController.current = controller
-    setStep({ name: 'waiting', kind })
+    setStep({ name: 'waiting', kind, choice })
     try {
       const draft = await pickSource(kind, { signal: controller.signal, choice })
       if (controller.signal.aborted) {
@@ -241,8 +233,11 @@ const AddSourceSheet = NiceModal.create(({ scopeId: openedFrom, kind: startKind 
     )
   } else if (step.name === 'waiting') {
     const waitingDef = kindDef(step.kind)
+    // The browser opens only to sign in; an account already signed in is used without it.
     const text = waitingDef?.connectorId
-      ? t('Waiting for the browser…')
+      ? step.choice?.accountId
+        ? null
+        : t('Waiting for the browser…')
       : step.kind === 'folder'
         ? t('Choose a folder in the window that opened.')
         : null
@@ -271,8 +266,8 @@ const AddSourceSheet = NiceModal.create(({ scopeId: openedFrom, kind: startKind 
             disabled={busy}
             onChange={(event) => setScopeId(event.currentTarget.value)}
             style={{
-              height: 30,
-              padding: '0 var(--dango-space-2)',
+              minHeight: 'var(--dango-space-7)',
+              padding: 'var(--dango-space-1) var(--dango-space-2)',
               borderRadius: 'var(--dango-radius-md)',
               border: '1px solid var(--dango-control-border)',
               background: 'var(--dango-raised)',
