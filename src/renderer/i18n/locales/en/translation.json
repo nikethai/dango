@@ -1695,5 +1695,21 @@
   "Use {{accountHint}}": "Use {{accountHint}}",
   "Another account": "Another account",
   "Add documents": "Add documents",
-  "Looking for Codex threads…": "Looking for Codex threads…"
+  "Looking for Codex threads…": "Looking for Codex threads…",
+  "Synced just now": "Synced just now",
+  "Synced {{count}} min ago_one": "Synced {{count}} min ago",
+  "Synced {{count}} min ago_other": "Synced {{count}} min ago",
+  "Synced {{count}} h ago_one": "Synced {{count}} h ago",
+  "Synced {{count}} h ago_other": "Synced {{count}} h ago",
+  "Synced {{count}} days ago_one": "Synced {{count}} day ago",
+  "Synced {{count}} days ago_other": "Synced {{count}} days ago",
+  "Paused": "Paused",
+  "Trying again shortly": "Trying again shortly",
+  "Reviewing…": "Reviewing…",
+  "Syncing…": "Syncing…",
+  "Removed {{label}}. Approved knowledge stays.": "Removed {{label}}. Approved knowledge stays.",
+  "Actions for {{label}}": "Actions for {{label}}",
+  "Sync now": "Sync now",
+  "No sources yet.": "No sources yet.",
+  "Connect a folder, Gmail, Asana, Codex threads or documents so Dango can learn about your work.": "Connect a folder, Gmail, Asana, Codex threads or documents so Dango can learn about your work."
 }

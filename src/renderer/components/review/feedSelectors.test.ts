@@ -81,7 +81,10 @@ describe('hasSources', () => {
     expect(hasSources({ entries: [] })).toBe(false)
     expect(hasSources({ entries: [entry()] })).toBe(true)
     expect(hasSources({ entries: [], lastCheckedAt: 1 })).toBe(true)
-    expect(hasSources({ sourceCount: 0, entries: [entry()] })).toBe(false)
+    // R5: with no source, Review rows still show the feed; EM2 only when there are neither.
+    expect(hasSources({ sourceCount: 0, entries: [entry()] })).toBe(true)
+    expect(hasSources({ sourceCount: 0, entries: [], lastCheckedAt: 1 })).toBe(false)
+    expect(hasSources({ sourceCount: 0, entries: [entry({ state: 'dismissed' })] })).toBe(false)
     expect(hasSources({ sourceCount: 2, entries: [] })).toBe(true)
   })
 })

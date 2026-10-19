@@ -112,11 +112,17 @@ describe('ReviewHome empty states', () => {
     expect(screen.getByText('Nothing needs you')).toBeTruthy()
     expect(screen.queryByText('Connect a source to get started')).toBeNull()
   })
-  it('sourceCount 0 with a done row: EM2 only', () => {
-    seed([row('d', { state: 'done' })])
+  it('sourceCount 0 and no rows: EM2 (R5)', () => {
     render(<ReviewHome sourceCount={0} />)
     expect(screen.getByText('Connect a source to get started')).toBeTruthy()
     expect(screen.queryByText('Nothing needs you')).toBeNull()
+  })
+  it('sourceCount 0 with a done row: the feed, not EM2 (R5)', () => {
+    seed([row('d', { state: 'done' })])
+    render(<ReviewHome sourceCount={0} />)
+    expect(screen.getByText('Nothing needs you')).toBeTruthy()
+    expect(screen.getByText('Row d')).toBeTruthy()
+    expect(screen.queryByText('Connect a source to get started')).toBeNull()
   })
   it('one done row: RV5 above that row', () => {
     seed([row('d', { state: 'done' })])

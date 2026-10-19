@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
 import Page from '@/components/layout/Page'
 import { ReviewHome } from '@/components/review/ReviewHome'
+import { useSources, useSourcesLoaded } from '@/packages/sources'
 
 // Hand-edited URLs: numbers become strings, anything else is dropped instead of throwing.
 const lenientId = z
@@ -22,9 +23,12 @@ export const Route = createFileRoute('/')({
 
 function Index() {
   const { t } = useTranslation()
+  const sources = useSources()
+  // Unknown until the stored sources are read (R4): ReviewHome then keeps its stand-in instead of flashing EM2.
+  const loaded = useSourcesLoaded()
   return (
     <Page title={t('Review')}>
-      <ReviewHome />
+      <ReviewHome sourceCount={loaded ? sources.length : undefined} />
     </Page>
   )
 }
