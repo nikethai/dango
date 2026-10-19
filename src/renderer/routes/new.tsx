@@ -58,6 +58,10 @@ function Index() {
     id: 'new',
     ...initEmptyChatSession(),
   })
+  /** Draft chat settings (provider options, plan mode); createSession copies them into the new chat's settings. */
+  const updateDraftSettings = useCallback((next: Partial<NonNullable<Session['settings']>>) => {
+    setSession((old) => ({ ...old, settings: { ...(old.settings || {}), ...next } }))
+  }, [])
   const [composerDraft, setComposerDraft] = useState('')
   const [composerKey, setComposerKey] = useState(0)
   /** Center → bottom dock animation in progress (blocks double-submit). */
@@ -339,15 +343,9 @@ function Index() {
                   session.roomMode === 'work' || session.roomMode === 'swarm' ? session.roomMode : 'discuss'
                 }
                 draftSettings={session.settings}
-                onDraftSettingsChange={(next) =>
-                  setSession((old) => ({
-                    ...old,
-                    settings: {
-                      ...(old.settings || {}),
-                      ...next,
-                    },
-                  }))
-                }
+                onDraftSettingsChange={updateDraftSettings}
+                planMode={session.settings?.planMode ?? false}
+                onPlanModeChange={(planMode) => updateDraftSettings({ planMode })}
                 onDraftRoomModeChange={(mode) => setSession((old) => ({ ...old, roomMode: mode }))}
                 onSelectModel={onSelectModel}
                 onToggleAgentMode={(agentMode) => setSession((old) => ({ ...old, agentMode }))}

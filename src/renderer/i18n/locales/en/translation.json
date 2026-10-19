@@ -1778,5 +1778,8 @@
   "What's still open in {{scope}}?": "What's still open in {{scope}}?",
   "What did we promise {{scope}} last?": "What did we promise {{scope}} last?",
   "Draft a reply to {{scope}}": "Draft a reply to {{scope}}",
-  "What's still open with {{scope}}?": "What's still open with {{scope}}?"
+  "What's still open with {{scope}}?": "What's still open with {{scope}}?",
+  "Plan mode": "Plan mode",
+  "Propose a plan first. Nothing runs until you choose Run plan.": "Propose a plan first. Nothing runs until you choose Run plan.",
+  "Turn on plan mode": "Turn on plan mode"
 }

@@ -15,6 +15,7 @@ import {
   IconFilePencil,
   IconFolder,
   IconLink,
+  IconListCheck,
   IconPhoto,
   IconPlus,
   IconRobot,
@@ -48,6 +49,11 @@ export type ComposerToolsMenuProps = {
   onWebBrowsingChange: (enabled: boolean) => void
   agentMode: boolean
   onToggleAgentMode?: () => void
+  /** The chat's plan mode (`session.settings.planMode`); its row shows under Agent Mode in agent chats. */
+  planMode?: boolean
+  onPlanModeChange?: (on: boolean) => void
+  /** False where plan mode does nothing though Agent Mode is on (multi-agent rooms). Default true. */
+  showPlanMode?: boolean
   /** Absolute workspace path for agent file/terminal tools (desktop). */
   workspaceRoot?: string
   onWorkspaceRootChange?: (workspaceRoot: string | undefined) => void
@@ -84,6 +90,9 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
   onWebBrowsingChange,
   agentMode,
   onToggleAgentMode,
+  planMode = false,
+  onPlanModeChange,
+  showPlanMode = true,
   workspaceRoot,
   onWorkspaceRootChange,
   browserArmed,
@@ -131,6 +140,8 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
     Boolean(onToggleAgentMode)
   // Desktop Tauri builds use CHATBOX_BUILD_PLATFORM=unknown; web/android cannot write FS.
   const showWorkspace = showAgent && Boolean(onWorkspaceRootChange)
+  // Plan mode is part of agent chats: hidden with Agent Mode off (the stored value is kept but does nothing).
+  const showPlan = showAgent && agentMode && showPlanMode && Boolean(onPlanModeChange)
   const showBrowserArm = platformCapabilities.supportsDesktopOnlySettings && Boolean(onBrowserArmedChange)
   const showComputerArm = platformCapabilities.supportsDesktopOnlySettings && Boolean(onComputerArmedChange)
 
@@ -144,6 +155,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
     return (
       (!webBrowsingMode && webSearchConfigured) ||
       agentMode ||
+      (showPlan && planMode) ||
       Boolean(workspaceRoot) ||
       Boolean(browserArmed) ||
       Boolean(computerArmed) ||
@@ -154,6 +166,8 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
     webBrowsingMode,
     webSearchConfigured,
     agentMode,
+    showPlan,
+    planMode,
     workspaceRoot,
     browserArmed,
     computerArmed,
@@ -192,6 +206,88 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
       )}
     </UnstyledButton>
   )
+
+  // Mode (agent chats): Agent Mode, Plan mode under it, Project folder. In both the drawer and the desktop menu.
+  const modeSection = showAgent ? (
+    <>
+      <Menu.Divider />
+      <Menu.Label fw={600}>{t('Mode')}</Menu.Label>
+      <Menu.Item
+        leftSection={<IconRobot size={16} stroke={1.5} />}
+        closeMenuOnClick={false}
+        rightSection={
+          <Switch
+            size="xs"
+            checked={agentMode}
+            aria-label={t('Agent Mode')}
+            onChange={() => onToggleAgentMode?.()}
+            onClick={(e) => e.stopPropagation()}
+          />
+        }
+        onClick={() => onToggleAgentMode?.()}
+      >
+        <Flex direction="column" gap={2}>
+          <Text size="sm">{t('Agent Mode')}</Text>
+          <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }}>
+            {t('Use tools and work in steps')}
+          </Text>
+        </Flex>
+      </Menu.Item>
+      {showPlan && (
+        <Menu.Item
+          leftSection={<IconListCheck size={16} stroke={1.5} />}
+          closeMenuOnClick={false}
+          rightSection={
+            <Switch
+              size="xs"
+              checked={planMode}
+              aria-label={t('Plan mode')}
+              onChange={(e) => onPlanModeChange?.(e.currentTarget.checked)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          }
+          onClick={() => onPlanModeChange?.(!planMode)}
+        >
+          <Flex direction="column" gap={2}>
+            <Text size="sm">{t('Plan mode')}</Text>
+            <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }}>
+              {t('Propose a plan first. Nothing runs until you choose Run plan.')}
+            </Text>
+          </Flex>
+        </Menu.Item>
+      )}
+      {showWorkspace && (
+        <Menu.Item
+          leftSection={<IconFolder size={16} stroke={1.5} />}
+          rightSection={
+            workspaceRoot ? (
+              <ActionIcon
+                size={18}
+                variant="subtle"
+                aria-label={t('Clear project folder')}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onWorkspaceRootChange?.(undefined)
+                }}
+              >
+                <IconX size={12} />
+              </ActionIcon>
+            ) : null
+          }
+          onClick={() => {
+            setWorkspaceModalOpen(true)
+          }}
+        >
+          <Flex direction="column" gap={2}>
+            <Text size="sm">{t('Project folder')}</Text>
+            <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }} lineClamp={1}>
+              {workspaceLabel ? workspaceLabel : t('Where the AI can read and edit files')}
+            </Text>
+          </Flex>
+        </Menu.Item>
+      )}
+    </>
+  ) : null
 
   if (isSmallScreen) {
     return (
@@ -436,62 +532,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
                     </>
                   )}
 
-                  {showAgent && (
-                    <>
-                      <Menu.Divider />
-                      <Menu.Label fw={600}>{t('Mode')}</Menu.Label>
-                      <Menu.Item
-                        leftSection={<IconRobot size={16} stroke={1.5} />}
-                        closeMenuOnClick={false}
-                        rightSection={
-                          <Switch
-                            size="xs"
-                            checked={agentMode}
-                            onChange={() => onToggleAgentMode?.()}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        }
-                        onClick={() => onToggleAgentMode?.()}
-                      >
-                        <Flex direction="column" gap={2}>
-                          <Text size="sm">{t('Agent Mode')}</Text>
-                          <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }}>
-                            {t('Use tools and work in steps')}
-                          </Text>
-                        </Flex>
-                      </Menu.Item>
-                      {showWorkspace && (
-                        <Menu.Item
-                          leftSection={<IconFolder size={16} stroke={1.5} />}
-                          rightSection={
-                            workspaceRoot ? (
-                              <ActionIcon
-                                size={18}
-                                variant="subtle"
-                                aria-label={t('Clear project folder')}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  onWorkspaceRootChange?.(undefined)
-                                }}
-                              >
-                                <IconX size={12} />
-                              </ActionIcon>
-                            ) : null
-                          }
-                          onClick={() => {
-                            setWorkspaceModalOpen(true)
-                          }}
-                        >
-                          <Flex direction="column" gap={2}>
-                            <Text size="sm">{t('Project folder')}</Text>
-                            <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }} lineClamp={1}>
-                              {workspaceLabel ? workspaceLabel : t('Where the AI can read and edit files')}
-                            </Text>
-                          </Flex>
-                        </Menu.Item>
-                      )}
-                    </>
-                  )}
+                  {modeSection}
 
                   <Menu.Divider />
                   <Menu.Label fw={600}>{t('Chat')}</Menu.Label>
@@ -654,6 +695,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
               </Flex>
             </Menu.Item>
           )}
+          {modeSection}
           <Menu.Divider />
           <Menu.Label fw={600}>{t('Chat')}</Menu.Label>
           {showRollbackThreadButton ? (

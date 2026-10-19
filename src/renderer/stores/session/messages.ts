@@ -12,6 +12,7 @@ import { countMessageWords } from '@shared/utils/message'
 import { createModelDependencies } from '@/adapters'
 import { checkSessionOverflowFast } from '@/packages/context-management'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
+import { isPlanModeOn } from '@/packages/plan/planSteps'
 import { estimateTokensFromMessages } from '@/packages/token'
 import platform from '@/platform'
 import * as chatStore from '../chatStore'
@@ -324,7 +325,11 @@ export async function submitNewUserMessage(
   // (legacy comment removed)
   if (needGenerating) {
     let freshSession = await chatStore.getSession(sessionId)
-    if (freshSession?.planMode && freshSession?.agentMode && !freshSession?.planPhase) {
+    // Plan mode lives in the chat's settings; the legacy top-level field is still read for old payloads.
+    const planModeOn = freshSession
+      ? isPlanModeOn(freshSession) || Boolean(freshSession.agentMode && freshSession.planMode)
+      : false
+    if (freshSession && planModeOn && !freshSession.planPhase) {
       freshSession = await chatStore.updateSession(sessionId, { planPhase: 'planning' })
     }
 

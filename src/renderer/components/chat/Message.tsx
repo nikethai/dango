@@ -165,6 +165,8 @@ interface Props {
   latestPlan?: boolean
   /** Whether this message's stopped plan offers Continue, resolved by MessageList. Default hidden. */
   planContinue?: PlanContinueState
+  /** Turns the chat's plan mode back on when Continue is blocked by it (MessageList). */
+  onTurnOnPlanMode?(): Promise<void>
 }
 
 const _Message: FC<Props> = (props) => {
@@ -183,6 +185,7 @@ const _Message: FC<Props> = (props) => {
     planTouchesFiles = false,
     latestPlan = false,
     planContinue = 'hidden',
+    onTurnOnPlanMode,
   } = props
 
   const { t } = useTranslation()
@@ -961,6 +964,7 @@ const _Message: FC<Props> = (props) => {
                           onStop={onStopGeneration}
                           onContinue={onContinuePlan}
                           continueState={planContinue}
+                          onTurnOnPlanMode={onTurnOnPlanMode}
                         />
                       </Suspense>
                     ) : null

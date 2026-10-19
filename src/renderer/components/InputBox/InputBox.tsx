@@ -210,6 +210,9 @@ export type InputBoxProps = {
   onClickSessionSettings?(): boolean | Promise<boolean>
   agentMode?: boolean
   onToggleAgentMode?(enabled: boolean): void
+  /** The chat's plan mode (`settings.planMode`), controlled like agentMode; the toggle shows in agent chats. */
+  planMode?: boolean
+  onPlanModeChange?(on: boolean): void
   workspaceRoot?: string
   onWorkspaceRootChange?(workspaceRoot: string | undefined): void
   browserArmed?: boolean
@@ -294,6 +297,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       onClickSessionSettings,
       agentMode: controlledAgentMode,
       onToggleAgentMode,
+      planMode: controlledPlanMode,
+      onPlanModeChange,
       workspaceRoot: controlledWorkspaceRoot,
       onWorkspaceRootChange,
       browserArmed: controlledBrowserArmed,
@@ -484,6 +489,15 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       onToggleAgentMode?.(!agentMode)
       dom.focusMessageInput()
     }, [agentMode, onToggleAgentMode])
+
+    const planMode = controlledPlanMode ?? currentSession?.settings?.planMode ?? false
+    const changePlanMode = useCallback(
+      (on: boolean) => {
+        onPlanModeChange?.(on)
+        dom.focusMessageInput()
+      },
+      [onPlanModeChange]
+    )
 
     // Get current messages for token counting - will only recalculate when stable messages actually change
     // Uses getContextMessageIds to respect compaction points
@@ -3220,6 +3234,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   }}
                   agentMode={agentMode}
                   onToggleAgentMode={toggleAgentMode}
+                  planMode={planMode}
+                  onPlanModeChange={onPlanModeChange ? changePlanMode : undefined}
+                  // Multi-agent rooms ignore plan mode.
+                  showPlanMode={roomSizeForTurn < 2}
                   workspaceRoot={workspaceRoot}
                   onWorkspaceRootChange={onWorkspaceRootChange}
                   browserArmed={controlledBrowserArmed ?? currentSession?.browserArmed}

@@ -33,9 +33,10 @@ import { useScopes } from '@/hooks/useScopes'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
 import { getShowThinking, scopeKindOf } from '@/packages/chat-settings'
-import { planContinueState } from '@/packages/plan/planSteps'
+import { isPlanModeOn, planContinueState } from '@/packages/plan/planSteps'
 import { thinkingOpenByDefault } from '@/packages/thinking/thinking'
 import * as atoms from '@/stores/atoms'
+import { turnOnChatPlanMode } from '@/stores/session/plan-mode'
 import {
   deleteFork,
   expandFork,
@@ -164,7 +165,9 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   )
   // Continue on a stopped plan: only the latest plan, while it is the chat's last message and nothing generates.
   const lastMessageId = currentMessageList.at(-1)?.id
-  const planModeOn = Boolean(currentSession.agentMode && currentSession.settings?.planMode)
+  const planModeOn = isPlanModeOn(currentSession)
+  // A Continue blocked by plan mode offers to turn it back on (with Agent Mode); Continue stays a separate click.
+  const onTurnOnPlanMode = useCallback(() => turnOnChatPlanMode(currentSession.id), [currentSession.id])
   const planContinueFor = (messageId: string) =>
     planContinueState({
       latestPlan: messageId === latestPlanMessageId,
@@ -333,6 +336,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                           planTouchesFiles={planTouchesFiles}
                           latestPlan={msg.id === latestPlanMessageId}
                           planContinue={planContinueFor(msg.id)}
+                          onTurnOnPlanMode={onTurnOnPlanMode}
                         />
                       )}
                     </ErrorBoundary>

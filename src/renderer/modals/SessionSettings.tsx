@@ -138,7 +138,8 @@ const SessionSettingsModal = NiceModal.create(
           const merged = {
             ...(s ?? {}),
             ...getSessionMeta(editingData),
-            settings: editingData.settings,
+            // Plan mode is set from the composer while this modal is open: keep the live value, not the snapshot.
+            settings: { ...editingData.settings, planMode: s?.settings?.planMode },
           } as Session
 
           return applySessionChanges(merged)
@@ -156,8 +157,7 @@ const SessionSettingsModal = NiceModal.create(
       return null
     }
 
-    const isQuickChat =
-      typeof document !== 'undefined' && document.documentElement.dataset.quickChat === '1'
+    const isQuickChat = typeof document !== 'undefined' && document.documentElement.dataset.quickChat === '1'
 
     return (
       <AdaptiveModal
@@ -287,9 +287,7 @@ const SessionSettingsModal = NiceModal.create(
                 </Flex>
                 <Text size="xs" c="dimmed">
                   {editingData.settings?.memoryAutoSave === false
-                    ? t(
-                        'Auto-extract and model retain are off for this chat. You can still save facts manually.'
-                      )
+                    ? t('Auto-extract and model retain are off for this chat. You can still save facts manually.')
                     : t(
                         'When on, durable facts may be auto-extracted and model-retained (if Memory auto-save is enabled globally).'
                       )}
@@ -298,7 +296,10 @@ const SessionSettingsModal = NiceModal.create(
             )}
 
             {/* Advanced model settings — collapsed by default */}
-            <Stack gap={0} className="border border-solid border-chatbox-border-primary rounded-lg overflow-hidden session-settings-advanced">
+            <Stack
+              gap={0}
+              className="border border-solid border-chatbox-border-primary rounded-lg overflow-hidden session-settings-advanced"
+            >
               <UnstyledButton
                 onClick={() => setAdvancedOpen((v) => !v)}
                 className="w-full px-3 py-2.5 hover:bg-[var(--chatbox-background-tertiary)] transition-colors session-settings-advanced-toggle"
@@ -390,8 +391,7 @@ function ThinkingBudgetConfig({
   maxValue = 10000,
 }: ThinkingBudgetConfigProps) {
   const { t } = useTranslation()
-  const isQuickChat =
-    typeof document !== 'undefined' && document.documentElement.dataset.quickChat === '1'
+  const isQuickChat = typeof document !== 'undefined' && document.documentElement.dataset.quickChat === '1'
 
   // Define preset values in one place
   const PRESET_VALUES = useMemo(() => [2048, 5120, 10240], [])
@@ -567,8 +567,7 @@ function OpenAIProviderConfig({
   onSettingsChange: (data: Session['settings']) => void
 }) {
   const { t } = useTranslation()
-  const isQuickChat =
-    typeof document !== 'undefined' && document.documentElement.dataset.quickChat === '1'
+  const isQuickChat = typeof document !== 'undefined' && document.documentElement.dataset.quickChat === '1'
   const providerOptions = settings?.providerOptions?.openai
 
   // Memoize options to prevent recreation on every render

@@ -27,6 +27,7 @@ import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as scrollActions from '@/stores/scrollActions'
 import { moveChatWithUndoOrToast } from '@/stores/session/chat-menu-actions'
 import { isSessionGenerationActive } from '@/stores/session/generation-cancel'
+import { setChatPlanMode } from '@/stores/session/plan-mode'
 import { isSessionGenerationLive, subscribeSessionGenerationLive } from '@/stores/session/session-live-generation'
 import { modifyMessage, removeCurrentThread, startNewThread, submitNewUserMessage } from '@/stores/sessionActions'
 import { getAllMessageList } from '@/stores/sessionHelpers'
@@ -358,6 +359,10 @@ function RouteComponent() {
                     onSelectModel={onSelectModel}
                     onToggleAgentMode={(agentMode) => {
                       void updateSessionStore(currentSession.id, { agentMode })
+                    }}
+                    planMode={currentSession.settings?.planMode ?? false}
+                    onPlanModeChange={(on) => {
+                      void setChatPlanMode(currentSession.id, on)
                     }}
                     onWorkspaceRootChange={(workspaceRoot) => {
                       void updateSessionStore(currentSession.id, { workspaceRoot })

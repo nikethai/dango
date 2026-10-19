@@ -270,6 +270,26 @@ describe('PlanCard stopped', () => {
     fireEvent.click(button)
     expect(props.onContinue).not.toHaveBeenCalled()
   })
+
+  it('a blocked Continue offers Turn on plan mode, and its click calls onTurnOnPlanMode', async () => {
+    const onTurnOnPlanMode = vi.fn(async () => {})
+    const { props } = renderCard(
+      { planText: FOUR, status: 'approved', startedAt: 1 },
+      { continueState: 'blocked', onTurnOnPlanMode }
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on plan mode' }))
+    await waitFor(() => expect(onTurnOnPlanMode).toHaveBeenCalledTimes(1))
+    // It changes the setting only: Continue stays the next, separate click.
+    expect(props.onContinue).not.toHaveBeenCalled()
+    cleanup()
+
+    // Without a handler, or once Continue is ready, there is no such button.
+    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { continueState: 'blocked' })
+    expect(screen.queryByRole('button', { name: 'Turn on plan mode' })).toBeNull()
+    cleanup()
+    renderCard({ planText: FOUR, status: 'approved', startedAt: 1 }, { continueState: 'ready', onTurnOnPlanMode })
+    expect(screen.queryByRole('button', { name: 'Turn on plan mode' })).toBeNull()
+  })
 })
 
 describe('PlanCard full plan (I3)', () => {
