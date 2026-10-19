@@ -11,7 +11,7 @@ vi.mock('@/platform', () => ({
   },
 }))
 
-import StoreStorage, { StorageKey } from './StoreStorage'
+import StoreStorage, { StorageKey, StorageKeyGenerator } from './StoreStorage'
 
 describe('StoreStorage write policy', () => {
   beforeEach(() => {
@@ -22,6 +22,19 @@ describe('StoreStorage write policy', () => {
     const storage = new StoreStorage()
     await storage.setItem(key, [{ id: 'p1' }])
     expect(setStoreValue).toHaveBeenCalledWith(key, [{ id: 'p1' }])
+  })
+
+  it.each([StorageKey.Sources, StorageKey.BackgroundJobs, 'source-cursor:s1'])(
+    'writes %s immediately, not debounced',
+    async (key) => {
+      const storage = new StoreStorage()
+      await storage.setItem(key, { v: 1 })
+      expect(setStoreValue).toHaveBeenCalledWith(key, { v: 1 })
+    }
+  )
+
+  it('sourceCursor builds a namespaced key', () => {
+    expect(StorageKeyGenerator.sourceCursor('abc')).toBe('source-cursor:abc')
   })
 
   it('still debounces a non-critical key', async () => {

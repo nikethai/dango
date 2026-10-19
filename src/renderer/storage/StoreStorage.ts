@@ -44,6 +44,10 @@ export enum StorageKey {
   Knowledge = 'knowledge',
   /** Where the old memory banks were moved to knowledge: `{ state: 'done', at, counts }`. */
   KnowledgeMigration = 'knowledge-migration',
+  /** Connected sources (one document; IndexedDB). Secrets live in the keychain, never here. */
+  Sources = 'sources',
+  /** Background job history (IndexedDB; shared by main and Quick Chat windows). */
+  BackgroundJobs = 'background-jobs',
 }
 
 export const StorageKeyGenerator = {
@@ -74,6 +78,10 @@ export const StorageKeyGenerator = {
   linkUniqKey(url: string) {
     return `link_uniq:${url}`
   },
+  /** Sync cursor for a connected source (written after every item batch, so never debounced). */
+  sourceCursor(id: string) {
+    return `source-cursor:${id}`
+  },
 }
 
 export default class StoreStorage extends BaseStorage {
@@ -89,6 +97,8 @@ export default class StoreStorage extends BaseStorage {
     StorageKey.ReviewEntries,
     StorageKey.Knowledge,
     StorageKey.KnowledgeMigration,
+    StorageKey.Sources,
+    StorageKey.BackgroundJobs,
     // Scope lists hold a client scope's privacy switch (readsEverywhere); a debounced write can lose it on quit.
     StorageKey.MyProjects,
     StorageKey.MyFolders,
@@ -112,7 +122,7 @@ export default class StoreStorage extends BaseStorage {
 
   public async setItem<T>(key: string, value: T): Promise<void> {
     // These keys are startup-critical and should not be dropped on fast restarts.
-    if (this.immediateKeys.has(key) || key.startsWith('memory:agent:')) {
+    if (this.immediateKeys.has(key) || key.startsWith('memory:agent:') || key.startsWith('source-cursor:')) {
       await this.setItemNow(key, value)
       return
     }
