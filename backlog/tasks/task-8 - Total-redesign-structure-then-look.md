@@ -4,7 +4,7 @@ title: 'Total redesign: structure, then look'
 status: Now
 assignee: []
 created_date: '2026-10-16 14:22'
-updated_date: '2026-10-18 15:43'
+updated_date: '2026-10-19 05:40'
 labels:
   - design
 dependencies: []
@@ -38,4 +38,6 @@ Maintainer asked on 2026-10-16 to redesign before building the shared core: does
 Slice 05 (Review home) built on feat/redesign-05-review-home. Follow-ups: for slice 10 (first real Auto applier) — (a) the Undo button on an Auto-arrived Done row may render before the arrival map is set and miss a re-render; (b) when an Auto arrival loses a cross-window race, addReviewEntry returns the open input entry instead of the stored Done row. For 1b's UndoToast — at 390 px the toast is narrow and covers a row. Minor: getOS() matches Mac before iPhone and Linux before Android, so the New chat shortcut hint's phone check never fires (CSS hides it under 640 px).
 
 Slice 06a (chat thread) built on feat/redesign-06a-chat-thread. Follow-ups: plan mode has no UI control (TASK-16); 'Continue remaining work' for task lists outside plans went with the task dock; the copy-reasoning action from ReasoningContentUI is gone (6b could restore); Android's pending line has never shown a reasoning summary; a later plan in the same chat merges into the open Change for the same change set (clear changeSetsBySession on apply/discard); a failed plan run files no Change; Stop pressed between the main stream's end and the continue stream's first update doesn't abort the continue (Stop registry); step titles show raw Markdown; post-turn failures are logged, not reported to Sentry.
+
+Slice 08 (Quick Chat, Rewrite, menu bar, notifications) built on feat/redesign-08-quick-chat-menu-bar. Follow-ups: stopping a Quick Chat stream from the main window (needs a cross-window stop signal); the Writing assistant's 'Save to chat' is gone; team-room and update notifications removed; requiresVision for Quick Chat image captures; Close button name 'Close (Esc)'; scopes reload writes back to storage (race with main); mobile/web Quick Chat focus pops the keyboard; Stop before generation starts needs a second press; shell:screenshot-captured still uses app.emit (renderer guards protect); Linux resize of the fixed-size quick window to verify; rustfmt drift in desktop_shell.rs predates the slice.
 <!-- SECTION:NOTES:END -->
