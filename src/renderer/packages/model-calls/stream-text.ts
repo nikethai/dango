@@ -379,8 +379,9 @@ export async function streamText(
   const dependencies = await createModelDependencies()
 
   // for model not support tool use, use prompt engineering to handle knowledge base and web search
-  // Attachment tools (fileKey) only when user uploaded files/links
-  const needAttachmentFileToolSet = hasDocumentFileOrLink && model.isSupportToolUse()
+  // Attachment tools (fileKey) only when user uploaded files/links. A turn with its own tool set (`tools`, e.g. `{}` for
+  // Answer without tools) gets none of the built-in toolsets, so it must not be told about them either.
+  const needAttachmentFileToolSet = !customTools && hasDocumentFileOrLink && model.isSupportToolUse()
   const workspaceRoot = agentCoding?.workspaceRoot?.trim() || ''
   const capabilityId = agentCoding?.capabilityId?.trim() || ''
   const mutationEnabled = Boolean(agentCoding?.mutationEnabled)
@@ -390,10 +391,10 @@ export async function streamText(
     mutationEnabled &&
     platform.type === 'desktop' &&
     model.isSupportToolUse()
-  const needVideoToolSet = hasVideoAttachment && model.isSupportToolUse() && model.isSupportVision()
+  const needVideoToolSet = !customTools && hasVideoAttachment && model.isSupportToolUse() && model.isSupportVision()
   // Public video URL reader — independent of local video attachments
   const videoUrlExtension = settingsStore.getState().extension?.videoUrl
-  const needVideoUrlToolSet = videoUrlExtension?.enabled !== false && model.isSupportToolUse()
+  const needVideoUrlToolSet = !customTools && videoUrlExtension?.enabled !== false && model.isSupportToolUse()
   const kbNotSupported = knowledgeBase && !model.isSupportToolUse('knowledge-base')
   const webNotSupported = webBrowsing && !model.isSupportToolUse('web-browsing')
   const workspaceFileToolSet = needWorkspaceCodingTools
