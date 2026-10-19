@@ -113,8 +113,60 @@ button.dg-tool {
 }
 .dg-msg-actions__meta {
   margin-left: var(--dango-space-2);
+  min-width: 0;
   color: var(--dango-muted);
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+/* Phone width: the meta (model · tokens · time) takes its own line under the buttons instead of overflowing. */
+@media (max-width: 480px) {
+  .dg-msg-actions {
+    max-width: 100%;
+  }
+  .dg-msg-actions__meta {
+    flex-basis: 100%;
+    margin-left: var(--dango-space-1);
+  }
+}
+/* The sticky row on small screens floats over the thread: a raised card, never wider than the column. */
+.dg-msg-actions-float {
+  max-width: 100%;
+  min-width: 0;
+  padding: var(--dango-space-1);
+  border-radius: var(--dango-radius-md);
+  border: 1px solid var(--dango-hairline);
+  background: var(--dango-raised);
+  box-shadow: var(--dango-shadow-popover);
+}
+
+/* Inline question editor (06b MA1): the column's width; body type on wider screens (16 px on phones avoids zoom). */
+.dg-msg-editor {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.dg-msg-editor textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+@media (min-width: 481px) {
+  .dg-msg-editor textarea {
+    font-size: var(--dango-type-body-size);
+    line-height: var(--dango-type-body-line);
+  }
+}
+
+/* A menu list inside a Sheet (Move to scope): the sheet is the surface, so no popover chrome. */
+.dg-menu.dg-menu--sheet {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Composer notices (06b ER4, 80% context): one sentence, then the fixes as buttons; wraps at phone width. */
@@ -144,12 +196,62 @@ button.dg-tool {
 }
 
 /* Model error under an answer (06b ER1/ER2/ER5/CH5): the sentence, then the fix as the button, then details. */
+/* A failed model call under its answer (06b ER1): sentence, fix buttons (wrap at 375 px), raw detail. */
+.dg-model-error {
+  margin-top: var(--dango-space-3);
+  padding: var(--dango-space-3);
+  border-radius: var(--dango-radius-md);
+  border: 1px solid color-mix(in srgb, var(--dango-danger) 28%, var(--dango-hairline));
+  background: color-mix(in srgb, var(--dango-danger) 6%, var(--dango-raised));
+  color: var(--dango-ink);
+  min-width: 0;
+  max-width: 100%;
+}
+.dg-model-error__sentence {
+  margin: 0;
+  color: var(--dango-ink);
+  overflow-wrap: anywhere;
+}
+.dg-model-error__link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--dango-blue-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.dg-model-error__link:focus-visible {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: 2px;
+}
 .dg-model-error__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--dango-space-2);
   margin-top: var(--dango-space-2);
+  min-width: 0;
+}
+.dg-model-error__actions .dg-btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+.dg-model-error__detail {
+  margin-top: var(--dango-space-2);
+  padding: var(--dango-space-2) var(--dango-space-3);
+  border-radius: var(--dango-radius-sm);
+  background: var(--dango-surface);
+  color: var(--dango-ink-2);
+  font-family: var(--dango-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
 }
 
 /* "/" menu group labels (06b CO2): Skills, then Commands. */
@@ -228,7 +330,4 @@ button.dg-tool {
 .dg-starters .dg-chip:focus-visible {
   outline: 2px solid var(--dango-focus);
   outline-offset: 2px;
-}
-.blank-home--sending .dg-starters {
-  display: none;
 }

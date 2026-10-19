@@ -102,6 +102,15 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('ModelErrorNotice', () => {
+  it('is a Dango notice: its own classes, not the legacy msg-error card', () => {
+    const { container } = render(<ModelErrorNotice msg={cases[0].msg} sessionId="s1" />)
+    const notice = screen.getByRole('alert')
+    expect(notice.className).toBe('dg-model-error')
+    expect(container.querySelector('[class*="msg-error"]')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show details' }))
+    expect(container.querySelector('.dg-model-error__detail')?.textContent).toContain('invalid_api_key')
+  })
+
   it("names the provider of the failed call (a Redo ▾ to another provider), not the chat's", () => {
     render(
       <ModelErrorNotice

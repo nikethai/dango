@@ -3251,90 +3251,6 @@
     }
   }
 
-  .composer-drop-overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 20;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-    border-radius: inherit;
-    background: color-mix(in srgb, var(--chatbox-background-secondary) 55%, transparent);
-    opacity: 0;
-    visibility: hidden;
-    /* Hide from a11y/layout when inactive so a stuck class cannot block the dock */
-    content-visibility: auto;
-    transition-property: opacity, visibility;
-    transition-duration: 150ms;
-    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
-  }
-
-  .composer-drop-overlay:not(.is-active) {
-    /* Hard hide — never leave ghost overlay chrome over the blank-home dock */
-    display: none;
-  }
-
-  .composer-drop-overlay.is-active {
-    display: flex;
-    opacity: 1;
-    visibility: visible;
-  }
-
-  .composer-drop-overlay-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.75rem 1.25rem;
-    text-align: center;
-  }
-
-  .composer-drop-overlay-icon {
-    color: var(--chatbox-tint-brand);
-    opacity: 1;
-    transform: scale(1);
-    filter: blur(0);
-  }
-
-  .composer-drop-overlay.is-active .composer-drop-overlay-icon {
-    animation: composer-drop-icon-in 220ms cubic-bezier(0.2, 0, 0, 1) both;
-  }
-
-  .composer-drop-overlay-title {
-    font-size: 0.9375rem;
-    font-weight: 500;
-    letter-spacing: -0.01em;
-    color: var(--chatbox-tint-primary);
-    text-wrap: balance;
-  }
-
-  .composer-drop-overlay-hint {
-    font-size: 0.75rem;
-    color: var(--chatbox-tint-tertiary);
-    letter-spacing: -0.01em;
-  }
-
-  .composer-drop-overlay-limits {
-    font-size: 0.6875rem;
-    color: var(--chatbox-tint-tertiary);
-    letter-spacing: -0.01em;
-    opacity: 0.9;
-  }
-
-  @keyframes composer-drop-icon-in {
-    from {
-      opacity: 0;
-      transform: scale(0.25);
-      filter: blur(4px);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-      filter: blur(0);
-    }
-  }
-
   .composer-poster-skeleton {
     background: color-mix(in srgb, var(--chatbox-background-tertiary) 70%, var(--chatbox-background-secondary));
     background-image: linear-gradient(
@@ -3813,10 +3729,6 @@
     }
 
     .tool-video-filmstrip-item {
-      animation: none;
-    }
-
-    .composer-drop-overlay.is-active .composer-drop-overlay-icon {
       animation: none;
     }
   }
@@ -6936,28 +6848,6 @@ html[data-quick-chat] .composer-tools-menu .mantine-Menu-item .mantine-Flex-root
   color: var(--chatbox-tint-brand);
 }
 
-/* Inline error recovery — not MUI Alert slabs */
-.msg-error-tips {
-  margin-top: 0.65rem;
-  padding: 0.75rem 0.85rem;
-  border-radius: var(--chatbox-radius-md);
-  background: color-mix(in srgb, var(--chatbox-tint-error) 8%, var(--chatbox-background-secondary));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chatbox-tint-error) 22%, transparent);
-  color: var(--chatbox-tint-primary);
-}
-
-/* Light: slightly stronger error wash so cards don't vanish on white canvas */
-:root:not([data-mantine-color-scheme='dark']) .msg-error-tips {
-  background: color-mix(in srgb, var(--chatbox-tint-error) 7%, #ffffff);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--chatbox-tint-error) 18%, transparent),
-    0 1px 2px rgba(0, 0, 0, 0.04);
-}
-
-:root:not([data-mantine-color-scheme='dark']) .msg-error-detail {
-  background: color-mix(in srgb, var(--chatbox-tint-error) 5%, #f8f8fa);
-}
-
 :root:not([data-mantine-color-scheme='dark']) .msg-followup-chip {
   background: var(--chatbox-background-primary);
   box-shadow:
@@ -6982,72 +6872,6 @@ html[data-quick-chat] .composer-tools-menu .mantine-Menu-item .mantine-Flex-root
 
 :root:not([data-mantine-color-scheme='dark']) .thread-jump-latest:hover {
   background: #f5f5f7;
-}
-
-.msg-error-tips-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.msg-error-tips-line {
-  margin: 0;
-  font-size: 0.875rem;
-  line-height: 1.5;
-  font-weight: 500;
-  color: var(--chatbox-tint-primary);
-}
-
-.msg-error-link {
-  display: inline;
-  padding: 0;
-  border: none;
-  background: none;
-  font: inherit;
-  font-weight: 600;
-  color: var(--chatbox-tint-brand);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.msg-error-link:hover {
-  color: var(--chatbox-background-brand-primary-hover);
-}
-
-.msg-error-detail {
-  margin-top: 0.55rem;
-  padding: 0.55rem 0.65rem;
-  border-radius: var(--chatbox-radius-sm);
-  background: color-mix(in srgb, var(--chatbox-tint-error) 6%, transparent);
-}
-
-.msg-error-detail-toggle {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.4rem;
-  width: 100%;
-  padding: 0;
-  border: none;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  color: inherit;
-  font: inherit;
-}
-
-.msg-error-detail-chevron {
-  flex-shrink: 0;
-  margin-top: 0.1rem;
-  color: var(--chatbox-tint-error);
-}
-
-.msg-error-detail-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  color: var(--chatbox-tint-secondary);
 }
 
 /* Quiet Claude-style follow-ups — no sparkles, no brand chips */
@@ -7172,14 +6996,6 @@ html[data-quick-chat] .composer-tools-menu .mantine-Menu-item .mantine-Flex-root
     min-height: 44px;
     padding: 0.5rem 1rem;
     font-size: 0.875rem;
-  }
-
-  .msg-error-tips {
-    padding: 0.7rem 0.75rem;
-  }
-
-  .msg-error-tips-line {
-    font-size: 0.8125rem;
   }
 
   .msg-ocr-card {

@@ -1109,8 +1109,10 @@ const _Message: FC<Props> = (props) => {
                     gap={0}
                     className={
                       isSamllScreen
-                        ? 'p-xxs bg-chatbox-background-primary rounded-md border-[0.5px] border-solid border-chatbox-border-primary'
-                        : ''
+                        ? isChatSession
+                          ? 'dg-msg-actions-float'
+                          : 'p-xxs bg-chatbox-background-primary rounded-md border-[0.5px] border-solid border-chatbox-border-primary'
+                        : 'min-w-0 max-w-full'
                     }
                   >
                     {isChatSession ? (

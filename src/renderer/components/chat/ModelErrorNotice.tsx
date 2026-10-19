@@ -34,7 +34,7 @@ function rawDetail(msg: Message): string {
 
 function SettingsLink({ children, onClick }: { children?: ReactNode; onClick: () => void }) {
   return (
-    <button type="button" className="msg-error-link" onClick={onClick}>
+    <button type="button" className="dg-model-error__link" onClick={onClick}>
       {children}
     </button>
   )
@@ -201,10 +201,8 @@ export function ModelErrorNotice(props: { msg: Message; sessionId: string }) {
   }
 
   return (
-    <div className="msg-error-tips message-error-tips" role="alert">
-      <div className="msg-error-tips-body">
-        <p className="msg-error-tips-line dg-type-callout">{sentence}</p>
-      </div>
+    <div className="dg-model-error" role="alert">
+      <p className="dg-model-error__sentence dg-type-callout">{sentence}</p>
       <div className="dg-model-error__actions">
         {fix ? (
           <button type="button" className="dg-btn dg-btn--primary" disabled={busy} onClick={() => void runFix()}>
@@ -225,11 +223,7 @@ export function ModelErrorNotice(props: { msg: Message; sessionId: string }) {
           </button>
         ) : null}
       </div>
-      {expanded ? (
-        <div className="msg-error-detail">
-          <div className="msg-error-detail-text dg-type-caption whitespace-pre-wrap break-all">{detail}</div>
-        </div>
-      ) : null}
+      {expanded ? <div className="dg-model-error__detail dg-type-caption">{detail}</div> : null}
     </div>
   )
 }

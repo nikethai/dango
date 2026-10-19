@@ -38,7 +38,7 @@ export function UserMessageEditor(props: { initialText: string; onSend(text: str
   }
 
   return (
-    <div className="dg-composer w-full">
+    <div className="dg-composer dg-msg-editor">
       <textarea
         ref={fieldRef}
         aria-label={t('Edit message')}

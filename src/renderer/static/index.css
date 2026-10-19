@@ -160,12 +160,6 @@ html[data-theme='dark'] {
   a {
     color: #fff;
   }
-  /* Error tips use studio brand tokens */
-  .message-error-tips a,
-  .msg-error-tips a,
-  .msg-error-tips .msg-error-link {
-    color: var(--chatbox-tint-brand) !important;
-  }
 }
 
 html[data-theme='light'] {
@@ -204,11 +198,6 @@ html[data-theme='light'] {
 
   a {
     color: #333;
-  }
-  .message-error-tips a,
-  .msg-error-tips a,
-  .msg-error-tips .msg-error-link {
-    color: var(--chatbox-tint-brand) !important;
   }
 }
 

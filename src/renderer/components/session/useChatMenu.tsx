@@ -110,7 +110,7 @@ export function useChatMenu(
         </button>
       }
     >
-      <div className="dg-menu" style={{ width: '100%' }}>
+      <div className="dg-menu dg-menu--sheet">
         <button
           type="button"
           className={currentScopeId ? undefined : 'is-current'}
