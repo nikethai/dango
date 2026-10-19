@@ -70,17 +70,18 @@ vi.mock('@/packages/undo', async () => {
   const real = await vi.importActual<typeof import('@/packages/undo/undo')>('@/packages/undo/undo')
   return { ...real, pushUndo: vi.fn(real.pushUndo) }
 })
-// Stop marks the generating message done (partial text kept), as the real stopSessionGeneration does.
-const stopSessionGeneration = vi.hoisted(() =>
-  vi.fn(async (sessionId: string, live?: Message | null) => {
+// Stop marks the generating message done (partial text kept), as the real stopChatIfRunning does; which runs count
+// (a marked message or a registered run) is covered in stop-generation.test.ts.
+const stopChatIfRunning = vi.hoisted(() =>
+  vi.fn(async (sessionId: string, _given?: Session | null) => {
     await Promise.resolve()
     const session = store.list.find((s) => s.id === sessionId)
-    if (!session) return false
+    if (!session?.messages.some((m) => m.generating)) return false
     session.messages = session.messages.map((m) => (m.generating ? { ...m, generating: false } : m))
-    return Boolean(live)
+    return true
   })
 )
-vi.mock('./stop-generation', () => ({ stopSessionGeneration }))
+vi.mock('./stop-generation', () => ({ stopChatIfRunning }))
 
 const toastAdd = vi.hoisted(() => vi.fn())
 vi.mock('@/stores/toastActions', () => ({ add: toastAdd }))
@@ -107,7 +108,7 @@ beforeEach(() => {
   resetUndoForTests()
   vi.mocked(pushUndo).mockClear()
   moveSessionToScope.mockClear()
-  stopSessionGeneration.mockClear()
+  stopChatIfRunning.mockClear()
   for (const fn of Object.values(tasks)) fn.mockClear()
   store.list = [chat('a', 'A', { projectId: 'p1', folderId: 'p1' }), chat('b', 'B'), chat('c', 'C')]
 })
@@ -151,9 +152,9 @@ describe('deleteChatWithUndo', () => {
     const answer = { ...msg('b-a1', 'partial answer'), role: 'assistant', generating: true } as Message
     store.list[1].messages.push(answer)
     await deleteChatWithUndo('b')
-    expect(stopSessionGeneration).toHaveBeenCalledTimes(1)
-    expect(stopSessionGeneration.mock.calls[0][0]).toBe('b')
-    expect(stopSessionGeneration.mock.calls[0][1]?.id).toBe('b-a1')
+    expect(stopChatIfRunning).toHaveBeenCalledTimes(1)
+    expect(stopChatIfRunning.mock.calls[0][0]).toBe('b')
+    expect(stopChatIfRunning.mock.calls[0][1]?.id).toBe('b')
     expect(store.list.map((s) => s.id)).toEqual(['a', 'c'])
 
     await lastUndo()?.undo()
@@ -164,17 +165,11 @@ describe('deleteChatWithUndo', () => {
     expect(restoredAnswer?.contentParts).toEqual(answer.contentParts)
   })
 
-  it('stops a run the cancel registry still knows about, even with no generating message stored', async () => {
-    const { registerGenerationCancel, clearGenerationCancel } = await import('./generation-cancel')
-    registerGenerationCancel('b', 'b-a9', () => undefined)
+  it('always asks the shared Stop, which also covers a run only the cancel registry knows about', async () => {
     await deleteChatWithUndo('b')
-    expect(stopSessionGeneration).toHaveBeenCalledWith('b', null)
-    clearGenerationCancel('b', 'b-a9')
-  })
-
-  it('does not call Stop for an idle chat', async () => {
-    await deleteChatWithUndo('b')
-    expect(stopSessionGeneration).not.toHaveBeenCalled()
+    expect(stopChatIfRunning).toHaveBeenCalledTimes(1)
+    expect(stopChatIfRunning.mock.calls[0][0]).toBe('b')
+    expect(store.list.map((s) => s.id)).toEqual(['a', 'c'])
   })
 
   it('returns null and offers no undo for a chat that is gone', async () => {

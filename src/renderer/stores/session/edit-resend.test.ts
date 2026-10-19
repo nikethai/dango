@@ -28,7 +28,12 @@ vi.mock('@/stores/chatStore', () => {
 })
 
 // Sending and generating are recorded, not run: the user turn lands at the end of the list as the real send does.
-const calls = vi.hoisted(() => ({ submitted: [] as Message[], generated: [] as string[] }))
+const calls = vi.hoisted(() => ({
+  submitted: [] as Message[],
+  generated: [] as string[],
+  generatedAfter: [] as string[],
+  stopped: [] as string[],
+}))
 vi.mock('./messages', () => ({
   submitNewUserMessage: vi.fn(async (sessionId: string, params: { newUserMsg: Message; needGenerating: boolean }) => {
     await Promise.resolve()
@@ -36,6 +41,19 @@ vi.mock('./messages', () => ({
     session?.messages.push(params.newUserMsg)
     calls.submitted.push(params.newUserMsg)
     if (params.needGenerating) calls.generated.push(sessionId)
+  }),
+  // As the real insertMessageAfter: into whichever list (current or an older thread) holds the previous message.
+  insertMessageAfter: vi.fn(async (sessionId: string, inserted: Message, afterId: string) => {
+    await Promise.resolve()
+    const session = store.list.find((s) => s.id === sessionId)
+    if (!session) return
+    for (const list of [session.messages, ...(session.threads ?? []).map((t) => t.messages)]) {
+      const at = list.findIndex((m) => m.id === afterId)
+      if (at >= 0) {
+        list.splice(at + 1, 0, inserted)
+        return
+      }
+    }
   }),
   modifyMessage: vi.fn(async (sessionId: string, updated: Message) => {
     await Promise.resolve()
@@ -52,8 +70,20 @@ vi.mock('./generation', async () => {
       await createNewFork(sessionId, msgId)
       calls.generated.push(sessionId)
     }),
+    generateMore: vi.fn(async (sessionId: string, msgId: string) => {
+      await Promise.resolve()
+      calls.generated.push(sessionId)
+      calls.generatedAfter.push(msgId)
+    }),
   }
 })
+vi.mock('./stop-generation', () => ({
+  stopChatIfRunning: vi.fn(async (sessionId: string) => {
+    await Promise.resolve()
+    calls.stopped.push(sessionId)
+    return false
+  }),
+}))
 
 const navigate = vi.hoisted(() => vi.fn())
 vi.mock('@/router', () => ({ router: { navigate } }))
@@ -81,6 +111,8 @@ beforeEach(() => {
   store.nextId = 0
   calls.submitted = []
   calls.generated = []
+  calls.generatedAfter = []
+  calls.stopped = []
   navigate.mockClear()
 })
 
@@ -126,6 +158,48 @@ describe('editAndResend', () => {
     expect(sent.skillIds).toEqual(['k1'])
     expect(sent.toolsOff).toBe(true)
     expect(calls.generated).toEqual(['s'])
+  })
+
+  it('stops whatever the chat is running first (a marked message or a registered run)', async () => {
+    store.list = [chat([msg('u1', 'user', 'first'), msg('a1', 'assistant', 'answer one')])]
+    await editAndResend('s', 'u1', 'new')
+    expect(calls.stopped).toEqual(['s'])
+  })
+
+  it('an older-thread edit keeps the old question too: the edited copy goes in a new branch', async () => {
+    store.list = [chat([msg('u9', 'user', 'current'), msg('a9', 'assistant', 'current answer')])]
+    store.list[0].threads = [
+      {
+        id: 't1',
+        name: 'Old',
+        createdAt: 1,
+        messages: [
+          msg('u1', 'user', 'first'),
+          msg('a1', 'assistant', 'answer one'),
+          msg('u2', 'user', 'second'),
+          msg('a2', 'assistant', 'answer two'),
+        ],
+      },
+    ]
+
+    await editAndResend('s', 'u2', 'new')
+
+    const session = live()
+    const thread = session.threads?.[0]
+    // The old question and answer are the other branch, untouched.
+    const fork = session.messageForksHash?.a1
+    expect(fork?.lists.some((l) => l.messages.map((m) => m.id).join() === 'u2,a2')).toBe(true)
+    expect(textOf(fork?.lists.flatMap((l) => l.messages).find((m) => m.id === 'u2'))).toBe('second')
+    // The thread now ends with an edited copy, answered below it.
+    const ids = thread?.messages.map((m) => m.id) ?? []
+    expect(ids.slice(0, 2)).toEqual(['u1', 'a1'])
+    expect(ids).toHaveLength(3)
+    const copy = thread?.messages[2] as Message
+    expect(copy.id).not.toBe('u2')
+    expect(textOf(copy)).toBe('new')
+    expect(calls.generatedAfter).toEqual([copy.id])
+    // The current list is not touched.
+    expect(session.messages.map((m) => m.id)).toEqual(['u9', 'a9'])
   })
 
   it('first message edit keeps a branch', async () => {

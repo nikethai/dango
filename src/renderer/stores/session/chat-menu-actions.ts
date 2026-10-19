@@ -19,17 +19,10 @@ export async function deleteChatWithUndo(sessionId: string): Promise<{ name: str
     return null
   }
   // Stop a running answer first: otherwise the stream keeps writing into the deleted chat, and undo would bring back
-  // a message still marked generating (a spinner nothing will ever clear). The partial text is kept.
-  const generating = [...live.messages].reverse().find((m) => m.generating)
-  const { getActiveGenerationMessageId } = await import('./generation-cancel')
-  const running = Boolean(generating) || Boolean(getActiveGenerationMessageId(sessionId))
-  // A waiting rate-limit retry would otherwise answer into the deleted chat.
-  const { cancelRateLimitRetry } = await import('./rate-limit-retry')
-  cancelRateLimitRetry(sessionId)
-  if (running) {
-    const { stopSessionGeneration } = await import('./stop-generation')
-    await stopSessionGeneration(sessionId, generating ?? null)
-  }
+  // a message still marked generating (a spinner nothing will ever clear). The partial text is kept. This also drops a
+  // waiting rate-limit retry, which would otherwise answer into the deleted chat.
+  const { stopChatIfRunning } = await import('./stop-generation')
+  const running = await stopChatIfRunning(sessionId, live)
   // Snapshot after Stop, so undo restores the chat stopped.
   const session = (running ? await chatStore.getSession(sessionId) : live) ?? live
   // deleteSession clears the chat's checklist from memory and disk; keep a copy for undo.

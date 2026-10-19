@@ -3,7 +3,7 @@
  * Prefer registry cancel over Message.cancel (functions are lost after JSON persist).
  */
 
-import type { Message, MessageContentParts } from '@shared/types'
+import type { Message, MessageContentParts, Session } from '@shared/types'
 import * as chatStore from '../chatStore'
 import { cancelSessionGeneration, getActiveGenerationMessageId } from './generation-cancel'
 import { modifyMessage } from './messages'
@@ -87,5 +87,22 @@ export async function stopSessionGeneration(
     })
   }
 
+  return true
+}
+
+/**
+ * Stop whatever this chat is running before an action that rewrites or removes its messages (delete, edit and resend).
+ * A run counts when a message is marked generating or when the cancel registry still knows it: generate() registers its
+ * run a moment before the message is marked. A waiting rate-limit retry is dropped either way. Pass the chat when it
+ * was just read; otherwise it is read here. Resolves true when something was running.
+ */
+export async function stopChatIfRunning(sessionId: string, session?: Session | null): Promise<boolean> {
+  const current = session ?? (await chatStore.getSession(sessionId))
+  const generating = current ? [...current.messages].reverse().find((m) => m.generating) : undefined
+  if (!generating && !getActiveGenerationMessageId(sessionId)) {
+    cancelRateLimitRetry(sessionId)
+    return false
+  }
+  await stopSessionGeneration(sessionId, generating ?? null)
   return true
 }
