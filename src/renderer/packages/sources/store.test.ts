@@ -23,6 +23,7 @@ import {
   getSource,
   listSources,
   loadSources,
+  registerSourcesResolver,
   revokeSource,
   SourceRuleError,
   sourceRuleErrorText,
@@ -33,13 +34,17 @@ import {
 const memory = new Map<string, unknown>()
 const clone = <T>(v: T): T => (v === undefined ? v : structuredClone(v))
 const calls: string[] = []
+const io = vi.hoisted(() => ({ writes: 0, failRead: false }))
 
 vi.mock('@/storage', () => ({
   StorageKey: { Sources: 'sources' },
   default: {
-    getItem: <T>(key: string, fallback: T): Promise<T> =>
-      Promise.resolve(memory.has(key) ? (clone(memory.get(key)) as T) : fallback),
+    getItem: <T>(key: string, fallback: T): Promise<T> => {
+      if (io.failRead) return Promise.reject(new Error('read failed'))
+      return Promise.resolve(memory.has(key) ? (clone(memory.get(key)) as T) : fallback)
+    },
     setItemNow: (key: string, value: unknown): Promise<void> => {
+      io.writes += 1
       memory.set(key, clone(value))
       return Promise.resolve()
     },
@@ -108,9 +113,23 @@ const kind = (k: SourceKind, over: Partial<SourceKindDefinition> = {}): SourceKi
   ...over,
 })
 
+const openJobEntry = (id: string, refId: string): ReviewEntry => ({
+  id,
+  kind: 'needs-you',
+  scopeId: 'acme',
+  state: 'open',
+  text: 't',
+  createdAt: 1,
+  ref: { type: 'job', id: refId },
+})
+const entryState = (id: string) =>
+  (reviewMemory.doc as { entries: ReviewEntry[] } | null)?.entries.find((e) => e.id === id)?.state
+
 beforeEach(() => {
   memory.clear()
   calls.length = 0
+  io.writes = 0
+  io.failRead = false
   reviewMemory.doc = null
   setReviewStorageForTests({
     getItem: async <T>(_key: string, fallback: T) =>
@@ -155,7 +174,7 @@ describe('sources store', () => {
     expect(getSource(a.id)).toMatchObject({ label: 'renamed', lastSyncAt: 42, kind: 'gmail', scopeId: 'acme' })
   })
 
-  it('drops corrupt stored rows one by one and tolerates a failing read', async () => {
+  it('drops corrupt stored rows one by one', async () => {
     memory.set('sources', [
       { id: 'ok', kind: 'gmail', scopeId: 'acme', label: 'x', connectedAt: 1 },
       { id: 'bad', kind: 'nope' },
@@ -168,6 +187,33 @@ describe('sources store', () => {
     await loadSources()
     expect(listSources()).toEqual([])
     expect(sourcesStore.getState().loaded).toBe(true)
+  })
+
+  it('a storage read failure keeps the store not loaded', async () => {
+    io.failRead = true
+    await loadSources()
+    expect(sourcesStore.getState().loaded).toBe(false)
+    expect(listSources()).toEqual([])
+    io.failRead = false
+    memory.set('sources', [{ id: 'ok', kind: 'gmail', scopeId: 'acme', label: 'x', connectedAt: 1 }])
+    await loadSources()
+    expect(sourcesStore.getState().loaded).toBe(true)
+    expect(listSources().map((s) => s.id)).toEqual(['ok'])
+  })
+
+  it('a rule-rejected add or a no-op change writes nothing', async () => {
+    await addSource(input({ kind: 'folder' }))
+    expect(io.writes).toBe(1)
+    await expect(addSource(input({ kind: 'folder' }))).rejects.toBeInstanceOf(SourceRuleError)
+    await updateSource('missing', { label: 'x' })
+    await revokeSource('missing')
+    expect(io.writes).toBe(1)
+  })
+
+  it('allows the same Documents collection to be added to the same scope again', async () => {
+    await addSource(input({ kind: 'documents', config: { kbId: 7 } }))
+    await expect(addSource(input({ kind: 'documents', config: { kbId: 7 } }))).resolves.toBeTruthy()
+    expect(listSources({ kind: 'documents' })).toHaveLength(2)
   })
 
   it('rejects a folder on Everywhere', async () => {
@@ -260,6 +306,51 @@ describe('sources store', () => {
     expect(state('e3')).toBe('open')
   })
 
+  it('revoke keeps the record and the entries when the kind revoke throws, and a retry completes', async () => {
+    const s = await addSource(input())
+    reviewMemory.doc = { entries: [openJobEntry('e1', 'j1')] }
+    vi.mocked(listJobs).mockImplementation((filter) =>
+      filter?.sourceId === s.id ? [job({ id: 'j1', sourceId: s.id, status: 'needs-you' })] : []
+    )
+    const revoke = vi.fn().mockRejectedValueOnce(new Error('unbind failed')).mockResolvedValue(undefined)
+    registerSourceKind(kind('gmail', { revoke }))
+
+    await expect(revokeSource(s.id)).rejects.toThrow('unbind failed')
+    expect(getSource(s.id)).toBeDefined()
+    expect(markSourceRemoved).not.toHaveBeenCalled()
+    expect(entryState('e1')).toBe('open')
+
+    await revokeSource(s.id)
+    expect(revoke).toHaveBeenCalledTimes(2)
+    expect(markSourceRemoved).toHaveBeenCalledWith(s.id)
+    expect(getSource(s.id)).toBeUndefined()
+    expect(entryState('e1')).toBe('dismissed')
+  })
+
+  it('revoke keeps the record and the entries when marking knowledge fails, and a retry completes', async () => {
+    const s = await addSource(input())
+    reviewMemory.doc = { entries: [openJobEntry('e1', 'j1')] }
+    vi.mocked(listJobs).mockImplementation((filter) =>
+      filter?.sourceId === s.id ? [job({ id: 'j1', sourceId: s.id, status: 'needs-you' })] : []
+    )
+    vi.mocked(markSourceRemoved).mockRejectedValueOnce(new Error('knowledge write failed'))
+
+    await expect(revokeSource(s.id)).rejects.toThrow('knowledge write failed')
+    expect(getSource(s.id)).toBeDefined()
+    expect(entryState('e1')).toBe('open')
+
+    await revokeSource(s.id)
+    expect(getSource(s.id)).toBeUndefined()
+    expect(entryState('e1')).toBe('dismissed')
+  })
+
+  it('revoke of a source whose kind is not registered still removes the record', async () => {
+    const s = await addSource(input({ kind: 'asana' }))
+    await revokeSource(s.id)
+    expect(markSourceRemoved).toHaveBeenCalledWith(s.id)
+    expect(getSource(s.id)).toBeUndefined()
+  })
+
   it('revoke never deletes the integration account', async () => {
     const s = await addSource(input({ config: { accountId: 'acc1' } }))
     registerSourceKind(kind('gmail', { revoke: async () => undefined }))
@@ -272,7 +363,10 @@ describe('sources store', () => {
     expect(calls).toEqual([])
   })
 
-  it('registers a job source resolver: removed sources cannot open, labels come from the store', async () => {
+  it('registerSourcesResolver: removed sources cannot open, labels come from the store', async () => {
+    vi.mocked(setJobSourceResolver).mockClear()
+    registerSourcesResolver()
+    expect(setJobSourceResolver).toHaveBeenCalledTimes(1)
     const resolver = vi.mocked(setJobSourceResolver).mock.calls.at(-1)?.[0]
     expect(resolver).toBeTruthy()
     const s = await addSource(input({ label: 'me@work' }))

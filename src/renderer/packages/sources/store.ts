@@ -93,7 +93,8 @@ async function readStored(): Promise<ConnectedSource[] | null> {
 export function loadSources(): Promise<void> {
   return enqueue(async () => {
     const stored = await readStored()
-    sourcesStore.setState((s) => ({ sources: stored ?? s.sources, loaded: true }))
+    // An unreadable store stays not loaded, so a count of 0 is never shown before it is known (R4).
+    if (stored) sourcesStore.setState({ sources: stored, loaded: true })
   })
 }
 
@@ -103,14 +104,17 @@ function ensureLoaded(): Promise<void> {
 
 /**
  * Applies `fn` to the latest list (storage, or this window's list when storage cannot be read), updates this window
- * at once and writes the result. A failed write is logged; it never rejects. Errors thrown by `fn` reject and change
- * nothing.
+ * at once and writes the result. `fn` returns the list it was given to change nothing; nothing is written then.
+ * A failed write is logged; it never rejects. Errors thrown by `fn` reject and change nothing.
  */
 function mutate<T>(fn: (sources: ConnectedSource[]) => { sources: ConnectedSource[]; result: T }): Promise<T> {
   return enqueue(async () => {
-    const current = (await readStored()) ?? sourcesStore.getState().sources
+    const stored = await readStored()
+    const current = stored ?? sourcesStore.getState().sources
     const { sources, result } = fn(current)
-    sourcesStore.setState({ sources, loaded: true })
+    if (stored) sourcesStore.setState({ sources, loaded: true })
+    else sourcesStore.setState({ sources })
+    if (sources === current) return result
     try {
       const storage = await getStorage()
       await storage.setItemNow(storage.key, sources)
@@ -203,9 +207,9 @@ export async function updateSource(
   patch: Partial<Omit<ConnectedSource, 'id' | 'kind' | 'connectedAt'>>
 ): Promise<void> {
   await mutate((sources) => ({
-    sources: sources.map((s) =>
-      s.id === id ? { ...s, ...patch, id: s.id, kind: s.kind, connectedAt: s.connectedAt } : s
-    ),
+    sources: sources.some((s) => s.id === id)
+      ? sources.map((s) => (s.id === id ? { ...s, ...patch, id: s.id, kind: s.kind, connectedAt: s.connectedAt } : s))
+      : sources,
     result: undefined,
   }))
 }
@@ -227,28 +231,36 @@ async function dismissJobEntries(jobIds: Set<string>): Promise<void> {
 }
 
 /**
- * Removes a source: stops its running jobs (and closes their open Review entries), runs the kind's `revoke` (a
- * folder is unbound; Integrations accounts and Documents collections are kept), marks its knowledge sources removed
- * (approved knowledge stays), then deletes the record and its read cursor.
+ * Removes a source: stops its running jobs, runs the kind's `revoke` (a folder is unbound; Integrations accounts and
+ * Documents collections are kept), marks its knowledge sources removed (approved knowledge stays), deletes the record
+ * and its read cursor, and only then closes the open Review entries of its jobs.
+ *
+ * If `revoke` or `markSourceRemoved` throws, the call rejects with the record kept and the entries open, so the user
+ * can try again; a retry repeats every step (each is idempotent, see `SourceKindDefinition.revoke`).
  */
 export async function revokeSource(id: string): Promise<void> {
   await ensureLoaded()
   const source = getSource(id)
   if (!source) return
+  // Jobs (and so their Review entries) are matched through this window's job store. Main is the only window that
+  // runs jobs and revokes sources, and it has loaded its jobs by then.
   const jobs = listJobs({ sourceId: id })
   for (const job of jobs) {
     if (job.status === 'running') await stopJob(job.id)
   }
-  await dismissJobEntries(new Set(jobs.map((j) => j.id)))
   await getSourceKind(source.kind)?.revoke?.(source)
   await markSourceRemoved(id)
-  await mutate((sources) => ({ sources: sources.filter((s) => s.id !== id), result: undefined }))
+  await mutate((sources) => {
+    const next = sources.filter((s) => s.id !== id)
+    return { sources: next.length === sources.length ? sources : next, result: undefined }
+  })
   try {
     const storage = await getStorage()
     await storage.removeItem(storage.cursorKey(id))
   } catch (error) {
     console.warn('[sources] Could not remove the read cursor', error)
   }
+  await dismissJobEntries(new Set(jobs.map((j) => j.id)))
 }
 
 const lastSegment = (path: string) =>
@@ -293,18 +305,22 @@ export async function adoptExistingFolderBindings(scopeIds: string[]): Promise<n
   return added
 }
 
-// Jobs of removed sources cannot be opened from Review; resumed jobs take their source's label.
-setJobSourceResolver({
-  exists: (id) => {
-    const { loaded } = sourcesStore.getState()
-    if (!loaded) {
-      void loadSources().catch(() => undefined)
-      return true
-    }
-    return getSource(id) !== undefined
-  },
-  label: (id) => getSource(id)?.label,
-})
+/**
+ * Tells the background runner about sources: jobs of removed sources cannot be opened from Review, and resumed jobs
+ * take their source's label. `initBackgroundJobs` (Task 6) calls this before registering the job opener.
+ */
+export function registerSourcesResolver(): void {
+  setJobSourceResolver({
+    exists: (id) => {
+      if (!sourcesStore.getState().loaded) {
+        void loadSources().catch(() => undefined)
+        return true
+      }
+      return getSource(id) !== undefined
+    },
+    label: (id) => getSource(id)?.label,
+  })
+}
 
 export function _resetSourcesForTests(): void {
   sourcesStore.setState({ sources: [], loaded: false })

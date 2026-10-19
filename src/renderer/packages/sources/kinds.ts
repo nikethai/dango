@@ -33,6 +33,10 @@ export type SourceKindDefinition = SourceAdapter & {
   attach?(draft: SourceDraft, scopeId: string): Promise<Record<string, unknown>>
   discard?(draft: SourceDraft): Promise<void>
   reconnect?(source: ConnectedSource): Promise<boolean>
+  /**
+   * Undoes what `attach` set up (a folder is unbound; accounts and collections are kept). Must be idempotent: running
+   * it again on an already-revoked source succeeds, because `revokeSource` repeats it when a later step failed.
+   */
   revoke?(source: ConnectedSource): Promise<void>
 }
 
