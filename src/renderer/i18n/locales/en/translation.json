@@ -1635,5 +1635,12 @@
   "Couldn't reach the model. Check your connection.": "Couldn't reach the model. Check your connection.",
   "The model couldn't answer. Try again.": "The model couldn't answer. Try again.",
   "Sign in again": "Sign in again",
-  "Find the folder": "Find the folder"
+  "Find the folder": "Find the folder",
+  "{{label}} stopped: {{reason}}": "{{label}} stopped: {{reason}}",
+  "Background review of {{label}}": "Background review of {{label}}",
+  "Folder sync": "Folder sync",
+  "Gmail sync": "Gmail sync",
+  "Asana sync": "Asana sync",
+  "Codex threads sync": "Codex threads sync",
+  "Documents sync": "Documents sync"
 }
