@@ -137,7 +137,10 @@ fn display_path(root: &Path) -> String {
 
 /// One path segment the broker accepts, both when walking and when resolving an id.
 fn is_valid_segment(segment: &str) -> bool {
-    !segment.is_empty() && segment != "." && segment != ".." && !segment.contains(['/', '\\', ':', '\0'])
+    !segment.is_empty()
+        && segment != "."
+        && segment != ".."
+        && !segment.contains(['/', '\\', ':', '\0'])
 }
 
 /// A thread id: `/`-joined valid segments ending in a `rollout-*.jsonl` name.
@@ -146,7 +149,8 @@ fn is_valid_id(id: &str) -> bool {
         return false;
     }
     let parts: Vec<&str> = id.split('/').collect();
-    parts.iter().all(|p| is_valid_segment(p)) && parts.last().is_some_and(|name| is_rollout_name(name))
+    parts.iter().all(|p| is_valid_segment(p))
+        && parts.last().is_some_and(|name| is_rollout_name(name))
 }
 
 fn is_rollout_name(name: &str) -> bool {
@@ -248,7 +252,8 @@ pub struct After<'a> {
 
 impl After<'_> {
     fn admits(&self, entry: &Entry) -> bool {
-        entry.updated_at > self.ms || (entry.updated_at == self.ms && self.id.is_some_and(|id| entry.id.as_str() > id))
+        entry.updated_at > self.ms
+            || (entry.updated_at == self.ms && self.id.is_some_and(|id| entry.id.as_str() > id))
     }
 }
 
@@ -264,7 +269,11 @@ pub fn list(root: &Path, after: Option<After<'_>>, limit: usize) -> Vec<Value> {
         .into_iter()
         .filter(|e| after.as_ref().is_none_or(|after| after.admits(e)))
         .collect();
-    entries.sort_by(|a, b| a.updated_at.cmp(&b.updated_at).then_with(|| a.id.cmp(&b.id)));
+    entries.sort_by(|a, b| {
+        a.updated_at
+            .cmp(&b.updated_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
     entries.truncate(limit);
     entries
         .into_iter()
@@ -291,7 +300,10 @@ fn resolve(root: &Path, id: &str) -> Result<(PathBuf, fs::Metadata), String> {
     if !canon.starts_with(&canon_root) || canon == canon_root {
         return Err(NOT_FOUND.into());
     }
-    let resolved_name_ok = canon.file_name().and_then(|n| n.to_str()).is_some_and(is_rollout_name);
+    let resolved_name_ok = canon
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(is_rollout_name);
     if !resolved_name_ok {
         return Err(NOT_FOUND.into());
     }
@@ -384,7 +396,10 @@ struct Scanned {
 }
 
 /// Reads one line into `buf`, keeping at most `MAX_LINE_BYTES`. Returns (bytes consumed, overflowed).
-fn read_line_capped(reader: &mut impl BufRead, buf: &mut Vec<u8>) -> std::io::Result<(usize, bool)> {
+fn read_line_capped(
+    reader: &mut impl BufRead,
+    buf: &mut Vec<u8>,
+) -> std::io::Result<(usize, bool)> {
     buf.clear();
     let mut consumed = 0usize;
     let mut overflow = false;
@@ -446,7 +461,10 @@ fn scan(file: File, max_bytes: u64, max_chars: usize) -> Scanned {
         if max_chars == 0 {
             continue;
         }
-        let entry = format!("{}{role}: {text}", if out.text.is_empty() { "" } else { "\n" });
+        let entry = format!(
+            "{}{role}: {text}",
+            if out.text.is_empty() { "" } else { "\n" }
+        );
         let entry_chars = entry.chars().count();
         if used_chars + entry_chars > max_chars {
             out.text.extend(entry.chars().take(max_chars - used_chars));
@@ -503,7 +521,9 @@ const INSTRUCTION_PREFIXES: [&str; 4] = [
 
 fn is_instruction_text(text: &str) -> bool {
     let t = text.trim_start();
-    INSTRUCTION_PREFIXES.iter().any(|prefix| t.starts_with(prefix))
+    INSTRUCTION_PREFIXES
+        .iter()
+        .any(|prefix| t.starts_with(prefix))
 }
 
 fn since_of(request: &Value) -> Option<u64> {
@@ -511,7 +531,9 @@ fn since_of(request: &Value) -> Option<u64> {
     if let Some(n) = raw.as_u64() {
         return Some(n);
     }
-    raw.as_f64().filter(|f| f.is_finite() && *f >= 0.0).map(|f| f as u64)
+    raw.as_f64()
+        .filter(|f| f.is_finite() && *f >= 0.0)
+        .map(|f| f as u64)
 }
 
 /// A list request's `sinceId`; anything but a valid thread id is ignored.
@@ -546,7 +568,9 @@ pub fn dispatch(root: Option<&Path>, request: Option<&Value>) -> Result<Value, S
                 ms,
                 id: since_id_of(request),
             });
-            let items = root.map(|root| list(root, after, limit)).unwrap_or_default();
+            let items = root
+                .map(|root| list(root, after, limit))
+                .unwrap_or_default();
             Ok(Value::Array(items))
         }
         "read" => {
@@ -621,7 +645,10 @@ mod tests {
         let root = fx.root.clone();
         // An unreadable-as-JSON rollout file still counts: detect never opens files.
         fs::write(
-            root.join("2026").join("10").join("01").join("rollout-b.jsonl"),
+            root.join("2026")
+                .join("10")
+                .join("01")
+                .join("rollout-b.jsonl"),
             [0xffu8, 0xfe],
         )
         .unwrap();
@@ -637,10 +664,17 @@ mod tests {
     fn display_path_uses_tilde() {
         let home = Path::new("/home/someone");
         assert_eq!(
-            display_path_for(Path::new("/home/someone/.codex/sessions"), Some(home), false),
+            display_path_for(
+                Path::new("/home/someone/.codex/sessions"),
+                Some(home),
+                false
+            ),
             "~/.codex/sessions"
         );
-        assert_eq!(display_path_for(Path::new("/home/someone"), Some(home), false), "~");
+        assert_eq!(
+            display_path_for(Path::new("/home/someone"), Some(home), false),
+            "~"
+        );
         assert_eq!(
             display_path_for(Path::new("/opt/codex/sessions"), Some(home), false),
             "/opt/codex/sessions"
@@ -657,16 +691,26 @@ mod tests {
         // Lexical form (nothing exists on disk).
         let home = Path::new("/home/someone");
         let root = sessions_root_from(Some("/home/someone/x/../.codex".into()), None).unwrap();
-        assert_eq!(display_path_for(&root, Some(home), false), "~/.codex/sessions");
+        assert_eq!(
+            display_path_for(&root, Some(home), false),
+            "~/.codex/sessions"
+        );
         let up = sessions_root_from(Some("/home/someone/../someone/.codex".into()), None).unwrap();
-        assert_eq!(display_path_for(&up, Some(home), false), "~/.codex/sessions");
+        assert_eq!(
+            display_path_for(&up, Some(home), false),
+            "~/.codex/sessions"
+        );
 
         // Canonical form (real folders, home reached through `..`).
         let base = temp_base();
         let real_home = base.join("home");
         fs::create_dir_all(real_home.join("x")).unwrap();
         fs::create_dir_all(real_home.join(".codex").join("sessions")).unwrap();
-        let root = sessions_root_from(Some(real_home.join("x").join("..").join(".codex").into()), None).unwrap();
+        let root = sessions_root_from(
+            Some(real_home.join("x").join("..").join(".codex").into()),
+            None,
+        )
+        .unwrap();
         let shown = display_path_for(&root, Some(&real_home), CASE_INSENSITIVE_PATHS);
         assert_eq!(shown, "~/.codex/sessions");
         assert!(!shown.contains(real_home.to_str().unwrap()));
@@ -677,7 +721,10 @@ mod tests {
     fn display_path_ignores_case_where_the_file_system_does() {
         let home = Path::new("/Users/Someone");
         let root = Path::new("/users/someone/.codex/sessions");
-        assert_eq!(display_path_for(root, Some(home), true), "~/.codex/sessions");
+        assert_eq!(
+            display_path_for(root, Some(home), true),
+            "~/.codex/sessions"
+        );
         assert_eq!(
             display_path_for(root, Some(home), false),
             "/users/someone/.codex/sessions"
@@ -733,7 +780,11 @@ mod tests {
         );
         assert_eq!(
             sessions_root_from(Some("".into()), Some("/home/someone".into())),
-            Some(PathBuf::from("/home/someone").join(".codex").join("sessions"))
+            Some(
+                PathBuf::from("/home/someone")
+                    .join(".codex")
+                    .join("sessions")
+            )
         );
         assert_eq!(sessions_root_from(None, None), None);
     }
@@ -759,10 +810,14 @@ mod tests {
         let fx = fixture();
         let root = fx.root.clone();
         let long = "x".repeat(200);
-        let line = json!({"type":"message","role":"user","content":[{"type":"input_text","text":long}]});
+        let line =
+            json!({"type":"message","role":"user","content":[{"type":"input_text","text":long}]});
         fs::write(root.join("rollout-long.jsonl"), format!("{line}\n")).unwrap();
         let items = list(&root, None, DEFAULT_LIST_LIMIT);
-        let long_item = items.iter().find(|v| v["id"] == json!("rollout-long.jsonl")).unwrap();
+        let long_item = items
+            .iter()
+            .find(|v| v["id"] == json!("rollout-long.jsonl"))
+            .unwrap();
         assert_eq!(long_item["title"].as_str().unwrap().chars().count(), 80);
     }
 
@@ -835,7 +890,11 @@ mod tests {
         let evil = fx.base.join("sessions-evil");
         fs::create_dir_all(&evil).unwrap();
         fs::write(evil.join("rollout-e.jsonl"), FIXTURE).unwrap();
-        std::os::unix::fs::symlink(evil.join("rollout-e.jsonl"), root.join("rollout-evil.jsonl")).unwrap();
+        std::os::unix::fs::symlink(
+            evil.join("rollout-e.jsonl"),
+            root.join("rollout-evil.jsonl"),
+        )
+        .unwrap();
         std::os::unix::fs::symlink(&evil, root.join("evil")).unwrap();
         assert!(read(&root, "rollout-evil.jsonl", READ_MAX_CHARS).is_err());
         assert!(read(&root, "evil/rollout-e.jsonl", READ_MAX_CHARS).is_err());
@@ -846,7 +905,12 @@ mod tests {
     #[test]
     fn open_checked_rejects_a_swapped_file() {
         let fx = fixture();
-        let path = fx.root.join("2026").join("10").join("01").join("rollout-a.jsonl");
+        let path = fx
+            .root
+            .join("2026")
+            .join("10")
+            .join("01")
+            .join("rollout-a.jsonl");
         let checked = fs::symlink_metadata(&path).unwrap();
         assert!(open_checked(&path, &checked).is_some());
         // Created before the removal so it cannot reuse the original inode.
@@ -873,7 +937,12 @@ mod tests {
             });
             let page: Vec<(u64, String)> = list(root, after, limit)
                 .iter()
-                .map(|v| (v["updatedAt"].as_u64().unwrap(), v["id"].as_str().unwrap().to_string()))
+                .map(|v| {
+                    (
+                        v["updatedAt"].as_u64().unwrap(),
+                        v["id"].as_str().unwrap().to_string(),
+                    )
+                })
                 .collect();
             if page.is_empty() {
                 return pages;
@@ -970,7 +1039,9 @@ mod tests {
         );
         let next = dispatch(
             Some(&root),
-            Some(&json!({ "op": "list", "sinceMs": 5000, "sinceId": "2026/10/01/rollout-a.jsonl" })),
+            Some(
+                &json!({ "op": "list", "sinceMs": 5000, "sinceId": "2026/10/01/rollout-a.jsonl" }),
+            ),
         )
         .unwrap();
         assert_eq!(next[0]["id"], json!("2026/10/01/rollout-b.jsonl"));
@@ -987,7 +1058,12 @@ mod tests {
     #[test]
     fn same_created_survives_an_append() {
         let fx = fixture();
-        let path = fx.root.join("2026").join("10").join("01").join("rollout-a.jsonl");
+        let path = fx
+            .root
+            .join("2026")
+            .join("10")
+            .join("01")
+            .join("rollout-a.jsonl");
         let before = fs::symlink_metadata(&path).unwrap();
         let mut file = File::options().append(true).open(&path).unwrap();
         std::io::Write::write_all(&mut file, b"more\n").unwrap();
@@ -1020,7 +1096,10 @@ mod tests {
 
     #[test]
     fn slash_path_joins_components_with_forward_slashes() {
-        assert_eq!(slash_path(Path::new("/opt/codex/sessions")), "/opt/codex/sessions");
+        assert_eq!(
+            slash_path(Path::new("/opt/codex/sessions")),
+            "/opt/codex/sessions"
+        );
         assert_eq!(slash_path(Path::new("codex/sessions")), "codex/sessions");
         assert_eq!(slash_path(Path::new("/")), "/");
     }
@@ -1041,11 +1120,22 @@ mod tests {
             assert!(dispatch(Some(&root), Some(&bad)).is_err(), "{bad}");
         }
         assert!(dispatch(Some(&root), None).is_err());
-        let listed = dispatch(Some(&root), Some(&json!({ "op": "list", "sinceMs": -5, "limit": "x" }))).unwrap();
+        let listed = dispatch(
+            Some(&root),
+            Some(&json!({ "op": "list", "sinceMs": -5, "limit": "x" })),
+        )
+        .unwrap();
         assert_eq!(listed.as_array().unwrap().len(), 1);
         let detected = dispatch(None, Some(&json!({ "op": "detect" }))).unwrap();
         assert_eq!(detected["found"], json!(false));
-        assert_eq!(dispatch(None, Some(&json!({ "op": "list" }))).unwrap(), json!([]));
-        assert!(dispatch(None, Some(&json!({ "op": "read", "id": "rollout-a.jsonl" }))).is_err());
+        assert_eq!(
+            dispatch(None, Some(&json!({ "op": "list" }))).unwrap(),
+            json!([])
+        );
+        assert!(dispatch(
+            None,
+            Some(&json!({ "op": "read", "id": "rollout-a.jsonl" }))
+        )
+        .is_err());
     }
 }
