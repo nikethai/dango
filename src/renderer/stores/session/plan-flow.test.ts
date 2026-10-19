@@ -227,15 +227,32 @@ function continueState(): ReturnType<typeof planContinueState> {
   })
 }
 
-/** One scripted model turn: optional checks, streamed parts, optional work while streaming (Stop), the result. */
+/**
+ * One scripted model turn: optional checks, streamed parts, optional work while streaming (Stop), the result. With
+ * `abortOnStop`, Stop's cancel aborts the stream the way the real one ends: the call rejects with an AbortError.
+ */
 function step(
   parts: Message['contentParts'],
-  opts: { finishReason?: string; before?: (o: StreamOpts) => void; during?: () => Promise<void> } = {}
+  opts: {
+    finishReason?: string
+    before?: (o: StreamOpts) => void
+    during?: () => Promise<void>
+    abortOnStop?: boolean
+  } = {}
 ): Step {
   return async (o) => {
     opts.before?.(o)
-    await o.onResultChangeWithCancel?.({ contentParts: parts, cancel: () => {} })
+    let aborted = false
+    await o.onResultChangeWithCancel?.({
+      contentParts: parts,
+      cancel: () => {
+        aborted = true
+      },
+    })
     await opts.during?.()
+    if (opts.abortOnStop && aborted) {
+      throw new DOMException('This operation was aborted', 'AbortError')
+    }
     const value = parts.map((p) => (p.type === 'text' ? p.text : '')).join('')
     return {
       result: { contentParts: parts, text: value, finishReason: opts.finishReason ?? 'stop' },
@@ -258,12 +275,26 @@ function seedChat(): Message {
   return a1
 }
 
-/** Proposed → Run plan → running → Stop, through the real generate() and Stop. */
-async function proposeRunAndStop() {
+/**
+ * Proposed → Run plan → running → Stop, through the real generate() and Stop. Checks the proposed plan (no edit tools,
+ * pending, awaiting approval) and the running card on the way. `abortOnStop`: the run's stream rejects with an
+ * AbortError when stopped, as a real provider stream does.
+ */
+async function proposeRunAndStop(opts: { abortOnStop?: boolean } = {}) {
   const a1 = seedChat()
   await setChatPlanMode('s1', true)
+
+  // Proposed: the planning turn has no edit tools and leaves a pending plan.
   h.script.push(step([text(PLAN_TEXT)]))
   await generate('s1', a1, { operationType: 'send_message' })
+  expect(h.calls).toHaveLength(1)
+  const planningTools = Object.keys(h.calls[0].tools ?? {})
+  expect(planningTools.filter((name) => EDIT_TOOLS.includes(name))).toEqual([])
+  const proposed = storedMessage('a1')
+  expect(planOf(proposed)).toMatchObject({ status: 'pending', version: 1, planText: PLAN_TEXT })
+  expect(proposed.generating).toBe(false)
+  expect(stored().planPhase).toBe('awaiting_approval')
+  expect(h.addReviewEntry).not.toHaveBeenCalled()
 
   h.script.push(
     step(
@@ -284,10 +315,57 @@ async function proposeRunAndStop() {
         during: async () => {
           await stopSessionGeneration('s1', storedMessage('a1'))
         },
+        abortOnStop: opts.abortOnStop,
       }
     )
   )
   await approveAndExecutePlan('s1', 'a1')
+  expect(h.calls).toHaveLength(2)
+}
+
+/** After Stop: the plan is approved, unfinished, timed, settled and ready to Continue; nothing is filed or failed. */
+function expectStoppedRun() {
+  const stopped = storedMessage('a1')
+  const stoppedPlan = planOf(stopped)
+  expect(stoppedPlan).toMatchObject({ status: 'approved' })
+  expect(stoppedPlan?.finishedAt).toBeUndefined()
+  expect(stoppedPlan?.runMs).toBeGreaterThanOrEqual(0)
+  expect(stopped.generating).toBe(false)
+  expect(stopped.error).toBeUndefined()
+  expect(continueState()).toBe('ready')
+  expect(h.addReviewEntry).not.toHaveBeenCalled()
+  expect(stored().planPhase).toBeUndefined()
+}
+
+/** Continue → finished → one Change in Review, keeping the stopped run's edit. */
+async function continueToFinished() {
+  h.script.push(
+    step([text('Checked links')], {
+      before: (o) => {
+        const isKeptEdit = (m: Message) =>
+          m.contentParts.some((p) => p.type === 'tool-call' && p.toolCallId === 'c1' && p.toolName === 'edit_file')
+        expect(o.messages.filter(isKeptEdit)).toHaveLength(1)
+        expect(textOf(o.messages.at(-1) as Message)).toMatch(/stopped before it finished/)
+      },
+    })
+  )
+  await resumeStoppedPlan('s1', 'a1')
+  expect(h.calls).toHaveLength(3)
+  const finished = storedMessage('a1')
+  expect(planOf(finished)?.finishedAt).toBeDefined()
+  expect(finished.error).toBeUndefined()
+  const types = finished.contentParts.map((p) => p.type)
+  expect(types[0]).toBe('tool-call')
+  expect(types[1]).toBe('text')
+  expect(types.at(-1)).toBe('plan')
+  expect(textOf(finished)).toContain('Checked links')
+  expect(h.addReviewEntry).toHaveBeenCalledTimes(1)
+  expect(h.addReviewEntry.mock.calls[0][0]).toMatchObject({
+    kind: 'change',
+    ref: { type: 'change', id: 'cs-e2e' },
+    chatId: 's1',
+    text: 'Plan finished: Edit README',
+  })
 }
 
 beforeEach(() => {
@@ -306,83 +384,15 @@ afterEach(() => {
 
 describe('plan flow end to end (scripted model)', () => {
   test('proposed → Run plan → running → Stop → Continue → finished → one Change in Review', async () => {
-    const a1 = seedChat()
-    await setChatPlanMode('s1', true)
+    await proposeRunAndStop()
+    expectStoppedRun()
+    await continueToFinished()
+  })
 
-    // 1. Proposed: the planning turn has no edit tools and leaves a pending plan.
-    h.script.push(step([text(PLAN_TEXT)]))
-    await generate('s1', a1, { operationType: 'send_message' })
-    expect(h.calls).toHaveLength(1)
-    const planningTools = Object.keys(h.calls[0].tools ?? {})
-    expect(planningTools.filter((name) => EDIT_TOOLS.includes(name))).toEqual([])
-    const proposed = storedMessage('a1')
-    expect(planOf(proposed)).toMatchObject({ status: 'pending', version: 1, planText: PLAN_TEXT })
-    expect(proposed.generating).toBe(false)
-    expect(stored().planPhase).toBe('awaiting_approval')
-    expect(h.addReviewEntry).not.toHaveBeenCalled()
-
-    // 2. Run plan → running → Stop.
-    h.script.push(
-      step(
-        [
-          { type: 'tool-call', toolCallId: 'c1', toolName: 'edit_file', state: 'result', args: {}, result: 'ok' },
-          text('Edited README'),
-        ],
-        {
-          before: () => {
-            const running = storedMessage('a1')
-            expect(running.generating).toBe(true)
-            expect(planOf(running)).toMatchObject({ status: 'approved' })
-            expect(planOf(running)?.startedAt).toBeDefined()
-            expect(stored().planPhase).toBe('executing')
-          },
-          during: async () => {
-            await stopSessionGeneration('s1', storedMessage('a1'))
-          },
-        }
-      )
-    )
-    await approveAndExecutePlan('s1', 'a1')
-    expect(h.calls).toHaveLength(2)
-    const stopped = storedMessage('a1')
-    const stoppedPlan = planOf(stopped)
-    expect(stoppedPlan).toMatchObject({ status: 'approved' })
-    expect(stoppedPlan?.finishedAt).toBeUndefined()
-    expect(stoppedPlan?.runMs).toBeGreaterThanOrEqual(0)
-    expect(stopped.generating).toBe(false)
-    expect(continueState()).toBe('ready')
-    expect(h.addReviewEntry).not.toHaveBeenCalled()
-    expect(stored().planPhase).toBeUndefined()
-
-    // 3. Continue → finished → one Change.
-    h.script.push(
-      step([text('Checked links')], {
-        before: (o) => {
-          const isKeptEdit = (m: Message) =>
-            m.contentParts.some((p) => p.type === 'tool-call' && p.toolCallId === 'c1' && p.toolName === 'edit_file')
-          expect(o.messages.filter(isKeptEdit)).toHaveLength(1)
-          expect(textOf(o.messages.at(-1) as Message)).toMatch(/stopped before it finished/)
-        },
-      })
-    )
-    await resumeStoppedPlan('s1', 'a1')
-    expect(h.calls).toHaveLength(3)
-    const finished = storedMessage('a1')
-    expect(planOf(finished)?.finishedAt).toBeDefined()
-    expect(finished.error).toBeUndefined()
-    const types = finished.contentParts.map((p) => p.type)
-    expect(types[0]).toBe('tool-call')
-    expect(types[1]).toBe('text')
-    expect(types.at(-1)).toBe('plan')
-    expect(textOf(finished)).toContain('Checked links')
-    expect(h.addReviewEntry).toHaveBeenCalledTimes(1)
-    expect(h.addReviewEntry.mock.calls[0][0]).toMatchObject({
-      kind: 'change',
-      ref: { type: 'change', id: 'cs-e2e' },
-      chatId: 's1',
-      text: 'Plan finished: Edit README',
-    })
-    expect(h.script).toHaveLength(0)
+  test('a Stop that aborts the stream (AbortError, as real providers end) leaves the run stopped, not failed', async () => {
+    await proposeRunAndStop({ abortOnStop: true })
+    expectStoppedRun()
+    await continueToFinished()
   })
 
   test('with plan mode off, a send in an agent chat answers directly and proposes no plan', async () => {

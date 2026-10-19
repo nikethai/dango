@@ -19,6 +19,7 @@ import {
   type SessionSettings,
   type SessionType,
   type Settings,
+  type StreamTextResult,
 } from '@shared/types'
 import { cloneMessage, getMessageText, mergeMessages } from '@shared/utils/message'
 import type { ToolSet } from 'ai'
@@ -114,6 +115,11 @@ const planDecisionInFlight = new Set<string>()
 function getMessageFromSession(session: Session, messageId: string): Message | null {
   const location = findMessageLocation(session, messageId)
   return location ? location.list[location.index] : null
+}
+
+/** The rejection an aborted fetch or stream ends with (a DOMException or an Error named AbortError). */
+function isAbortError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { name?: unknown }).name === 'AbortError'
 }
 
 function getPlanPart(message: Message): MessagePlanPart | null {
@@ -1280,16 +1286,18 @@ export async function generate(
             ? 1
             : maxSteps
 
+        // What the stream last showed, as streamText would return it when stopped (see the catch below).
+        let lastStreamedParts: Message['contentParts'] = []
         const { result, knowledgeIds } = await streamText(model, {
           sessionId: session.id,
           knowledgeScopeId: getEffectiveProjectId(session) ?? null,
           knowledgeQuery: resumeQuery,
           messages: mainPromptMsgs,
           sessionSettings: effectiveSettings,
-          onResultChangeWithCancel:
-            resumedParts.length > 0
-              ? (updated) => modifyMessageCache(withResumedParts(resumedParts, updated))
-              : modifyMessageCache,
+          onResultChangeWithCancel: (updated) => {
+            if (updated.contentParts) lastStreamedParts = updated.contentParts
+            return modifyMessageCache(resumedParts.length > 0 ? withResumedParts(resumedParts, updated) : updated)
+          },
           onStatusChange: (status) => {
             targetMsg = {
               ...targetMsg,
@@ -1401,6 +1409,14 @@ export async function generate(
             : resumeQuery
               ? { userQuery: resumeQuery }
               : undefined,
+        }).catch((error: unknown) => {
+          // streamText resolves with the partial answer when Stop aborts it; a stream that rejects with an AbortError
+          // after Stop is the same Stop, so the run settles as stopped (plan time kept, Continue offered), not failed.
+          if (isAbortError(error) && wasGenerationCancelled(sessionId, targetMsg.id)) {
+            const stopped: StreamTextResult = { contentParts: lastStreamedParts }
+            return { result: stopped, knowledgeIds: [] as string[] }
+          }
+          throw error
         })
         // Read now: a visible-answer continue below registers a new abort function, which clears the Stop mark;
         // the continue stream's own Stop is read after it (finishExecutedPlan takes both).
