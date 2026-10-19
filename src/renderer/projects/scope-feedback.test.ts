@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const add = vi.fn()
 const logError = vi.fn()
-const moveSessionToScope = vi.fn()
 const deleteScopeWithUndo = vi.fn()
 
 vi.mock('@/stores/toastActions', () => ({ add: (...args: unknown[]) => add(...args) }))
@@ -12,10 +11,9 @@ vi.mock('i18next', () => ({
     key.replace(/\{\{(\w+)\}\}/g, (_m, name: string) => String(vars?.[name] ?? '')),
 }))
 vi.mock('@/lib/utils', () => ({ getLogger: () => ({ error: (...args: unknown[]) => logError(...args) }) }))
-vi.mock('./scope-sessions', () => ({ moveSessionToScope: (...args: unknown[]) => moveSessionToScope(...args) }))
 vi.mock('./scope-delete', () => ({ deleteScopeWithUndo: (...args: unknown[]) => deleteScopeWithUndo(...args) }))
 
-import { deleteScopeOrToast, moveSessionToScopeOrToast } from './scope-feedback'
+import { deleteScopeOrToast } from './scope-feedback'
 
 const scope = { id: 's1', name: 'Acme Co', kind: 'client' } as Scope
 const deps = { removeScope: vi.fn(), putScope: vi.fn() }
@@ -23,24 +21,7 @@ const deps = { removeScope: vi.fn(), putScope: vi.fn() }
 beforeEach(() => {
   add.mockClear()
   logError.mockClear()
-  moveSessionToScope.mockReset()
   deleteScopeWithUndo.mockReset()
-})
-
-describe('moveSessionToScopeOrToast', () => {
-  it('passes the result through when the move works', async () => {
-    moveSessionToScope.mockResolvedValue(true)
-    expect(await moveSessionToScopeOrToast('c1', 's1')).toBe(true)
-    expect(moveSessionToScope).toHaveBeenCalledWith('c1', 's1')
-    expect(add).not.toHaveBeenCalled()
-  })
-
-  it('shows a toast and returns false when the move fails', async () => {
-    moveSessionToScope.mockRejectedValue(new Error('disk full'))
-    expect(await moveSessionToScopeOrToast('c1', 's1')).toBe(false)
-    expect(add).toHaveBeenCalledWith("Couldn't move this chat. Try again.")
-    expect(logError).toHaveBeenCalled()
-  })
 })
 
 describe('deleteScopeOrToast', () => {
