@@ -15,6 +15,7 @@ registerBuiltinSourceKinds()
 export {
   connectSource,
   discardSourceDraft,
+  draftWasDiscarded,
   MCP_SOURCE_OPTION,
   pickSource,
   registerSourceFixHandlers,

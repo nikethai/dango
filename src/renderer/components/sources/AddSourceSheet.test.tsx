@@ -74,6 +74,8 @@ vi.mock('@/packages/sources', () => {
     pickSource: vi.fn(),
     connectSource: vi.fn(),
     discardSourceDraft: vi.fn(async () => undefined),
+    draftWasDiscarded: (e: unknown) =>
+      e instanceof h.SourceRuleError || (e as { discarded?: boolean } | null)?.discarded === true,
     revokeSource: vi.fn(async () => undefined),
     useCodexDetection: () => h.codex,
     codexThreadsFound: (d: { found: boolean; threadCount: number } | null | undefined) =>
@@ -355,6 +357,26 @@ describe('AddSourceSheet', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await expect(result).resolves.toBeNull()
     expect(discard).toHaveBeenCalledWith(folderDraft)
+  })
+
+  it('a connect error that discarded the draft returns to the picker', async () => {
+    connect.mockRejectedValueOnce(Object.assign(new Error('Sources could not be read'), { discarded: true }))
+    await toConnectStep(folderDraft, 'Folder', { scopeId: 'dango' })
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }))
+    expect(await screen.findByText('Sources could not be read')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Add a source' })).toBeTruthy()
+  })
+
+  it('undo of a connect that signed in to a new account removes that account too', async () => {
+    const created: SourceDraft = { ...gmailDraft, createdAccountId: 'a-new' }
+    connect.mockResolvedValueOnce({ sourceId: 's3' })
+    const { result } = await toConnectStep(created, 'Gmail')
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }))
+    await result
+    await vi.mocked(pushUndo).mock.calls[0][0].undo()
+    expect(revokeSource).toHaveBeenCalledWith('s3')
+    expect(discard).toHaveBeenCalledWith(created)
+    expect(vi.mocked(revokeSource).mock.invocationCallOrder[0]).toBeLessThan(discard.mock.invocationCallOrder[0])
   })
 
   it('the client-ID error offers Open Integrations', async () => {

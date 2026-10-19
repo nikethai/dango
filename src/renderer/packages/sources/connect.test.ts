@@ -14,6 +14,7 @@ import {
   addSource,
   connectSource,
   discardSourceDraft,
+  draftWasDiscarded,
   getSource,
   getSourceKind,
   isOAuthClientIdError,
@@ -30,6 +31,7 @@ const h = vi.hoisted(() => {
   const accounts: { id: string; connectorId: string; accountHint?: string; label: string; status: string }[] = []
   return {
     memory: new Map<string, unknown>(),
+    failRead: false,
     accounts,
     settings: {} as Record<string, unknown>,
     removeAccount: null as unknown as (id: string) => Promise<void>,
@@ -40,7 +42,9 @@ vi.mock('@/storage', () => ({
   StorageKey: { Sources: 'sources' },
   default: {
     getItem: <T>(key: string, fallback: T): Promise<T> =>
-      Promise.resolve(h.memory.has(key) ? (structuredClone(h.memory.get(key)) as T) : fallback),
+      h.failRead
+        ? Promise.reject(new Error('read failed'))
+        : Promise.resolve(h.memory.has(key) ? (structuredClone(h.memory.get(key)) as T) : fallback),
     setItemNow: (key: string, value: unknown): Promise<void> => {
       h.memory.set(key, structuredClone(value))
       return Promise.resolve()
@@ -185,6 +189,7 @@ const ctx = () => ({ signal: new AbortController().signal, progress: vi.fn() })
 
 beforeEach(() => {
   h.memory.clear()
+  h.failRead = false
   h.accounts.length = 0
   h.settings = {}
   _resetSourcesForTests()
@@ -294,6 +299,31 @@ describe('folder', () => {
     expect(p.unbindProject).toHaveBeenCalledWith('acme')
     expect(p.unbindProject).toHaveBeenCalledWith(draft.draftBindingId)
     expect(listSources()).toHaveLength(1)
+  })
+
+  it('any error after the folder was adopted unbinds it again and discards the draft', async () => {
+    p.pickAndBindProject.mockResolvedValue(descriptor('/Users/me/Acme'))
+    const draft = (await pickSource('folder')) as SourceDraft
+    p.adoptDraftFolderBinding.mockResolvedValue(descriptor('/Users/me/Acme', { projectId: 'acme' }))
+    // Storing the source fails with something other than a scope rule (sources cannot be read).
+    h.failRead = true
+    const error = await connectSource(draft, { scopeId: 'acme', backgroundReview: false }).catch((e) => e)
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBeInstanceOf(SourceRuleError)
+    expect(p.unbindProject).toHaveBeenCalledWith('acme')
+    expect(p.unbindProject).toHaveBeenCalledWith(draft.draftBindingId)
+    expect(draftWasDiscarded(error)).toBe(true)
+    expect(startJob).not.toHaveBeenCalled()
+  })
+
+  it('an attach that fails keeps the draft, so Connect can be tried again', async () => {
+    p.pickAndBindProject.mockResolvedValue(descriptor('/Users/me/Acme'))
+    const draft = (await pickSource('folder')) as SourceDraft
+    p.adoptDraftFolderBinding.mockRejectedValue(new Error('disk busy'))
+    const error = await connectSource(draft, { scopeId: 'acme', backgroundReview: false }).catch((e) => e)
+    expect(error.message).toBe('disk busy')
+    expect(p.unbindProject).not.toHaveBeenCalled()
+    expect(draftWasDiscarded(error)).toBe(false)
   })
 
   it('folder sync raises a relink fix when the binding is missing', async () => {

@@ -12,6 +12,7 @@ import { getSourceKind, revokeSource, syncJobLabel, updateSource } from '@/packa
 import { pushUndo } from '@/packages/undo'
 import platform, { platformCapabilities } from '@/platform'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { add as addToast } from '@/stores/toastActions'
 import { openConfiguration, SOURCES_SETTINGS_ROUTE } from './AddSourceSheet'
 
 const BACKGROUND_REVIEW_LINE =
@@ -94,7 +95,11 @@ function removeWithUndo(source: ConnectedSource): void {
     setTimeout(() => {
       removalTimers.delete(source.id)
       revokeSource(source.id)
-        .catch((error) => console.warn('[sources] Could not remove the source', error))
+        .catch((error) => {
+          console.warn('[sources] Could not remove the source', error)
+          // The row comes back; removing it again repeats every step. The label is user or service text (a value).
+          addToast(i18n.t("Couldn't remove {{label}}", { label: source.label }))
+        })
         .finally(() => setHidden(source.id, false))
     }, REMOVE_DELAY_MS)
   )

@@ -8,6 +8,7 @@ import { useScopes } from '@/hooks/useScopes'
 import {
   connectSource,
   discardSourceDraft,
+  draftWasDiscarded,
   isOAuthClientIdError,
   listSourceKinds,
   MCP_SOURCE_OPTION,
@@ -177,13 +178,17 @@ const AddSourceSheet = NiceModal.create(({ scopeId: openedFrom, kind: startKind 
       // The label and scope name are user or service text.
       pushUndo({
         message: t('Connected {{label}} to {{scope}}', { label: draft.label, scope: scopeName }),
-        undo: () => revokeSource(sourceId),
+        undo: async () => {
+          await revokeSource(sourceId)
+          // An account this sheet signed in to goes too; accounts the user already had stay.
+          if (draft.createdAccountId) await discardSourceDraft(draft)
+        },
         group: 'other',
       })
     } catch (error) {
       setBusy(false)
-      // A scope rule error has already discarded the draft: pick again.
-      if (error instanceof SourceRuleError) setStep({ name: 'pick', error: errorLine(error) })
+      // The draft was discarded (a scope rule error, or storing failed after attaching): pick again.
+      if (draftWasDiscarded(error)) setStep({ name: 'pick', error: errorLine(error) })
       else setStep({ name: 'connect', draft, error: errorLine(error) })
     }
   }

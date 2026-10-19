@@ -60,6 +60,7 @@ vi.mock('@/stores/settingsStore', () => ({
   useSettingsStore: <T,>(selector: (s: { backgroundPaused: boolean }) => T) => selector({ backgroundPaused: h.paused }),
 }))
 vi.mock('@/packages/undo', () => ({ pushUndo: vi.fn() }))
+vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
 vi.mock('@/hooks/useScopes', () => ({
   useScopes: () => ({
     scopes: [
@@ -84,6 +85,7 @@ vi.mock('./AddSourceSheet', () => ({
 import { runJobFix, startJob } from '@/packages/background'
 import { revokeSource, updateSource } from '@/packages/sources'
 import { pushUndo } from '@/packages/undo'
+import { add as addToast } from '@/stores/toastActions'
 import { openAddSourceSheet, openConfiguration } from './AddSourceSheet'
 import { _resetPendingRemovalsForTests, sourceStatusLine } from './SourceRow'
 import { SourcesSettings } from './SourcesSettings'
@@ -256,6 +258,18 @@ describe('SourcesSettings', () => {
     await act(() => vi.advanceTimersByTimeAsync(1))
     expect(revokeSource).toHaveBeenCalledTimes(1)
     expect(revokeSource).toHaveBeenCalledWith('s1')
+  })
+
+  it('a failed removal says so and brings the row back', async () => {
+    h.sources = [source()]
+    vi.mocked(revokeSource).mockRejectedValueOnce(new Error('unbind failed'))
+    await renderPage()
+    await openMenu('chaeboxi')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }))
+    await act(() => vi.advanceTimersByTimeAsync(5000))
+    expect(revokeSource).toHaveBeenCalledWith('s1')
+    expect(addToast).toHaveBeenCalledWith("Couldn't remove chaeboxi")
+    expect(screen.getByText('chaeboxi')).toBeTruthy()
   })
 
   it('a needs-you row shows the fix as its button and no retry count', async () => {

@@ -1707,6 +1707,7 @@
   "Reviewing…": "Reviewing…",
   "Syncing…": "Syncing…",
   "Removed {{label}}. Approved knowledge stays.": "Removed {{label}}. Approved knowledge stays.",
+  "Couldn't remove {{label}}": "Couldn't remove {{label}}",
   "Actions for {{label}}": "Actions for {{label}}",
   "Sync now": "Sync now",
   "No sources yet.": "No sources yet.",

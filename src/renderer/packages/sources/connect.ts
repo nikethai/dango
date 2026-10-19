@@ -50,9 +50,19 @@ export async function discardSourceDraft(draft: SourceDraft): Promise<void> {
   await getSourceKind(draft.kind)?.discard?.(draft)
 }
 
+// Errors `connectSource` threw after discarding the draft.
+const discardedDrafts = new WeakSet<object>()
+
+/** Whether `connectSource` discarded the draft before throwing `error`: the draft cannot be connected again. */
+export function draftWasDiscarded(error: unknown): boolean {
+  return error instanceof SourceRuleError || (typeof error === 'object' && error !== null && discardedDrafts.has(error))
+}
+
 /**
- * Attaches the draft to the scope, stores the source and, when the kind can sync, starts its first sync. On a
- * `SourceRuleError` the draft is discarded (and an attachment already made undone) before the error is rethrown.
+ * Attaches the draft to the scope, stores the source and, when the kind can sync, starts its first sync. When storing
+ * fails after the attachment was made (any error), or on a `SourceRuleError`, the attachment is undone and the draft
+ * discarded before the error is rethrown (`draftWasDiscarded` is then true). When `attach` itself fails with another
+ * error, the draft is kept so Connect can be tried again.
  */
 export async function connectSource(
   draft: SourceDraft,
@@ -73,25 +83,26 @@ export async function connectSource(
       config: { ...draft.config, ...attached },
     })
   } catch (error) {
-    if (error instanceof SourceRuleError) {
-      if (attached && def.attach && def.revoke) {
-        // Attached but not stored: undo the attachment (a folder adopted into the scope is unbound again).
-        await def
-          .revoke({
-            id: '',
-            kind: draft.kind,
-            scopeId,
-            label: draft.label,
-            backgroundReview: false,
-            localOnly: false,
-            config: { ...draft.config, ...attached },
-            connectedAt: Date.now(),
-          })
-          .catch((e) => console.warn('[sources] Could not undo the attachment', e))
-      }
-      await discardSourceDraft(draft).catch((e) => console.warn('[sources] Could not discard the draft', e))
+    if (attached === undefined && !(error instanceof SourceRuleError)) throw error
+    if (attached && def.attach && def.revoke) {
+      // Attached but not stored: undo the attachment (a folder adopted into the scope is unbound again).
+      await def
+        .revoke({
+          id: '',
+          kind: draft.kind,
+          scopeId,
+          label: draft.label,
+          backgroundReview: false,
+          localOnly: false,
+          config: { ...draft.config, ...attached },
+          connectedAt: Date.now(),
+        })
+        .catch((e) => console.warn('[sources] Could not undo the attachment', e))
     }
-    throw error
+    await discardSourceDraft(draft).catch((e) => console.warn('[sources] Could not discard the draft', e))
+    const thrown = typeof error === 'object' && error !== null ? error : new Error(String(error))
+    discardedDrafts.add(thrown)
+    throw thrown
   }
   if (!def.sync) return { sourceId: source.id }
   const job = startJob({
