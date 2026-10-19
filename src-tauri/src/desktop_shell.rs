@@ -510,17 +510,16 @@ fn apply_tray_status(app: &AppHandle, update: &TrayStatusUpdate) {
     let Some(state) = app.try_state::<ShellState>() else {
         return;
     };
-    // Hold the lock only to read and record the mood; muda setters dispatch to the main thread.
+    // Hold the lock only to read the mood; muda setters dispatch to the main thread. The new mood is recorded only
+    // once its icon is set, so a failed icon load is tried again on the next push.
     let (items, mood_changed) = {
-        let Ok(mut guard) = state.tray_items.lock() else {
+        let Ok(guard) = state.tray_items.lock() else {
             return;
         };
-        let Some(items) = guard.as_mut() else {
+        let Some(items) = guard.as_ref() else {
             return;
         };
-        let changed = items.mood != update.mood;
-        items.mood = update.mood;
-        (items.clone(), changed)
+        (items.clone(), items.mood != update.mood)
     };
 
     set_item_text(&items.status, &update.status_line);
@@ -529,6 +528,14 @@ fn apply_tray_status(app: &AppHandle, update: &TrayStatusUpdate) {
     set_item_text(&items.quick, &update.menu.quick_chat);
     set_item_text(&items.open_dango, &update.menu.open_dango);
     set_item_text(&items.quit, &update.menu.quit);
+
+    // Windows/Linux keep the colour icon: there is nothing to load, so the mood is recorded at once.
+    #[cfg(not(target_os = "macos"))]
+    {
+        if mood_changed {
+            record_tray_mood(&state, update.mood);
+        }
+    }
 
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
@@ -540,14 +547,23 @@ fn apply_tray_status(app: &AppHandle, update: &TrayStatusUpdate) {
     {
         if mood_changed {
             if let Ok((icon, _)) = load_tray_icon(update.mood) {
-                let _ = tray.set_icon(Some(icon));
-                // Re-assert the template flag for the new image (macOS)
-                let _ = tray.set_icon_as_template(true);
+                if tray.set_icon(Some(icon)).is_ok() {
+                    // Re-assert the template flag for the new image (macOS)
+                    let _ = tray.set_icon_as_template(true);
+                    record_tray_mood(&state, update.mood);
+                }
             }
         }
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = mood_changed;
+}
+
+/// Records the mood the tray icon now shows.
+fn record_tray_mood(state: &ShellState, mood: TrayMood) {
+    if let Ok(mut guard) = state.tray_items.lock() {
+        if let Some(items) = guard.as_mut() {
+            items.mood = mood;
+        }
+    }
 }
 
 pub fn setup_tray(app: &AppHandle) -> Result<(), String> {

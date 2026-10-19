@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import en from '@/i18n/locales/en/translation.json'
 import { computeTrayStatus } from './tray-status'
 
 const now = 1_700_000_000_000
@@ -37,10 +38,16 @@ describe('computeTrayStatus', () => {
   it('carries the menu labels', () => {
     expect(computeTrayStatus({ waiting: 0, paused: false, now }).menu).toEqual({
       openReview: 'Open Review',
-      quickChat: 'Quick chat',
+      quickChat: 'Quick Chat',
       openDango: 'Open Dango',
-      quit: 'Quit Dango',
+      quit: 'Quit',
     })
+  })
+
+  it('has an en key for every menu label', () => {
+    for (const label of Object.values(computeTrayStatus({ waiting: 0, paused: false, now }).menu)) {
+      expect((en as Record<string, string>)[label]).toBe(label)
+    }
   })
 
   it('reads 1 and 2 minutes', () => {

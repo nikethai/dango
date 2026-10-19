@@ -58,9 +58,9 @@ export function computeTrayStatus(
     tooltip: t('Dango · {{status}}', { status: statusLine }),
     menu: {
       openReview: t('Open Review'),
-      quickChat: t('Quick chat'),
+      quickChat: t('Quick Chat'),
       openDango: t('Open Dango'),
-      quit: t('Quit Dango'),
+      quit: t('Quit'),
     },
   }
 }
