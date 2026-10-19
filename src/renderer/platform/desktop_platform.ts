@@ -2,6 +2,8 @@
 
 import type { DesktopIPC } from '@shared/desktop-ipc-types'
 import type { Config, Settings, ShortcutSetting } from '@shared/types'
+import type { CodexThread, CodexThreadSummary, CodexThreadsDetection } from '@shared/types/sources'
+import type { WorkspaceDescriptor } from '@shared/types/workspace'
 import { cache } from '@shared/utils/cache'
 import { listen as tauriListen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -521,6 +523,28 @@ export default class DesktopPlatform implements Platform {
 
   public async readCodexAuthConfig() {
     return this.ipc.invoke('codex:read-auth-config')
+  }
+
+  public async adoptDraftFolderBinding(draftId: string, scopeId: string): Promise<WorkspaceDescriptor> {
+    const desc = await this.invokeWorkspace<WorkspaceDescriptor>('workspace:adopt-draft-binding', draftId, scopeId)
+    await this.revokeNativeMutationIfHidden()
+    return desc
+  }
+
+  public discardDraftFolderBindings(): Promise<number> {
+    return this.invokeWorkspace<number>('workspace:discard-draft-bindings')
+  }
+
+  public detectCodexThreads(): Promise<CodexThreadsDetection> {
+    return this.invokeWorkspace<CodexThreadsDetection>('codex:threads', { op: 'detect' })
+  }
+
+  public listCodexThreads(sinceMs?: number): Promise<CodexThreadSummary[]> {
+    return this.invokeWorkspace<CodexThreadSummary[]>('codex:threads', { op: 'list', sinceMs })
+  }
+
+  public readCodexThread(id: string): Promise<CodexThread> {
+    return this.invokeWorkspace<CodexThread>('codex:threads', { op: 'read', id })
   }
 
   public async videoYtDlp(op: 'detect' | 'install') {

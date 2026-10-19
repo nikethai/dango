@@ -25,6 +25,8 @@ export interface PlatformCapabilities {
   supportsChangeReview: boolean
   supportsLocalExecution: boolean
   supportsManagedWorktrees: boolean
+  /** Read-only local Codex CLI threads broker (desktop Tauri only). */
+  supportsCodexThreads: boolean
 }
 
 /**
@@ -60,5 +62,6 @@ export function createPlatformCapabilities({
     supportsChangeReview: isDesktopRuntime,
     supportsLocalExecution: false,
     supportsManagedWorktrees: false,
+    supportsCodexThreads: isDesktopRuntime,
   }
 }
