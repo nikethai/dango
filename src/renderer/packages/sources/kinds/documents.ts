@@ -5,6 +5,7 @@ import { UNAVAILABLE_HINT } from './common'
 
 // File statuses that mean "not searchable yet" (see KnowledgeBaseDocuments).
 const INDEXING = new Set(['pending', 'processing', 'paused'])
+const READY = 'done'
 
 const kbIdOf = (config: Record<string, unknown>) => (typeof config.kbId === 'number' ? config.kbId : undefined)
 
@@ -31,11 +32,13 @@ export const documentsKind: SourceKindDefinition = {
 
   async sync(source) {
     const kbId = kbIdOf(source.config)
-    if (kbId === undefined) throw new Error('This Documents source has no collection')
-    const controller = platform.getKnowledgeBaseController()
-    const [total, files] = await Promise.all([controller.countFiles(kbId), controller.listFiles(kbId)])
+    if (kbId === undefined) throw new Error(i18n.t('This Documents source has no collection.'))
+    const files = await platform.getKnowledgeBaseController().listFiles(kbId)
+    // Failed files are neither ready nor still indexing.
     const indexing = files.filter((f) => INDEXING.has(f.status)).length
-    const ready = i18n.t('{{count}} documents ready to search', { count: Math.max(0, total - indexing) })
+    const ready = i18n.t('{{count}} documents ready to search', {
+      count: files.filter((f) => f.status === READY).length,
+    })
     if (indexing === 0) return { summary: ready }
     return {
       summary: i18n.t('{{ready}}, {{indexing}}', {

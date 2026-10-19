@@ -59,7 +59,9 @@ async function signIn(spec: OAuthKindSpec, signal: AbortSignal): Promise<string 
   }
   if (signal.aborted) return null
   // The session's redirect honours an Integrations override, so its port is the one the browser comes back to.
-  const port = Number(new URL(start.session.redirectUri).port) || undefined
+  // Without an explicit port the browser comes back on the protocol's default port, never the helper's own.
+  const redirect = new URL(start.session.redirectUri)
+  const port = Number(redirect.port) || (redirect.protocol === 'https:' ? 443 : 80)
   let redirectUrl: string
   try {
     ;({ redirectUrl } = await waitForLocalOAuthCallback({ port, signal }))

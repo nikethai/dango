@@ -1708,6 +1708,7 @@
   "Syncing…": "Syncing…",
   "Removed {{label}}. Approved knowledge stays.": "Removed {{label}}. Approved knowledge stays.",
   "Couldn't remove {{label}}": "Couldn't remove {{label}}",
+  "This Documents source has no collection.": "This Documents source has no collection.",
   "Actions for {{label}}": "Actions for {{label}}",
   "Sync now": "Sync now",
   "No sources yet.": "No sources yet.",

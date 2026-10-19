@@ -3,6 +3,7 @@ import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import type { ConnectedSource, SourceDraft, SourceKind } from '@shared/types/sources'
 import type { WorkspaceDescriptor } from '@shared/types/workspace'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import i18n from '@/i18n'
 import { NeedsUserError, registerFixHandler, startJob } from '@/packages/background'
 import { completeConnectorOAuth, startConnectorOAuth } from '@/packages/integrations'
 import platform from '@/platform'
@@ -444,6 +445,25 @@ describe('OAuth kinds', () => {
     expect(completeConnectorOAuth).not.toHaveBeenCalled()
   })
 
+  it('a redirect URI without a port waits on the protocol default port', async () => {
+    for (const [redirectUri, port] of [
+      ['http://localhost/oauth/callback', 80],
+      ['https://localhost/oauth/callback', 443],
+    ] as const) {
+      vi.mocked(waitForLocalOAuthCallback).mockClear()
+      vi.mocked(startConnectorOAuth).mockResolvedValue({ session: { ...session, redirectUri }, authUrl: 'x' } as never)
+      const callback = deferred<{ redirectUrl: string }>()
+      vi.mocked(waitForLocalOAuthCallback).mockReturnValue(callback.promise)
+      const controller = new AbortController()
+      const pending = pickSource('gmail', { signal: controller.signal })
+      await vi.waitFor(() => expect(waitForLocalOAuthCallback).toHaveBeenCalled())
+      controller.abort()
+      callback.reject(new Error('OAuth callback cancelled'))
+      expect(await pending).toBeNull()
+      expect(vi.mocked(waitForLocalOAuthCallback).mock.calls[0][0]).toMatchObject({ port })
+    }
+  })
+
   it('a sign-in that finishes after the abort removes the account it created', async () => {
     vi.mocked(startConnectorOAuth).mockResolvedValue({ session, authUrl: 'https://auth' } as never)
     vi.mocked(waitForLocalOAuthCallback).mockResolvedValue({ redirectUrl: 'http://127.0.0.1:19847/cb?code=c' })
@@ -588,6 +608,34 @@ describe('documents', () => {
     } as never)
     const result = await need(kindOf('documents').sync)(sourceOf({ kind: 'documents', config: { kbId: 7 } }), ctx())
     expect(result.summary).toBe('2 documents ready to search, 1 still indexing')
+  })
+
+  it('Documents counts only finished files as ready; failed files are neither ready nor indexing', async () => {
+    p.getKnowledgeBaseController.mockReturnValue({
+      countFiles: async () => 6,
+      listFiles: async () => [
+        { status: 'done' },
+        { status: 'done' },
+        { status: 'failed' },
+        { status: 'failed' },
+        { status: 'pending' },
+        { status: 'paused' },
+      ],
+    } as never)
+    const result = await need(kindOf('documents').sync)(sourceOf({ kind: 'documents', config: { kbId: 7 } }), ctx())
+    expect(result.summary).toBe('2 documents ready to search, 2 still indexing')
+  })
+
+  it('a Documents source without a collection fails with a translated message', async () => {
+    const t = vi.spyOn(i18n, 't')
+    try {
+      await expect(need(kindOf('documents').sync)(sourceOf({ kind: 'documents', config: {} }), ctx())).rejects.toThrow(
+        'This Documents source has no collection.'
+      )
+      expect(t).toHaveBeenCalledWith('This Documents source has no collection.')
+    } finally {
+      t.mockRestore()
+    }
   })
 })
 
