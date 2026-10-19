@@ -19,6 +19,8 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
 | 07 | The Windows-only file-identity check (`same_file` / `same_created`) has never run. | Same as above, on Windows. |
 | 07 | The desktop manual walk has not been run. | PR #104's checklist. |
 | 08 | The Quick Chat window, menu bar and notifications have not been compiled or walked on the desktop. | PR checklist for slice 08. |
+| 06b | Agent Mode and Plan mode only appear on desktop, so the new Mode section in the Tools menu and the plan-mode toggle were not seen in a real window. The web build was walked headless in light and dark at 1280 and 375 px. | Desktop walk in the slice 06b PR. |
+| 06b | No real model has run a plan end to end. A scripted-model test covers it. | TASK-16 AC #3. |
 | all | No CI runs the tests. The local gates are the only check. | — |
 
 ## Trade-offs accepted on purpose
@@ -37,6 +39,13 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
 - **Review empty state (07 corrects 05).** EM2, "no sources yet", shows only when there are no sources and nothing visible in Review.
 - **Quick window (07, 08).** Any desktop window other than main sends setup to the main window and runs no jobs. This follows the maintainer's rule that anything to configure opens the big window.
 
+- **Settings › Chat Display removed (06b).** Its six toggles (token count, model name, token speed, word count, timestamp, first-token time) had no effect any more. The saved values stay, so nothing needed migrating.
+- **Picture chats (06b).** Editing a question in a picture chat now resends it, so changing only the wording means generating new images.
+- **Editing a question (06b).** Editing the first question of a chat overwrites its old wording. The old answer is kept as a branch.
+- **Cost estimate (06b).** It prices one model call per run at the uncached price, so an Agent Mode turn with many tool calls can cost more than the sheet says. Quick Chat and plan runs never show the sheet.
+- **Quick Chat (06b).** It still shows raw model errors and runs no ability or cost checks.
+- **Desktop vision block (06b).** A model known to lack vision is now blocked on desktop when a picture is attached, unless an OCR model is set. Video is always blocked.
+
 ## Follow-ups filed
 
 - TASK-13: the knowledge store can't recover from an unreadable `knowledge` key, and knowledge leaks into settings export and import.
@@ -50,7 +59,17 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
 - TASK-21: replace Tailwind numeric spacing with `--dango-space` tokens.
 - TASK-22: a source removal still in its 5 s undo window is lost when you quit.
 - TASK-23: design pass on the folder drop target and the scope select.
+- TASK-24: Redo with another model should size the context for the picked model.
+- TASK-25: locale-aware durations, numbers and currency.
+- TASK-26: new chat with a summary should summarise only the part that fits.
+- TASK-27: an OCR fix button, and plain copy for Dango's own error codes.
+- TASK-28: rate-limit waits lost to a reload should still reach Review.
+- TASK-29: the usage service treats a Gemini per-minute limit as an exhausted plan.
+- TASK-30: models with unknown capabilities silently lose their tools.
+- TASK-31: multi-agent rooms have gaps in the ability, cost and plan-mode checks.
+- TASK-32: decide whether Redo on a tool-capable model turns tools back on after "Answer without tools".
+- TASK-33: phone-width polish (action row behind the composer, model name truncation, sidebar opening on load) and unused translation keys.
 
 ## Per slice still to come
 
-Slices 06b, 06c and 10 add their sections here when their PRs open.
+Slices 06c and 10 add their sections here when their PRs open.
