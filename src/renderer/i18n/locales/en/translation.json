@@ -1634,6 +1634,6 @@
   "This chat is too long for the model.": "This chat is too long for the model.",
   "Couldn't reach the model. Check your connection.": "Couldn't reach the model. Check your connection.",
   "The model couldn't answer. Try again.": "The model couldn't answer. Try again.",
-  "Reconnect": "Reconnect",
-  "Choose the folder again": "Choose the folder again"
+  "Sign in again": "Sign in again",
+  "Find the folder": "Find the folder"
 }

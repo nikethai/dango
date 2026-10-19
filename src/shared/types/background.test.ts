@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { JOB_FIX_LABELS, RETRY_DELAYS_MS, retryDelayAfter } from './background'
+import { JOB_FIX_LABELS, parseJobs, RETRY_DELAYS_MS, retryDelayAfter } from './background'
 import { parseSources } from './sources'
 
 it('RETRY_DELAYS_MS matches the roadmap', () => {
@@ -18,8 +18,8 @@ describe('retryDelayAfter', () => {
 
 it('JOB_FIX_LABELS names the four fixes', () => {
   expect(JOB_FIX_LABELS).toEqual({
-    reconnect: 'Reconnect',
-    'relink-folder': 'Choose the folder again',
+    reconnect: 'Sign in again',
+    'relink-folder': 'Find the folder',
     'choose-model': 'Choose a model',
     'try-again': 'Try again',
   })
@@ -42,5 +42,21 @@ describe('parseSources', () => {
 
   it('returns [] for a non-array', () => {
     expect(parseSources('nope')).toEqual([])
+  })
+})
+
+describe('parseJobs', () => {
+  const old = { id: 'j1', scopeId: 'p1', kind: 'sync', label: 'Sync', status: 'done', attempts: 1, startedAt: 1 }
+
+  it('parses a job saved before the new fields existed', () => {
+    expect(parseJobs([old])).toEqual([old])
+  })
+
+  it('drops rows with an unknown status', () => {
+    expect(parseJobs([old, { ...old, id: 'j2', status: 'weird' }]).map((j) => j.id)).toEqual(['j1'])
+  })
+
+  it('returns [] for a non-array', () => {
+    expect(parseJobs({})).toEqual([])
   })
 })

@@ -19,12 +19,13 @@ export type BackgroundJob = {
 }
 export const RETRY_DELAYS_MS = [10_000, 60_000, 300_000] as const // then a Needs you entry
 
-export type JobFixAction = 'reconnect' | 'relink-folder' | 'choose-model' | 'try-again'
+export const JOB_FIX_ACTIONS = ['reconnect', 'relink-folder', 'choose-model', 'try-again'] as const
+export type JobFixAction = (typeof JOB_FIX_ACTIONS)[number]
 export type JobFix = { action: JobFixAction; label: string }
 // English keys: the UI passes them through t().
 export const JOB_FIX_LABELS: Record<JobFixAction, string> = {
-  reconnect: 'Reconnect',
-  'relink-folder': 'Choose the folder again',
+  reconnect: 'Sign in again',
+  'relink-folder': 'Find the folder',
   'choose-model': 'Choose a model',
   'try-again': 'Try again',
 }
@@ -51,8 +52,17 @@ export const BackgroundJobSchema: z.ZodType<BackgroundJob> = z.object({
   sourceId: z.string().optional(),
   progress: z.string().optional(),
   outcome: z.string().optional(),
-  fix: z
-    .object({ action: z.enum(['reconnect', 'relink-folder', 'choose-model', 'try-again']), label: z.string() })
-    .optional(),
+  fix: z.object({ action: z.enum(JOB_FIX_ACTIONS), label: z.string() }).optional(),
   stoppedAt: z.number().optional(),
 })
+
+/** Parses stored jobs, dropping invalid rows one by one. */
+export function parseJobs(raw: unknown): BackgroundJob[] {
+  if (!Array.isArray(raw)) return []
+  const jobs: BackgroundJob[] = []
+  for (const row of raw) {
+    const parsed = BackgroundJobSchema.safeParse(row)
+    if (parsed.success) jobs.push(parsed.data)
+  }
+  return jobs
+}
