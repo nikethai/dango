@@ -19,6 +19,7 @@ import {
   registerJobReviewOpener,
   resumeJobs,
   runJobFix,
+  setJobSourceResolver,
   startJob,
   stopJob,
   subscribeBackgroundJobs,
@@ -65,7 +66,9 @@ function handlerThat(fn: (ctx: JobContext) => Promise<{ summary: string; addDone
   return h
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Warm the store's lazy `@/storage` import, so a first load settles within fake-timer flushes.
+  await import('@/storage')
   vi.useFakeTimers({ now: T0 })
   memory.clear()
   _resetBackgroundJobsForTests()
@@ -578,5 +581,242 @@ describe('background job runner', () => {
       const src = readFileSync(join(__dirname, file), 'utf8')
       expect(src).not.toMatch(/notifications/)
     }
+  })
+})
+
+describe('background job runner: one job per source, fixes and resolver', () => {
+  const needsSignIn = () => new NeedsUserError('sign in again', { action: 'reconnect', label: 'Sign in again' })
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) await vi.advanceTimersByTimeAsync(0)
+  }
+  const runningFor = (sourceId: string) => listJobs({ sourceId }).filter((j) => j.status === 'running')
+
+  it('a fix finishing after a new run of the same source and kind does not run the fixed job again', async () => {
+    let calls = 0
+    const handler = handlerThat(async () => {
+      await Promise.resolve()
+      calls += 1
+      if (calls === 1) throw needsSignIn()
+      return new Promise(() => undefined)
+    })
+    registerJobHandler('sync', handler)
+    const { id } = gmail()
+    await settle()
+    expect(getBackgroundJob(id)?.status).toBe('needs-you')
+    let finishFix: (ok: boolean) => void = () => undefined
+    registerFixHandler(
+      'reconnect',
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishFix = resolve
+        })
+    )
+    const fixing = runJobFix(id)
+    await settle()
+    const fresh = gmail()
+    await settle()
+    expect(handler).toHaveBeenCalledTimes(2)
+    vi.mocked(setReviewEntryState).mockClear()
+    finishFix(true)
+    await fixing
+    await settle()
+    expect(handler).toHaveBeenCalledTimes(2)
+    expect(getBackgroundJob(id)?.status).toBe('needs-you')
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'job', id } }, 'done')
+    expect(runningFor('src1').map((j) => j.id)).toEqual([fresh.id])
+  })
+
+  it('pruning never drops a needs-you job', async () => {
+    registerJobHandler('sync', async () => {
+      await Promise.resolve()
+      throw needsSignIn()
+    })
+    registerJobHandler('swarm', async () => {
+      await Promise.resolve()
+      return { summary: 'ok', addDoneEntry: false }
+    })
+    const { id } = gmail()
+    await settle()
+    for (let i = 0; i < JOB_HISTORY_PER_SCOPE + 5; i++) {
+      await vi.advanceTimersByTimeAsync(1_000)
+      startJob({ scopeId: 's1', kind: 'swarm', label: 'Swarm' })
+      await settle()
+    }
+    expect(getBackgroundJob(id)?.status).toBe('needs-you')
+    expect(stored().find((j) => j.id === id)?.status).toBe('needs-you')
+    expect(listJobs({ scopeId: 's1' }).filter((j) => j.kind === 'swarm')).toHaveLength(JOB_HISTORY_PER_SCOPE)
+  })
+
+  it('resume keeps only the newest running job per source and kind', async () => {
+    const now = Date.now()
+    const base = { scopeId: 's1', kind: 'sync', label: 'Gmail sync', sourceId: 'src1', status: 'running' }
+    memory.set(KEY, [
+      { ...base, id: 'old', attempts: 1, nextRetryAt: now + 10_000, startedAt: now - 50_000 },
+      { ...base, id: 'new', attempts: 0, startedAt: now - 1_000 },
+    ])
+    const seen: string[] = []
+    registerJobHandler('sync', async (ctx) => {
+      await Promise.resolve()
+      seen.push(ctx.job.id)
+      return { summary: 'ok', addDoneEntry: false }
+    })
+    await resumeJobs(now)
+    await settle()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(seen).toEqual(['new'])
+    expect(getBackgroundJob('old')).toMatchObject({ status: 'failed', stoppedAt: now })
+    expect(getBackgroundJob('old')?.nextRetryAt).toBeUndefined()
+    expect(stored().find((j) => j.id === 'old')?.status).toBe('failed')
+    expect(addReviewEntry).not.toHaveBeenCalled()
+  })
+
+  it('startJob before the store has loaded still leaves one running job per source and kind', async () => {
+    memory.set(KEY, [
+      {
+        id: 'stored',
+        scopeId: 's1',
+        kind: 'sync',
+        label: 'Gmail sync',
+        sourceId: 'src1',
+        status: 'running',
+        attempts: 0,
+        startedAt: Date.now() - 5_000,
+      },
+    ])
+    const handler = handlerThat(async () => {
+      await Promise.resolve()
+      return new Promise(() => undefined)
+    })
+    registerJobHandler('sync', handler)
+    gmail()
+    await settle()
+    expect(runningFor('src1')).toHaveLength(1)
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(stored().filter((j) => j.sourceId === 'src1' && j.status === 'running')).toHaveLength(1)
+  })
+
+  it('startJob before load still closes the entry of a stored needs-you job', async () => {
+    memory.set(KEY, [
+      {
+        id: 'stuck',
+        scopeId: 's1',
+        kind: 'sync',
+        label: 'Gmail sync',
+        sourceId: 'src1',
+        status: 'needs-you',
+        attempts: 0,
+        startedAt: Date.now() - 5_000,
+        finishedAt: Date.now() - 4_000,
+        error: 'sign in again',
+        fix: { action: 'reconnect', label: 'Sign in again' },
+      },
+    ])
+    registerJobHandler('sync', async () => {
+      await Promise.resolve()
+      return { summary: 'ok', addDoneEntry: false }
+    })
+    gmail()
+    await settle()
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'job', id: 'stuck' } }, 'done')
+  })
+
+  it('a throwing fix handler counts as cancelled', async () => {
+    const handler = handlerThat(async () => {
+      await Promise.resolve()
+      throw needsSignIn()
+    })
+    registerJobHandler('sync', handler)
+    registerFixHandler('reconnect', async () => {
+      await Promise.resolve()
+      throw new Error('browser closed')
+    })
+    const { id } = gmail()
+    await settle()
+    await expect(runJobFix(id)).resolves.toBeUndefined()
+    await settle()
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(getBackgroundJob(id)?.status).toBe('needs-you')
+    expect(setReviewEntryState).not.toHaveBeenCalled()
+  })
+
+  it('two quick opens run the fix once', async () => {
+    registerJobHandler('sync', async () => {
+      await Promise.resolve()
+      throw needsSignIn()
+    })
+    let finishFix: (ok: boolean) => void = () => undefined
+    const fix = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishFix = resolve
+        })
+    )
+    registerFixHandler('reconnect', fix)
+    const { id } = gmail()
+    await settle()
+    const a = runJobFix(id)
+    const b = runJobFix(id)
+    await settle()
+    expect(fix).toHaveBeenCalledTimes(1)
+    finishFix(false)
+    await Promise.all([a, b])
+    // Once settled, a later open runs the fix again.
+    void runJobFix(id)
+    await settle()
+    expect(fix).toHaveBeenCalledTimes(2)
+  })
+
+  it('the job opener cannot open entries whose source is gone', async () => {
+    setJobSourceResolver({ exists: (sourceId) => sourceId !== 'gone', label: () => undefined })
+    registerJobHandler('sync', async () => {
+      await Promise.resolve()
+      throw needsSignIn()
+    })
+    registerJobHandler('swarm', async () => {
+      await Promise.resolve()
+      return { summary: 'ok', addDoneEntry: true }
+    })
+    registerJobReviewOpener()
+    const canOpen = vi.mocked(registerReviewOpener).mock.calls[0][2]?.canOpen
+    if (!canOpen) throw new Error('no canOpen')
+    const kept = gmail()
+    const gone = gmail({ sourceId: 'gone' })
+    const swarm = startJob({ scopeId: 's1', kind: 'swarm', label: 'Swarm' })
+    await settle()
+    const entry = (id: string, kind: ReviewEntry['kind'] = 'needs-you'): ReviewEntry => ({
+      id: `e-${id}`,
+      kind,
+      scopeId: 's1',
+      text: 'x',
+      ref: { type: 'job', id },
+      state: 'open',
+      createdAt: T0,
+    })
+    expect(canOpen(entry(kept.id))).toBe(true)
+    expect(canOpen(entry(gone.id))).toBe(false)
+    expect(canOpen(entry(swarm.id, 'done'))).toBe(true)
+  })
+
+  it('entries of a resumed job take the source label from the resolver', async () => {
+    setJobSourceResolver({ exists: () => true, label: (sourceId) => `Label of ${sourceId}` })
+    memory.set(KEY, [
+      {
+        id: 'j1',
+        scopeId: 's1',
+        kind: 'sync',
+        label: 'Gmail sync',
+        sourceId: 'src1',
+        status: 'running',
+        attempts: 0,
+        startedAt: Date.now() - 5_000,
+      },
+    ])
+    registerJobHandler('sync', async () => {
+      await Promise.resolve()
+      throw needsSignIn()
+    })
+    await resumeJobs()
+    await settle()
+    expect(addReviewEntry).toHaveBeenCalledWith(expect.objectContaining({ source: 'Label of src1' }))
   })
 })

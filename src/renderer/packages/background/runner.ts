@@ -29,6 +29,34 @@ const timers = new Map<string, ReturnType<typeof setTimeout>>()
 // The Review entry's `source`. Not a job field, so it is known only for jobs started in this window's lifetime.
 const sourceLabels = new Map<string, string>()
 let unwatchPause: (() => void) | null = null
+// Fixes in flight per job id, so two quick opens run one fix.
+const fixing = new Map<string, Promise<void>>()
+
+/** Slice-internal hook for the sources store (Task 3). */
+export type JobSourceResolver = {
+  exists(sourceId: string): boolean
+  label(sourceId: string): string | undefined
+}
+let sourceResolver: JobSourceResolver | null = null
+
+/** Lets the job opener refuse entries whose source was removed, and names the source on entries of resumed jobs. */
+export function setJobSourceResolver(resolver: JobSourceResolver | null): void {
+  sourceResolver = resolver
+}
+
+function sourceLabelFor(job: BackgroundJob): string | undefined {
+  const known = sourceLabels.get(job.id)
+  if (known !== undefined || job.sourceId === undefined) return known
+  return sourceResolver?.label(job.sourceId)
+}
+
+/** Same source and kind; jobs without a source (swarm, plan) never match. */
+const sameSlot = (a: BackgroundJob, b: Pick<BackgroundJob, 'sourceId' | 'kind'>) =>
+  a.sourceId !== undefined && a.sourceId === b.sourceId && a.kind === b.kind
+
+function runningSibling(job: BackgroundJob): BackgroundJob | undefined {
+  return jobsStore.getState().jobs.find((j) => j.id !== job.id && j.status === 'running' && sameSlot(j, job))
+}
 
 const jobRef = (id: string): ReviewRef => ({ type: 'job', id })
 const isPaused = () => readBackgroundPaused(settingsStore.getState().backgroundPaused)
@@ -87,7 +115,7 @@ function entryFor(job: BackgroundJob, kind: 'done' | 'needs-you', text: string, 
   return {
     kind,
     scopeId: job.scopeId,
-    source: sourceLabels.get(job.id),
+    source: sourceLabelFor(job),
     text,
     actionLabel: fix?.label,
     ref: jobRef(job.id),
@@ -213,17 +241,8 @@ export function startJob(input: {
   sourceLabel?: string
 }): BackgroundJob {
   startWatchingPause()
-  if (input.sourceId !== undefined) {
-    const same = jobsStore.getState().jobs.filter((j) => j.sourceId === input.sourceId && j.kind === input.kind)
-    const running = same.find((j) => j.status === 'running')
-    if (running) return running
-    const latest = same.reduce<BackgroundJob | undefined>(
-      (a, b) => (!a || b.startedAt > a.startedAt ? b : a),
-      undefined
-    )
-    // The new run supersedes the old Needs you entry.
-    if (latest?.status === 'needs-you') void closeEntry(latest.id)
-  }
+  const running = jobsStore.getState().jobs.find((j) => j.status === 'running' && sameSlot(j, input))
+  if (running) return running
   const job: BackgroundJob = {
     id: uuidv4(),
     scopeId: input.scopeId,
@@ -236,24 +255,58 @@ export function startJob(input: {
   }
   if (input.sourceLabel) sourceLabels.set(job.id, input.sourceLabel)
   void putJob(job)
-  schedule(job.id)
+  if (jobsStore.getState().loaded) {
+    closeSupersededEntry(job)
+    schedule(job.id)
+  } else {
+    // Stored jobs are not known yet: load them first, so resume keeps one running job per source and kind.
+    void resumeJobs()
+      .then(() => closeSupersededEntry(job))
+      .catch((error) => console.warn('[background] Could not load jobs', error))
+  }
   return job
+}
+
+/** A new run supersedes the Needs you entry of the latest earlier job for the same source and kind (R15). */
+function closeSupersededEntry(job: BackgroundJob): void {
+  let latest: BackgroundJob | undefined
+  for (const j of jobsStore.getState().jobs) {
+    if (j.id === job.id || !sameSlot(j, job) || j.startedAt > job.startedAt) continue
+    if (!latest || j.startedAt > latest.startedAt) latest = j
+  }
+  if (latest?.status === 'needs-you') void closeEntry(latest.id)
 }
 
 /** Stops a running job for good: `failed` with `stoppedAt`, no retry and no Review entry. */
 export async function stopJob(id: string): Promise<void> {
   const job = getBackgroundJob(id)
   if (!job || job.status !== 'running') return
+  await halt(job)
+}
+
+function halt(job: BackgroundJob): Promise<void> {
+  const id = job.id
   clearTimer(id)
   const controller = active.get(id)
   active.delete(id)
   controller?.abort()
   const now = Date.now()
-  await putJob({ ...without(job, 'progress', 'nextRetryAt'), status: 'failed', stoppedAt: now, finishedAt: now })
+  return putJob({ ...without(job, 'progress', 'nextRetryAt'), status: 'failed', stoppedAt: now, finishedAt: now })
 }
 
-/** Runs the job's fix; when it succeeds, closes the Needs you entry and runs the same job again from zero attempts. */
-export async function runJobFix(id: string): Promise<void> {
+/**
+ * Runs the job's fix; when it succeeds, closes the Needs you entry and runs the same job again from zero attempts.
+ * A fix that throws counts as cancelled. While a fix runs, opening it again joins that fix.
+ */
+export function runJobFix(id: string): Promise<void> {
+  const inFlight = fixing.get(id)
+  if (inFlight) return inFlight
+  const run = fixJob(id).finally(() => fixing.delete(id))
+  fixing.set(id, run)
+  return run
+}
+
+async function fixJob(id: string): Promise<void> {
   const job = getBackgroundJob(id)
   if (!job || job.status !== 'needs-you' || !job.fix) return
   const run = fixHandlers.get(job.fix.action) ?? (job.fix.action === 'try-again' ? async () => true : undefined)
@@ -261,10 +314,18 @@ export async function runJobFix(id: string): Promise<void> {
     console.warn(`[background] No fix handler for ${job.fix.action}`)
     return
   }
-  if (!(await run(job))) return
+  let fixed = false
+  try {
+    fixed = await run(job)
+  } catch (error) {
+    console.warn(`[background] Fix ${job.fix.action} failed`, error)
+  }
+  if (!fixed) return
   const cur = getBackgroundJob(id)
   if (!cur || cur.status !== 'needs-you') return
   await closeEntry(id)
+  // A newer run of the same source and kind started meanwhile: it does the work, this job stays as it was.
+  if (runningSibling(cur)) return
   startWatchingPause()
   const saved = putJob({
     ...without(cur, 'error', 'fix', 'finishedAt', 'nextRetryAt', 'outcome', 'progress'),
@@ -279,9 +340,27 @@ export async function runJobFix(id: string): Promise<void> {
 export async function resumeJobs(now = Date.now()): Promise<void> {
   startWatchingPause()
   await loadJobs()
+  await stopOlderDuplicates()
   for (const job of jobsStore.getState().jobs) {
     if (job.status === 'running') schedule(job.id, now)
   }
+}
+
+/** Keeps the newest running job per source and kind; older ones are stopped, without an entry. */
+function stopOlderDuplicates(): Promise<unknown> {
+  const newest = new Map<string, BackgroundJob>()
+  const older: BackgroundJob[] = []
+  for (const job of jobsStore.getState().jobs) {
+    if (job.status !== 'running' || job.sourceId === undefined) continue
+    const key = JSON.stringify([job.sourceId, job.kind])
+    const kept = newest.get(key)
+    if (!kept) newest.set(key, job)
+    else if (job.startedAt > kept.startedAt) {
+      older.push(kept)
+      newest.set(key, job)
+    } else older.push(job)
+  }
+  return Promise.all(older.map(halt))
 }
 
 /** Registers the Review opener for job entries: Needs you runs the fix, Done opens the scope. */
@@ -294,7 +373,14 @@ export function registerJobReviewOpener(): () => void {
       const { router } = await import('@/router')
       await router.navigate({ to: '/scope/$scopeId', params: { scopeId: entry.scopeId }, search: { tab: 'overview' } })
     },
-    { canOpen: (entry) => entry.kind === 'needs-you' || entry.kind === 'done' }
+    {
+      canOpen: (entry) => {
+        if (entry.kind !== 'needs-you' && entry.kind !== 'done') return false
+        // R15: an entry whose source was removed has nothing to fix or open.
+        const sourceId = getBackgroundJob(entry.ref.id)?.sourceId
+        return sourceId === undefined || !sourceResolver || sourceResolver.exists(sourceId)
+      },
+    }
   )
 }
 
@@ -307,6 +393,8 @@ export function _resetBackgroundJobsForTests(): void {
   handlers.clear()
   fixHandlers.clear()
   sourceLabels.clear()
+  fixing.clear()
+  sourceResolver = null
   unwatchPause?.()
   unwatchPause = null
   _resetJobsStoreForTests()

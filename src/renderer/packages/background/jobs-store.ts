@@ -34,11 +34,14 @@ const pruned = new Set<string>()
 
 const finishedAt = (j: BackgroundJob) => j.finishedAt ?? j.stoppedAt ?? j.startedAt
 
-/** Keeps every running job and the newest `JOB_HISTORY_PER_SCOPE` finished jobs of each scope. */
+/**
+ * Keeps every running and needs-you job (a needs-you job waits for its fix) and the newest `JOB_HISTORY_PER_SCOPE`
+ * done or stopped jobs of each scope.
+ */
 function prune(jobs: BackgroundJob[]): BackgroundJob[] {
   const finishedByScope = new Map<string, BackgroundJob[]>()
   for (const j of jobs) {
-    if (j.status === 'running') continue
+    if (j.status === 'running' || j.status === 'needs-you') continue
     const list = finishedByScope.get(j.scopeId) ?? []
     list.push(j)
     finishedByScope.set(j.scopeId, list)
