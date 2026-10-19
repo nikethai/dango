@@ -1720,5 +1720,16 @@
   "Stop {{label}}": "Stop {{label}}",
   "Add a source…": "Add a source…",
   "{{label}} started": "{{label}} started",
-  "{{label}} done": "{{label}} done"
+  "{{label}} done": "{{label}} done",
+  "Rename": "Rename",
+  "Pin": "Pin",
+  "Unpin": "Unpin",
+  "Move to scope…": "Move to scope…",
+  "Delete chat": "Delete chat",
+  "Deleted \"{{name}}\"": "Deleted \"{{name}}\"",
+  "Archived \"{{name}}\"": "Archived \"{{name}}\"",
+  "Unarchived \"{{name}}\"": "Unarchived \"{{name}}\"",
+  "Moved to {{scope}}": "Moved to {{scope}}",
+  "Moved out of {{scope}}": "Moved out of {{scope}}",
+  "{{name}} (branch)": "{{name}} (branch)"
 }

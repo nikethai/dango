@@ -1,23 +1,31 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Flex } from '@mantine/core'
 import type { Session } from '@shared/types'
-import { IconClearAll, IconDeviceFloppy, IconDots, IconSettings, IconTrash } from '@tabler/icons-react'
+import { IconClearAll, IconDots, IconSettings } from '@tabler/icons-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import platform from '@/platform'
-import { router } from '@/router'
-import { deleteSession } from '@/stores/chatStore'
 import { clear as clearSession } from '@/stores/sessionActions'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import Broom from '../icons/Broom'
+import { useChatMenu } from '../session/useChatMenu'
 import UpdateAvailableButton from '../UpdateAvailableButton'
 
 /**
- * Thread header overflow — one ⋯ for session options + export + destructive actions.
+ * Thread header overflow — one ⋯: Session options, the chat menu (CM1), then Clear All Messages.
  * Global search lives in the sidebar only (not duplicated here).
  */
-export default function Toolbar({ session, compact }: { session: Session; compact?: boolean }) {
+export default function Toolbar({
+  session,
+  compact,
+  onRename,
+}: {
+  session: Session
+  compact?: boolean
+  /** Starts the header's inline rename. Without it (compact workspace toolbar) the menu has no Rename row. */
+  onRename?: () => void
+}) {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
   const sessionId = session.id
@@ -34,6 +42,8 @@ export default function Toolbar({ session, compact }: { session: Session; compac
     }
   }, [])
 
+  const chatMenu = useChatMenu(session, { selected: true, onRename })
+
   const overflowItems = useMemo<ActionMenuItemProps[]>(() => {
     return [
       {
@@ -43,13 +53,8 @@ export default function Toolbar({ session, compact }: { session: Session; compac
           void NiceModal.show('session-settings', { session })
         },
       },
-      {
-        text: t('Export Chat'),
-        icon: IconDeviceFloppy,
-        onClick: () => {
-          void NiceModal.show('export-chat')
-        },
-      },
+      { divider: true },
+      ...chatMenu.items,
       { divider: true },
       {
         doubleCheck: { color: 'chatbox-error' },
@@ -59,22 +64,8 @@ export default function Toolbar({ session, compact }: { session: Session; compac
           void clearSession(sessionId)
         },
       },
-      {
-        doubleCheck: { color: 'chatbox-error' },
-        text: t('Delete Current Session'),
-        icon: IconTrash,
-        color: 'chatbox-error',
-        onClick: async () => {
-          try {
-            await deleteSession(sessionId)
-            router.navigate({ to: '/', replace: true })
-          } catch (error) {
-            console.error('Failed to delete session:', error)
-          }
-        },
-      },
     ]
-  }, [isSmallScreen, session, sessionId, t])
+  }, [chatMenu.items, isSmallScreen, session, sessionId, t])
 
   return (
     <Flex align="center" gap={compact ? 0 : isSmallScreen ? 'xs' : 'sm'} className="controls">
@@ -92,6 +83,7 @@ export default function Toolbar({ session, compact }: { session: Session; compac
           <IconDots size={compact ? 16 : undefined} strokeWidth={1.8} />
         </ActionIcon>
       </ActionMenu>
+      {chatMenu.sheet}
     </Flex>
   )
 }

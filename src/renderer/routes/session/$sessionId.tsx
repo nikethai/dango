@@ -21,10 +21,10 @@ import { useProviders } from '@/hooks/useProviders'
 import platform from '@/platform'
 import { getEffectiveProjectId } from '@/projects/project-context'
 import { commitProjectContextDraft } from '@/projects/project-context-draft'
-import { moveSessionToScopeOrToast } from '@/projects/scope-feedback'
 import { updateSessionWithMessages as updateSessionStore, useSession } from '@/stores/chatStore'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as scrollActions from '@/stores/scrollActions'
+import { moveChatWithUndoOrToast } from '@/stores/session/chat-menu-actions'
 import { isSessionGenerationActive } from '@/stores/session/generation-cancel'
 import { isSessionGenerationLive, subscribeSessionGenerationLive } from '@/stores/session/session-live-generation'
 import { modifyMessage, removeCurrentThread, startNewThread, submitNewUserMessage } from '@/stores/sessionActions'
@@ -373,7 +373,7 @@ function RouteComponent() {
                     onSubmit={onSubmit}
                     onStopGenerating={onStopGenerating}
                     scopeId={getEffectiveProjectId(currentSession)}
-                    onScopeChange={(id) => void moveSessionToScopeOrToast(currentSessionId, id)}
+                    onScopeChange={(id) => void moveChatWithUndoOrToast(currentSessionId, id)}
                   />
                 </ErrorBoundary>
               </ChatDockStack>
