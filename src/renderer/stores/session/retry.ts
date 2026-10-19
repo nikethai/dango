@@ -10,10 +10,16 @@ function failedModelOverride(msg: Message): ModelOverride | undefined {
 
 /**
  * Answer a failed message again, in place, with the model that failed: a failed Redo ▾ answer keeps its picked model
- * (`errorExtra.modelOverride`); the chat's own settings are never touched.
+ * (`errorExtra.modelOverride`); the chat's own settings are never touched. `stillWanted` (an automatic rate-limit
+ * retry) is asked once more right before the turn starts: false when a Stop or another turn came in meanwhile.
  */
-export async function retryFailedMessage(sessionId: string, msg: Message): Promise<void> {
+export async function retryFailedMessage(
+  sessionId: string,
+  msg: Message,
+  options?: { stillWanted?: () => boolean }
+): Promise<void> {
   const truncateTokenLimit = await getOverflowTruncateLimit(sessionId)
+  if (options?.stillWanted && !options.stillWanted()) return
   await generate(sessionId, msg, {
     operationType: 'regenerate',
     truncateTokenLimit,

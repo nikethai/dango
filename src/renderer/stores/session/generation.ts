@@ -42,6 +42,7 @@ import { prependUntrustedBlockToPrompt } from '@/packages/imported-history/conti
 import { generateImage, streamText } from '@/packages/model-calls'
 import { classifyModelError } from '@/packages/model-errors/classify'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
+import { isApprovedPlanRun } from '@/packages/plan/planSteps'
 import { buildSkillContextBlocks, resolveSkillActivations, selectCatalogForInject } from '@/packages/skills'
 import { estimateTokensFromMessages } from '@/packages/token'
 import { getVideoLimits } from '@/packages/video'
@@ -82,12 +83,7 @@ import {
   resumedRunParts,
   withResumedParts,
 } from './plan-lifecycle'
-import {
-  cancelRateLimitRetry,
-  clearRateLimitAttempts,
-  resolveRateLimitNeedsYou,
-  scheduleRateLimitRetry,
-} from './rate-limit-retry'
+import { cancelRateLimitRetry, rateLimitAnswered, scheduleRateLimitRetry } from './rate-limit-retry'
 import {
   clearSessionGenerationLive,
   isSessionGenerationLive,
@@ -671,7 +667,7 @@ export async function generate(
   let shouldProcessQueuedMessages = !options?.skipQueuedMessages
   let activeExecutionPlan: MessagePlanPart | undefined
   // An execution run (approve or Continue set planPhase 'executing') clears the phase however it ends.
-  const executionRun = getPlanPart(targetMsg)?.status === 'approved'
+  const executionRun = isApprovedPlanRun(targetMsg)
   let managesPlanPhase = executionRun
   const releaseExecutionPhase = async () => {
     if (!executionRun) return
@@ -1584,13 +1580,16 @@ export async function generate(
           searchProvider: streamResult.searchProvider ?? targetMsg.searchProvider,
           groundingMetadata: streamResult.groundingMetadata ?? targetMsg.groundingMetadata,
           error: emptyCompletionError,
-          durationMs: Date.now() - runStartedAt,
+          // Only a finished answer shows how long it took; an empty completion is an error (R11).
+          durationMs: emptyCompletionError ? undefined : Date.now() - runStartedAt,
         }
         await settleStreamUi(targetMsg)
         if (!emptyCompletionError) {
-          // Answered: the next rate limit starts the schedule again, and a waiting Needs you for this chat is done.
-          clearRateLimitAttempts(targetMsg.id)
-          void resolveRateLimitNeedsYou(sessionId).catch(() => {})
+          // Answered: the next rate limit starts the schedule again, and a waiting Needs you for this chat is done,
+          // except after one room turn (another agent may still be limited; the room run settles it when it ends).
+          void rateLimitAnswered(sessionId, targetMsg.id, {
+            roomTurn: Boolean(options?.roomMulti || targetMsg.roomRole),
+          }).catch(() => {})
         }
         // The answer and the plan part (with finishedAt) are saved: from here the error path must keep this plan,
         // and nothing below may turn a finished turn into an error or file a second Change.

@@ -4,7 +4,8 @@ import type { ReviewEntry } from '@shared/types/review'
 import { t } from 'i18next'
 import { getLogger } from '@/lib/utils'
 import { scopeIdForSession } from '@/packages/chat-review'
-import { classifyModelError, modelErrorProviderName } from '@/packages/model-errors/classify'
+import { classifyModelError, modelErrorProviderId, modelErrorProviderName } from '@/packages/model-errors/classify'
+import { isApprovedPlanRun } from '@/packages/plan/planSteps'
 import {
   addReviewEntry,
   loadReviewEntries,
@@ -29,6 +30,12 @@ type Pending = { messageId: string; timer: ReturnType<typeof setTimeout> }
 
 /** One pending retry per chat: a new turn in the chat replaces or cancels it. */
 const pending = new Map<string, Pending>()
+/**
+ * Per chat, bumped by every cancel (Stop, a send, any new turn, delete). A fired retry still awaits the chat and its
+ * module before it starts its turn; it keeps the epoch it was scheduled under and gives up when the epoch moved, so a
+ * Send in that window never ends up with two turns running in one chat.
+ */
+const epochs = new Map<string, number>()
 /** Automatic retries already scheduled per failed message; cleared when the message gets an answer. */
 const attempts = new Map<string, number>()
 const listeners = new Set<() => void>()
@@ -49,11 +56,26 @@ export function isRateLimitRetryPending(sessionId: string, messageId: string): b
   return pending.get(sessionId)?.messageId === messageId
 }
 
-/** Wait before automatic retry number `attempt` (0-based): Retry-After when sent, else the schedule; null when done. */
+/**
+ * The longest Retry-After worth waiting for in an open chat. Beyond it (a daily quota, a far-off date) the person decides
+ * in Review; it also keeps the wait under setTimeout's 2^31 ms limit, past which the timer would fire at once.
+ */
+export const MAX_RATE_LIMIT_WAIT_MS = 60 * 60 * 1000
+
+/**
+ * Wait before automatic retry number `attempt` (0-based): Retry-After when sent, else the schedule; null when done or
+ * when the provider asks for a wait over an hour.
+ */
 export function rateLimitDelayMs(attempt: number, retryAfterMs?: number): number | null {
   if (attempt >= RETRY_DELAYS_MS.length) return null
-  if (retryAfterMs !== undefined && Number.isFinite(retryAfterMs) && retryAfterMs > 0) return retryAfterMs
+  if (retryAfterMs !== undefined && Number.isFinite(retryAfterMs) && retryAfterMs > 0) {
+    return retryAfterMs > MAX_RATE_LIMIT_WAIT_MS ? null : retryAfterMs
+  }
   return RETRY_DELAYS_MS[attempt]
+}
+
+function epochOf(sessionId: string): number {
+  return epochs.get(sessionId) ?? 0
 }
 
 /** Retry-After from the header, else Gemini's `"retryDelay": "41s"` in the body. */
@@ -67,11 +89,7 @@ function providerRetryAfterMs(msg: Message): number | undefined {
 }
 
 function providerName(msg: Message): string {
-  const id =
-    typeof msg.errorExtra?.aiProvider === 'string' && msg.errorExtra.aiProvider
-      ? msg.errorExtra.aiProvider
-      : msg.aiProvider
-  return modelErrorProviderName(id, settingsStore.getState().customProviders) ?? t('AI provider')
+  return modelErrorProviderName(modelErrorProviderId(msg), settingsStore.getState().customProviders) ?? t('AI provider')
 }
 
 async function patchErrorExtra(sessionId: string, messageId: string, patch: Record<string, unknown>): Promise<void> {
@@ -87,19 +105,26 @@ function failedWithRateLimit(msg: Message | undefined): msg is Message {
 
 /** A plan execution run or a multi-agent room turn: a bare retry would lose its plan or room options (R18, R20). */
 function needsItsOwnRun(msg: Message): boolean {
-  return Boolean(msg.roomRole) || msg.contentParts.some((part) => part.type === 'plan' && part.status === 'approved')
+  return Boolean(msg.roomRole) || isApprovedPlanRun(msg)
 }
 
-async function fire(sessionId: string, messageId: string) {
+async function fire(sessionId: string, messageId: string, epoch: number) {
+  const stillWanted = () => epochOf(sessionId) === epoch
   const session = await chatStore.getSession(sessionId)
   const latest = session?.messages.find((m) => m.id === messageId)
   // Answered, removed or already running again (Retry now): nothing to do.
   if (!failedWithRateLimit(latest)) return
   const { retryFailedMessage } = await import('./retry')
-  await retryFailedMessage(sessionId, latest)
+  // A Stop, send or new turn while the chat loaded: that turn wins.
+  if (!stillWanted()) return
+  await retryFailedMessage(sessionId, latest, { stillWanted })
 }
 
-async function giveUp(sessionId: string, msg: Message) {
+/**
+ * `ownRun`: a plan run or room turn. Review's Open only opens the chat there (Continue or the room is the fix), so its
+ * entry says the chat is waiting for the person and offers Open, not Retry.
+ */
+async function giveUp(sessionId: string, msg: Message, ownRun: boolean) {
   await patchErrorExtra(sessionId, msg.id, { rateLimitGaveUp: true, retryAt: undefined })
   const session = await chatStore.getSession(sessionId)
   if (!session) return
@@ -111,8 +136,10 @@ async function giveUp(sessionId: string, msg: Message) {
     scopeId: scopeIdForSession(session),
     source: provider,
     text: t('{{provider}} is still limiting requests', { ...literal, provider }),
-    sub: t('The chat "{{chat}}" is waiting for a retry.', { ...literal, chat: session.name }),
-    actionLabel: 'Retry',
+    sub: ownRun
+      ? t('The chat "{{chat}}" is waiting for you.', { ...literal, chat: session.name })
+      : t('The chat "{{chat}}" is waiting for a retry.', { ...literal, chat: session.name }),
+    actionLabel: ownRun ? 'Open' : 'Retry',
     ref: { type: 'chat', id: sessionId },
     chatId: sessionId,
   })
@@ -125,17 +152,19 @@ async function giveUp(sessionId: string, msg: Message) {
 export function scheduleRateLimitRetry(sessionId: string, msg: Message, options?: { autoRetry?: boolean }): void {
   cancelRateLimitRetry(sessionId)
   const attempt = attempts.get(msg.id) ?? 0
-  const delay = options?.autoRetry === false ? null : rateLimitDelayMs(attempt, providerRetryAfterMs(msg))
+  const ownRun = options?.autoRetry === false || needsItsOwnRun(msg)
+  const delay = ownRun ? null : rateLimitDelayMs(attempt, providerRetryAfterMs(msg))
   if (delay === null) {
-    void giveUp(sessionId, msg).catch((error) => log.error('rate limit: Needs you entry failed', error))
+    void giveUp(sessionId, msg, ownRun).catch((error) => log.error('rate limit: Needs you entry failed', error))
     return
   }
   attempts.set(msg.id, attempt + 1)
+  const epoch = epochOf(sessionId)
   const timer = setTimeout(() => {
     if (pending.get(sessionId)?.timer !== timer) return
     pending.delete(sessionId)
     notify()
-    void fire(sessionId, msg.id).catch((error) => log.error('rate limit: retry failed to start', error))
+    void fire(sessionId, msg.id, epoch).catch((error) => log.error('rate limit: retry failed to start', error))
   }, delay)
   pending.set(sessionId, { messageId: msg.id, timer })
   notify()
@@ -146,8 +175,12 @@ export function scheduleRateLimitRetry(sessionId: string, msg: Message, options?
   }).catch((error) => log.error('rate limit: could not mark the message', error))
 }
 
-/** Stop, a new send, any new turn or deleting the chat: the pending retry never fires. */
+/**
+ * Stop, a new send, any new turn or deleting the chat: the pending retry never fires, and one that already fired but
+ * has not started its turn yet stands down (the epoch moves even when nothing is pending).
+ */
 export function cancelRateLimitRetry(sessionId: string): void {
+  epochs.set(sessionId, epochOf(sessionId) + 1)
   const entry = pending.get(sessionId)
   if (!entry) return
   clearTimeout(entry.timer)
@@ -158,6 +191,33 @@ export function cancelRateLimitRetry(sessionId: string): void {
 /** The message got an answer (or the person asked again from Review): the next rate limit starts at 10 s again. */
 export function clearRateLimitAttempts(messageId: string): void {
   attempts.delete(messageId)
+}
+
+/**
+ * A turn answered: the next rate limit on that message starts the schedule again, and the chat's Needs you entry is
+ * done (R22). Not for a room turn (`roomTurn`): another agent in the same room may still be the one rate limited, so a
+ * room clears its entry only when the whole run answered (resolveRateLimitNeedsYouAfterRoomRun).
+ */
+export async function rateLimitAnswered(
+  sessionId: string,
+  messageId: string,
+  options: { roomTurn: boolean }
+): Promise<void> {
+  clearRateLimitAttempts(messageId)
+  if (!options.roomTurn) await resolveRateLimitNeedsYou(sessionId)
+}
+
+/**
+ * After a room run started by the person's message `userMessageId`: when every turn of the run answered, the chat's
+ * rate-limit Needs you entry is done. A run with a failed turn leaves it open.
+ */
+export async function resolveRateLimitNeedsYouAfterRoomRun(sessionId: string, userMessageId: string): Promise<void> {
+  const session = await chatStore.getSession(sessionId)
+  const start = session?.messages.findIndex((m) => m.id === userMessageId) ?? -1
+  if (!session || start < 0) return
+  const turns = session.messages.slice(start + 1).filter((m) => m.role === 'assistant')
+  if (turns.length === 0 || turns.some((m) => m.error || m.generating)) return
+  await resolveRateLimitNeedsYou(sessionId)
 }
 
 /** After an answer in this chat: a Needs you entry left from an earlier rate limit is done (R22). */

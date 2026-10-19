@@ -48,13 +48,20 @@ const RATE_LIMIT_BODY_PATTERN = /"type"\s*:\s*"rate_limit_error"/
 /**
  * Gemini answers a per-minute quota with RESOURCE_EXHAUSTED and "You exceeded your current quota", wording the quota
  * classifier reads as used-up credit. A per-minute metric, a retry delay or the free-tier request counter means waiting
- * helps, unless the body also names credit or billing.
+ * helps, unless the body also names credit or billing, or the quota is counted per day (it resets tomorrow, so three
+ * retries over a few minutes would only end in a Needs you entry).
  */
 const PER_MINUTE_QUOTA_PATTERN = /PerMinute|per[_ ]minute|retryDelay|free_tier_requests/i
+const PER_DAY_QUOTA_PATTERN = /PerDay|per[_ ]day/i
 const CREDIT_PATTERN = /insufficient[_ ]quota|credit[_ ]balance|out[_ ]of[_ ]credits?|billing[_ ]hard[_ ]limit/i
 
 function isPerMinuteQuota(text: string): boolean {
-  return /RESOURCE_EXHAUSTED/.test(text) && PER_MINUTE_QUOTA_PATTERN.test(text) && !CREDIT_PATTERN.test(text)
+  return (
+    /RESOURCE_EXHAUSTED/.test(text) &&
+    PER_MINUTE_QUOTA_PATTERN.test(text) &&
+    !PER_DAY_QUOTA_PATTERN.test(text) &&
+    !CREDIT_PATTERN.test(text)
+  )
 }
 
 function stringField(extra: Message['errorExtra'], key: string): string | undefined {
@@ -101,6 +108,15 @@ export function classifyModelError(msg: Pick<Message, 'error' | 'errorCode' | 'e
 
   if (error.startsWith('Network Error') || code === 10002) return 'network'
   return 'provider'
+}
+
+/**
+ * The provider a failed answer came from: the one the failed call used (`errorExtra.aiProvider`, which follows a Redo ▾
+ * override), else the message's own provider. Shared by the error notice and the rate-limit Needs you entry.
+ */
+export function modelErrorProviderId(msg: Pick<Message, 'aiProvider' | 'errorExtra'>): string | undefined {
+  const failedWith = msg.errorExtra?.aiProvider
+  return typeof failedWith === 'string' && failedWith ? failedWith : msg.aiProvider
 }
 
 /** The provider's name as people know it: a custom provider's own name, else the built-in name, else its id. */

@@ -2,7 +2,7 @@
  * Plan card rules (slice 6a): which steps a plan has, which state its card is in, and how far a run got.
  * Pure; the card and the plan lifecycle (`planTitle`) share this one step parser.
  */
-import type { MessagePlanPart, Session } from '@shared/types'
+import type { Message, MessagePlanPart, Session } from '@shared/types'
 import type { Task, TaskStatus } from '@/stores/taskStore'
 
 export type PlanCardState = 'proposed' | 'running' | 'stopped' | 'finished' | 'rejected' | 'revised'
@@ -88,6 +88,15 @@ export function parsePlanSteps(planText: string): string[] {
 export function planHasMoreThanSteps(planText: string): boolean {
   const { stepLines } = parseSteps(planText)
   return planText.split(/\r?\n/).some((line, i) => line.trim() !== '' && !stepLines.has(i))
+}
+
+/**
+ * An execution run of an approved plan (Run plan or Continue): its answer carries the approved plan part. Such a run
+ * keeps its own bookkeeping (planPhase, the plan part), so a bare retry must not re-run it; the card's Continue is the
+ * fix. Shared by generation, the rate-limit retry and the error notice.
+ */
+export function isApprovedPlanRun(msg: Pick<Message, 'contentParts'>): boolean {
+  return msg.contentParts.some((part) => part.type === 'plan' && part.status === 'approved')
 }
 
 /**

@@ -26,6 +26,7 @@ const {
   addReviewEntryMock,
   getModelMock,
   insertMessageMock,
+  insertMessagesMock,
 } = vi.hoisted(() => ({
   updateSessionWithMessages: vi.fn(),
   useSessionMock: vi.fn(),
@@ -37,6 +38,7 @@ const {
   addReviewEntryMock: vi.fn(async (input: unknown) => input),
   getModelMock: vi.fn(),
   insertMessageMock: vi.fn(),
+  insertMessagesMock: vi.fn(),
 }))
 
 vi.hoisted(() => {
@@ -100,6 +102,7 @@ vi.mock('./chatStore', () => ({
   getSession: getSessionMock,
   useSession: useSessionMock,
   insertMessage: insertMessageMock,
+  insertMessages: insertMessagesMock,
 }))
 
 vi.mock('@/packages/context-management', async (importOriginal) => ({
@@ -221,6 +224,7 @@ beforeEach(() => {
   addReviewEntryMock.mockClear()
   getModelMock.mockClear()
   insertMessageMock.mockReset()
+  insertMessagesMock.mockReset()
 })
 
 describe('fork actions', () => {
@@ -607,6 +611,15 @@ describe('redo with another model', () => {
     expect(failed.saved?.errorExtra?.modelOverride).toEqual(modelOverride)
   })
 
+  test('an empty completion is an error and records no duration (R11)', async () => {
+    const empty = await redo(async () => ({
+      result: { contentParts: [], text: '', finishReason: 'stop' },
+      knowledgeIds: [],
+    }))
+    expect(empty.saved?.error).toBeTruthy()
+    expect(empty.saved?.durationMs).toBeUndefined()
+  })
+
   test('a failed call keeps its HTTP status and Retry-After on the message', async () => {
     const { ApiError } = await import('../../shared/models/errors')
     const failed = await redo(() =>
@@ -632,6 +645,42 @@ describe('redo with another model', () => {
     expect(isRateLimitRetryPending('redo-session', failedId)).toBe(true)
     await expect(stopSessionGeneration('redo-session', null)).resolves.toBe(false)
     expect(isRateLimitRetryPending('redo-session', failedId)).toBe(false)
+  })
+
+  test('stop and new send cancel the pending retry: a new send drops the wait and only the new turn runs', async () => {
+    const { ApiError } = await import('../../shared/models/errors')
+    const { isRateLimitRetryPending } = await import('./session/rate-limit-retry')
+    const { streamText } = await import('@/packages/model-calls')
+    // A short provider wait, so a retry that was not cancelled would fire within this test.
+    const failed = await redo(() =>
+      Promise.reject(new ApiError('Error from Claude', '{"error":"rate"}', { status: 429, retryAfterMs: 30 }))
+    )
+    const failedId = failed.saved?.id as string
+    expect(isRateLimitRetryPending('redo-session', failedId)).toBe(true)
+
+    vi.mocked(streamText).mockImplementation((async () => ({
+      result: { contentParts: [{ type: 'text', text: 'New answer' }], text: 'New answer', finishReason: 'stop' },
+      knowledgeIds: [],
+    })) as never)
+    // The chat as stored after the failure: the failed answer is settled, nothing is streaming.
+    let current: Session = {
+      ...chatSession(),
+      messages: [...chatSession().messages, { ...(failed.saved as Message), generating: false }],
+    }
+    getSessionMock.mockImplementation(async () => current)
+    insertMessagesMock.mockImplementation(async (_sid: string, msgs: Message[]) => {
+      current = { ...current, messages: [...current.messages, ...msgs] }
+    })
+    try {
+      const newUserMsg = { ...makeMessage('u-new', 'user'), contentParts: [{ type: 'text' as const, text: 'Next' }] }
+      await sessionActions.submitNewUserMessage('redo-session', { newUserMsg, needGenerating: true })
+      expect(isRateLimitRetryPending('redo-session', failedId)).toBe(false)
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      // One model call: the new turn. The failed answer was not retried behind it.
+      expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.mocked(streamText).mockReset()
+    }
   })
 
   test('a send blocked by the usage budget is marked as a budget error', async () => {

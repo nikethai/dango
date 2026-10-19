@@ -1,7 +1,8 @@
-import type { MessagePlanPart } from '@shared/types'
+import type { Message, MessagePlanPart } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import type { Task } from '@/stores/taskStore'
 import {
+  isApprovedPlanRun,
   parsePlanSteps,
   planCardState,
   planContinueState,
@@ -206,5 +207,21 @@ describe('planHasMoreThanSteps', () => {
   })
   it('true for prose without steps', () => {
     expect(planHasMoreThanSteps('Just do it.')).toBe(true)
+  })
+})
+
+describe('isApprovedPlanRun', () => {
+  const msg = (parts: Message['contentParts']) => ({ contentParts: parts })
+  it('is true only for a message whose plan part was approved (an execution run)', () => {
+    expect(
+      isApprovedPlanRun(
+        msg([
+          { type: 'text', text: 'x' },
+          { type: 'plan', planText: '1. a', status: 'approved' },
+        ])
+      )
+    ).toBe(true)
+    expect(isApprovedPlanRun(msg([{ type: 'plan', planText: '1. a', status: 'pending' }]))).toBe(false)
+    expect(isApprovedPlanRun(msg([{ type: 'text', text: 'x' }]))).toBe(false)
   })
 })

@@ -1763,6 +1763,7 @@
   "{{provider}} is limiting requests.": "{{provider}} is limiting requests.",
   "{{provider}} is still limiting requests": "{{provider}} is still limiting requests",
   "The chat \"{{chat}}\" is waiting for a retry.": "The chat \"{{chat}}\" is waiting for a retry.",
+  "The chat \"{{chat}}\" is waiting for you.": "The chat \"{{chat}}\" is waiting for you.",
   "{{model}} can't use tools.": "{{model}} can't use tools.",
   "Answer without tools": "Answer without tools",
   "This chat is {{pct}}% full. Early messages may be left out.": "This chat is {{pct}}% full. Early messages may be left out.",

@@ -22,13 +22,14 @@ vi.mock('./generation', () => ({ generate, getOverflowTruncateLimit: vi.fn(async
 const switchCurrentSession = vi.hoisted(() => vi.fn())
 vi.mock('./crud', () => ({ switchCurrentSession }))
 
+const reviewEntries = vi.hoisted(() => ({ list: [] as unknown[] }))
 const review = vi.hoisted(() => ({
   addReviewEntry: vi.fn(async (input: unknown) => input),
   registerReviewOpener: vi.fn((_type: string, _open: (entry: unknown) => unknown, _opts?: unknown) => () => {}),
   setReviewEntryState: vi.fn(async () => undefined),
   loadReviewEntries: vi.fn(async () => undefined),
   reviewRegistryStore: { getState: () => ({ openers: {} as Record<string, unknown> }) },
-  reviewStore: { getState: () => ({ entries: [] as unknown[], loaded: true }) },
+  reviewStore: { getState: () => ({ entries: reviewEntries.list, loaded: true }) },
 }))
 vi.mock('@/packages/review', () => review)
 
@@ -37,13 +38,17 @@ vi.mock('i18next', () => ({
     key.replace(/\{\{(\w+)\}\}/g, (_m, name: string) => String(vars?.[name] ?? '')),
 }))
 
+import * as chatStore from '../chatStore'
+import { getOverflowTruncateLimit } from './generation'
 import {
   cancelRateLimitRetry,
   clearRateLimitAttempts,
   isRateLimitRetryPending,
   openChatAndRetry,
+  rateLimitAnswered,
   rateLimitDelayMs,
   registerChatReviewOpener,
+  resolveRateLimitNeedsYouAfterRoomRun,
   scheduleRateLimitRetry,
 } from './rate-limit-retry'
 
@@ -85,6 +90,7 @@ beforeEach(() => {
   review.addReviewEntry.mockClear()
   review.registerReviewOpener.mockClear()
   review.setReviewEntryState.mockClear()
+  reviewEntries.list = []
 })
 
 afterEach(() => {
@@ -101,6 +107,12 @@ describe('rateLimitDelayMs', () => {
     expect(rateLimitDelayMs(3)).toBeNull()
     expect(rateLimitDelayMs(0, 7_000)).toBe(7_000)
     expect(rateLimitDelayMs(3, 7_000)).toBeNull()
+  })
+
+  it('a Retry-After over an hour, or past what a timer can hold, means give up now', () => {
+    expect(rateLimitDelayMs(0, 3_600_000)).toBe(3_600_000)
+    expect(rateLimitDelayMs(0, 3_600_001)).toBeNull()
+    expect(rateLimitDelayMs(0, 2 ** 31)).toBeNull()
   })
 })
 
@@ -172,6 +184,64 @@ describe('scheduleRateLimitRetry', () => {
     expect(generate).not.toHaveBeenCalled()
   })
 
+  it('a Send while a fired retry is still loading the chat drops the retry: one turn per chat', async () => {
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const snapshot = structuredClone(store.list[0])
+    vi.mocked(chatStore.getSession).mockImplementationOnce(async () => {
+      await gate
+      return snapshot
+    })
+    scheduleRateLimitRetry('s1', failed())
+    await vi.advanceTimersByTimeAsync(10_000)
+    // The new turn's first statement (submitNewUserMessage / generate / Stop) cancels.
+    cancelRateLimitRetry('s1')
+    release()
+    await flush()
+    await flush()
+    expect(generate).not.toHaveBeenCalled()
+  })
+
+  it('a Send while the fired retry is getting ready to answer also drops it', async () => {
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.mocked(getOverflowTruncateLimit).mockImplementationOnce(async () => {
+      await gate
+      return undefined
+    })
+    scheduleRateLimitRetry('s1', failed())
+    await vi.advanceTimersByTimeAsync(10_000)
+    await flush()
+    expect(getOverflowTruncateLimit).toHaveBeenCalled()
+    cancelRateLimitRetry('s1')
+    release()
+    await flush()
+    await flush()
+    expect(generate).not.toHaveBeenCalled()
+  })
+
+  it('a Retry-After far in the future files Needs you at once instead of retrying', async () => {
+    scheduleRateLimitRetry('s1', failed({ retryAfterMs: 2 ** 31 }))
+    await flush()
+    await flush()
+    expect(isRateLimitRetryPending('s1', 'a1')).toBe(false)
+    expect(review.addReviewEntry).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(generate).not.toHaveBeenCalled()
+  })
+
+  it('a Gemini retryDelay of hours (a daily quota) files Needs you at once', async () => {
+    scheduleRateLimitRetry('s1', failed({ responseBody: '{"error":{"details":[{"retryDelay":"32520s"}]}}' }))
+    await flush()
+    await flush()
+    expect(isRateLimitRetryPending('s1', 'a1')).toBe(false)
+    expect(review.addReviewEntry).toHaveBeenCalledTimes(1)
+  })
+
   it('a success clears attempts: the next rate limit starts at 10 s again', async () => {
     scheduleRateLimitRetry('s1', failed())
     await vi.advanceTimersByTimeAsync(10_000)
@@ -190,6 +260,10 @@ describe('scheduleRateLimitRetry', () => {
     await flush()
     expect(isRateLimitRetryPending('s1', 'a1')).toBe(false)
     expect(review.addReviewEntry).toHaveBeenCalledTimes(1)
+    // Open there only opens the chat (Continue or the room is the fix): the entry must not promise a retry.
+    expect(review.addReviewEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ actionLabel: 'Open', sub: 'The chat "Trip plan" is waiting for you.' })
+    )
     await vi.advanceTimersByTimeAsync(600_000)
     expect(generate).not.toHaveBeenCalled()
   })
@@ -223,6 +297,7 @@ describe('Needs you entry and the chat opener', () => {
         source: 'OpenAI',
         text: 'OpenAI is still limiting requests',
         sub: 'The chat "Trip plan" is waiting for a retry.',
+        actionLabel: 'Retry',
         ref: { type: 'chat', id: 's1' },
         chatId: 's1',
       })
@@ -250,5 +325,41 @@ describe('Needs you entry and the chat opener', () => {
     await openChatAndRetry('s1')
     expect(switchCurrentSession).toHaveBeenCalledWith('s1')
     expect(generate).not.toHaveBeenCalled()
+  })
+})
+
+describe('clearing a Needs you entry after an answer', () => {
+  const openEntry = { state: 'open', ref: { type: 'chat', id: 's1' } }
+
+  it('a plain answer in the chat marks its rate-limit Needs you done and resets the schedule', async () => {
+    reviewEntries.list = [openEntry]
+    await rateLimitAnswered('s1', 'a1', { roomTurn: false })
+    expect(review.setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'chat', id: 's1' } }, 'done')
+  })
+
+  it("one agent's answer in a room leaves another agent's rate-limit entry open", async () => {
+    reviewEntries.list = [openEntry]
+    await rateLimitAnswered('s1', 'a1', { roomTurn: true })
+    expect(review.setReviewEntryState).not.toHaveBeenCalled()
+  })
+
+  it('a room run where every turn answered marks the entry done; one failed turn keeps it open', async () => {
+    reviewEntries.list = [openEntry]
+    const turn = (id: string, extra: Partial<Message> = {}): Message =>
+      ({
+        id,
+        role: 'assistant',
+        roomRole: 'opening',
+        contentParts: [{ type: 'text', text: 'ok' }],
+        ...extra,
+      }) as Message
+    store.list[0].messages = [store.list[0].messages[0], turn('r1'), turn('r2')]
+    await resolveRateLimitNeedsYouAfterRoomRun('s1', 'u1')
+    expect(review.setReviewEntryState).toHaveBeenCalledTimes(1)
+
+    review.setReviewEntryState.mockClear()
+    store.list[0].messages = [store.list[0].messages[0], turn('r1'), failed()]
+    await resolveRateLimitNeedsYouAfterRoomRun('s1', 'u1')
+    expect(review.setReviewEntryState).not.toHaveBeenCalled()
   })
 })

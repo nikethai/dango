@@ -19,7 +19,7 @@ import * as chatStore from '../chatStore'
 import { getAllMessageList } from '../sessionHelpers'
 import { settingsStore } from '../settingsStore'
 import { messageQueueStore } from './messageQueue'
-import { cancelRateLimitRetry } from './rate-limit-retry'
+import { cancelRateLimitRetry, resolveRateLimitNeedsYouAfterRoomRun } from './rate-limit-retry'
 import { getSessionWebBrowsing } from './session-web-browsing'
 
 /**
@@ -338,6 +338,8 @@ export async function submitNewUserMessage(
         mentionedAgentIds: newUserMsg.mentionedAgentIds,
         truncateTokenLimit,
       })
+      // Room turns leave the chat's rate-limit Needs you alone; the run settles it once every turn answered.
+      void resolveRateLimitNeedsYouAfterRoomRun(sessionId, newUserMsg.id).catch(() => {})
       return
     }
 

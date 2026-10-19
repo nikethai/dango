@@ -1,6 +1,6 @@
 import type { Message } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { classifyModelError, isContextLengthError, modelErrorProviderName } from './classify'
+import { classifyModelError, isContextLengthError, modelErrorProviderId, modelErrorProviderName } from './classify'
 
 type ErrorFields = Pick<Message, 'error' | 'errorCode' | 'errorExtra'>
 
@@ -108,6 +108,33 @@ describe('classifyModelError: budget and rate-limit wording', () => {
     expect(classifyModelError(gemini(undefined))).toBe('rate-limit')
   })
 
+  it('a Gemini per-day quota is not a per-minute rate limit: waiting a minute does not help', () => {
+    const body = JSON.stringify({
+      error: {
+        code: 429,
+        message:
+          'You exceeded your current quota, please check your plan and billing details.\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 250, model: gemini-2.5-flash\nPlease retry in 9h2m.',
+        status: 'RESOURCE_EXHAUSTED',
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+            violations: [
+              {
+                quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests',
+                quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier',
+              },
+            ],
+          },
+          { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '32520s' },
+        ],
+      },
+    })
+    const gemini = (status?: number) =>
+      apiError(status, body, { errorExtra: { aiProvider: 'gemini', status, responseBody: body } })
+    expect(classifyModelError(gemini(429))).not.toBe('rate-limit')
+    expect(classifyModelError(gemini(undefined))).not.toBe('rate-limit')
+  })
+
   it('a Gemini RESOURCE_EXHAUSTED that names billing or credit is out of credit', () => {
     const insufficient =
       '{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"insufficient_quota: PerMinute"}}'
@@ -137,5 +164,14 @@ describe('modelErrorProviderName', () => {
     expect(modelErrorProviderName('custom-1', [{ id: 'custom-1', name: 'My Proxy' }])).toBe('My Proxy')
     expect(modelErrorProviderName('mystery')).toBe('mystery')
     expect(modelErrorProviderName(undefined)).toBeUndefined()
+  })
+})
+
+describe('modelErrorProviderId', () => {
+  it('prefers the provider the failed call used, else the message provider', () => {
+    expect(modelErrorProviderId({ aiProvider: 'openai', errorExtra: { aiProvider: 'claude' } })).toBe('claude')
+    expect(modelErrorProviderId({ aiProvider: 'openai', errorExtra: { aiProvider: '' } })).toBe('openai')
+    expect(modelErrorProviderId({ aiProvider: 'openai' })).toBe('openai')
+    expect(modelErrorProviderId({})).toBeUndefined()
   })
 })
