@@ -30,13 +30,20 @@ const h = vi.hoisted(() => ({
   settings: {} as Record<string, unknown>,
   jobs: [] as unknown[],
   order: [] as string[],
+  // Reads of the sources key that fail before storage answers again.
+  failSourceReads: 0,
 }))
 
 vi.mock('@/storage', () => ({
   StorageKey: { Sources: 'sources' },
   default: {
-    getItem: <T>(key: string, fallback: T): Promise<T> =>
-      Promise.resolve(h.memory.has(key) ? (structuredClone(h.memory.get(key)) as T) : fallback),
+    getItem: <T>(key: string, fallback: T): Promise<T> => {
+      if (key === 'sources' && h.failSourceReads > 0) {
+        h.failSourceReads -= 1
+        return Promise.reject(new Error('storage busy'))
+      }
+      return Promise.resolve(h.memory.has(key) ? (structuredClone(h.memory.get(key)) as T) : fallback)
+    },
     setItemNow: (key: string, value: unknown): Promise<void> => {
       h.memory.set(key, structuredClone(value))
       return Promise.resolve()
@@ -161,6 +168,7 @@ beforeEach(() => {
   h.settings = { ...CLOUD_MODEL }
   h.jobs = []
   h.order = []
+  h.failSourceReads = 0
   _resetSourcesForTests()
   _resetReviewForTests()
   _resetSourceKindsForTests()
@@ -386,6 +394,19 @@ describe('reviewJobHandler', () => {
     const sync = await syncJobHandler(ctxOf(jobOf({ kind: 'sync' })))
     expect(sync).toEqual({ summary: 'This source was removed.', addDoneEntry: false })
     expect(read).not.toHaveBeenCalled()
+  })
+
+  it('a review or sync whose sources cannot be read yet throws (so it retries), not "removed"', async () => {
+    storeSources(sourceOf())
+    h.failSourceReads = 2
+    await expect(reviewJobHandler(ctxOf())).rejects.toThrow()
+    await expect(syncJobHandler(ctxOf(jobOf({ kind: 'sync' })))).rejects.toThrow()
+    expect(read).not.toHaveBeenCalled()
+    // Storage answers again: the retried review runs normally.
+    read.mockResolvedValueOnce({ items: [], cursor: null })
+    const review = await reviewJobHandler(ctxOf())
+    expect(review.summary).not.toBe('This source was removed.')
+    expect(read).toHaveBeenCalledTimes(1)
   })
 
   it('no model raises choose-model', async () => {

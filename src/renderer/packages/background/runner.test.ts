@@ -885,6 +885,28 @@ describe('background job runner: one job per source, fixes and resolver', () => 
     expect(addReviewEntry).not.toHaveBeenCalled()
   })
 
+  it('stopJob on a needs-you job dismisses its open Review entry', async () => {
+    registerJobHandler('sync', async () => {
+      await Promise.resolve()
+      throw needsSignIn()
+    })
+    const { id } = gmail()
+    await settle()
+    vi.mocked(setReviewEntryState).mockClear()
+    await stopJob(id)
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'job', id } }, 'dismissed')
+  })
+
+  it('stopJob on a running job touches no Review entry', async () => {
+    registerJobHandler('sync', () => new Promise(() => undefined))
+    const { id } = gmail()
+    await flush()
+    vi.mocked(setReviewEntryState).mockClear()
+    await stopJob(id)
+    expect(getBackgroundJob(id)?.status).toBe('failed')
+    expect(setReviewEntryState).not.toHaveBeenCalled()
+  })
+
   it('a superseded needs-you job counts toward the history cap; the latest of its source and kind never does', async () => {
     let fail = true
     registerJobHandler('sync', async () => {

@@ -284,12 +284,17 @@ function closeSupersededEntry(job: BackgroundJob): void {
 
 /**
  * Stops a running job for good: `failed` with `stoppedAt`, no retry and no Review entry. A needs-you job is retired
- * the same way (its fix is dropped; closing its open entry is the caller's part, as when a source is removed).
+ * the same way and its Needs you entry is dismissed, since its fix is dropped (a Stop clicked just as the job
+ * reached needs-you would otherwise leave an entry that opens to nothing).
  */
 export async function stopJob(id: string): Promise<void> {
   const job = getBackgroundJob(id)
   if (!job || (job.status !== 'running' && job.status !== 'needs-you')) return
-  await halt(job)
+  if (job.status === 'running') return halt(job)
+  await Promise.all([
+    halt(job),
+    safely('Dismissing the entry', () => setReviewEntryState({ ref: jobRef(id) }, 'dismissed')),
+  ])
 }
 
 function halt(job: BackgroundJob): Promise<void> {

@@ -7,7 +7,7 @@ use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Component, Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_LIST_LIMIT: usize = 200;
 pub const MAX_LIST_LIMIT: usize = 1_000;
@@ -323,11 +323,43 @@ fn same_file(a: &fs::Metadata, b: &fs::Metadata) -> bool {
     same_created(a, b)
 }
 
-/// Both are regular files created at the same time. Length and mtime are not compared: Codex appends to a thread
-/// while it runs, and that must not make the file look swapped.
+/// Both are regular files created at the same time. Length and mtime are not compared then: Codex appends to a thread
+/// while it runs, and that must not make the file look swapped. See `same_stamp` when a creation time is missing.
 #[cfg_attr(unix, allow(dead_code))]
 fn same_created(a: &fs::Metadata, b: &fs::Metadata) -> bool {
-    a.is_file() && b.is_file() && a.created().ok() == b.created().ok()
+    a.is_file() && b.is_file() && same_stamp(&FileStamp::of(a), &FileStamp::of(b))
+}
+
+/// What `same_created` compares, read once so the rule is a pure function.
+#[cfg_attr(unix, allow(dead_code))]
+#[derive(Clone, Copy)]
+struct FileStamp {
+    created: Option<SystemTime>,
+    len: u64,
+    modified: Option<SystemTime>,
+}
+
+#[cfg_attr(unix, allow(dead_code))]
+impl FileStamp {
+    fn of(meta: &fs::Metadata) -> Self {
+        Self {
+            created: meta.created().ok(),
+            len: meta.len(),
+            modified: meta.modified().ok(),
+        }
+    }
+}
+
+/// Equal creation times when both sides have one. When either is missing (two missing ones prove nothing), falls
+/// back to equal length and mtime: that still catches a swap, and only rejects a thread appended in the instant
+/// between the check and the open (the read then fails once and is retried), whereas "never the same" would reject
+/// every read on a file system without creation times.
+#[cfg_attr(unix, allow(dead_code))]
+fn same_stamp(a: &FileStamp, b: &FileStamp) -> bool {
+    match (a.created, b.created) {
+        (Some(x), Some(y)) => x == y,
+        _ => a.len == b.len && a.modified.is_some() && a.modified == b.modified,
+    }
 }
 
 /// `{ id, title, updatedAt, text, truncated }`, text capped at `max_chars` characters.
@@ -962,6 +994,28 @@ mod tests {
         let after = file.metadata().unwrap();
         assert_ne!(before.len(), after.len());
         assert!(same_created(&before, &after));
+    }
+
+    #[test]
+    fn same_stamp_needs_a_creation_time_on_both_sides() {
+        let t = |s: u64| Some(UNIX_EPOCH + std::time::Duration::from_secs(s));
+        let stamp = |created, len, modified| FileStamp {
+            created,
+            len,
+            modified,
+        };
+        // Both created: only the creation time counts (an append changes length and mtime).
+        assert!(same_stamp(&stamp(t(1), 10, t(5)), &stamp(t(1), 20, t(6))));
+        assert!(!same_stamp(&stamp(t(1), 10, t(5)), &stamp(t(2), 10, t(5))));
+        // Missing on both sides is not proof of the same file: length and mtime decide.
+        assert!(!same_stamp(&stamp(None, 10, t(5)), &stamp(None, 11, t(5))));
+        assert!(!same_stamp(&stamp(None, 10, t(5)), &stamp(None, 10, t(6))));
+        assert!(same_stamp(&stamp(None, 10, t(5)), &stamp(None, 10, t(5))));
+        // Missing on one side only: the same fallback.
+        assert!(same_stamp(&stamp(t(1), 10, t(5)), &stamp(None, 10, t(5))));
+        assert!(!same_stamp(&stamp(None, 10, t(5)), &stamp(t(1), 12, t(7))));
+        // Nothing to compare at all: not the same.
+        assert!(!same_stamp(&stamp(None, 10, None), &stamp(None, 10, None)));
     }
 
     #[test]

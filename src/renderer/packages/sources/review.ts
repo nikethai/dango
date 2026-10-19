@@ -9,7 +9,7 @@ import { getSourceKind } from './kinds'
 import { throwIfAborted } from './kinds/common'
 import { backgroundModelChoice, hasUsableModel } from './model-check'
 import { _resetReviewStateForTests, forgetReviewState, reviewProgressFor } from './review-state'
-import { getSource, loadSources, sourcesStore, updateSource } from './store'
+import { getSource, loadSources, SourcesUnreadableError, sourcesStore, updateSource } from './store'
 
 /** Item characters (text, label and ref) sent in one model call. */
 export const REVIEW_BATCH_CHARS = 12_000
@@ -121,9 +121,13 @@ function uniqueByRef(items: SourceItem[]): SourceItem[] {
   return [...latest.values()]
 }
 
-/** The job's source, or undefined when it was removed (its jobs then end quietly). */
+/**
+ * The job's source, or undefined when it was removed (its jobs then end quietly). Sources that could not be read are
+ * not "removed": that throws, so the runner retries the job.
+ */
 async function sourceFor(sourceId: string | undefined): Promise<ConnectedSource | undefined> {
   if (!sourcesStore.getState().loaded) await loadSources()
+  if (!sourcesStore.getState().loaded) throw new SourcesUnreadableError()
   return sourceId === undefined ? undefined : getSource(sourceId)
 }
 
