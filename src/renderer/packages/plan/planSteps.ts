@@ -149,6 +149,14 @@ export function isPlanModeOn(session: Pick<Session, 'agentMode' | 'settings'>): 
   return Boolean(session.agentMode && session.settings?.planMode)
 }
 
+/**
+ * Whether the chat has a plan-mode toggle in its composer (desktop settings, not a room of two or more agents), so a
+ * blocked Continue may offer "Turn on plan mode" there too. Pass `platformCapabilities.supportsDesktopOnlySettings`.
+ */
+export function planModeToggleShown(session: Pick<Session, 'agentIds'>, supportsDesktopOnlySettings: boolean): boolean {
+  return supportsDesktopOnlySettings && (session.agentIds?.length ?? 0) < 2
+}
+
 /** Whether a stopped plan's card offers Continue: ready, disabled (plan mode off), or not at all. */
 export type PlanContinueState = 'ready' | 'blocked' | 'hidden'
 

@@ -102,6 +102,18 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('ModelErrorNotice', () => {
+  it("names the provider of the failed call (a Redo ▾ to another provider), not the chat's", () => {
+    render(
+      <ModelErrorNotice
+        msg={failed({}, { aiProvider: 'claude', status: 401, responseBody: 'invalid x-api-key' })}
+        sessionId="s1"
+      />
+    )
+    expect(screen.getByText(/Your .* key was rejected\./).textContent).not.toContain('OpenAI')
+    fireEvent.click(screen.getByRole('button', { name: 'Update key' }))
+    expect(navigateToSettings).toHaveBeenCalledWith('/provider/claude')
+  })
+
   for (const c of cases) {
     it(`${c.name}: the sentence and one button that names the fix`, () => {
       const { container } = render(<ModelErrorNotice msg={c.msg} sessionId="s1" />)

@@ -7,6 +7,7 @@ import {
   planCardState,
   planContinueState,
   planHasMoreThanSteps,
+  planModeToggleShown,
   planRunOrigin,
   planRunTasks,
   planStepViews,
@@ -223,5 +224,14 @@ describe('isApprovedPlanRun', () => {
     ).toBe(true)
     expect(isApprovedPlanRun(msg([{ type: 'plan', planText: '1. a', status: 'pending' }]))).toBe(false)
     expect(isApprovedPlanRun(msg([{ type: 'text', text: 'x' }]))).toBe(false)
+  })
+})
+
+describe('planModeToggleShown', () => {
+  it('only where the composer has the plan-mode toggle: desktop settings and not a room', () => {
+    expect(planModeToggleShown({ agentIds: undefined }, true)).toBe(true)
+    expect(planModeToggleShown({ agentIds: ['a'] }, true)).toBe(true)
+    expect(planModeToggleShown({ agentIds: ['a', 'b'] }, true)).toBe(false)
+    expect(planModeToggleShown({ agentIds: undefined }, false)).toBe(false)
   })
 })

@@ -155,7 +155,6 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
     return (
       (!webBrowsingMode && webSearchConfigured) ||
       agentMode ||
-      (showPlan && planMode) ||
       Boolean(workspaceRoot) ||
       Boolean(browserArmed) ||
       Boolean(computerArmed) ||
@@ -166,8 +165,6 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
     webBrowsingMode,
     webSearchConfigured,
     agentMode,
-    showPlan,
-    planMode,
     workspaceRoot,
     browserArmed,
     computerArmed,

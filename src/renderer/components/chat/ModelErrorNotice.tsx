@@ -5,7 +5,13 @@ import { Trans, useTranslation } from 'react-i18next'
 import { useCopied } from '@/hooks/useCopied'
 import { formatDangoDuration } from '@/hooks/useThinkingTimer'
 import { navigateToSettings } from '@/modals/Settings'
-import { classifyModelError, type ModelErrorKind, modelErrorProviderName } from '@/packages/model-errors/classify'
+import {
+  classifyModelError,
+  type ModelErrorKind,
+  modelErrorProviderId,
+  modelErrorProviderName,
+} from '@/packages/model-errors/classify'
+import { isApprovedPlanRun } from '@/packages/plan/planSteps'
 import {
   cancelRateLimitRetry,
   clearRateLimitAttempts,
@@ -64,11 +70,6 @@ function LegacySentence({ i18nKey, model }: { i18nKey: string; model?: string })
   )
 }
 
-/** An execution run of an approved plan: its card's Continue is the fix, so the notice offers no Retry. */
-function isPlanRun(msg: Message): boolean {
-  return msg.contentParts.some((part) => part.type === 'plan' && part.status === 'approved')
-}
-
 type Fix = { label: string; run(): unknown }
 
 /** Time left before the scheduled rate-limit retry, ticking each second; undefined when no retry is waiting. */
@@ -103,10 +104,7 @@ export function ModelErrorNotice(props: { msg: Message; sessionId: string }) {
   if (!msg.error) return null
 
   const kind: ModelErrorKind = classifyModelError(msg)
-  const providerId =
-    typeof msg.errorExtra?.aiProvider === 'string' && msg.errorExtra.aiProvider
-      ? msg.errorExtra.aiProvider
-      : msg.aiProvider
+  const providerId = modelErrorProviderId(msg)
   const provider = modelErrorProviderName(providerId, customProviders) ?? t('AI provider')
   const host = typeof msg.errorExtra?.host === 'string' && msg.errorExtra.host ? msg.errorExtra.host : provider
   const openProvider = () => navigateToSettings(providerId ? `/provider/${providerId}` : '/provider')
@@ -115,7 +113,8 @@ export function ModelErrorNotice(props: { msg: Message; sessionId: string }) {
   // Retrying these would fail the same way: the setting or the model has to change first.
   const repeats = !!legacy || (msg.errorCode !== undefined && REPEATING_ERROR_CODES.has(msg.errorCode))
   const retry: Fix | undefined =
-    isPlanRun(msg) || repeats
+    // An approved plan's execution run: its card's Continue is the fix, so the notice offers no Retry.
+    isApprovedPlanRun(msg) || repeats
       ? undefined
       : {
           label: t('Retry'),

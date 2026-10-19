@@ -33,8 +33,9 @@ import { useScopes } from '@/hooks/useScopes'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
 import { getShowThinking, scopeKindOf } from '@/packages/chat-settings'
-import { isPlanModeOn, planContinueState } from '@/packages/plan/planSteps'
+import { isPlanModeOn, planContinueState, planModeToggleShown } from '@/packages/plan/planSteps'
 import { thinkingOpenByDefault } from '@/packages/thinking/thinking'
+import { platformCapabilities } from '@/platform'
 import * as atoms from '@/stores/atoms'
 import { turnOnChatPlanMode } from '@/stores/session/plan-mode'
 import {
@@ -167,7 +168,9 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const lastMessageId = currentMessageList.at(-1)?.id
   const planModeOn = isPlanModeOn(currentSession)
   // A Continue blocked by plan mode offers to turn it back on (with Agent Mode); Continue stays a separate click.
+  // Only where the composer has the toggle: desktop settings, not a multi-agent room.
   const onTurnOnPlanMode = useCallback(() => turnOnChatPlanMode(currentSession.id), [currentSession.id])
+  const turnOnPlanModeOffered = planModeToggleShown(currentSession, platformCapabilities.supportsDesktopOnlySettings)
   const planContinueFor = (messageId: string) =>
     planContinueState({
       latestPlan: messageId === latestPlanMessageId,
@@ -336,7 +339,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                           planTouchesFiles={planTouchesFiles}
                           latestPlan={msg.id === latestPlanMessageId}
                           planContinue={planContinueFor(msg.id)}
-                          onTurnOnPlanMode={onTurnOnPlanMode}
+                          onTurnOnPlanMode={turnOnPlanModeOffered ? onTurnOnPlanMode : undefined}
                         />
                       )}
                     </ErrorBoundary>

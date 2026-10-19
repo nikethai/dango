@@ -36,9 +36,15 @@ function namesSystemCommandExactly(command: SystemCommand, query: string): boole
   return q.length > 0 && (command.name === q || (command.aliases?.includes(q) ?? false))
 }
 
+function namesPackageCommandExactly(command: CommandPackage, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  return q.length > 0 && command.name.toLowerCase() === q
+}
+
 /**
  * The / menu: up to 5 skills, then built-in commands, then up to 8 saved commands.
- * A built-in named exactly (`/rewrite`, `/compact` or an alias) goes first, so Enter still runs it.
+ * A command named exactly goes first, so Enter still runs it: a built-in (`/rewrite`, `/compact` or an alias), then a
+ * saved command.
  */
 export function buildCommandPickerItems(
   query: string,
@@ -68,7 +74,9 @@ export function buildCommandPickerItems(
     .map((command) => ({ kind: 'package' as const, command }))
   const exact = system.filter((item) => namesSystemCommandExactly(item.command, query))
   const otherSystem = system.filter((item) => !exact.includes(item))
-  return [...exact, ...skills, ...otherSystem, ...packages]
+  const exactPackages = packages.filter((item) => namesPackageCommandExactly(item.command, query))
+  const otherPackages = packages.filter((item) => !exactPackages.includes(item))
+  return [...exact, ...exactPackages, ...skills, ...otherSystem, ...otherPackages]
 }
 
 export interface CommandPickerProps {

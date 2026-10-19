@@ -55,6 +55,16 @@ describe('buildCommandPickerItems', () => {
     expect(viaAlias[0]).toMatchObject({ kind: 'system', command: { id: 'compact' } })
   })
 
+  it('puts a saved command first when the query names it exactly (after an exact built-in)', () => {
+    const deploySkills = [skill('deploy-checklist', 'Deploy steps')]
+    const items = buildCommandPickerItems('deploy', commands, { skills: deploySkills })
+    expect(items[0]).toMatchObject({ kind: 'package', command: { name: 'deploy' } })
+    expect(names(items)).toEqual(['deploy', 'deploy-checklist'])
+    // A saved command named like a built-in never pushes the built-in down.
+    const clash = buildCommandPickerItems('rewrite', [command('rewrite', 'My rewrite')], {})
+    expect(kinds(clash).slice(0, 2)).toEqual(['system', 'package'])
+  })
+
   it('leaves out system commands when includeSystem is false', () => {
     const items = buildCommandPickerItems('', commands, { skills, includeSystem: false })
     expect(kinds(items)).toEqual(['skill', 'package'])
