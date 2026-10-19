@@ -114,6 +114,7 @@ import {
   isContainRenderableCode,
 } from '../Artifact'
 import { ScalableIcon } from '../common/ScalableIcon'
+import { requestBeforeSend } from './before-send'
 import { ThinkingLine } from './ThinkingLine'
 
 // Tool/thinking renderers are agent-only — lazy-load them and skip on Android.
@@ -287,14 +288,21 @@ const _Message: FC<Props> = (props) => {
     modifyMessage(sessionId, { ...msg, generating: false }, true)
   }, [sessionId, msg])
 
-  const handleRefresh = useCallback(() => {
+  // Redo, Redo ▾, Reply Again Below and edit-and-resend ask the before-send gate first (cost, abilities), like a send.
+  const handleRefresh = useCallback(async () => {
+    if (!(await requestBeforeSend(sessionId, { kind: 'redo', messageId: msg.id }))) return
     handleStop()
-    regenerateInNewFork(sessionId, msg)
+    void regenerateInNewFork(sessionId, msg)
   }, [handleStop, sessionId, msg])
 
-  const onGenerateMore = useCallback(() => {
-    generateMore(sessionId, msg.id)
-  }, [sessionId, msg.id])
+  const onGenerateMore = useCallback(async () => {
+    if (
+      props.sessionType === 'chat' &&
+      !(await requestBeforeSend(sessionId, { kind: 'reply-below', messageId: msg.id }))
+    )
+      return
+    void generateMore(sessionId, msg.id)
+  }, [sessionId, msg.id, props.sessionType])
 
   const onApprovePlan = useCallback(() => approveAndExecutePlan(sessionId, msg.id), [sessionId, msg.id])
 
@@ -332,6 +340,8 @@ const _Message: FC<Props> = (props) => {
 
   // A question is edited in place and sent again (the old answer stays as a branch); an answer keeps the edit modal.
   const [editing, setEditing] = useState(false)
+  // The text an edit-and-resend tried to send: the editor reopens with it when the send is refused or fails.
+  const [editDraft, setEditDraft] = useState<string | null>(null)
   const onEditClick = useCallback(async () => {
     if (msg.role === 'user') {
       setEditing(true)
@@ -341,15 +351,31 @@ const _Message: FC<Props> = (props) => {
   }, [msg, sessionId])
 
   const onEditSend = useCallback(
-    (text: string) => {
+    async (text: string) => {
       setEditing(false)
-      void editAndResend(sessionId, msg.id, text).catch((error: unknown) => {
+      const reopen = () => {
+        setEditDraft(text)
+        setEditing(true)
+      }
+      if (!(await requestBeforeSend(sessionId, { kind: 'edit-resend', messageId: msg.id, text }))) {
+        reopen()
+        return
+      }
+      try {
+        await editAndResend(sessionId, msg.id, text)
+        setEditDraft(null)
+      } catch (error: unknown) {
         console.error('Edit and resend failed', error)
         toastActions.add(t("Couldn't send that. Try again."))
-      })
+        reopen()
+      }
     },
     [sessionId, msg.id, t]
   )
+  const onEditCancel = useCallback(() => {
+    setEditDraft(null)
+    setEditing(false)
+  }, [])
 
   const onBranchFromHere = useCallback(() => {
     void branchChatFromMessage(sessionId, msg.id).catch((error: unknown) => {
@@ -575,9 +601,12 @@ const _Message: FC<Props> = (props) => {
   const isChatSession = props.sessionType === 'chat'
 
   const handleRedoWithModel = useCallback(
-    (provider: string, modelId: string) => {
+    async (provider: string, modelId: string) => {
+      const model = { provider, modelId }
+      // Priced at the picked model; its list already offers only models that can take the turn.
+      if (!(await requestBeforeSend(sessionId, { kind: 'redo-with-model', messageId: msg.id, model }))) return
       handleStop()
-      void regenerateInNewFork(sessionId, msg, { modelOverride: { provider, modelId } })
+      void regenerateInNewFork(sessionId, msg, { modelOverride: model })
     },
     [handleStop, sessionId, msg]
   )
@@ -802,9 +831,9 @@ const _Message: FC<Props> = (props) => {
         ) : null}
         {editing && isUser ? (
           <UserMessageEditor
-            initialText={contentParts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n')}
-            onSend={onEditSend}
-            onCancel={() => setEditing(false)}
+            initialText={editDraft ?? contentParts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n')}
+            onSend={(text) => void onEditSend(text)}
+            onCancel={onEditCancel}
           />
         ) : null}
         <div className={cn('msg-bubble', isUser ? 'inline-block' : 'w-full', editing && isUser && 'hidden')}>

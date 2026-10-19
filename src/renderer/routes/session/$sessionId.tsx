@@ -7,6 +7,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useTranslation } from 'react-i18next'
 import BrowserAgentPanel from '@/components/BrowserAgent/BrowserAgentPanel'
 import ComputerUseHud from '@/components/ComputerUse/ComputerUseHud'
+import { BeforeSendHost } from '@/components/chat/BeforeSendGate'
 import ChatDockStack from '@/components/chat/ChatDockStack'
 import { ChatDropOverlay } from '@/components/chat/ChatDropOverlay'
 import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
@@ -405,6 +406,8 @@ function RouteComponent() {
       </div>
 
       <ThreadHistoryDrawer session={currentSession} />
+      {/* The before-send cost sheet for the composer and the message actions (Redo, Redo ▾, edit-and-resend…). */}
+      <BeforeSendHost />
     </div>
   ) : null
 }

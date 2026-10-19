@@ -8,6 +8,7 @@ import { useSetAtom } from 'jotai'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { v4 as uuidv4 } from 'uuid'
+import { BeforeSendHost } from '@/components/chat/BeforeSendGate'
 import { ChatDropOverlay } from '@/components/chat/ChatDropOverlay'
 import { FirstChatSuggestionChips } from '@/components/chat/EmptyThreadState'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
@@ -364,6 +365,8 @@ function Index() {
         </div>
 
         <div className="blank-home-grow blank-home-grow-bottom" aria-hidden />
+        {/* The composer's before-send cost sheet. */}
+        <BeforeSendHost />
       </div>
     </Page>
   )

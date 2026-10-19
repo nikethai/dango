@@ -29,7 +29,11 @@ export function isLocalModelProvider(providerId: string, apiHost?: string): bool
   return !!apiHost && isLocalHost(apiHost)
 }
 
-/** USD for the whole send, or null when the model has no price (never guess a dollar amount). */
+/**
+ * USD for the whole send, or null when the model has no price (never guess a dollar amount).
+ * A rough upper guess: each run is priced as one model call at the uncached input price. Tool steps inside a run
+ * (more calls) and prompt caching (cheaper input) are not counted.
+ */
 export function estimateTurnCostUsd(input: CostEstimateInput, overrides?: PricingOverrides): number | null {
   const pricing = getModelPricing(input.providerId, input.modelId, overrides)
   if (!pricing) return null

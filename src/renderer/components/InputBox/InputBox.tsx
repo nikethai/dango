@@ -30,6 +30,7 @@ import type React from 'react'
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createModelDependencies } from '@/adapters'
+import { estimateInputTokens, providerApiHost, runsForRoom } from '@/components/chat/before-send'
 import { useMyCopilots, useRemoteCopilots } from '@/hooks/useCopilots'
 import { exportRoomPack } from '@/stores/roomPack'
 import useInputBoxHistory from '@/hooks/useInputBoxHistory'
@@ -1551,7 +1552,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     )
 
     const closeSelectModelErrorTipCb = useRef<NodeJS.Timeout>()
-    const { confirm: confirmCost, sheet: costSheet } = useCostHeadsUp()
+    const { confirm: confirmCost } = useCostHeadsUp()
     const handleSubmit = async (needGenerating = true, opts?: { toolsOff?: boolean }) => {
       if (disableSubmit || isSubmitting || isPreprocessing) {
         return
@@ -1618,12 +1619,16 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         const run = await confirmCost({
           providerId: model.provider,
           modelId: model.modelId,
-          apiHost:
-            settingsStore.getState().providers?.[model.provider]?.apiHost ||
-            providers.find((p) => p.id === model.provider)?.defaultSettings?.apiHost,
-          inputTokens: totalTokens,
+          apiHost: providerApiHost(model.provider),
+          // While the counts are still being worked out, totalTokens is stale: estimate from the text instead.
+          inputTokens: isCalculating
+            ? estimateInputTokens([
+                ...(currentSession?.messages ?? []),
+                ...(preConstructedMessage.message ? [preConstructedMessage.message] : []),
+              ])
+            : totalTokens,
           maxOutputTokens: currentSessionMergedSettings?.maxTokens,
-          runs: roomModeForTurn === 'swarm' ? Math.max(1, roomSizeForTurn) * 2 : 1,
+          runs: runsForRoom(roomModeForTurn, roomSizeForTurn),
           modelName: modelDisplayName || resolvedModelDisplayText || model.modelId,
         })
         if (!run) return
@@ -3475,7 +3480,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             </Flex>
           </Stack>
         </Stack>
-        {costSheet}
         {currentSession && (
           <CompressionModal
             opened={showCompressionModal}

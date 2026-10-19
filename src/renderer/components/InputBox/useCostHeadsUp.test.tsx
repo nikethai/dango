@@ -6,6 +6,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: () => {} },
   useTranslation: () => ({
     t: (key: string, options?: Record<string, string | number>) =>
       key.replace(/\{\{(\w+)\}\}/g, (_m, name: string) => String(options?.[name] ?? '')),
@@ -14,6 +15,7 @@ vi.mock('react-i18next', () => ({
 const settings = vi.hoisted(() => ({ state: { costWarningUsd: 0.5 } as Record<string, unknown> }))
 vi.mock('@/stores/settingsStore', () => ({ settingsStore: { getState: () => settings.state } }))
 
+import { BeforeSendHost } from '@/components/chat/BeforeSendGate'
 import type { CostEstimateInput } from '@/packages/cost-tracking/headsUp'
 import { useCostHeadsUp } from './useCostHeadsUp'
 
@@ -30,9 +32,18 @@ const OVER: CostEstimateInput = {
 const UNDER: CostEstimateInput = { ...OVER, inputTokens: 1_000 }
 
 let api: ReturnType<typeof useCostHeadsUp>
-function Harness() {
+function Composer() {
   api = useCostHeadsUp()
-  return <>{api.sheet}</>
+  return null
+}
+/** The composer asks; the route's shared host shows the sheet. */
+function Harness({ composer = true }: { composer?: boolean }) {
+  return (
+    <>
+      {composer ? <Composer /> : null}
+      <BeforeSendHost />
+    </>
+  )
 }
 
 /** Asks, lets the sheet render, and hands back the pending answer (wrapped so await doesn't wait for it). */
@@ -89,5 +100,20 @@ describe('useCostHeadsUp (CS1)', () => {
     expect(dialog.textContent).toContain(
       'You asked to hear about runs over $0.50. Change the limit in Settings › Models and keys.'
     )
+  })
+
+  it('a composer that goes away answers Cancel and closes the sheet', async () => {
+    const { rerender } = render(<Harness />)
+    const { answer } = ask(OVER)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    rerender(<Harness composer={false} />)
+    await expect(answer).resolves.toBe(false)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('with no host mounted, nothing waits on a sheet no one sees', async () => {
+    render(<Composer />)
+    const { answer } = ask(OVER)
+    await expect(answer).resolves.toBe(true)
   })
 })

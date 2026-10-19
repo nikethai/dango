@@ -43,7 +43,9 @@ describe('abilities are checked before sending, never during a turn', () => {
   test('generation.ts does not import the before-send checks', () => {
     expect(imports).not.toMatch(/modelReadiness/)
     expect(imports).not.toMatch(/headsUp/)
+    expect(imports).not.toMatch(/before-send/)
     expect(generation).not.toMatch(/\bturnNeedsTools\b/)
+    expect(generation).not.toMatch(/\brequestBeforeSend\b/)
     expect(generation).not.toMatch(/\bheadsUp\b/)
   })
 
@@ -66,7 +68,17 @@ describe('cost is checked before sending, never during a turn', () => {
     for (const [path, text] of modelCalls) {
       expect(text, path).not.toMatch(/\bshouldShowCostSheet\b/)
       expect(text, path).not.toMatch(/headsUp/)
+      expect(text, path).not.toMatch(/before-send/)
     }
+  })
+
+  test('the chat and the new-chat page each host the shared before-send sheet once', () => {
+    for (const route of ['src/renderer/routes/session/$sessionId.tsx', 'src/renderer/routes/new.tsx']) {
+      const source = readSource(route)
+      expect(source.match(/<BeforeSendHost \/>/g), route).toHaveLength(1)
+    }
+    // The composer no longer renders a sheet of its own.
+    expect(readSource('src/renderer/components/InputBox/InputBox.tsx')).not.toMatch(/costSheet|<Sheet\b/)
   })
 
   test('the composer asks before sending', () => {
@@ -75,5 +87,9 @@ describe('cost is checked before sending, never during a turn', () => {
     const ask = submit.indexOf('confirmCost(')
     expect(ask).toBeGreaterThan(-1)
     expect(ask).toBeLessThan(submit.indexOf('setIsSubmitting(true)'))
+    // Token counts still running are stale: the ask estimates from the text instead.
+    expect(submit.slice(ask, submit.indexOf('setIsSubmitting(true)'))).toMatch(
+      /inputTokens: isCalculating\s*\?\s*estimateInputTokens\(/
+    )
   })
 })
