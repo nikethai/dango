@@ -18,7 +18,7 @@ import {
 } from '@shared/pm-pilot'
 import { v4 as uuidv4 } from 'uuid'
 import i18n from '@/i18n'
-import { errorClassName, localOnlySourceIds, resolveBackgroundModel } from './background-model'
+import { type BackgroundModel, errorClassName, localOnlySourceIds, resolveBackgroundModel } from './background-model'
 import {
   addReviewEntry,
   applyReviewEntry,
@@ -97,14 +97,16 @@ function cleanReply(raw: string): string {
  * (pass the cited evidence). The background model is the only one tried (preflight R8). With a cloud model, an inbound
  * record or evidence that may not reach the cloud refuses before any call (`LocalOnlyModelError`, ADR 0003). The body
  * lists no sources, since it reaches the client. Throws when there is no model, the call fails or the reply is empty.
+ * `model`: the background model the caller resolved for this run; omitted, it is resolved here.
  */
 export async function writeDraftText(input: {
   inbound: SourceRecord
   answer: string
   evidence: Evidence[]
   localOnlySourceIds?: Set<string>
+  model?: BackgroundModel | null
 }): Promise<string> {
-  const model = await resolveBackgroundModel()
+  const model = input.model !== undefined ? input.model : await resolveBackgroundModel()
   if (!model) throw new Error(DRAFT_NO_MODEL)
   if (model.cloud) {
     const localOnly = await localOnlySourceIds(input.localOnlySourceIds)
@@ -179,7 +181,8 @@ async function ask(input: {
  * Turns a judged inbound Gmail message into a Review entry. `fyi` and `noise` are ignored. Low, or a local-only block,
  * adds one Needs you entry and its question. Otherwise the reply is written, saved as a proposed draft addressed to the
  * inbound From, and added as a proposal (safe for High under the daily cap, else risky); when Trust Auto applied it on
- * arrival, the Done copy is written onto the entry. A second run for the same message adds nothing.
+ * arrival, the Done copy is written onto the entry. A second run for the same message adds nothing. `model` and
+ * `localOnlySourceIds` are the pipeline's per-run decision, passed on to `writeDraftText`.
  */
 export async function actOnThread(input: {
   scope: Scope
@@ -187,6 +190,8 @@ export async function actOnThread(input: {
   judgement: Judgement
   evidence: Evidence[]
   localOnlyBlocked: boolean
+  model?: BackgroundModel | null
+  localOnlySourceIds?: Set<string>
 }): Promise<'drafted' | 'asked' | 'ignored'> {
   const { scope, inbound, judgement, evidence, localOnlyBlocked } = input
   if (judgement.intent !== 'question' || inbound.sourceKind !== 'gmail') return 'ignored'
@@ -205,7 +210,13 @@ export async function actOnThread(input: {
     return ask({ scope, inbound, judgement, evidence, localOnlyBlocked, now })
   }
 
-  const text = await writeDraftText({ inbound, answer: judgement.answer ?? '', evidence: cited })
+  const text = await writeDraftText({
+    inbound,
+    answer: judgement.answer ?? '',
+    evidence: cited,
+    ...(input.model !== undefined ? { model: input.model } : {}),
+    ...(input.localOnlySourceIds ? { localOnlySourceIds: input.localOnlySourceIds } : {}),
+  })
   tier = demoteUnsupported(tier, text, citedTexts)
   const shape = entryShapeForTier({ tier, draftsToday, localOnlyBlocked })
   const entryId = uuidv4()

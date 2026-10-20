@@ -109,6 +109,20 @@ describe('needsYouEntry', () => {
     })
   })
 
+  it('which-project options carry the Asana project gid when the candidate has one', () => {
+    const q = question({
+      kind: 'which-project',
+      candidates: [
+        { value: 'Website', sourceLabel: 'Asana', projectGid: 'p1' },
+        { value: 'Website', sourceLabel: 'Asana', projectGid: 'p2' },
+      ],
+    })
+    expect(needsYouEntry(q, 'Acme Co').options).toEqual([
+      { id: 'p1', text: 'Website' },
+      { id: 'p2', text: 'Website' },
+    ])
+  })
+
   it('unknown client', () => {
     expect(needsYouEntry(question({ kind: 'which-client', scopeId: null, candidates: [] }))).toMatchObject({
       scopeId: 'everywhere',

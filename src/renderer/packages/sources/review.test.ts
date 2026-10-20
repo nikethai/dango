@@ -12,6 +12,7 @@ import {
 } from '@/packages/background'
 import { proposeKnowledge } from '@/packages/knowledge'
 import { generateText } from '@/packages/model-calls'
+import { registerPmAdapters } from '@/packages/pm-pilot'
 import platform, { platformCapabilities } from '@/platform'
 import { _stopBackgroundJobsForTests, initBackgroundJobs } from '@/setup/background_jobs'
 import {
@@ -115,6 +116,11 @@ vi.mock('@/router', () => ({ router: { navigate: vi.fn(async () => undefined) } 
 vi.mock('@shared/models', () => ({ getModel: vi.fn(() => ({ name: 'model' })) }))
 vi.mock('@/adapters', () => ({ createModelDependencies: vi.fn(async () => ({})) }))
 vi.mock('@/packages/model-calls', () => ({ generateText: vi.fn() }))
+vi.mock('@/packages/pm-pilot', () => ({
+  registerPmAdapters: vi.fn(() => {
+    h.order.push('pm')
+  }),
+}))
 
 const CLOUD_MODEL = {
   defaultChatModel: { provider: 'openai', model: 'gpt-4o' },
@@ -605,6 +611,25 @@ describe('initBackgroundJobs', () => {
     expect(startJob).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(90_000)
     expect(startJob).toHaveBeenCalledWith(expect.objectContaining({ kind: 'sync', sourceId: 's1' }))
+  })
+
+  it('registers the PM pilot adapters on desktop before resuming jobs', async () => {
+    const p = platform as unknown as { type?: string }
+    p.type = 'desktop'
+    try {
+      await initBackgroundJobs()
+      expect(registerPmAdapters).toHaveBeenCalledOnce()
+      expect(h.order.indexOf('pm')).toBeGreaterThanOrEqual(0)
+      expect(h.order.indexOf('pm')).toBeLessThan(h.order.indexOf('resume'))
+    } finally {
+      delete p.type
+    }
+  })
+
+  it('does not register the PM pilot adapters off desktop', async () => {
+    await initBackgroundJobs()
+    expect(resumeJobs).toHaveBeenCalled()
+    expect(registerPmAdapters).not.toHaveBeenCalled()
   })
 
   it('an adopted folder with background review on syncs first, then is reviewed', async () => {

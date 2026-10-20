@@ -101,6 +101,19 @@ afterEach(async () => {
 })
 
 describe('pmStore records', () => {
+  it('pruneRecords removes records of one kind whose source is not kept', async () => {
+    await pmStore.upsertRecords([
+      rec({ externalId: 'm1', sourceId: 'g-kept' }),
+      rec({ externalId: 'm2', sourceId: 'g-gone' }),
+      asana({ externalId: 't1', sourceId: 'a-other' }),
+    ])
+    await pmStore.pruneRecords('gmail', new Set(['g-kept']))
+    expect((await pmStore.getRecords('acme')).map((r) => `${r.sourceId}/${r.externalId}`)).toEqual([
+      'g-kept/m1',
+      'a-other/t1',
+    ])
+  })
+
   it('upserting the same id twice keeps one record', async () => {
     await pmStore.upsertRecords([rec({ externalId: 'm1', text: 'first' })])
     await pmStore.upsertRecords([rec({ externalId: 'm1', text: 'second' })])
@@ -278,6 +291,14 @@ describe('pmStore cursors, processed ids, drafts and questions', () => {
     await pmStore.saveQuestion(question({ id: 'q1', state: 'answered' }))
     expect(await pmStore.findOpenQuestion({ domain: 'newco.com' })).toBeUndefined()
     expect((await pmStore.getQuestion('q1'))?.state).toBe('answered')
+  })
+
+  it('finds an open question by kind and source', async () => {
+    await pmStore.saveQuestion(question({ id: 'q2', kind: 'choose-model', sourceId: 'g1', domain: undefined }))
+    await pmStore.saveQuestion(question({ id: 'q3', kind: 'which-project', sourceId: 'a1', domain: undefined }))
+    expect((await pmStore.findOpenQuestion({ kind: 'choose-model', sourceId: 'g1' }))?.id).toBe('q2')
+    expect((await pmStore.findOpenQuestion({ kind: 'which-project', sourceId: 'a1' }))?.id).toBe('q3')
+    expect(await pmStore.findOpenQuestion({ kind: 'choose-model', sourceId: 'a1' })).toBeUndefined()
   })
 
   it('state survives a reload', async () => {

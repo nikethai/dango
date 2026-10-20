@@ -91,7 +91,7 @@ export function needsYouEntry(q: ClientQuestion, scopeName = '', format: CopyFor
         ...base,
         source: format('Asana', {}),
         text: fill(format, 'Which Asana project is {{scope}}?', { scope: scopeName }),
-        options: q.candidates.map((c) => ({ id: c.scopeId ?? c.value, text: c.value })),
+        options: q.candidates.map((c) => ({ id: c.projectGid ?? c.scopeId ?? c.value, text: c.value })),
       }
     case 'choose-model':
       return {

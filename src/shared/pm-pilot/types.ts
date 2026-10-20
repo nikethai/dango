@@ -189,6 +189,8 @@ export type ClientQuestionCandidate = {
   date?: number
   sourceLabel: string
   scopeId?: string
+  /** `which-project`: the Asana project's gid (the candidate's `value` is its name). */
+  projectGid?: string
   evidenceIds?: string[]
 }
 export type ClientQuestion = {
@@ -224,6 +226,7 @@ export const ClientQuestionSchema: z.ZodType<ClientQuestion> = z.looseObject({
       date: z.number().optional(),
       sourceLabel: z.string(),
       scopeId: z.string().optional(),
+      projectGid: z.string().optional(),
       evidenceIds: z.array(z.string()).optional(),
     })
   ),

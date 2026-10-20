@@ -28,6 +28,7 @@ import { navigateToSettings } from '@/modals/Settings'
 import { initKnowledge } from '@/packages/knowledge'
 import { useMenuBarSync } from '@/packages/menu-bar'
 import { getOS } from '@/packages/navigator'
+import { initPmReview } from '@/packages/pm-pilot'
 import { UndoToast, useUndoHotkey } from '@/packages/undo'
 import PictureDialog from '@/pages/PictureDialog'
 import RemoteDialogWindow from '@/pages/RemoteDialogWindow'
@@ -60,6 +61,8 @@ function Root() {
   }, [])
   // Review's default 'question' opener, app-wide (slice 10 may replace it).
   useEffect(() => registerDefaultQuestionOpener(), [])
+  // Slice 10's draft applier and opener, in every window that shows Review (preflight R10).
+  useEffect(() => initPmReview(), [])
   // Change rows from a finished plan open the chat they came from (slice 6a).
   useEffect(() => registerChangeOpener(), [])
   // Needs you rows for a rate-limited chat open it and retry the answer (06b, ER3).

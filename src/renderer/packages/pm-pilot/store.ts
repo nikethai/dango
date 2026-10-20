@@ -201,6 +201,11 @@ function removeSourceRecords(sourceId: string): Promise<void> {
   return removeRecordsWhere((r) => r.sourceId === sourceId)
 }
 
+/** Removes every record of `kind` whose source is not in `keep` (sources removed since their records were stored). */
+function pruneRecords(kind: PmSourceKind, keep: ReadonlySet<string>): Promise<void> {
+  return removeRecordsWhere((r) => r.sourceKind === kind && (r.sourceId === null || !keep.has(r.sourceId)))
+}
+
 function getRecords(scopeId: string): Promise<SourceRecord[]> {
   return recordsQueue(async () => [...(await loadScope(scopeId))])
 }
@@ -409,11 +414,17 @@ async function getQuestion(id: string): Promise<ClientQuestion | undefined> {
   return (await readQuestions()).find((q) => q.id === id)
 }
 
-/** The open question about an outside domain (or address), or about one thread. */
-async function findOpenQuestion(by: { domain: string } | { threadId: string }): Promise<ClientQuestion | undefined> {
-  return (await readQuestions()).find(
-    (q) => q.state === 'open' && ('domain' in by ? q.domain === by.domain : q.threadId === by.threadId)
-  )
+type QuestionLookup = { domain: string } | { threadId: string } | { kind: ClientQuestion['kind']; sourceId: string }
+
+function questionMatches(q: ClientQuestion, by: QuestionLookup): boolean {
+  if ('domain' in by) return q.domain === by.domain
+  if ('threadId' in by) return q.threadId === by.threadId
+  return q.kind === by.kind && q.sourceId === by.sourceId
+}
+
+/** The open question about an outside domain (or address), about one thread, or of one kind for one source. */
+async function findOpenQuestion(by: QuestionLookup): Promise<ClientQuestion | undefined> {
+  return (await readQuestions()).find((q) => q.state === 'open' && questionMatches(q, by))
 }
 
 /** The local calendar day of `now`, so the count resets at local midnight. */
@@ -455,6 +466,7 @@ export const pmStore = {
   deleteRecords,
   deleteRecordsByThread,
   removeSourceRecords,
+  pruneRecords,
   getRecords,
   reloadRecords,
   flushRecords,

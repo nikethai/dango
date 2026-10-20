@@ -249,6 +249,36 @@ describe('actOnThread', () => {
     expect(e.ref).toEqual({ type: 'draft', id: d.id })
   })
 
+  it('drafts with the model and local-only set the pipeline passed, never resolving its own', async () => {
+    state.trust = 'ask'
+    state.model = null
+    const runModel = vi.fn(async (_s: string, _u: string) => REPLY)
+    await expect(
+      actOnThread({
+        scope,
+        inbound: inbound(),
+        judgement: judgement(),
+        evidence,
+        localOnlyBlocked: false,
+        model: { cloud: true, generate: runModel },
+        localOnlySourceIds: new Set(['src2']),
+      })
+    ).rejects.toBeInstanceOf(LocalOnlyModelError)
+    expect(runModel).not.toHaveBeenCalled()
+    await expect(
+      actOnThread({
+        scope,
+        inbound: inbound(),
+        judgement: judgement(),
+        evidence,
+        localOnlyBlocked: false,
+        model: { cloud: true, generate: runModel },
+        localOnlySourceIds: new Set(),
+      })
+    ).resolves.toBe('drafted')
+    expect(runModel).toHaveBeenCalledOnce()
+  })
+
   it('when arrival returns done, the Done copy is written onto the entry', async () => {
     await expect(act()).resolves.toBe('drafted')
     expect(writeDraft).toHaveBeenCalledTimes(1)

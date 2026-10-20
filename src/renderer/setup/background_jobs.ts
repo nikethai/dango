@@ -32,11 +32,12 @@ async function isJobWindow(): Promise<boolean> {
 }
 
 /**
- * Starts background work in the main window: registers the sync and review handlers, the sources' fix handlers and
- * the Review opener, removes folder bindings left over from an unfinished Add a source, resumes stored jobs, turns
- * folder bindings made before sources existed into sources, then starts due syncs and reviews at launch, every
- * 15 minutes (sooner when a kind polls more often) and whenever a sync finishes. Nothing is started before the stored jobs are resumed; when resuming
- * fails, the next check tries it again first. Returns at once in any other window.
+ * Starts background work in the main window: registers the sync and review handlers, the sources' fix handlers,
+ * the Review opener and (desktop) the Gmail and Asana adapters, removes folder bindings left over from an unfinished
+ * Add a source, resumes stored jobs, turns folder bindings made before sources existed into sources, then starts due
+ * syncs and reviews at launch, every 15 minutes (sooner when a kind polls more often) and whenever a sync finishes.
+ * Nothing is started before the stored jobs are resumed; when resuming fails, the next check tries it again first.
+ * Returns at once in any other window.
  */
 export async function initBackgroundJobs(): Promise<void> {
   if (started) return
@@ -49,6 +50,16 @@ export async function initBackgroundJobs(): Promise<void> {
   registerJobHandler('review', reviewJobHandler)
   registerSourceFixHandlers()
   registerJobReviewOpener()
+  // Slice 10: Gmail and Asana read and sync on desktop. After the built-in kinds, before stored jobs resume (a resumed
+  // Gmail sync must find its adapter) and before the due-check interval is set (it honours their pollMs).
+  if (platform.type === 'desktop') {
+    try {
+      const { registerPmAdapters } = await import('@/packages/pm-pilot')
+      registerPmAdapters()
+    } catch (error) {
+      console.warn('[background] Could not register the Gmail and Asana adapters', error)
+    }
+  }
 
   try {
     await platform.discardDraftFolderBindings?.()

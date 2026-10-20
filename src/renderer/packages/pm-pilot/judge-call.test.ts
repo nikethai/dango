@@ -76,6 +76,22 @@ beforeEach(() => {
 })
 
 describe('judgeThread', () => {
+  it('uses the model the caller resolved for the run, without resolving another', async () => {
+    const generate = vi.fn(async () =>
+      JSON.stringify({ intent: 'fyi', summary: 'An update.', evidenceIds: [], confidence: 0.2, candidates: [] })
+    )
+    state.choice = null
+    const out = await judgeThread({ scopeName: 'Acme', inbound, evidence: [], model: { cloud: false, generate } })
+    expect(out.judgement).toMatchObject({ intent: 'fyi' })
+    expect(generate).toHaveBeenCalledOnce()
+    expect(getModel).not.toHaveBeenCalled()
+    // A null model is "no model", not "resolve one".
+    expect(await judgeThread({ scopeName: 'Acme', inbound, evidence: [], model: null })).toEqual({
+      judgement: null,
+      error: 'No model is set up',
+    })
+  })
+
   it('judges with the background model and keeps only evidence it was given', async () => {
     reply(
       JSON.stringify({

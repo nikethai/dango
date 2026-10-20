@@ -7,7 +7,7 @@ import {
   type SourceRecord,
   validateJudgement,
 } from '@shared/pm-pilot'
-import { errorClassName, localOnlySourceIds, resolveBackgroundModel } from './background-model'
+import { type BackgroundModel, errorClassName, localOnlySourceIds, resolveBackgroundModel } from './background-model'
 import { buildJudgePrompt } from './prompts'
 
 /*
@@ -32,16 +32,18 @@ function failure(e: unknown): string {
 /**
  * Judges an inbound client message against the evidence. Never throws. With a cloud model, a local-only inbound record
  * (or one with no source id) is refused before any call, and evidence `mayReachCloud` refuses is dropped (ADR 0003).
- * `localOnlySourceIds` defaults to the connected sources marked "Keep on this device only".
+ * `localOnlySourceIds` defaults to the connected sources marked "Keep on this device only". `model` is the background
+ * model the caller already resolved for this run (so cloud or local is decided once); omitted, it is resolved here.
  */
 export async function judgeThread(input: {
   scopeName: string
   inbound: SourceRecord
   evidence: Evidence[]
   localOnlySourceIds?: Set<string>
+  model?: BackgroundModel | null
 }): Promise<JudgeResult> {
   try {
-    const model = await resolveBackgroundModel()
+    const model = input.model !== undefined ? input.model : await resolveBackgroundModel()
     if (!model) return { judgement: null, error: JUDGE_NO_MODEL }
 
     const cloud = model.cloud
