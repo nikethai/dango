@@ -275,6 +275,15 @@ async function setCursor(cursor: SyncCursor): Promise<void> {
   pmStateStore.setState({ cursors: next })
 }
 
+/** Removes the cursors `remove` picks (cursors of removed sources). */
+async function removeCursors(remove: (c: SyncCursor) => boolean): Promise<void> {
+  const { next } = await mutateDoc('PmCursors', parseCursors, (cursors) => ({
+    next: cursors.filter((c) => !remove(c)),
+    result: undefined,
+  }))
+  pmStateStore.setState({ cursors: next })
+}
+
 /** Remembers that the pipeline acted on these messages; keeps the newest `PROCESSED_PER_ACCOUNT` per account. */
 async function markProcessed(accountId: string, messageIds: string | string[]): Promise<void> {
   const ids = [...new Set(Array.isArray(messageIds) ? messageIds : [messageIds])]
@@ -287,6 +296,11 @@ async function markProcessed(accountId: string, messageIds: string | string[]): 
 
 async function isProcessed(accountId: string, messageId: string): Promise<boolean> {
   return (parseProcessed(await readDoc('PmProcessed'))[accountId] ?? []).includes(messageId)
+}
+
+/** Every processed message id of an account, read once (a pipeline run checks many messages). */
+async function processedIds(accountId: string): Promise<Set<string>> {
+  return new Set(parseProcessed(await readDoc('PmProcessed'))[accountId] ?? [])
 }
 
 /** Written through at once: a draft's state must be stored before any Gmail write is retried. */
@@ -472,8 +486,10 @@ export const pmStore = {
   flushRecords,
   getCursor,
   setCursor,
+  removeCursors,
   markProcessed,
   isProcessed,
+  processedIds,
   saveDraft,
   claimDraftWrite,
   settleDraftWrite,

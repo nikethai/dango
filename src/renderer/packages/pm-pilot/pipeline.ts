@@ -1,6 +1,8 @@
 import {
   type ClientQuestion,
   type CopyFormat,
+  GMAIL_BACKFILL_DAYS,
+  inertValues,
   needsYouEntry,
   PIPELINE_MAX_THREADS_PER_TICK,
   type RouteResult,
@@ -10,7 +12,7 @@ import {
 } from '@shared/pm-pilot'
 import { v4 as uuidv4 } from 'uuid'
 import i18n from '@/i18n'
-import { actOnThread } from './act-call'
+import { actOnThread, DRAFT_EMPTY } from './act-call'
 import { type BackgroundModel, errorClassName, resolveBackgroundModel } from './background-model'
 import {
   addReviewEntry,
@@ -203,6 +205,11 @@ type RunContext = {
   now: number
   stats: RunStats
   scopes: Map<string, Promise<Scope | undefined>>
+  /** Decided once per run: the background model (null: none) and the sources that stay on this device. */
+  model: BackgroundModel | null
+  localOnly: Set<string>
+  /** The account's processed message ids, read once per run and kept up to date by this run. */
+  processed: Set<string>
 }
 
 function statsFor(ctx: RunContext, sourceId: string): SourceStats {
@@ -251,21 +258,33 @@ async function runAccount(ctx: RunContext): Promise<void> {
   const { stored, unknown } = routeRecords(result.records, routeSourcesOf(sources), result.ownAddress)
   await pmStore.upsertRecords(stored)
   for (const r of stored) if (r.sourceId) statsFor(ctx, r.sourceId).threads.add(r.threadOrTaskId)
+
+  // Decided once per run and passed to every model step (read-back, retrieve, judge, draft).
+  ctx.model = await resolveBackgroundModel()
+  ctx.localOnly = new Set(
+    listSources()
+      .filter((s) => s.localOnly)
+      .map((s) => s.id)
+  )
+  ctx.processed = await pmStore.processedIds(accountId)
+
+  // Questions about unknown threads before the cursor moves: those threads are not stored, so a failure after the
+  // cursor would lose them. Filing is idempotent per domain, so a replay after a failed cursor save adds nothing.
+  await askWhichClient(ctx, sources, unknown)
   // The whole cursor, own address included, only now: `setCursor` flushes the records above first.
   await pmStore.setCursor(result.cursor)
 
-  await readBack(stored)
-  await askWhichClient(ctx, sources, unknown)
+  await readBack(ctx, stored)
   await actOnNewMail(ctx, sources)
 }
 
 /** The sent-reply read-back (flow 10 step 5), with Review and knowledge loaded so its notes land. Never fails a run. */
-async function readBack(records: SourceRecord[]): Promise<void> {
+async function readBack(ctx: RunContext, records: SourceRecord[]): Promise<void> {
   if (!records.some((r) => r.sentByMe)) return
   try {
     if (!reviewStore.getState().loaded) await loadReviewEntries()
     await ensureKnowledgeLoaded()
-    await readBackSent(records)
+    await readBackSent(records, { model: ctx.model, localOnlySourceIds: ctx.localOnly })
   } catch (e) {
     warn('Sent replies could not be read back', e)
   }
@@ -279,15 +298,19 @@ async function askWhichClient(ctx: RunContext, sources: ConnectedSource[], unkno
     if (route.candidateScopeIds.length === 0) continue
     const inbound = newestInbound(records)
     if (!inbound || inbound.noise || inbound.occurredAt <= connectedAt) continue
-    if (await pmStore.isProcessed(ctx.accountId, inbound.externalId)) continue
-    if (await pmStore.findOpenQuestion({ domain: route.domain })) continue
-    const scopes = (await Promise.all(route.candidateScopeIds.map((id) => scopeOf(ctx, id)))).filter(
+    if (ctx.processed.has(inbound.externalId)) continue
+    // Ids are fixed per account, domain and thread, so filing again (a run that failed before its cursor was saved)
+    // finds the same question and only re-adds its entry, which slice 1b merges by ref.
+    const id = `which-client:${ctx.accountId}:${route.domain}:${inbound.threadOrTaskId}`
+    const open = await pmStore.findOpenQuestion({ domain: route.domain })
+    if (open && open.id !== id) continue
+    const scopes = (await Promise.all(route.candidateScopeIds.map((sid) => scopeOf(ctx, sid)))).filter(
       (s): s is Scope => !!s
     )
     if (scopes.length === 0) continue
-    const entryId = uuidv4()
+    const entryId = `${id}:entry`
     const question: ClientQuestion = {
-      id: uuidv4(),
+      id,
       kind: 'which-client',
       scopeId: null,
       accountId: ctx.accountId,
@@ -299,9 +322,9 @@ async function askWhichClient(ctx: RunContext, sources: ConnectedSource[], unkno
       domain: route.domain,
       reviewEntryId: entryId,
       state: 'open',
-      createdAt: ctx.now,
+      createdAt: open?.createdAt ?? ctx.now,
     }
-    await pmStore.saveQuestion(question)
+    if (!open) await pmStore.saveQuestion(question)
     await addReviewEntry({
       ...needsYouEntry(question, '', format),
       id: entryId,
@@ -347,24 +370,28 @@ async function closeLocalModelQuestion(source: ConnectedSource): Promise<void> {
 
 type Candidate = { source: ConnectedSource; inbound: SourceRecord }
 
+const DAY_MS = 86_400_000
+
 /**
  * Threads of the account's client sources whose newest inbound message may be acted on: not noise, not answered by the
- * PM since, and newer than the source's connection. Newest first. Read from the stored records, so threads left over
- * from an earlier tick (the per-tick cap, a failure) are picked up again.
+ * PM since, not processed, newer than the source's connection and at most `GMAIL_BACKFILL_DAYS` old. Newest first.
+ * Read from the stored records, so threads left over from an earlier tick (the per-tick cap, a failure) come back.
  */
-async function newMailCandidates(sources: ConnectedSource[]): Promise<Candidate[]> {
+async function newMailCandidates(ctx: RunContext, sources: ConnectedSource[]): Promise<Candidate[]> {
+  const oldest = ctx.now - GMAIL_BACKFILL_DAYS * DAY_MS
   const out: Candidate[] = []
   for (const source of sources) {
     if (source.scopeId === EVERYWHERE_SCOPE_ID) continue
+    const after = Math.max(source.connectedAt, oldest)
     const records = (await pmStore.getRecords(source.scopeId)).filter(
-      (r) => r.sourceId === source.id && r.sourceKind === 'gmail'
+      (r) => r.sourceId === source.id && r.sourceKind === 'gmail' && r.occurredAt > after
     )
     const byThread = new Map<string, SourceRecord[]>()
     for (const r of records) byThread.set(r.threadOrTaskId, [...(byThread.get(r.threadOrTaskId) ?? []), r])
     for (const thread of byThread.values()) {
       if (newestFirst(thread)[0]?.sentByMe) continue
       const inbound = newestInbound(thread)
-      if (!inbound || inbound.noise || inbound.occurredAt <= source.connectedAt) continue
+      if (!inbound || inbound.noise || ctx.processed.has(inbound.externalId)) continue
       out.push({ source, inbound })
     }
   }
@@ -373,19 +400,21 @@ async function newMailCandidates(sources: ConnectedSource[]): Promise<Candidate[
 
 class NoModelError extends Error {}
 
-/** Retrieve, judge and act on one message with the run's model; marks it processed once `actOnThread` resolved. */
-async function judgeAndAct(
-  ctx: RunContext,
-  c: Candidate,
-  model: BackgroundModel,
-  localOnly: Set<string>
-): Promise<void> {
+/** A failure that belongs to one message (an unreadable judgement, an empty draft): counted against that message. */
+class MessageFailure extends Error {}
+
+/**
+ * Retrieve, judge and act on one message with the run's model; marks it processed once `actOnThread` resolved.
+ * Throws `MessageFailure` for a failure of this message only; any other throw is a failure of the model or the
+ * service (an outage, a bad key, a rate limit), which no message is blamed for.
+ */
+async function judgeAndAct(ctx: RunContext, c: Candidate, model: BackgroundModel): Promise<void> {
   const scope = await scopeOf(ctx, c.source.scopeId)
   if (!scope) return
   const evidence = await retrieveEvidence({
     scopeId: scope.id,
     inbound: c.inbound,
-    localOnlySourceIds: localOnly,
+    localOnlySourceIds: ctx.localOnly,
     cloudModel: model.cloud,
   })
   throwIfAborted(ctx.signal)
@@ -393,55 +422,92 @@ async function judgeAndAct(
     scopeName: scope.name,
     inbound: c.inbound,
     evidence,
-    localOnlySourceIds: localOnly,
+    localOnlySourceIds: ctx.localOnly,
     model,
   })
   throwIfAborted(ctx.signal)
   if (!judgement) {
     if (error === JUDGE_LOCAL_ONLY) throw new LocalOnlyModelError()
     if (error === JUDGE_NO_MODEL) throw new NoModelError()
-    throw new PmRetryError(t(error === JUDGE_UNREADABLE ? MODEL_UNREADABLE : MODEL_FAILED))
+    if (error === JUDGE_UNREADABLE) throw new MessageFailure(MODEL_UNREADABLE)
+    throw new PmRetryError(t(MODEL_FAILED))
   }
-  const outcome = await actOnThread({
-    scope,
-    inbound: c.inbound,
-    judgement,
-    evidence,
-    localOnlyBlocked: false,
-    model,
-    localOnlySourceIds: localOnly,
-  })
+  let outcome: Awaited<ReturnType<typeof actOnThread>>
+  try {
+    outcome = await actOnThread({
+      scope,
+      inbound: c.inbound,
+      judgement,
+      evidence,
+      localOnlyBlocked: false,
+      model,
+      localOnlySourceIds: ctx.localOnly,
+    })
+  } catch (e) {
+    if (e instanceof Error && e.message === DRAFT_EMPTY) throw new MessageFailure(DRAFT_EMPTY)
+    throw e
+  }
   await pmStore.markProcessed(ctx.accountId, c.inbound.externalId)
+  ctx.processed.add(c.inbound.externalId)
   attempts.delete(`${ctx.accountId}:${c.inbound.externalId}`)
   const stats = statsFor(ctx, c.source.id)
   stats.threads.add(c.inbound.threadOrTaskId)
   if (outcome !== 'ignored') stats.notable = true
 }
 
+/**
+ * A message Dango could not check is handed to the user: one Needs you on its thread ("Couldn't check this email",
+ * answered like any other question), then it is marked processed so it is not judged again.
+ */
+async function giveUp(ctx: RunContext, c: Candidate): Promise<void> {
+  if (!(await pmStore.findOpenQuestion({ threadId: c.inbound.threadOrTaskId }))) {
+    const scope = await scopeOf(ctx, c.source.scopeId)
+    const entryId = uuidv4()
+    const question: ClientQuestion = {
+      id: uuidv4(),
+      kind: 'which-answer',
+      sourceId: c.source.id,
+      scopeId: c.source.scopeId,
+      accountId: ctx.accountId,
+      threadId: c.inbound.threadOrTaskId,
+      subject: c.inbound.title,
+      from: c.inbound.author,
+      summary: '',
+      candidates: [],
+      reviewEntryId: entryId,
+      state: 'open',
+      createdAt: ctx.now,
+    }
+    await pmStore.saveQuestion(question)
+    await addReviewEntry({
+      ...needsYouEntry(question, scope?.name ?? '', format),
+      id: entryId,
+      source: t('Gmail'),
+      text: t("Couldn't check this email"),
+      // The sender and subject are external text, passed as inert values.
+      sub: format('{{from}} · "{{subject}}"', inertValues({ from: c.inbound.author, subject: c.inbound.title })),
+    })
+  }
+  await pmStore.markProcessed(ctx.accountId, c.inbound.externalId)
+  ctx.processed.add(c.inbound.externalId)
+  attempts.delete(`${ctx.accountId}:${c.inbound.externalId}`)
+  statsFor(ctx, c.source.id).notable = true
+}
+
 async function actOnNewMail(ctx: RunContext, sources: ConnectedSource[]): Promise<void> {
-  const candidates = await newMailCandidates(sources)
-  // Decided once per run: the model, whether it is cloud, and which sources stay on this device.
-  const model = await resolveBackgroundModel()
-  const localOnly = new Set(
-    listSources()
-      .filter((s) => s.localOnly)
-      .map((s) => s.id)
-  )
+  const { model, localOnly } = ctx
+  const candidates = await newMailCandidates(ctx, sources)
   if (model) {
     for (const s of sources) if (!model.cloud || !localOnly.has(s.id)) await closeLocalModelQuestion(s)
   }
 
   let acted = 0
-  let failure: unknown
-  let modelMissing = false
+  let retryable = false
   for (const c of candidates) {
     if (acted >= PIPELINE_MAX_THREADS_PER_TICK) break
     throwIfAborted(ctx.signal)
-    if (await pmStore.isProcessed(ctx.accountId, c.inbound.externalId)) continue
-    if (!model) {
-      modelMissing = true
-      break
-    }
+    if (ctx.processed.has(c.inbound.externalId)) continue
+    if (!model) throw noModel()
     if (model.cloud && localOnly.has(c.source.id)) {
       // No model call for a source that stays on this device (ADR 0003).
       await askForLocalModel(ctx, c.source)
@@ -450,35 +516,37 @@ async function actOnNewMail(ctx: RunContext, sources: ConnectedSource[]): Promis
     acted += 1
     ctx.progress(t('Checking new client emails…'))
     try {
-      await judgeAndAct(ctx, c, model, localOnly)
+      await judgeAndAct(ctx, c, model)
     } catch (e) {
       if (isAbort(e, ctx.signal)) throw e
+      if (e instanceof NoModelError) throw noModel()
       if (e instanceof LocalOnlyModelError) {
-        await askForLocalModel(ctx, c.source)
+        // A local-only source waits for a local model. On any other source the refusal is about this message (its
+        // evidence, a switch flipped mid-run): it is handed to the user once rather than re-judged every tick.
+        if (localOnly.has(c.source.id)) await askForLocalModel(ctx, c.source)
+        else await giveUp(ctx, c)
         continue
       }
-      if (e instanceof NoModelError) {
-        modelMissing = true
-        break
+      if (e instanceof MessageFailure) {
+        const key = `${ctx.accountId}:${c.inbound.externalId}`
+        const tries = (attempts.get(key) ?? 0) + 1
+        attempts.set(key, tries)
+        if (tries >= MAX_ATTEMPTS_PER_MESSAGE) {
+          warn('A client email could not be checked; handed to the user')
+          await giveUp(ctx, c)
+        } else {
+          retryable = true
+        }
+        continue
       }
-      failure ??= e
-      const key = `${ctx.accountId}:${c.inbound.externalId}`
-      const tries = (attempts.get(key) ?? 0) + 1
-      attempts.set(key, tries)
-      if (tries >= MAX_ATTEMPTS_PER_MESSAGE) {
-        // Given up, so one message cannot stop the mailbox: logged without its text.
-        warn('A client email was skipped after repeated failures', e)
-        attempts.delete(key)
-        await pmStore.markProcessed(ctx.accountId, c.inbound.externalId)
-      }
+      // The model or the service failed (an outage, a bad key, a rate limit): stop here, blame no message and retry
+      // the whole run later. Nothing was marked processed.
+      if (e instanceof PmRetryError || e instanceof NeedsUserError) throw e
+      warn('The model could not be reached', e)
+      throw new PmRetryError(t(MODEL_FAILED))
     }
   }
-  if (modelMissing) throw noModel()
-  if (failure !== undefined) {
-    if (failure instanceof PmRetryError || failure instanceof NeedsUserError) throw failure
-    warn('A client email could not be drafted', failure)
-    throw new PmRetryError(t(MODEL_FAILED))
-  }
+  if (retryable) throw new PmRetryError(t(MODEL_UNREADABLE))
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -487,8 +555,20 @@ async function actOnNewMail(ctx: RunContext, sources: ConnectedSource[]): Promis
 type Joiner = { signal: AbortSignal; progress(text: string): void }
 type SharedRun = { promise: Promise<RunStats>; joiners: Set<Joiner>; controller: AbortController }
 
-/** The account's run in flight; cleared when it settles (preflight R14). */
+/** The account's poll in flight, which later jobs join; cleared when it settles (preflight R14). */
 const inflight = new Map<string, SharedRun>()
+/** The last mailbox read queued per account (a poll or a backfill): the next one starts after it, never alongside. */
+const accountTails = new Map<string, Promise<unknown>>()
+
+function onAccount<T>(accountId: string, task: () => Promise<T>): Promise<T> {
+  const next = (accountTails.get(accountId) ?? Promise.resolve()).catch(() => undefined).then(task)
+  const tail = next.catch(() => undefined)
+  accountTails.set(accountId, tail)
+  void tail.then(() => {
+    if (accountTails.get(accountId) === tail) accountTails.delete(accountId)
+  })
+  return next
+}
 
 function join(run: SharedRun, joiner: Joiner): void {
   run.joiners.add(joiner)
@@ -518,15 +598,18 @@ function accountRun(accountId: string, joiner: Joiner, now: number): Promise<Run
     now,
     stats: new Map(),
     scopes: new Map(),
+    model: null,
+    localOnly: new Set(),
+    processed: new Set(),
   }
-  run.promise = (async () => {
+  run.promise = onAccount(accountId, async () => {
     try {
       await runAccount(ctx)
       return ctx.stats
     } catch (e) {
       throw mapGmailError(e, controller.signal)
     }
-  })().finally(() => {
+  }).finally(() => {
     if (inflight.get(accountId) === run) inflight.delete(accountId)
   })
   inflight.set(accountId, run)
@@ -562,41 +645,52 @@ export async function runGmailPipeline(
 /**
  * After "Which client is this?" adds `matcher` to `source`: reads `GMAIL_BACKFILL_DAYS` of the account's mail
  * matching it and stores the threads that now route to a client scope. Leaves the account cursor alone and acts on
- * nothing. Waits for the account's run in flight first. Returns how many records it stored.
+ * nothing. It takes the account's mailbox slot: it starts after the poll in flight, and a poll waits for it. Runs in
+ * the jobs window (record changes happen there). Returns how many records it stored.
  */
-export async function backfillMatcher(source: ConnectedSource, matcher: string): Promise<number> {
+export function backfillMatcher(
+  source: ConnectedSource,
+  matcher: string,
+  ctx: { signal?: AbortSignal; progress?(text: string): void } = {}
+): Promise<number> {
   const { accountId } = gmailConfig(source)
-  if (!accountId) throw signInAgain()
-  await inflight.get(accountId)?.promise.catch(() => undefined)
-  try {
-    const token = await getFreshToken(accountId)
-    if (!token.ok) throw signInAgain()
-    const cursor = await pmStore.getCursor(accountId, 'gmail', 'mailbox')
-    const result = await syncGmailMailbox({
-      accountId,
-      accessToken: token.token,
-      cursor: null,
-      backfillQuery: buildMatcherQuery([matcher]),
-    })
-    const sources = (await gmailSources())
-      .filter((s) => gmailConfig(s).accountId === accountId)
-      .map((s) => {
-        if (s.id !== source.id) return s
-        const matchers = [...new Set([...gmailConfig(s).matchers, matcher])]
-        return { ...s, config: { ...s.config, matchers } }
+  if (!accountId) return Promise.reject(signInAgain())
+  return onAccount(accountId, async () => {
+    try {
+      if (ctx.signal) throwIfAborted(ctx.signal)
+      const token = await getFreshToken(accountId)
+      if (!token.ok) throw signInAgain()
+      const cursor = await pmStore.getCursor(accountId, 'gmail', 'mailbox')
+      ctx.progress?.(t('Reading earlier emails…'))
+      const result = await syncGmailMailbox({
+        accountId,
+        accessToken: token.token,
+        cursor: null,
+        backfillQuery: buildMatcherQuery([matcher]),
+        ...(ctx.signal ? { signal: ctx.signal } : {}),
       })
-    const ownAddress = result.ownAddress || cursor?.ownAddress || ''
-    const { stored } = routeRecords(result.records, routeSourcesOf(sources), ownAddress)
-    await pmStore.upsertRecords(stored)
-    await pmStore.flushRecords()
-    return stored.length
-  } catch (e) {
-    throw mapGmailError(e)
-  }
+      if (ctx.signal) throwIfAborted(ctx.signal)
+      const sources = (await gmailSources())
+        .filter((s) => gmailConfig(s).accountId === accountId)
+        .map((s) => {
+          if (s.id !== source.id) return s
+          const matchers = [...new Set([...gmailConfig(s).matchers, matcher])]
+          return { ...s, config: { ...s.config, matchers } }
+        })
+      const ownAddress = result.ownAddress || cursor?.ownAddress || ''
+      const { stored } = routeRecords(result.records, routeSourcesOf(sources), ownAddress)
+      await pmStore.upsertRecords(stored)
+      await pmStore.flushRecords()
+      return stored.length
+    } catch (e) {
+      throw mapGmailError(e, ctx.signal)
+    }
+  })
 }
 
 export function _resetPipelineForTests(): void {
   inflight.clear()
+  accountTails.clear()
   attempts.clear()
   health.clear()
 }

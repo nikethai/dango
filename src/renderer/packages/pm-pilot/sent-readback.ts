@@ -10,7 +10,7 @@ import {
   validateFactChanges,
 } from '@shared/pm-pilot'
 import i18n from '@/i18n'
-import { errorClassName, localOnlySourceIds, resolveBackgroundModel } from './background-model'
+import { type BackgroundModel, errorClassName, localOnlySourceIds, resolveBackgroundModel } from './background-model'
 import {
   getScope,
   gmailConfig,
@@ -32,6 +32,9 @@ import { pmStore } from './store'
  * proposed. Logs carry fixed text and error class names only, never mail text.
  */
 
+/** The pipeline run's decision: the background model (null: none) and the sources that stay on this device. */
+export type RunModel = { model: BackgroundModel | null; localOnlySourceIds: Set<string> }
+
 function warn(what: string, e?: unknown): void {
   const name = errorClassName(e)
   console.warn(`[pm-pilot] ${what}`, ...(name ? [name] : []))
@@ -52,9 +55,11 @@ export async function phraseFactChanges(input: {
   /** The draft's evidence. */
   evidence?: Evidence[]
   localOnlySourceIds?: Set<string>
+  /** The model the caller resolved for this run; omitted, it is resolved here. */
+  model?: BackgroundModel | null
 }): Promise<FactChange[]> {
   try {
-    const model = await resolveBackgroundModel()
+    const model = input.model !== undefined ? input.model : await resolveBackgroundModel()
     if (!model) return []
     if (model.cloud) {
       const localOnly = await localOnlySourceIds(input.localOnlySourceIds)
@@ -97,6 +102,8 @@ export async function proposeFactChanges(input: {
   sentText: string
   sentRecord?: SourceRecord
   scopeName: string
+  /** The pipeline run's model and local-only set (decided once per run); omitted, they are resolved. */
+  run?: RunModel
 }): Promise<number> {
   const { draft, sentText, sentRecord, scopeName } = input
   if (!factsDiffer(draft.text, sentText)) return 0
@@ -108,6 +115,7 @@ export async function proposeFactChanges(input: {
     // Unknown origins stay in the list as `undefined`, so a cloud model refuses them.
     sourceIds: [sentRecord?.sourceId, ...(fromDraft.length > 0 ? fromDraft : [undefined])],
     evidence: draft.evidence,
+    ...(input.run ? { model: input.run.model, localOnlySourceIds: input.run.localOnlySourceIds } : {}),
   })
   let filed = 0
   for (const change of changes) {
@@ -159,7 +167,7 @@ async function proposeChange(
  * hide an older one): propose the changed facts, then mark the draft `sent` (written) or `dismissed` (only proposed,
  * its Review entry closed). A draft is read back once, so a second run proposes nothing.
  */
-export async function readBackSent(records: SourceRecord[]): Promise<void> {
+export async function readBackSent(records: SourceRecord[], run?: RunModel): Promise<void> {
   const sent = records.filter((r) => r.sentByMe && r.sourceKind === 'gmail').sort((a, b) => a.occurredAt - b.occurredAt)
   for (const record of sent) {
     const drafts = (await pmStore.listDraftsByThread(record.threadOrTaskId)).filter(
@@ -168,14 +176,16 @@ export async function readBackSent(records: SourceRecord[]): Promise<void> {
         d.accountId === record.accountId &&
         d.createdAt < record.occurredAt
     )
-    for (const draft of drafts) await readBackDraft(draft, record)
+    for (const draft of drafts) await readBackDraft(draft, record, run)
   }
 }
 
-async function readBackDraft(draft: ClientDraft, record: SourceRecord): Promise<void> {
+async function readBackDraft(draft: ClientDraft, record: SourceRecord, run?: RunModel): Promise<void> {
   try {
     const scope = await getScope(draft.scopeId)
-    if (scope) await proposeFactChanges({ draft, sentText: record.text, sentRecord: record, scopeName: scope.name })
+    if (scope) {
+      await proposeFactChanges({ draft, sentText: record.text, sentRecord: record, scopeName: scope.name, run })
+    }
   } catch (e) {
     warn('Sent reply facts could not be proposed', e)
   }

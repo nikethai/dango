@@ -396,6 +396,25 @@ describe('phraseFactChanges', () => {
     expect(prompt.match(/<\/sent>/g)).toHaveLength(1)
   })
 
+  it('uses the model the pipeline run decided on, without resolving one', async () => {
+    state.usable = false
+    const generate = vi.fn(async () => JSON.stringify({ changes: [CHANGE] }))
+    const out = await phraseFactChanges({ ...input, model: { cloud: false, generate } })
+    expect(generate).toHaveBeenCalledOnce()
+    expect(getModel).not.toHaveBeenCalled()
+    expect(out).toHaveLength(1)
+    // The run's local-only set is honoured with its cloud model.
+    const cloud = vi.fn(async () => '')
+    expect(
+      await phraseFactChanges({
+        ...input,
+        model: { cloud: true, generate: cloud },
+        localOnlySourceIds: new Set(['src-gmail']),
+      })
+    ).toEqual([])
+    expect(cloud).not.toHaveBeenCalled()
+  })
+
   it('returns [] without a call when no model is usable', async () => {
     state.usable = false
     expect(await phraseFactChanges(input)).toEqual([])

@@ -1911,5 +1911,7 @@
   "access to the Asana project was lost": "access to the Asana project was lost",
   "Asana is busy": "Asana is busy",
   "Asana could not be reached": "Asana could not be reached",
-  "Asana could not be synced": "Asana could not be synced"
+  "Asana could not be synced": "Asana could not be synced",
+  "Couldn't check this email": "Couldn't check this email",
+  "Reading earlier emails…": "Reading earlier emails…"
 }

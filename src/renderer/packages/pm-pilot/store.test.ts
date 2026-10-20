@@ -231,6 +231,19 @@ describe('pmStore cursors, processed ids, drafts and questions', () => {
     expect(await pmStore.isProcessed('acc2', 'm5001')).toBe(false)
   })
 
+  it("reads an account's processed ids at once, and removes cursors by rule", async () => {
+    await pmStore.markProcessed('acc1', ['m1', 'm2'])
+    await pmStore.markProcessed('acc2', 'x')
+    expect(await pmStore.processedIds('acc1')).toEqual(new Set(['m1', 'm2']))
+    expect(await pmStore.processedIds('none')).toEqual(new Set())
+    const base = { sourceKind: 'asana' as const, value: 'v', updatedAt: 1 }
+    await pmStore.setCursor({ ...base, accountId: 'a', scope: 's1:p1' })
+    await pmStore.setCursor({ ...base, accountId: 'a', scope: 's2:p1' })
+    await pmStore.removeCursors((c) => c.scope.startsWith('s1:'))
+    expect(await pmStore.getCursor('a', 'asana', 's1:p1')).toBeUndefined()
+    expect(await pmStore.getCursor('a', 'asana', 's2:p1')).toBeDefined()
+  })
+
   it('draft count resets at local midnight', async () => {
     const lateEvening = new Date(2026, 9, 20, 23, 59).getTime()
     const nextMorning = new Date(2026, 9, 21, 0, 1).getTime()

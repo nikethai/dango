@@ -68,6 +68,10 @@ vi.mock('./store', () => ({
       return Promise.resolve()
     }),
     removeSourceRecords: vi.fn(async () => undefined),
+    removeCursors: vi.fn((remove: (c: SyncCursor) => boolean) => {
+      h.cursors = h.cursors.filter((c) => !remove(c))
+      return Promise.resolve()
+    }),
     pruneRecords: vi.fn(async () => undefined),
     getCursor: vi.fn(async (accountId: string, kind: string, scope: string) =>
       h.cursors.find((c) => c.accountId === accountId && c.sourceKind === kind && c.scope === scope)
@@ -207,6 +211,23 @@ describe('registerPmAdapters', () => {
     // Not before the store is loaded: an empty list then means "not read yet".
     h.listeners[0]({ loaded: true, sources: [] }, { loaded: false, sources: [gmail] })
     expect(pmStore.removeSourceRecords).toHaveBeenCalledTimes(1)
+  })
+
+  it('removes the cursors of a removed source; a mailbox cursor only when no source uses the account', async () => {
+    registerPmAdapters()
+    const gmail = (id: string) => asanaSource({ id, kind: 'gmail', config: { accountId: 'acc-mail' } })
+    h.cursors = [
+      { ...cursorOf('s'), scope: 'a1:p1' },
+      { ...cursorOf('s'), scope: 'a9:p1' },
+      { accountId: 'acc-mail', sourceKind: 'gmail', scope: 'mailbox', value: 'h', updatedAt: 1 },
+    ]
+    h.listeners[0](
+      { loaded: true, sources: [gmail('g2')] },
+      { loaded: true, sources: [asanaSource(), gmail('g1'), gmail('g2')] }
+    )
+    await vi.waitFor(() => expect(h.cursors.map((c) => c.scope)).toEqual(['a9:p1', 'mailbox']))
+    h.listeners[0]({ loaded: true, sources: [] }, { loaded: true, sources: [gmail('g2')] })
+    await vi.waitFor(() => expect(h.cursors.map((c) => c.scope)).toEqual(['a9:p1']))
   })
 })
 

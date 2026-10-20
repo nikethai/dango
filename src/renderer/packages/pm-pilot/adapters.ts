@@ -219,7 +219,11 @@ export async function readSourceItems(
 const PM_KINDS: ReadonlySet<string> = new Set<PmSourceKind>(['gmail', 'asana'])
 let unwatchSources: (() => void) | null = null
 
-/** Removes the records of a Gmail or Asana source as soon as it disappears from the sources store (preflight R15). */
+/**
+ * Removes the records and cursors of a Gmail or Asana source as soon as it disappears from the sources store
+ * (preflight R15). An Asana cursor belongs to its source; a Gmail cursor belongs to the mailbox, so it goes only when
+ * no Gmail source on that account is left.
+ */
 function watchRemovedSources(): () => void {
   return sourcesStore.subscribe((next, prev) => {
     if (!prev.loaded || !next.loaded) return
@@ -227,8 +231,20 @@ function watchRemovedSources(): () => void {
     for (const s of prev.sources) {
       if (!PM_KINDS.has(s.kind) || kept.has(s.id)) continue
       void pmStore.removeSourceRecords(s.id).catch((e) => warn('Records of a removed source could not be removed', e))
+      void removeCursorsOf(s, next.sources).catch((e) => warn('Cursors of a removed source could not be removed', e))
     }
   })
+}
+
+function removeCursorsOf(removed: ConnectedSource, remaining: ConnectedSource[]): Promise<void> {
+  if (removed.kind === 'asana') {
+    return pmStore.removeCursors((c) => c.sourceKind === 'asana' && c.scope.startsWith(`${removed.id}:`))
+  }
+  const accountId = typeof removed.config.accountId === 'string' ? removed.config.accountId : ''
+  if (!accountId) return Promise.resolve()
+  const stillUsed = remaining.some((s) => s.kind === 'gmail' && s.config.accountId === accountId)
+  if (stillUsed) return Promise.resolve()
+  return pmStore.removeCursors((c) => c.sourceKind === 'gmail' && c.accountId === accountId)
 }
 
 /**

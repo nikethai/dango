@@ -86,6 +86,12 @@ vi.mock('./store', () => {
         return Promise.resolve()
       }),
       isProcessed: vi.fn(async (accountId: string, id: string) => h.processed.has(`${accountId}:${id}`)),
+      processedIds: vi.fn(
+        async (accountId: string) =>
+          new Set(
+            [...h.processed].filter((k) => k.startsWith(`${accountId}:`)).map((k) => k.slice(accountId.length + 1))
+          )
+      ),
       saveQuestion: vi.fn((q: ClientQuestion) => {
         h.questions = [...h.questions.filter((x) => x.id !== q.id), q]
         return Promise.resolve()
@@ -122,7 +128,7 @@ vi.mock('./judge-call', async (importOriginal) => {
   const orig = await importOriginal<typeof import('./judge-call')>()
   return { ...orig, judgeThread: vi.fn() }
 })
-vi.mock('./act-call', () => ({ actOnThread: vi.fn(async () => 'drafted') }))
+vi.mock('./act-call', () => ({ actOnThread: vi.fn(async () => 'drafted'), DRAFT_EMPTY: 'The model wrote no reply' }))
 vi.mock('./sent-readback', () => ({ readBackSent: vi.fn(async () => undefined) }))
 
 import { NeedsUserError } from '@/packages/background/errors'
@@ -130,7 +136,7 @@ import { actOnThread } from './act-call'
 import { resolveBackgroundModel } from './background-model'
 import { addReviewEntry, ensureKnowledgeLoaded, setReviewEntryState } from './bridge'
 import { GmailAuthError, GmailRateLimitError, syncGmailMailbox } from './gmail-sync'
-import { JUDGE_FAILED, JUDGE_LOCAL_ONLY, judgeThread } from './judge-call'
+import { JUDGE_FAILED, JUDGE_LOCAL_ONLY, JUDGE_UNREADABLE, judgeThread } from './judge-call'
 import {
   _resetPipelineForTests,
   backfillMatcher,
@@ -206,7 +212,8 @@ const question: Judgement = {
   candidates: [],
 }
 
-const ctx = () => ({ signal: new AbortController().signal, progress: vi.fn() })
+const NOW = CONNECTED + 86_400_000
+const ctx = (signal = new AbortController().signal) => ({ signal, progress: vi.fn(), now: NOW })
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -307,17 +314,64 @@ describe('runGmailPipeline', () => {
     expect(h.processed.has('acc1:m-fail')).toBe(true)
   })
 
-  it(`gives a message up after ${MAX_ATTEMPTS_PER_MESSAGE} failed attempts, so it cannot stop the mail`, async () => {
+  it('a model outage over three runs gives no message up and processes nothing', async () => {
     vi.mocked(judgeThread).mockResolvedValue({ judgement: null, error: `${JUDGE_FAILED} (TypeError)` })
-    syncReturns([mail({ externalId: 'poison' })])
-    for (let i = 0; i < MAX_ATTEMPTS_PER_MESSAGE; i++) {
+    syncReturns(Array.from({ length: 5 }, () => mail()))
+    for (let i = 0; i < MAX_ATTEMPTS_PER_MESSAGE + 1; i++) {
+      if (i > 0) syncReturns([])
+      const run = runGmailPipeline(source(), ctx())
+      await expect(run).rejects.toThrow('the model call failed')
+      await expect(run).rejects.not.toBeInstanceOf(NeedsUserError)
+    }
+    // The loop stops at the first failed call: one call per run, no message blamed, none handed over.
+    expect(judgeThread).toHaveBeenCalledTimes(MAX_ATTEMPTS_PER_MESSAGE + 1)
+    expect(pmStore.markProcessed).not.toHaveBeenCalled()
+    expect(h.questions).toHaveLength(0)
+    // Back up: every message is still acted on.
+    vi.mocked(judgeThread).mockResolvedValue({ judgement: question })
+    syncReturns([])
+    await runGmailPipeline(source(), ctx())
+    expect(actOnThread).toHaveBeenCalledTimes(5)
+  })
+
+  it('a draft call that fails is an outage too, not the message', async () => {
+    vi.mocked(actOnThread).mockRejectedValue(new Error('The model call failed (APICallError)'))
+    syncReturns([mail(), mail()])
+    for (let i = 0; i < MAX_ATTEMPTS_PER_MESSAGE + 1; i++) {
       if (i > 0) syncReturns([])
       await expect(runGmailPipeline(source(), ctx())).rejects.toThrow('the model call failed')
     }
+    expect(actOnThread).toHaveBeenCalledTimes(MAX_ATTEMPTS_PER_MESSAGE + 1)
+    expect(pmStore.markProcessed).not.toHaveBeenCalled()
+  })
+
+  it(`a message that fails ${MAX_ATTEMPTS_PER_MESSAGE} times becomes one Needs you, others still go`, async () => {
+    vi.mocked(judgeThread).mockImplementation(async ({ inbound }) =>
+      inbound.externalId === 'poison' ? { judgement: null, error: JUDGE_UNREADABLE } : { judgement: question }
+    )
+    syncReturns([mail({ externalId: 'poison', title: 'Odd mail' }), mail({ externalId: 'fine' })])
+    for (let i = 0; i < MAX_ATTEMPTS_PER_MESSAGE - 1; i++) {
+      if (i > 0) syncReturns([])
+      await expect(runGmailPipeline(source(), ctx())).rejects.toThrow('the model reply could not be read')
+    }
+    expect(h.processed).toEqual(new Set(['acc1:fine']))
+    syncReturns([])
+    const last = await runGmailPipeline(source(), ctx())
+    expect(last.quiet).toBe(false)
     expect(h.processed.has('acc1:poison')).toBe(true)
+    expect(h.questions).toEqual([
+      expect.objectContaining({ kind: 'which-answer', sourceId: 'g1', scopeId: 'acme', subject: 'Odd mail' }),
+    ])
+    expect(vi.mocked(addReviewEntry).mock.calls.at(-1)?.[0]).toMatchObject({
+      kind: 'needs-you',
+      source: 'Gmail',
+      text: "Couldn't check this email",
+      sub: 'jo@acme.com · "Odd mail"',
+      ref: { type: 'question', id: h.questions[0].id },
+    })
     syncReturns([])
     await runGmailPipeline(source(), ctx())
-    expect(judgeThread).toHaveBeenCalledTimes(MAX_ATTEMPTS_PER_MESSAGE)
+    expect(addReviewEntry).toHaveBeenCalledTimes(1)
   })
 
   it('two unknown threads from one domain make one question', async () => {
@@ -395,19 +449,30 @@ describe('runGmailPipeline', () => {
     expect(h.questions[0].state).toBe('answered')
   })
 
-  it('a local-only refusal while drafting asks for a local model instead of retrying', async () => {
+  it('a local-only refusal on a source that is not local-only is handed over once, not re-judged', async () => {
     vi.mocked(actOnThread).mockRejectedValueOnce(new LocalOnlyModelError())
     syncReturns([mail({ externalId: 'm1x' })])
     await expect(runGmailPipeline(source(), ctx())).resolves.toMatchObject({ quiet: false })
-    expect(h.questions).toEqual([expect.objectContaining({ kind: 'choose-model', sourceId: 'g1' })])
-    expect(h.processed.has('acc1:m1x')).toBe(false)
+    expect(h.questions).toEqual([expect.objectContaining({ kind: 'which-answer', threadId: expect.any(String) })])
+    expect(h.questions.some((q) => q.kind === 'choose-model')).toBe(false)
+    expect(h.processed.has('acc1:m1x')).toBe(true)
+    // The next tick neither asks again, closes anything nor calls the model.
+    syncReturns([])
+    await runGmailPipeline(source(), ctx())
+    expect(judgeThread).toHaveBeenCalledTimes(1)
+    expect(addReviewEntry).toHaveBeenCalledTimes(1)
+    expect(setReviewEntryState).not.toHaveBeenCalled()
+    expect(h.questions[0].state).toBe('open')
   })
 
-  it('a local-only refusal from the judge asks for a local model too', async () => {
+  it('a local-only refusal from the judge on such a source is handed over the same way', async () => {
     vi.mocked(judgeThread).mockResolvedValueOnce({ judgement: null, error: JUDGE_LOCAL_ONLY })
     syncReturns([mail()])
     await runGmailPipeline(source(), ctx())
-    expect(h.questions).toEqual([expect.objectContaining({ kind: 'choose-model' })])
+    expect(h.questions).toEqual([expect.objectContaining({ kind: 'which-answer' })])
+    syncReturns([])
+    await runGmailPipeline(source(), ctx())
+    expect(judgeThread).toHaveBeenCalledTimes(1)
   })
 
   it('decides cloud or local once per run and passes it to retrieve, judge and draft', async () => {
@@ -524,9 +589,88 @@ describe('runGmailPipeline', () => {
     syncReturns([sent])
     await runGmailPipeline(source(), ctx())
     expect(ensureKnowledgeLoaded).toHaveBeenCalled()
-    expect(readBackSent).toHaveBeenCalledWith([
-      expect.objectContaining({ externalId: sent.externalId, sourceId: 'g1' }),
+    expect(readBackSent).toHaveBeenCalledWith(
+      [expect.objectContaining({ externalId: sent.externalId, sourceId: 'g1' })],
+      // The run's decision, not one of its own (M4).
+      { model: CLOUD, localOnlySourceIds: new Set() }
+    )
+  })
+})
+
+describe('runGmailPipeline, fix round', () => {
+  it('files which-client questions before the cursor moves, and a replay adds no second question', async () => {
+    h.sources = [source({ config: { accountId: 'acc1' } })]
+    const m = mail({ author: 'ann@newco.com', participants: ['ann@newco.com'] })
+    vi.mocked(addReviewEntry).mockRejectedValueOnce(new Error('review store busy'))
+    syncReturns([m])
+    await expect(runGmailPipeline(h.sources[0], ctx())).rejects.toThrow()
+    expect(pmStore.setCursor).not.toHaveBeenCalled()
+    // The cursor did not move, so history returns the thread again: the same question, its entry added this time.
+    syncReturns([m])
+    await runGmailPipeline(h.sources[0], ctx())
+    expect(pmStore.setCursor).toHaveBeenCalledTimes(1)
+    expect(h.questions).toHaveLength(1)
+    expect(pmStore.saveQuestion).toHaveBeenCalledTimes(1)
+    const refs = vi.mocked(addReviewEntry).mock.calls.map((c) => (c[0] as { ref: { id: string } }).ref.id)
+    expect(refs).toEqual([h.questions[0].id, h.questions[0].id])
+  })
+
+  it('reads the processed list once per run and never calls isProcessed per message', async () => {
+    syncReturns(Array.from({ length: 4 }, () => mail()))
+    await runGmailPipeline(source(), ctx())
+    expect(pmStore.processedIds).toHaveBeenCalledTimes(1)
+    expect(pmStore.isProcessed).not.toHaveBeenCalled()
+  })
+
+  it('looks back at most 90 days for mail to act on, even for a source connected long ago', async () => {
+    const now = CONNECTED + 200 * 86_400_000
+    syncReturns([
+      mail({ externalId: 'old', occurredAt: CONNECTED + 1000 }),
+      mail({ externalId: 'recent', occurredAt: now - 86_400_000 }),
     ])
+    await runGmailPipeline(source(), { ...ctx(), now })
+    expect(actOnThread).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(actOnThread).mock.calls[0][0].inbound.externalId).toBe('recent')
+  })
+
+  it('one stopped job does not stop the shared run for the other; both stopped does', async () => {
+    h.sources = [source(), source({ id: 'g2', scopeId: 'globex', config: { accountId: 'acc1' } })]
+    let release!: () => void
+    let seen!: AbortSignal
+    vi.mocked(syncGmailMailbox).mockImplementation(async (input) => {
+      seen = input.signal as AbortSignal
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return {
+        records: [],
+        backfilled: false,
+        ownAddress: OWN,
+        cursor: { accountId: 'acc1', sourceKind: 'gmail', scope: 'mailbox', value: 'h2', updatedAt: 1 },
+      }
+    })
+    const a = new AbortController()
+    const b = new AbortController()
+    const runA = runGmailPipeline(h.sources[0], ctx(a.signal))
+    const runB = runGmailPipeline(h.sources[1], ctx(b.signal))
+    await vi.waitFor(() => expect(syncGmailMailbox).toHaveBeenCalledTimes(1))
+    a.abort()
+    expect(seen.aborted).toBe(false)
+    release()
+    await expect(runB).resolves.toMatchObject({ summary: 'Checked 0 new emails' })
+    await runA.catch(() => undefined)
+
+    const c = new AbortController()
+    const d = new AbortController()
+    const runC = runGmailPipeline(h.sources[0], ctx(c.signal))
+    const runD = runGmailPipeline(h.sources[1], ctx(d.signal))
+    await vi.waitFor(() => expect(syncGmailMailbox).toHaveBeenCalledTimes(2))
+    c.abort()
+    expect(seen.aborted).toBe(false)
+    d.abort()
+    expect(seen.aborted).toBe(true)
+    release()
+    await Promise.allSettled([runC, runD])
   })
 })
 
@@ -556,5 +700,53 @@ describe('backfillMatcher', () => {
     expect(judgeThread).not.toHaveBeenCalled()
     expect(actOnThread).not.toHaveBeenCalled()
     expect(h.questions).toHaveLength(0)
+  })
+
+  it('takes the account slot: a poll and a backfill never read the mailbox at once', async () => {
+    const s = source()
+    let active = 0
+    let most = 0
+    const gates: Array<() => void> = []
+    vi.mocked(syncGmailMailbox).mockImplementation(async () => {
+      active += 1
+      most = Math.max(most, active)
+      await new Promise<void>((resolve) => gates.push(resolve))
+      active -= 1
+      return {
+        records: [],
+        backfilled: true,
+        ownAddress: OWN,
+        cursor: { accountId: 'acc1', sourceKind: 'gmail', scope: 'mailbox', value: 'h2', updatedAt: 1 },
+      }
+    })
+    const poll = runGmailPipeline(s, ctx())
+    const signal = new AbortController().signal
+    const progress = vi.fn()
+    const backfill = backfillMatcher(s, '@newco.com', { signal, progress })
+    await vi.waitFor(() => expect(gates).toHaveLength(1))
+    // The backfill waits for the poll in flight.
+    gates[0]()
+    await poll
+    await vi.waitFor(() => expect(gates).toHaveLength(2))
+    // A poll started during the backfill waits for it, rather than reading alongside.
+    const nextPoll = runGmailPipeline(s, ctx())
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(gates).toHaveLength(2)
+    gates[1]()
+    await backfill
+    await vi.waitFor(() => expect(gates).toHaveLength(3))
+    gates[2]()
+    await nextPoll
+    expect(most).toBe(1)
+    expect(syncGmailMailbox).toHaveBeenCalledTimes(3)
+    expect(vi.mocked(syncGmailMailbox).mock.calls[1][0]).toMatchObject({ cursor: null, signal })
+    expect(progress).toHaveBeenCalledWith('Reading earlier emails…')
+  })
+
+  it('a stopped backfill reads nothing', async () => {
+    const a = new AbortController()
+    a.abort()
+    await expect(backfillMatcher(source(), '@newco.com', { signal: a.signal })).rejects.toBeDefined()
+    expect(syncGmailMailbox).not.toHaveBeenCalled()
   })
 })
