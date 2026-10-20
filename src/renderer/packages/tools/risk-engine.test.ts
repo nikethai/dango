@@ -216,6 +216,42 @@ describe('risk-engine', () => {
       expect(shell(command)).not.toBe(ToolRiskTier.CRITICAL)
     })
 
+    it.each([
+      'rm -r ..',
+      'rm -r ../',
+      'rm -r *',
+      'rm -r .*',
+      'rm -r ./*',
+      'rm -r ../*',
+      'rm -r ~bob',
+      'rm -r ~bob/',
+      'chmod -R 777 /',
+      'chmod 777 -R ~',
+      'chown -R me $HOME',
+      'chmod --recursive 755 ..',
+      'chown -R user:group *',
+      'chmod -R a+rwx ~/',
+      'chmod 777 /',
+      'chmod 777 /etc',
+      'chown root /usr/',
+    ])('%s is CRITICAL (recursive targets, chmod/chown on roots)', (command) => {
+      expect(shell(command)).toBe(ToolRiskTier.CRITICAL)
+    })
+
+    it.each([
+      'rm -r ./build',
+      'rm -r node_modules',
+      'rm -r build/*.o',
+      'chmod -R u+w ./src',
+      'chmod +x script.sh',
+      'chmod 644 ./a.txt',
+      'chmod 755 /tmp/tool',
+      'chown -R me ./dist',
+      'ls -la ..',
+    ])('%s is not CRITICAL (chmod/rm look-alikes)', (command) => {
+      expect(shell(command)).not.toBe(ToolRiskTier.CRITICAL)
+    })
+
     it('classifies each string value, also nested and in arrays', () => {
       expect(getToolRiskTier('run_command', 'Run a shell command', { opts: { cmd: 'rm -r ~/' } })).toBe(
         ToolRiskTier.CRITICAL

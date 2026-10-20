@@ -97,6 +97,16 @@ const MEDIUM_PATH_PATTERNS = [
 // 3. Argument patterns (inspected when args are provided)
 // ---------------------------------------------------------------------------
 
+// Shell fragments for the recursive-command patterns below (text is lowercased first).
+/** Somewhere in this command (not past ; & |), a recursive flag: -r, -R, -rfv, --recursive. */
+const HAS_RECURSIVE_FLAG = String.raw`(?=(?:[^;&|]*\s)?-(?:[a-z]*r[a-z]*|-recursive)\b)`
+/** Somewhere in this command, a force flag: -f, -rf, --force. */
+const HAS_FORCE_FLAG = String.raw`(?=(?:[^;&|]*\s)?-(?:[a-z]*f[a-z]*|-force)\b)`
+/** A whole argument that means home, root, the parent or everything here: ~ ~/ ~bob $HOME / /* .. ../* * .* ./* */
+const BROAD_TARGET = String.raw`["']?(?:(?:~[\w.-]*|\$home|\$\{home\}|\.\.)\/?\*?|\/\*?|\*|\.\*|\.\/\*)["']?(?=[\s;&|]|$)`
+/** A whole argument that is root or a top-level system directory: / /etc /usr/ … */
+const SYSTEM_ROOT_TARGET = String.raw`["']?\/(?:(?:etc|usr|bin|sbin|lib|lib64|var|boot|sys|proc|dev|root|home|opt|system|library|applications|users)\/?)?\*?["']?(?=[\s;&|]|$)`
+
 const CRITICAL_ARG_PATTERNS = [
   // Force / recursive destructive flags
   // NOTE: we avoid \b before - because JSON.stringify produces strings like
@@ -105,9 +115,12 @@ const CRITICAL_ARG_PATTERNS = [
   /--force/,
   /--no-preserve-root/,
   // rm with a recursive and a force flag, in any order or form (-fr, -r -f, -rfv, --recursive --force)
-  /\brm\s+(?=(?:[^;&|]*\s)?-(?:[a-z]*r[a-z]*|-recursive)\b)(?=(?:[^;&|]*\s)?-(?:[a-z]*f[a-z]*|-force)\b)/,
-  // Recursive rm of the home directory or root, even without -f (rm -r ~/, rm -r "$HOME", rm -r /*)
-  /\brm\s+(?=(?:[^;&|]*\s)?-(?:[a-z]*r[a-z]*|-recursive)\b)[^;&|]*\s["']?(?:~|\$home|\$\{home\}|\/)\/?\*?["']?(?=[\s;&|]|$)/,
+  new RegExp(`\\brm\\s+${HAS_RECURSIVE_FLAG}${HAS_FORCE_FLAG}`),
+  // Recursive rm, chmod or chown of home, root, the parent or everything here, even without -f
+  // (rm -r ~/, rm -r "$HOME", rm -r ~bob, rm -r .., rm -r *, chmod -R 777 /, chown -R me $HOME)
+  new RegExp(`\\b(?:rm|chmod|chown)\\s+${HAS_RECURSIVE_FLAG}[^;&|]*\\s${BROAD_TARGET}`),
+  // chmod / chown of root or a top-level system directory (chmod 777 /, chown root /usr/)
+  new RegExp(`\\b(?:chmod|chown)\\s+[^;&|]*\\s${SYSTEM_ROOT_TARGET}`),
   // find that deletes what it finds
   /\bfind\s[^;&|]*\s-(?:delete|exec(?:dir)?\s+rm)\b/,
   // Disk formatting / raw writes to a device
