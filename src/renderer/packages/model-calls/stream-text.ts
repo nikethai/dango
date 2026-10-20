@@ -23,6 +23,7 @@ import { ensureKnowledgeLoaded } from '@/packages/knowledge/store'
 import { hostPreSearchMemories } from '@/packages/memory/host-presearch'
 import { isSessionMemoryToolRetainAllowed } from '@/packages/memory/session-policy'
 import { getMemoryToolSet, MEMORY_TOOL_NAMES } from '@/packages/memory/tools'
+import { isLocalModelProvider } from '@/packages/sources/model-check'
 import { commandToolInstructions } from '@/packages/tool-permission'
 import platform from '@/platform'
 import { ensureMemoryStoreInit, memoryStore } from '@/stores/memoryStore'
@@ -84,6 +85,7 @@ import generateImageToolSet, {
   formatImageCatalogInstructions,
 } from './toolsets/generate-image'
 import { getToolSet } from './toolsets/knowledge-base'
+import { loadPmToolSet } from './toolsets/pm-pilot'
 import taskTrackingToolSet from './toolsets/task-tracking'
 import videoToolSet, { initVideoToolBudget, resetVideoToolBudget } from './toolsets/video'
 import videoUrlToolSet from './toolsets/video-url'
@@ -495,6 +497,18 @@ export async function streamText(
       console.error('Failed to load knowledge base toolset:', err)
     }
   }
+  // Slice 10 client_recall: local records only, so merged unwrapped like the knowledge base. Cloud is the chat model's.
+  let pmToolSet: Awaited<ReturnType<typeof loadPmToolSet>> = null
+  if (!customTools && model.isSupportToolUse()) {
+    try {
+      pmToolSet = await loadPmToolSet({
+        sessionScopeId: scopeId,
+        cloudModel: !isLocalModelProvider(sessionSettings?.provider),
+      })
+    } catch (err) {
+      console.error('Failed to load client email and tasks toolset:', err)
+    }
+  }
   const mcpTools = wrapToolsWithApproval(sessionId, mcpController.getAvailableTools(), { scopeId })
   // Task tools must be decided before grounding: Gemini forbids mixing provider tools
   // (google.tools.googleSearch) with function tools. Counting tasks too late caused
@@ -543,6 +557,7 @@ export async function streamText(
   const hasFunctionTools =
     Object.keys(mcpTools).length > 0 ||
     Boolean(kbToolSet) ||
+    Boolean(pmToolSet) ||
     Boolean(needAttachmentFileToolSet) ||
     Boolean(needWorkspaceCodingTools) ||
     Boolean(needVideoToolSet) ||
@@ -561,6 +576,9 @@ export async function streamText(
 
   if (kbToolSet && !kbNotSupported) {
     toolSetInstructions += kbToolSet.description
+  }
+  if (pmToolSet) {
+    toolSetInstructions += pmToolSet.description
   }
   if (needAttachmentFileToolSet) {
     toolSetInstructions += attachmentFileToolSet.description
@@ -889,6 +907,9 @@ Do not open with repeated web searches when personal memory may apply.
           ...tools,
           ...kbToolSet.tools,
         }
+      }
+      if (pmToolSet) {
+        tools = { ...tools, ...pmToolSet.tools }
       }
 
       if (needAttachmentFileToolSet) {

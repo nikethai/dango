@@ -154,6 +154,9 @@ vi.mock('./toolsets/knowledge-base', () => ({
   getToolSet: vi.fn(async () => null),
 }))
 
+const loadPmToolSetMock = vi.hoisted(() => vi.fn(async (_ctx: unknown): Promise<unknown> => null))
+vi.mock('./toolsets/pm-pilot', () => ({ loadPmToolSet: (ctx: unknown) => loadPmToolSetMock(ctx) }))
+
 vi.mock('./toolsets/file', () => ({
   default: {
     description: '',
@@ -597,5 +600,81 @@ describe('streamText tools-off turn', () => {
       toolDescriptions.videoUrl = ''
       settingsState.extension.videoUrl.enabled = false
     }
+  })
+})
+
+describe('streamText client_recall', () => {
+  const clientRecall = { description: 'client_recall', execute: vi.fn() }
+  beforeEach(() => {
+    loadPmToolSetMock
+      .mockReset()
+      .mockResolvedValue({ description: 'CLIENT RECALL TOOLS', tools: { client_recall: clientRecall } })
+  })
+
+  it('merges the PM toolset unwrapped, with its instructions, and decides cloud from the chat model', async () => {
+    const { streamText } = await import('./stream-text')
+    injectModelSystemPromptMock.mockClear()
+    clientRecall.execute.mockReset().mockResolvedValue({ ok: true, records: [], gaps: [] })
+    const chat = vi.fn(async (_messages, options) => {
+      await options.tools?.client_recall?.execute?.({ query: 'launch' }, { toolCallId: 't1', messages: [] })
+      return { contentParts: [], text: 'done' } as StreamTextResult
+    })
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'When is the Acme launch?')],
+      scopeId: 'acme',
+      sessionSettings: { provider: ModelProviderEnum.OpenAI },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(chat).toHaveBeenCalled()
+    expect(clientRecall.execute).toHaveBeenCalledTimes(1)
+    expect(loadPmToolSetMock).toHaveBeenLastCalledWith({ sessionScopeId: 'acme', cloudModel: true })
+    expect(injectModelSystemPromptMock.mock.calls.map((call) => String(call[2] ?? '')).join('\n')).toContain(
+      'CLIENT RECALL TOOLS'
+    )
+
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'hello')],
+      sessionSettings: { provider: ModelProviderEnum.Ollama },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(loadPmToolSetMock).toHaveBeenLastCalledWith({ sessionScopeId: undefined, cloudModel: false })
+
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'hello')],
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(loadPmToolSetMock).toHaveBeenLastCalledWith({ sessionScopeId: undefined, cloudModel: true })
+  })
+
+  it('is not loaded for a turn with its own tools or a model without tool use', async () => {
+    const { streamText } = await import('./stream-text')
+    const chat = vi.fn((_messages, options) => {
+      expect(options.tools?.client_recall).toBeUndefined()
+      return Promise.resolve({ contentParts: [], text: 'done' } as StreamTextResult)
+    })
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'hello')],
+      tools: {},
+      onResultChangeWithCancel: vi.fn(),
+    })
+    await streamText(createTestModel(chat, false), {
+      messages: [createMessage('user', 'hello')],
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(loadPmToolSetMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps chatting when the PM toolset fails to load', async () => {
+    loadPmToolSetMock.mockRejectedValue(new Error('storage down'))
+    const { streamText } = await import('./stream-text')
+    const chat = vi.fn((_messages, options) => {
+      expect(options.tools?.client_recall).toBeUndefined()
+      return Promise.resolve({ contentParts: [], text: 'done' } as StreamTextResult)
+    })
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'hello')],
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(chat).toHaveBeenCalled()
   })
 })

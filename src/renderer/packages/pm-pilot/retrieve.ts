@@ -40,7 +40,7 @@ const STOP_WORDS = new Set(
 )
 
 /** Lower case, accents dropped (đ → d), split on anything that is not a letter or digit. */
-function tokens(text: string): Set<string> {
+export function tokens(text: string): Set<string> {
   const folded = text.slice(0, MATCH_CHARS).normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase()
   const out = new Set<string>()
   for (const word of folded.split(/[^\p{L}\p{N}]+/u)) {
@@ -49,7 +49,7 @@ function tokens(text: string): Set<string> {
   return out
 }
 
-function overlap(a: Set<string>, b: Set<string>): number {
+export function overlap(a: Set<string>, b: Set<string>): number {
   let n = 0
   for (const w of a) if (b.has(w)) n += 1
   return n
