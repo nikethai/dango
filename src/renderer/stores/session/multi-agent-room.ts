@@ -13,6 +13,7 @@ import {
   resolveStanceLabel,
   resolveSynthesisLead,
   roundForQueueIndex,
+  shouldRunMultiAgentRoom,
   shouldRunSynthesis,
   toSessionAgentFields,
   type RoomMode,
@@ -90,7 +91,8 @@ export async function applyRoomMembership(sessionId: string, mentionedAgentIds?:
   return merged
 }
 
-export async function setSessionRoomMode(sessionId: string, roomMode: RoomMode): Promise<void> {
+/** Swarm on writes `'swarm'`; Swarm off writes `undefined`. */
+export async function setSessionRoomMode(sessionId: string, roomMode: RoomMode | undefined): Promise<void> {
   await chatStore.updateSession(sessionId, { roomMode })
 }
 
@@ -629,10 +631,5 @@ export async function keepDiscussing(
   })
 }
 
-/**
- * Whether the submit path should use room multi-agent orchestration.
- */
-export function shouldRunMultiAgentRoom(mentionedAgentIds: string[] | undefined, roomAgentIds: string[]): boolean {
-  const speakers = resolveSpeakers(roomAgentIds, mentionedAgentIds)
-  return speakers.length >= 2
-}
+/** Whether the submit path runs the room (Swarm on, two or more speakers). Pure; lives in `@shared/agent-room`. */
+export { shouldRunMultiAgentRoom }

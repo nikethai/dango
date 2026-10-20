@@ -242,7 +242,9 @@ export async function submitNewUserMessage(
 
   const roomAfterMembership = await applyRoomMembership(sessionId, newUserMsg.mentionedAgentIds)
   const speakers = resolveSpeakers(roomAfterMembership, newUserMsg.mentionedAgentIds)
-  const isMultiAgentRoom = needGenerating && shouldRunMultiAgentRoom(newUserMsg.mentionedAgentIds, roomAfterMembership)
+  // Swarm off: a chat with several agents answers as its first speaker (solo path below).
+  const isMultiAgentRoom =
+    needGenerating && shouldRunMultiAgentRoom(newUserMsg.mentionedAgentIds, roomAfterMembership, session.roomMode)
 
   if (isMultiAgentRoom) {
     // Room discussion owns assistant turns — drop the solo placeholder
@@ -252,8 +254,8 @@ export async function submitNewUserMessage(
       await removeMessage(sessionId, newAssistantMsg.id)
       earlyAssistantInserted = false
     }
-  } else if (speakers.length === 1 && earlyAssistantInserted) {
-    // Label single-agent speaker on the assistant bubble (built-in + custom agents)
+  } else if (speakers.length >= 1 && earlyAssistantInserted) {
+    // Label the answering agent on the assistant bubble (built-in + custom agents); with Swarm off it is the first speaker.
     const speakerId = speakers[0]
     const { resolveAgentMeta } = await import('@/packages/agents')
     const meta = resolveAgentMeta(speakerId)

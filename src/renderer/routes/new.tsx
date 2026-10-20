@@ -341,9 +341,7 @@ function Index() {
                 initialMessage={composerDraft}
                 draftAgentIds={selectedAgentIds}
                 onDraftAgentIdsChange={handleAgentIdsChange}
-                draftRoomMode={
-                  session.roomMode === 'work' || session.roomMode === 'swarm' ? session.roomMode : 'discuss'
-                }
+                draftRoomMode={session.roomMode === 'swarm' ? 'swarm' : undefined}
                 draftSettings={session.settings}
                 onDraftSettingsChange={updateDraftSettings}
                 planMode={session.settings?.planMode ?? false}

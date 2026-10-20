@@ -20,6 +20,7 @@ import {
   IconPlus,
   IconRobot,
   IconSettings2,
+  IconUsersGroup,
   IconVocabulary,
   IconWorldWww,
   IconX,
@@ -70,6 +71,12 @@ export type ComposerToolsMenuProps = {
   onRollbackThread?: () => void
   onClickSessionSettings?: () => void
   onShareRoomPack?: () => void
+  /** The chat's Swarm switch (`session.roomMode === 'swarm'`). */
+  swarmOn?: boolean
+  /** Agents in the chat (or @-mentioned in the draft); the caption asks for more below two. */
+  swarmAgentCount?: number
+  /** Omit to hide the Swarm row. */
+  onSwarmChange?: (on: boolean) => void
   onImageUploadClick: () => void
   onFileUploadClick: () => void
   onAttachLink: () => void
@@ -108,6 +115,9 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
   onRollbackThread,
   onClickSessionSettings,
   onShareRoomPack,
+  swarmOn = false,
+  swarmAgentCount = 0,
+  onSwarmChange,
   onImageUploadClick,
   onFileUploadClick,
   onAttachLink,
@@ -144,6 +154,8 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
   const showPlan = showAgent && agentMode && showPlanMode && Boolean(onPlanModeChange)
   const showBrowserArm = platformCapabilities.supportsDesktopOnlySettings && Boolean(onBrowserArmedChange)
   const showComputerArm = platformCapabilities.supportsDesktopOnlySettings && Boolean(onComputerArmedChange)
+  // Swarm (rooms are native-only, so not for OpenClaw); not desktop-only.
+  const showSwarm = sessionType === 'chat' && !isOpenClawModel && Boolean(onSwarmChange)
 
   useEffect(() => {
     if (workspaceModalOpen) {
@@ -158,6 +170,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
       Boolean(workspaceRoot) ||
       Boolean(browserArmed) ||
       Boolean(computerArmed) ||
+      (showSwarm && swarmOn) ||
       Boolean(knowledgeBaseId) ||
       (showMcp && mcpEnabledCount > 0)
     )
@@ -168,6 +181,8 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
     workspaceRoot,
     browserArmed,
     computerArmed,
+    showSwarm,
+    swarmOn,
     knowledgeBaseId,
     showMcp,
     mcpEnabledCount,
@@ -204,87 +219,115 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
     </UnstyledButton>
   )
 
-  // Mode (agent chats): Agent Mode, Plan mode under it, Project folder. In both the drawer and the desktop menu.
-  const modeSection = showAgent ? (
-    <>
-      <Menu.Divider />
-      <Menu.Label fw={600}>{t('Mode')}</Menu.Label>
-      <Menu.Item
-        leftSection={<IconRobot size={16} stroke={1.5} />}
-        closeMenuOnClick={false}
-        rightSection={
-          <Switch
-            size="xs"
-            checked={agentMode}
-            aria-label={t('Agent Mode')}
-            onChange={() => onToggleAgentMode?.()}
-            onClick={(e) => e.stopPropagation()}
-          />
-        }
-        onClick={() => onToggleAgentMode?.()}
-      >
-        <Flex direction="column" gap={2}>
-          <Text size="sm">{t('Agent Mode')}</Text>
-          <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }}>
-            {t('Use tools and work in steps')}
-          </Text>
-        </Flex>
-      </Menu.Item>
-      {showPlan && (
-        <Menu.Item
-          leftSection={<IconListCheck size={16} stroke={1.5} />}
-          closeMenuOnClick={false}
-          rightSection={
-            <Switch
-              size="xs"
-              checked={planMode}
-              aria-label={t('Plan mode')}
-              onChange={(e) => onPlanModeChange?.(e.currentTarget.checked)}
-              onClick={(e) => e.stopPropagation()}
-            />
-          }
-          onClick={() => onPlanModeChange?.(!planMode)}
-        >
-          <Flex direction="column" gap={2}>
-            <Text size="sm">{t('Plan mode')}</Text>
-            <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }}>
-              {t('Propose a plan first. Nothing runs until you choose Run plan.')}
-            </Text>
-          </Flex>
-        </Menu.Item>
-      )}
-      {showWorkspace && (
-        <Menu.Item
-          leftSection={<IconFolder size={16} stroke={1.5} />}
-          rightSection={
-            workspaceRoot ? (
-              <ActionIcon
-                size={18}
-                variant="subtle"
-                aria-label={t('Clear project folder')}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onWorkspaceRootChange?.(undefined)
-                }}
-              >
-                <IconX size={12} />
-              </ActionIcon>
-            ) : null
-          }
-          onClick={() => {
-            setWorkspaceModalOpen(true)
-          }}
-        >
-          <Flex direction="column" gap={2}>
-            <Text size="sm">{t('Project folder')}</Text>
-            <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }} lineClamp={1}>
-              {workspaceLabel ? workspaceLabel : t('Where the AI can read and edit files')}
-            </Text>
-          </Flex>
-        </Menu.Item>
-      )}
-    </>
+  const swarmRow = showSwarm ? (
+    <Menu.Item
+      leftSection={<IconUsersGroup size={16} stroke={1.5} />}
+      closeMenuOnClick={false}
+      rightSection={
+        <Switch
+          size="xs"
+          checked={swarmOn}
+          aria-label={t('Swarm')}
+          onChange={(e) => onSwarmChange?.(e.currentTarget.checked)}
+          onClick={(e) => e.stopPropagation()}
+        />
+      }
+      onClick={() => onSwarmChange?.(!swarmOn)}
+    >
+      <Flex direction="column" gap={2}>
+        <Text size="sm">{t('Swarm')}</Text>
+        <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }}>
+          {swarmOn && swarmAgentCount < 2 ? t('Add 2 or 3 agents with @') : t('Several agents work on one answer')}
+        </Text>
+      </Flex>
+    </Menu.Item>
   ) : null
+
+  // Mode: Agent Mode, Plan mode under it, Project folder (agent chats), then Swarm. In both the drawer and the desktop menu.
+  const modeSection =
+    showAgent || showSwarm ? (
+      <>
+        <Menu.Divider />
+        <Menu.Label fw={600}>{t('Mode')}</Menu.Label>
+        {showAgent && (
+          <Menu.Item
+            leftSection={<IconRobot size={16} stroke={1.5} />}
+            closeMenuOnClick={false}
+            rightSection={
+              <Switch
+                size="xs"
+                checked={agentMode}
+                aria-label={t('Agent Mode')}
+                onChange={() => onToggleAgentMode?.()}
+                onClick={(e) => e.stopPropagation()}
+              />
+            }
+            onClick={() => onToggleAgentMode?.()}
+          >
+            <Flex direction="column" gap={2}>
+              <Text size="sm">{t('Agent Mode')}</Text>
+              <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }}>
+                {t('Use tools and work in steps')}
+              </Text>
+            </Flex>
+          </Menu.Item>
+        )}
+        {showPlan && (
+          <Menu.Item
+            leftSection={<IconListCheck size={16} stroke={1.5} />}
+            closeMenuOnClick={false}
+            rightSection={
+              <Switch
+                size="xs"
+                checked={planMode}
+                aria-label={t('Plan mode')}
+                onChange={(e) => onPlanModeChange?.(e.currentTarget.checked)}
+                onClick={(e) => e.stopPropagation()}
+              />
+            }
+            onClick={() => onPlanModeChange?.(!planMode)}
+          >
+            <Flex direction="column" gap={2}>
+              <Text size="sm">{t('Plan mode')}</Text>
+              <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }}>
+                {t('Propose a plan first. Nothing runs until you choose Run plan.')}
+              </Text>
+            </Flex>
+          </Menu.Item>
+        )}
+        {showWorkspace && (
+          <Menu.Item
+            leftSection={<IconFolder size={16} stroke={1.5} />}
+            rightSection={
+              workspaceRoot ? (
+                <ActionIcon
+                  size={18}
+                  variant="subtle"
+                  aria-label={t('Clear project folder')}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onWorkspaceRootChange?.(undefined)
+                  }}
+                >
+                  <IconX size={12} />
+                </ActionIcon>
+              ) : null
+            }
+            onClick={() => {
+              setWorkspaceModalOpen(true)
+            }}
+          >
+            <Flex direction="column" gap={2}>
+              <Text size="sm">{t('Project folder')}</Text>
+              <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }} lineClamp={1}>
+                {workspaceLabel ? workspaceLabel : t('Where the AI can read and edit files')}
+              </Text>
+            </Flex>
+          </Menu.Item>
+        )}
+        {swarmRow}
+      </>
+    ) : null
 
   if (isSmallScreen) {
     return (

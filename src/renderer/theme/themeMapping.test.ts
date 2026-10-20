@@ -693,11 +693,11 @@ describe('theme mapping onto Dango', () => {
     expect(source).toContain("borderColor: 'var(--dango-control-border)'")
   })
 
-  test('the scope pill sits after the tools menu and before team mode in the composer', () => {
+  test('the scope pill sits after the tools menu and before the model selector in the composer', () => {
     const source = readSource('src/renderer/components/InputBox/InputBox.tsx')
     const pill = source.indexOf('<ScopePill')
     expect(pill).toBeGreaterThan(source.indexOf('<ComposerToolsMenu'))
-    expect(pill).toBeLessThan(source.indexOf('<TeamModeSelect'))
+    expect(pill).toBeLessThan(source.indexOf('<ModelSelector'))
   })
 
   test('the composer scope pill truncates at 160px', () => {

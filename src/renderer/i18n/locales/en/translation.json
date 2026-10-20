@@ -1807,5 +1807,8 @@
   "Since {{date}}": "Since {{date}}",
   "Stop allowing": "Stop allowing",
   "Nothing yet. When you choose Always in this scope, it shows here.": "Nothing yet. When you choose Always in this scope, it shows here.",
-  "Dango will ask before “{{label}}” again.": "Dango will ask before “{{label}}” again."
+  "Dango will ask before “{{label}}” again.": "Dango will ask before “{{label}}” again.",
+  "Swarm": "Swarm",
+  "Several agents work on one answer": "Several agents work on one answer",
+  "Add 2 or 3 agents with @": "Add 2 or 3 agents with @"
 }

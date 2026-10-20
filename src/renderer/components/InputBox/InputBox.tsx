@@ -1,6 +1,7 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Box, Button, Flex, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
 import { useViewportSize } from '@mantine/hooks'
+import { isSwarmOn, mergeRoomMembers } from '@shared/agent-room'
 import {
   getFileAcceptString,
   getUnsupportedFileI18nKey,
@@ -143,7 +144,6 @@ import {
   slugifyMemoryLabel,
 } from '../chat/memory-dock-utils'
 import ReasoningEffortSelect from '../chat/ReasoningEffortSelect'
-import TeamRoomActions from '../chat/TeamRoomActions'
 import { CompressionModal } from '../common/CompressionModal'
 import { ScalableIcon } from '../common/ScalableIcon'
 import ProviderImageIcon from '../icons/ProviderImageIcon'
@@ -177,7 +177,6 @@ import QueuedMessageList from './QueuedMessageList'
 import QuoteChip from './QuoteChip'
 import { ScopePill } from './ScopePill'
 import SkillPicker, { filterSkills } from './SkillPicker'
-import TeamModeSelect from './TeamModeSelect'
 import { voiceAuthFromSettings } from './VoiceHoldButton'
 import { useCostHeadsUp } from './useCostHeadsUp'
 
@@ -224,13 +223,14 @@ export type InputBoxProps = {
   initialMessage?: string
   /**
    * Blank / new-chat draft room members (sessionId === 'new' has no chatStore session).
-   * Used for Team mode visibility and room strip.
+   * Used for the Swarm row and the room strip.
    */
   draftAgentIds?: string[]
   /** Persist room-member changes on blank home (NewChatAgentBar + dock strip). */
   onDraftAgentIdsChange?(ids: string[]): void
-  draftRoomMode?: 'discuss' | 'work' | 'swarm'
-  onDraftRoomModeChange?(mode: 'discuss' | 'work' | 'swarm'): void
+  /** The draft's Swarm switch: `'swarm'` on, `undefined` off. */
+  draftRoomMode?: 'swarm'
+  onDraftRoomModeChange?(mode: 'swarm' | undefined): void
   draftSettings?: Session['settings']
   onDraftSettingsChange?(next: Pick<SessionSettings, 'providerOptions'>): void
   /** The chat's scope (shown in the scope pill). */
@@ -1379,8 +1379,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       [allAgents, isNewSession, onDraftAgentIdsChange, roomAgentIds, selectedAgents, sessionId, setMessageInput]
     )
 
-    const handleRoomModeChange = useCallback(
-      async (mode: 'discuss' | 'work' | 'swarm') => {
+    /** Swarm on writes `'swarm'`; off writes `undefined` (legacy discuss / work also read as off). */
+    const handleSwarmChange = useCallback(
+      async (on: boolean) => {
+        const mode = on ? ('swarm' as const) : undefined
         if (isNewSession) {
           onDraftRoomModeChange?.(mode)
           return
@@ -2827,21 +2829,17 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       )
     }
 
-    const roomMode: 'discuss' | 'work' | 'swarm' = isNewSession
-      ? draftRoomMode === 'work' || draftRoomMode === 'swarm'
-        ? draftRoomMode
-        : 'discuss'
-      : currentSession?.roomMode === 'work' || currentSession?.roomMode === 'swarm'
-        ? currentSession.roomMode
-        : 'discuss'
-    const showRoomModeChip = roomAgentIds.length >= 2 || draftMentionedAgentIds.length >= 2
+    const swarmOn = isSwarmOn(isNewSession ? draftRoomMode : currentSession?.roomMode)
+    // Agents in the chat after this send (room members plus @-mentions in the draft).
+    const swarmAgentCount = mergeRoomMembers(roomAgentIds, draftMentionedAgentIds).length
+    // Rooms show only when Swarm is on; a single agent always shows.
+    const showRoomStrip = roomAgentIds.length === 1 || (swarmOn && roomAgentIds.length >= 2)
 
     return (
       <Box id={dom.InputBoxID} className="chat-input-shell">
         <Stack className={cn(widthFull ? 'chat-col-full' : 'chat-col')} gap="xs">
           {currentSessionId && <CompactionStatus sessionId={currentSessionId} />}
           {currentSessionId && <QueuedMessageList sessionId={currentSessionId} />}
-          {currentSessionId ? <TeamRoomActions sessionId={currentSessionId} /> : null}
           {showContextNearFull && contextFill !== null && currentSessionId ? (
             <ContextNearFullNotice
               ratio={contextFill}
@@ -2954,12 +2952,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
               Mentions live in the message body (Slack-style @ $ # @mem:).
               Only session room membership, memory payload chips, and quotes stay above.
             */}
-            {(roomAgentIds.length > 0 ||
-              selectedCommands.length > 0 ||
-              memoryAttachments.length > 0 ||
-              !!quoteDraft) && (
+            {(showRoomStrip || selectedCommands.length > 0 || memoryAttachments.length > 0 || !!quoteDraft) && (
               <div className="composer-meta-stack">
-                {roomAgentIds.length > 0 ? (
+                {showRoomStrip ? (
                   <AgentRoomStrip
                     agentIds={roomAgentIds}
                     sessionId={isNewSession ? undefined : sessionId}
@@ -3246,8 +3241,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   onToggleAgentMode={toggleAgentMode}
                   planMode={planMode}
                   onPlanModeChange={onPlanModeChange ? changePlanMode : undefined}
-                  // Multi-agent rooms ignore plan mode.
-                  showPlanMode={roomSizeForTurn < 2}
+                  // A Swarm run ignores plan mode; with Swarm off a room answers as one agent.
+                  showPlanMode={!(swarmOn && roomSizeForTurn >= 2)}
                   workspaceRoot={workspaceRoot}
                   onWorkspaceRootChange={onWorkspaceRootChange}
                   browserArmed={controlledBrowserArmed ?? currentSession?.browserArmed}
@@ -3268,6 +3263,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                         }
                       : undefined
                   }
+                  swarmOn={swarmOn}
+                  swarmAgentCount={swarmAgentCount}
+                  onSwarmChange={(on) => void handleSwarmChange(on)}
                   onShareRoomPack={
                     currentSession?.agentIds && currentSession.agentIds.length > 0
                       ? () => {
@@ -3327,17 +3325,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 {onScopeChange ? <ScopePill scopes={scopes} value={scopeId} onChange={onScopeChange} /> : null}
               </Flex>
 
-              {/* Right Group: Team mode (multi-agent) + Model + Send */}
+              {/* Right Group: Model + Send */}
               <Flex align="center" gap={4} className="min-w-0 flex-1 justify-end flex-nowrap">
-                {showRoomModeChip ? (
-                  <TeamModeSelect
-                    value={roomMode}
-                    onChange={(mode) => void handleRoomModeChange(mode)}
-                    toolbarButtonClass={toolbarButtonClass}
-                    isSmallScreen={isSmallScreen}
-                  />
-                ) : null}
-
                 {/* Model Selector */}
                 <Tooltip
                   label={

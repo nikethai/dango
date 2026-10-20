@@ -72,6 +72,23 @@ export function resolveSpeakers(roomAgentIds: string[], mentionedAgentIds?: stri
   return uniqueIds(roomAgentIds)
 }
 
+/** Swarm is the chat's one multi-agent switch; legacy `discuss` / `work` read as off. */
+export function isSwarmOn(roomMode: string | undefined): boolean {
+  return roomMode === 'swarm'
+}
+
+/**
+ * Whether a send runs the multi-agent room: Swarm on and two or more speakers.
+ * With Swarm off, a chat with several agents answers as its first speaker.
+ */
+export function shouldRunMultiAgentRoom(
+  mentionedAgentIds: string[] | undefined,
+  roomAgentIds: string[],
+  roomMode: string | undefined
+): boolean {
+  return isSwarmOn(roomMode) && resolveSpeakers(roomAgentIds, mentionedAgentIds).length >= 2
+}
+
 /**
  * Dual-write fields for session persistence during rename migration.
  */
