@@ -3,6 +3,7 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
 import { MemoryMigrationSheet } from '@/components/knowledge/MemoryMigrationSheet'
 import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
+import { ToolPermissionHost } from '@/components/permission/ToolPermissionHost'
 import { registerChangeOpener } from '@/components/review/changeOpener'
 import { registerDefaultQuestionOpener } from '@/components/review/questionOpener'
 import useAppTheme from '@/hooks/useAppTheme'
@@ -242,6 +243,8 @@ function Root() {
       {/* <ReportContentDialog /> */}
       {/* Search */}
       <SearchDialog />
+      {/* Tool permission sheet (main and quick window: it answers the turn in this window) */}
+      <ToolPermissionHost />
       {/* One-time move of old memory into knowledge (not in Quick Chat) */}
       {isQuickRoute ? null : <MemoryMigrationSheet />}
       {/* Welcome when no model configured */}
