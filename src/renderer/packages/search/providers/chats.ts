@@ -5,6 +5,20 @@ import { getEffectiveProjectId } from '@/projects/project-context'
 import { inScopes, oneLine, SEARCH_GROUP_LIMIT, type SearchHit, type SearchProvider } from '../types'
 
 const EXCERPT_LIMIT = 160
+/** Characters kept before the match when the excerpt is cut. */
+const EXCERPT_LEAD = 40
+/** Messages are scanned from two characters; one character matches chat names only. */
+const MESSAGE_MIN_CHARS = 2
+
+/** At most `EXCERPT_LIMIT` characters of `text` around the first match of `query`, with … where it was cut. */
+export function excerptAround(text: string, query: string): string {
+  if (text.length <= EXCERPT_LIMIT) return text
+  const at = Math.max(0, text.toLowerCase().indexOf(oneLine(query).toLowerCase()))
+  const start = Math.max(0, at - EXCERPT_LEAD)
+  if (start === 0) return `${text.slice(0, EXCERPT_LIMIT - 1)}…`
+  if (start + EXCERPT_LIMIT - 1 >= text.length) return `…${text.slice(text.length - (EXCERPT_LIMIT - 1))}`
+  return `…${text.slice(start, start + EXCERPT_LIMIT - 2)}…`
+}
 
 /**
  * Switches to the chat and, when a message is given, scrolls to it once the list has rendered (moved from the old
@@ -68,21 +82,29 @@ export const chatsProvider: SearchProvider = {
     if (signal.aborted) return []
     const nameMatches = metas.filter((meta) => meta.name?.toLowerCase().includes(needle))
 
-    // searchSessions takes no signal: batches that arrive after an abort are dropped.
+    // Off-scope and hidden chats are skipped before their storage is read; the scan stops on abort or after a group's
+    // worth of matching chats. A batch that still arrives after an abort is dropped.
     const messageMatches = new Map<string, { session: Session; match: MessageMatch }>()
-    await searchSessions(q.text, undefined, (batch) => {
-      if (signal.aborted) return
-      for (const session of batch) {
-        if (messageMatches.has(session.id) || !wanted(session)) continue
-        const first = session.messages[0]
-        if (!first) continue
-        const text = oneLine(getMessageText(first, false, false))
-        messageMatches.set(session.id, {
-          session,
-          match: { messageId: first.id, excerpt: text.slice(0, EXCERPT_LIMIT) },
-        })
-      }
-    })
+    if (needle.length >= MESSAGE_MIN_CHARS) {
+      await searchSessions(
+        q.text,
+        undefined,
+        (batch) => {
+          if (signal.aborted) return
+          for (const session of batch) {
+            if (messageMatches.has(session.id) || !wanted(session)) continue
+            const first = session.messages[0]
+            if (!first) continue
+            const text = oneLine(getMessageText(first, false, false))
+            messageMatches.set(session.id, {
+              session,
+              match: { messageId: first.id, excerpt: excerptAround(text, q.text.trim()) },
+            })
+          }
+        },
+        { signal, include: wanted, maxSessions: SEARCH_GROUP_LIMIT }
+      )
+    }
     if (signal.aborted) return []
 
     const named = new Set(nameMatches.map((meta) => meta.id))

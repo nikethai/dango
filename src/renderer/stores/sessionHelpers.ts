@@ -17,8 +17,9 @@ import { getLogger } from '@/lib/utils'
 import { PREVIEW_LINES } from '@/packages/context-management/attachment-payload'
 import {
   createHistorySearchRegexp,
-  LINEAR_HISTORY_SEARCH_RESULT_CAP,
+  type HistoryScanOptions,
   matchSessionMessages,
+  scanHistorySessions,
 } from '@/packages/history-search'
 import * as localParser from '@/packages/local-parser'
 import { estimateTokens, getTokenizerType } from '@/packages/token'
@@ -910,9 +911,18 @@ export function getSessionMeta(session: SessionMeta & { messages?: { timestamp?:
   return base
 }
 
-export async function searchSessions(searchInput: string, sessionId?: string, onResult?: (result: Session[]) => void) {
+/**
+ * Searches one session, or every listed session in list order, emitting per-session batches of matching messages.
+ * `opts` (global search only) skips sessions before reading them, stops on abort, or stops after `maxSessions`
+ * matching sessions; without it the scan stops at `LINEAR_HISTORY_SEARCH_RESULT_CAP` matching messages.
+ */
+export async function searchSessions(
+  searchInput: string,
+  sessionId?: string,
+  onResult?: (result: Session[]) => void,
+  opts?: HistoryScanOptions
+) {
   const regexp = createHistorySearchRegexp(searchInput)
-  let matchedMessageTotal = 0
 
   const emitBatch = (batch: Session[]) => {
     if (batch.length === 0) {
@@ -925,25 +935,17 @@ export async function searchSessions(searchInput: string, sessionId?: string, on
     const session = await storage.getItem<Session | null>(StorageKeyGenerator.session(sessionId), null)
     if (session) {
       const matchedMessages = matchSessionMessages(session, regexp)
-      matchedMessageTotal += matchedMessages.length
       emitBatch([{ ...session, messages: matchedMessages }])
     }
   } else {
     const sessionsList = sortSessions(await storage.getItem<SessionMeta[]>(StorageKey.ChatSessionsList, []))
-
-    for (const sessionMeta of sessionsList) {
-      const session = await storage.getItem<Session | null>(StorageKeyGenerator.session(sessionMeta.id), null)
-      if (session) {
-        const messages = matchSessionMessages(session, regexp)
-        if (messages.length > 0) {
-          matchedMessageTotal += messages.length
-          emitBatch([{ ...session, messages }])
-        }
-        if (matchedMessageTotal >= LINEAR_HISTORY_SEARCH_RESULT_CAP) {
-          break
-        }
-      }
-    }
+    await scanHistorySessions(
+      sessionsList,
+      (id) => storage.getItem<Session | null>(StorageKeyGenerator.session(id), null),
+      regexp,
+      emitBatch,
+      opts
+    )
   }
 }
 

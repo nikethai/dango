@@ -103,6 +103,58 @@ describe('chats provider', () => {
   })
 })
 
+describe('chats provider message scan', () => {
+  beforeEach(() => {
+    m.listSessionsMeta.mockResolvedValue([{ id: 'c-name', name: 'L plan', projectId: 's1' }])
+    m.searchSessions.mockResolvedValue(undefined)
+  })
+
+  it('passes the signal, a scope filter and the group limit to searchSessions', async () => {
+    const controller = new AbortController()
+    await chatsProvider.search({ text: 'launch', scopeIds: ['s1'] }, controller.signal)
+    expect(m.searchSessions).toHaveBeenCalledTimes(1)
+    const [text, sessionId, , opts] = m.searchSessions.mock.calls[0]
+    expect(text).toBe('launch')
+    expect(sessionId).toBeUndefined()
+    expect(opts.signal).toBe(controller.signal)
+    expect(opts.maxSessions).toBe(8)
+    expect(opts.include({ id: 'a', projectId: 's1' })).toBe(true)
+    expect(opts.include({ id: 'b', projectId: 's2' })).toBe(false)
+    expect(opts.include({ id: 'c' })).toBe(false)
+    expect(opts.include({ id: 'd', projectId: 's1', hidden: true })).toBe(false)
+  })
+
+  it('one character matches names only and scans no messages', async () => {
+    const hits = await chatsProvider.search({ text: 'l', scopeIds: 'all' }, signal())
+    expect(m.searchSessions).not.toHaveBeenCalled()
+    expect(hits.map((h) => h.title)).toEqual(['L plan'])
+  })
+
+  it('the excerpt is a window around the match, so it shows the query', async () => {
+    m.listSessionsMeta.mockResolvedValue([])
+    const long = `${'a'.repeat(300)} the launch date ${'b'.repeat(300)}`
+    m.searchSessions.mockImplementation(async (_t: string, _i: unknown, onResult: (s: unknown[]) => void) => {
+      await Promise.resolve()
+      onResult([{ id: 'c1', name: 'Long', messages: [textMessage('m1', long)] }])
+    })
+    const [only] = await chatsProvider.search({ text: 'Launch', scopeIds: 'all' }, signal())
+    expect(only.excerpt).toContain('launch')
+    expect(only.excerpt?.startsWith('…')).toBe(true)
+    expect(only.excerpt?.endsWith('…')).toBe(true)
+    expect(only.excerpt?.length).toBeLessThanOrEqual(160)
+  })
+
+  it('a short message is the whole excerpt, without ellipses', async () => {
+    m.listSessionsMeta.mockResolvedValue([])
+    m.searchSessions.mockImplementation(async (_t: string, _i: unknown, onResult: (s: unknown[]) => void) => {
+      await Promise.resolve()
+      onResult([{ id: 'c1', name: 'Short', messages: [textMessage('m1', 'the launch\ndate')] }])
+    })
+    const [only] = await chatsProvider.search({ text: 'launch', scopeIds: 'all' }, signal())
+    expect(only.excerpt).toBe('the launch date')
+  })
+})
+
 describe('knowledge provider', () => {
   it('lists the chosen scope with the query and labels it with the scope name', async () => {
     m.listKnowledge.mockReturnValue([{ id: 'k1', scopeId: 's1', text: 'Launch is on Tuesday' }])

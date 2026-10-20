@@ -4,9 +4,23 @@ import { SEARCH_GROUP_LIMIT, SEARCH_GROUPS, type SearchGroup, type SearchHit, ty
 
 export const SEARCH_DEBOUNCE_MS = 150
 
-type SearchState = { groups: Record<SearchGroup, SearchHit[]>; loading: boolean }
+export type SearchState = {
+  groups: Record<SearchGroup, SearchHit[]>
+  /** The current text and scope have providers still running (or waiting for the debounce). */
+  loading: boolean
+  /**
+   * The groups belong to an earlier text or scope: true from any change until the current run's first provider
+   * settles; false for empty text. Callers ignore ↵ / ⌘↵ while stale.
+   */
+  stale: boolean
+}
+
+// What the groups on screen were found for (`key`), and the last run whose providers all settled.
+type RunState = { groups: Record<SearchGroup, SearchHit[]>; key: string | null; settledKey: string | null }
 
 const emptyGroups = (): Record<SearchGroup, SearchHit[]> => ({ chats: [], knowledge: [], sources: [] })
+
+const EMPTY_STATE: SearchState = { groups: emptyGroups(), loading: false, stale: false }
 
 /** Groups in provider registration order, each cut to `SEARCH_GROUP_LIMIT`. */
 function buildGroups(order: string[], results: Map<string, SearchHit[]>): Record<SearchGroup, SearchHit[]> {
@@ -33,15 +47,16 @@ export function useSearch(text: string, scopeIds: string[] | 'all'): SearchState
     () => (scopeKey === 'all' ? 'all' : (JSON.parse(scopeKey) as string[])),
     [scopeKey]
   )
-  const [state, setState] = useState<SearchState>(() => ({ groups: emptyGroups(), loading: false }))
+  const runKey = `${scopeKey}\u0000${trimmed}`
+  const [state, setState] = useState<RunState>(() => ({ groups: emptyGroups(), key: null, settledKey: null }))
 
   useEffect(() => {
     if (!trimmed) {
-      setState({ groups: emptyGroups(), loading: false })
+      setState({ groups: emptyGroups(), key: null, settledKey: null })
       return
     }
-    // Earlier results stay on screen until this run's first provider answers, then are replaced, never mixed.
-    setState((prev) => (prev.loading ? prev : { ...prev, loading: true }))
+    // Earlier results stay on screen (stale) until this run's first provider answers, then are replaced, never mixed.
+    const key = runKey
     const controller = new AbortController()
     const timer = setTimeout(() => {
       const providers = listSearchProviders().filter((p) => trimmed.length >= (p.minChars ?? 1))
@@ -49,7 +64,7 @@ export function useSearch(text: string, scopeIds: string[] | 'all'): SearchState
       const results = new Map<string, SearchHit[]>()
       let pending = providers.length
       if (pending === 0) {
-        setState({ groups: emptyGroups(), loading: false })
+        setState({ groups: emptyGroups(), key, settledKey: key })
         return
       }
       const query: SearchQuery = { text: trimmed, scopeIds: scopes }
@@ -71,7 +86,7 @@ export function useSearch(text: string, scopeIds: string[] | 'all'): SearchState
           .then(() => {
             if (controller.signal.aborted) return
             pending -= 1
-            setState({ groups: buildGroups(order, results), loading: pending > 0 })
+            setState({ groups: buildGroups(order, results), key, settledKey: pending > 0 ? null : key })
           })
       }
     }, SEARCH_DEBOUNCE_MS)
@@ -79,7 +94,8 @@ export function useSearch(text: string, scopeIds: string[] | 'all'): SearchState
       clearTimeout(timer)
       controller.abort()
     }
-  }, [trimmed, scopes])
+  }, [runKey, trimmed, scopes])
 
-  return state
+  if (!trimmed) return EMPTY_STATE
+  return { groups: state.groups, loading: state.settledKey !== runKey, stale: state.key !== runKey }
 }

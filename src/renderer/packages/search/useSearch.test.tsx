@@ -69,6 +69,45 @@ describe('useSearch', () => {
     expect(result.current.loading).toBe(false)
   })
 
+  it('stale is true from a text change until the new run answers first, with the old groups still shown', async () => {
+    const pending = new Map<string, ReturnType<typeof deferred<SearchHit[]>>>()
+    registerSearchProvider({
+      id: 'p',
+      group: 'chats',
+      search: (q: SearchQuery) => {
+        const d = deferred<SearchHit[]>()
+        pending.set(q.text, d)
+        return d.promise
+      },
+    })
+    registerSearchProvider({ id: 'slow', group: 'knowledge', search: () => new Promise<SearchHit[]>(() => undefined) })
+    const { result, rerender } = renderHook(({ text }) => useSearch(text, 'all'), { initialProps: { text: 'la' } })
+    expect(result.current.stale).toBe(true)
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    await act(async () => {
+      pending.get('la')?.resolve([hit('la result')])
+      await flush()
+    })
+    expect(result.current.stale).toBe(false)
+    expect(result.current.loading).toBe(true)
+
+    rerender({ text: 'launch' })
+    expect(result.current.stale).toBe(true)
+    expect(result.current.groups.chats.map((h) => h.title)).toEqual(['la result'])
+    await act(() => vi.advanceTimersByTimeAsync(150))
+    expect(result.current.stale).toBe(true)
+
+    await act(async () => {
+      pending.get('launch')?.resolve([hit('launch result')])
+      await flush()
+    })
+    expect(result.current.stale).toBe(false)
+    expect(result.current.groups.chats.map((h) => h.title)).toEqual(['launch result'])
+
+    rerender({ text: '' })
+    expect(result.current.stale).toBe(false)
+  })
+
   it('debounces typing by 150 ms', async () => {
     const search = vi.fn(async (_q: SearchQuery): Promise<SearchHit[]> => [])
     registerSearchProvider({ id: 'p', group: 'chats', search })
@@ -112,7 +151,7 @@ describe('useSearch', () => {
     const { result } = renderHook(() => useSearch('   ', 'all'))
     await act(() => vi.advanceTimersByTimeAsync(500))
     expect(search).not.toHaveBeenCalled()
-    expect(result.current).toEqual({ groups: { chats: [], knowledge: [], sources: [] }, loading: false })
+    expect(result.current).toEqual({ groups: { chats: [], knowledge: [], sources: [] }, loading: false, stale: false })
   })
 
   it('fills each group as its provider returns, skips providers below minChars, and keeps at most 8 per group', async () => {
