@@ -88,6 +88,8 @@ function sanitizeScopeGrants(raw: unknown): ScopeGrants {
   return result
 }
 
+const TOOL_APPROVAL_STORAGE_KEY = 'tool-approval-store'
+
 export const toolApprovalStore = createStore<ToolApprovalState>()(
   persist(
     combine(
@@ -140,7 +142,7 @@ export const toolApprovalStore = createStore<ToolApprovalState>()(
       })
     ),
     {
-      name: 'tool-approval-store',
+      name: TOOL_APPROVAL_STORAGE_KEY,
       version: 0,
       partialize: (state) => ({
         auditLog: state.auditLog,
@@ -163,6 +165,18 @@ export const toolApprovalStore = createStore<ToolApprovalState>()(
     }
   )
 )
+
+/**
+ * Each window (main, Quick Chat) keeps its own copy of this store. When another window writes `tool-approval-store`,
+ * read it again so a revoked grant stops auto-approving here, and so this window's next write does not put the stale
+ * grant back. The `storage` event never fires in the window that wrote, and rehydrating does not write (no migration
+ * step), so windows do not echo each other. `key === null` means the whole localStorage was cleared.
+ */
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === TOOL_APPROVAL_STORAGE_KEY || event.key === null) void toolApprovalStore.persist.rehydrate()
+  })
+}
 
 export function getToolApproval(sessionId: string, toolName: string) {
   return toolApprovalStore.getState().approvedTools.get(getApprovalKey(sessionId, toolName))

@@ -98,6 +98,19 @@ describe('ScopePermissions', () => {
     expect(toolApprovalStore.getState().scopeGrants['scope-1']?.browser_click).toEqual(older)
   })
 
+  it('undo keeps a grant the user made again meanwhile', async () => {
+    grant('scope-1', older)
+    render(<ScopePermissions scopeId="scope-1" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Stop allowing' }))
+    const again = { ...older, riskTier: ToolRiskTier.HIGH, grantedAt: older.grantedAt + 1000 }
+    act(() => grant('scope-1', again))
+    const input = vi.mocked(pushUndo).mock.calls[0][0]
+    await act(async () => {
+      await input.undo()
+    })
+    expect(toolApprovalStore.getState().scopeGrants['scope-1']?.browser_click).toEqual(again)
+  })
+
   it('renders the section for Everywhere like any scope', () => {
     grant(EVERYWHERE_SCOPE_ID, newer)
     render(<ScopePermissions scopeId={EVERYWHERE_SCOPE_ID} />)

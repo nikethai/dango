@@ -2,7 +2,7 @@ import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toolLabel } from '@/packages/tool-permission'
 import { pushUndo } from '@/packages/undo'
-import { type ScopeToolGrant, toolApprovalStore, useScopeGrants } from '@/stores/toolApprovalStore'
+import { getScopeGrant, type ScopeToolGrant, toolApprovalStore, useScopeGrants } from '@/stores/toolApprovalStore'
 
 /** Tools this scope runs without asking ("Always" grants), with a way to stop each one. */
 export function ScopePermissions({ scopeId }: { scopeId: string }) {
@@ -15,7 +15,11 @@ export function ScopePermissions({ scopeId }: { scopeId: string }) {
     toolApprovalStore.getState().revokeScopeGrant(scopeId, grant.toolName)
     pushUndo({
       message: t('Dango will ask before “{{label}}” again.', { label }),
-      undo: () => toolApprovalStore.getState().addScopeGrant(scopeId, grant),
+      undo: () => {
+        // The user may have chosen Always again within the undo window; keep that newer grant.
+        if (getScopeGrant(scopeId, grant.toolName)) return
+        toolApprovalStore.getState().addScopeGrant(scopeId, grant)
+      },
       group: 'other',
     })
   }

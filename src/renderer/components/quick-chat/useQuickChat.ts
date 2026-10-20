@@ -23,6 +23,7 @@ import { stopSessionGeneration } from '@/stores/session/stop-generation'
 import { regenerateInNewFork, submitNewUserMessage } from '@/stores/sessionActions'
 import { getAllMessageList, initEmptyChatSession } from '@/stores/sessionHelpers'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
+import { toolApprovalStore } from '@/stores/toolApprovalStore'
 import { getModelDisplayName } from '@/utils/modelDisplayName'
 import { getModelReadiness, type SelectedModel } from '@/utils/modelReadiness'
 import { readQuickSessionSnapshot, resolveQuickSessionId, writeQuickSessionSnapshot } from '@/utils/quickSession'
@@ -54,12 +55,14 @@ async function openProviderSettings() {
 /**
  * The quick window is created once and then only hidden, so its stores keep what they read at creation. On show it
  * reads again what the main window may have changed meanwhile: settings (providers, default model, notification
- * switches), the last-used model and the scope list. A read that fails keeps what this window had.
+ * switches), the last-used model, tool permissions (a grant revoked in main must stop applying here) and the scope
+ * list. A read that fails keeps what this window had.
  */
 async function reloadSharedState() {
   const results = await Promise.allSettled([
     Promise.resolve().then(() => settingsStore.persist.rehydrate()),
     Promise.resolve().then(() => lastUsedModelStore.persist.rehydrate()),
+    Promise.resolve().then(() => toolApprovalStore.persist.rehydrate()),
     reloadScopes(),
   ])
   for (const result of results) {
