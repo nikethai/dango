@@ -137,6 +137,8 @@ export type ClientDraft = {
   id: string
   scopeId: string
   accountId: string
+  /** The connected Gmail source of the inbound message (local-only checks, ADR 0003). */
+  sourceId?: string
   threadId: string
   inboundMessageId: string
   to: string
@@ -150,11 +152,17 @@ export type ClientDraft = {
   state: ClientDraftState
   reviewEntryId?: string
   createdAt: number
+  /**
+   * Set just before the Gmail write starts and cleared when its outcome is known. Still set later means the write was
+   * cut off (a crash) and Gmail may hold the draft: it is not written again without telling the user.
+   */
+  writeStartedAt?: number
 }
 export const ClientDraftSchema: z.ZodType<ClientDraft> = z.looseObject({
   id: z.string(),
   scopeId: z.string(),
   accountId: z.string(),
+  sourceId: z.string().optional(),
   threadId: z.string(),
   inboundMessageId: z.string(),
   to: z.string(),
@@ -168,6 +176,7 @@ export const ClientDraftSchema: z.ZodType<ClientDraft> = z.looseObject({
   state: z.enum(['proposed', 'written', 'undone', 'sent', 'dismissed']),
   reviewEntryId: z.string().optional(),
   createdAt: z.number(),
+  writeStartedAt: z.number().optional(),
 })
 
 /** `'choose-model'`: a local-only source, or no usable model (preflight R9). */

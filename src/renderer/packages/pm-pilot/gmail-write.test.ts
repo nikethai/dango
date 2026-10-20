@@ -279,6 +279,12 @@ describe('undoDraft', () => {
     expect(seen.find((s) => s.path === 'threads/t1/modify')?.body).toEqual({ removeLabelIds: ['Label_9'] })
   })
 
+  it('undo keeps the thread label when asked (another Dango draft is still in the thread)', async () => {
+    server.use(...undoHandlers())
+    await expect(undoDraft(token, written, { keepLabel: true })).resolves.toBe('removed')
+    expect(seen.map((s) => `${s.method} ${s.path}`)).toEqual(['GET drafts/d1', 'DELETE drafts/d1'])
+  })
+
   it('undo keeps a draft the user edited', async () => {
     server.use(...undoHandlers('m10'))
     await expect(undoDraft(token, written)).resolves.toBe('kept-edited')

@@ -149,11 +149,13 @@ export async function writeDraft(
  * Takes back a draft Dango wrote, only when Gmail still holds the very message Dango wrote. A draft the user has
  * edited in Gmail has a new message id and is kept (`'kept-edited'`, nothing deleted); so is one whose written
  * message id was never recorded. A draft already deleted or sent is `'already-gone'`. Otherwise the draft is
- * deleted and the thread label removed (`'removed'`). Other failures throw and nothing is deleted.
+ * deleted and the thread label removed (`'removed'`), unless `keepLabel` says another Dango draft is still in the
+ * thread. Other failures throw and nothing is deleted.
  */
 export async function undoDraft(
   token: string,
-  draft: ClientDraft
+  draft: ClientDraft,
+  opts: { keepLabel?: boolean } = {}
 ): Promise<'removed' | 'kept-edited' | 'already-gone'> {
   if (!draft.gmailDraftId) return 'already-gone'
   const path = `drafts/${encodeURIComponent(draft.gmailDraftId)}`
@@ -172,6 +174,7 @@ export async function undoDraft(
     if (gmailStatus(error) === 404) return 'already-gone'
     throw error
   }
+  if (opts.keepLabel) return 'removed'
   try {
     const labelId = await existingLabelId(token, DRAFT_LABEL)
     if (labelId) await modifyThreadLabels(token, draft.threadId, { removeLabelIds: [labelId] })
