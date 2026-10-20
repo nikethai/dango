@@ -253,13 +253,15 @@ const READ_ONLY_COMMAND_KEYS = ['command', 'cmd']
 const PROSE_KEYS = new Set(['reason', 'explanation', 'purpose', 'description'])
 /**
  * The only characters a read-only command may use. Everything else — quotes, backslashes, brackets, `$`, `~`, `*`,
- * `?`, `!`, `@`, redirects, separators, line breaks and any non-ASCII — means the shell could read it differently
+ * `?`, `!`, `@`, `%`, `^` (cmd.exe), redirects, separators, line breaks and any non-ASCII — means the shell could read it differently
  * than we do, so the call asks.
  */
-const SAFE_COMMAND_TEXT = /^[A-Za-z0-9 _\-.,/:=+%^]*$/
+const SAFE_COMMAND_TEXT = /^[A-Za-z0-9 _\-.,/:=+]*$/
+/** git's `--format=` / `--pretty=` values may use `%` placeholders (`--format=%h`); nothing else may (cmd.exe `%VAR%`). */
+const GIT_FORMAT_FLAG = /^--(?:format|pretty)=/
 /** Paths that hold credentials or keys; reading one always asks. */
 const SECRET_PATH =
-  /(?:^|[/:=])\.env|\.aws(?:\/|$)|\.ssh(?:\/|$)|\.gnupg(?:\/|$)|\.kube(?:\/|$)|\.docker\/config\.json|\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.config\/gh(?:\/|$)|credentials|\.pem$|\.key$|(?:^|[/:])id_|secret|token/i
+  /(?:^|[/:=])\.env|\.aws(?:\/|$)|\.ssh(?:\/|$)|\.gnupg(?:\/|$)|\.kube(?:\/|$)|\.docker\/config\.json|\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.config\/gh(?:\/|$)|\.config\/hub|\.config\/rclone|\.bash_history|\.zsh_history|(?:^|[/:=])\.history|\.pgpass|\.s3cfg|\.boto|credentials|\.pem$|\.key$|(?:^|[/:])id_|secret|token/i
 /** Programs that only read what they are given (paths are checked separately). */
 const READ_ONLY_PROGRAMS = new Set([
   'ls',
@@ -296,7 +298,11 @@ const GIT_BRANCH_FLAGS = new Set([
 
 /** A path-like operand that stays inside the working folder and is not a secret. */
 function isSafeOperand(token: string): boolean {
-  if (token.startsWith('/') || token.startsWith('..') || token.includes('/..')) return false
+  // Each `=`-separated part too, so `--file=C:/x` is checked like `C:/x`.
+  for (const part of token.split('=')) {
+    // Absolute (`/etc`), UNC (`//server`), drive-letter (`C:`, `c:/`) and parent (`..`) paths leave the folder.
+    if (part.startsWith('/') || /^[A-Za-z]:/.test(part) || part.startsWith('..') || part.includes('/..')) return false
+  }
   return !SECRET_PATH.test(token)
 }
 
@@ -311,8 +317,12 @@ function isReadOnlyGit(rest: string[]): boolean {
 
 /** One simple command, from safe characters only, whose program is on the read-only list. */
 function isReadOnlyCommandText(text: string): boolean {
-  if (!SAFE_COMMAND_TEXT.test(text)) return false
   const [program, ...rest] = text.trim().split(' ').filter(Boolean)
+  const checked =
+    program === 'git'
+      ? text.replace(/\S+/g, (token) => (GIT_FORMAT_FLAG.test(token) ? token.replace(/%/g, '') : token))
+      : text
+  if (!SAFE_COMMAND_TEXT.test(checked)) return false
   if (!program) return false
   if (!rest.every(isSafeOperand)) return false
   if (READ_ONLY_PROGRAMS.has(program)) return program !== 'ls' || !rest.some((arg) => RECURSIVE_FLAG.test(arg))

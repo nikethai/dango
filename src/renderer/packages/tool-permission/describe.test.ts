@@ -258,6 +258,8 @@ describe('alwaysAsks / canAlways / toolLabel', () => {
     expect(isShellCommandTool('terminal_exec')).toBe(true)
     expect(isShellCommandTool('terminal')).toBe(true)
     expect(isShellCommandTool('execute_command')).toBe(true)
+    expect(isShellCommandTool('get_terminal_size')).toBe(false)
+    expect(isCommandTool('get_terminal_size')).toBe(false)
     expect(isShellCommandTool('do_it', 'Run a shell command')).toBe(true)
     for (const [name, description] of [
       ['execute_sql', 'Execute a SQL query'],

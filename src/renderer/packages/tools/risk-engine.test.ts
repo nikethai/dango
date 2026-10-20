@@ -368,13 +368,14 @@ describe('isReadOnlyCommand', () => {
     'type git',
     'git status',
     'git log --oneline -5',
-    'git diff HEAD^',
     'git diff main..HEAD',
     'git show HEAD',
     'git branch -a',
     'git branch',
     'git remote -v',
     'git rev-parse HEAD',
+    'git log --format=%h',
+    'git log --pretty=%H -3',
     'cat README.md',
     'head -n 5 a.txt',
     'tail -n 20 log.txt',
@@ -466,6 +467,24 @@ describe('isReadOnlyCommand', () => {
     'top -b -n 1',
     'node -v',
     // secrets and paths outside the project
+    'cat C:/Users/me/.bash_history',
+    'ls C:/',
+    'ls c:',
+    'cat //server/share/x',
+    'grep --file=C:/x foo a.txt',
+    'grep --file=//server/x foo a.txt',
+    'type %OPENAI_API_KEY%',
+    'cat %USERPROFILE%/x',
+    'ls a^b',
+    'git log --grep=%x',
+    'cat .bash_history',
+    'cat .zsh_history',
+    'cat .history',
+    'cat .pgpass',
+    'cat .s3cfg',
+    'cat .boto',
+    'cat .config/hub',
+    'cat .config/rclone/rclone.conf',
     'cat ~/.aws/credentials',
     'cat .env',
     'cat .env.local',
@@ -513,6 +532,8 @@ describe('isReadOnlyCommand', () => {
     )
     expect(isReadOnlyCommand({ command: 'ls', script: 'rm -rf ~' })).toBe(false)
     expect(isReadOnlyCommand({ command: 'ls', cwd: '/' })).toBe(false)
+    expect(isReadOnlyCommand({ command: 'ls', cwd: 'C:/' })).toBe(false)
+    expect(isReadOnlyCommand({ command: 'ls', cwd: '//server/share' })).toBe(false)
   })
 
   it('rejects spawn args that chain, args with no command, and non-objects', () => {
