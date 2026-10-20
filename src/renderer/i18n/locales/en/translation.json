@@ -1830,5 +1830,8 @@
   "Planned the work": "Planned the work",
   "Did a task": "Did a task",
   "Wrote the answer": "Wrote the answer",
-  "captain": "captain"
+  "captain": "captain",
+  "Chat “{{name}}”": "Chat “{{name}}”",
+  "{{scopeName}} knowledge": "{{scopeName}} knowledge",
+  "ChatGPT “{{title}}”": "ChatGPT “{{title}}”"
 }
