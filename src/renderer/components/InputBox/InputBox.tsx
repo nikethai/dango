@@ -1,7 +1,7 @@
 import NiceModal from '@ebay/nice-modal-react'
 import { ActionIcon, Box, Button, Flex, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
 import { useViewportSize } from '@mantine/hooks'
-import { isSwarmOn, mergeRoomMembers } from '@shared/agent-room'
+import { isSwarmOn, swarmSpeakerCount } from '@shared/agent-room'
 import {
   getFileAcceptString,
   getUnsupportedFileI18nKey,
@@ -2830,8 +2830,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     }
 
     const swarmOn = isSwarmOn(isNewSession ? draftRoomMode : currentSession?.roomMode)
-    // Agents in the chat after this send (room members plus @-mentions in the draft).
-    const swarmAgentCount = mergeRoomMembers(roomAgentIds, draftMentionedAgentIds).length
+    // Who would speak this turn: @-mentions in the draft, else the room (as shouldRunMultiAgentRoom counts).
+    const swarmAgentCount = swarmSpeakerCount(roomAgentIds, draftMentionedAgentIds)
     // Rooms show only when Swarm is on; a single agent always shows.
     const showRoomStrip = roomAgentIds.length === 1 || (swarmOn && roomAgentIds.length >= 2)
 

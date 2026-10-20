@@ -89,6 +89,26 @@ export function shouldRunMultiAgentRoom(
   return isSwarmOn(roomMode) && resolveSpeakers(roomAgentIds, mentionedAgentIds).length >= 2
 }
 
+/** Agents who would speak this turn (what `shouldRunMultiAgentRoom` counts). */
+export function swarmSpeakerCount(roomAgentIds: string[], mentionedAgentIds?: string[]): number {
+  return resolveSpeakers(roomAgentIds, mentionedAgentIds).length
+}
+
+/**
+ * Whether an armed Browser / Computer use stays on for this turn. Only a room run (`roomMulti`) can turn them off:
+ * a legacy discuss run, a role without tools, or a room that blocks external tools. A solo turn in a chat with
+ * several agents (Swarm off) keeps them.
+ */
+export function roomAllowsArmedTools(params: {
+  roomMulti: boolean
+  roomMode: string | undefined
+  roomToolsAllowed: boolean
+  roomBlocksExternalTools: boolean
+}): boolean {
+  if (!params.roomMulti) return true
+  return params.roomMode !== 'discuss' && params.roomToolsAllowed && !params.roomBlocksExternalTools
+}
+
 /**
  * Dual-write fields for session persistence during rename migration.
  */

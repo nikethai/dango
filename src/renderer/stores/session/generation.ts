@@ -1127,7 +1127,9 @@ export async function generate(
 
         // 2-phase execution: if planMode and not yet approved, generate plan first
         // Team room: full tools on do/deliver; swarm plan = task tools only; else tools-off
-        const { roomRoleAllowsTaskToolsOnly, roomRoleAllowsTools } = await import('@shared/agent-room')
+        const { roomAllowsArmedTools, roomRoleAllowsTaskToolsOnly, roomRoleAllowsTools } = await import(
+          '@shared/agent-room'
+        )
         const roomRoleForTools = options?.roomRole ?? targetMsg.roomRole
         const roomModeForTools = options?.roomMode
         const roomToolsAllowed = Boolean(roomMulti && roomRoleAllowsTools(roomRoleForTools))
@@ -1371,11 +1373,13 @@ export async function generate(
           })(),
           // Browser / computer: desktop + master settings + session arm; Discuss/non-do-deliver off (D10)
           browserAgent: (() => {
-            const roomMode = options?.roomMode ?? session.roomMode
-            const roomMultiLocal = Boolean(session.agentIds && session.agentIds.length > 1)
-            const discussOff = roomMultiLocal && roomMode === 'discuss'
-            const toolsRoleOk = !roomMultiLocal || roomToolsAllowed
-            const roomAllowed = !discussOff && toolsRoleOk && !roomBlocksExternalTools
+            // Only a room run gates them; a solo answer in a chat with several agents keeps them (Swarm off).
+            const roomAllowed = roomAllowsArmedTools({
+              roomMulti,
+              roomMode: options?.roomMode ?? session.roomMode,
+              roomToolsAllowed,
+              roomBlocksExternalTools,
+            })
             return {
               armed: !firstHandoff && !toolsOffForTurn && Boolean(session.browserArmed) && roomAllowed,
               sessionId,
@@ -1385,11 +1389,13 @@ export async function generate(
             }
           })(),
           computerUse: (() => {
-            const roomMode = options?.roomMode ?? session.roomMode
-            const roomMultiLocal = Boolean(session.agentIds && session.agentIds.length > 1)
-            const discussOff = roomMultiLocal && roomMode === 'discuss'
-            const toolsRoleOk = !roomMultiLocal || roomToolsAllowed
-            const roomAllowed = !discussOff && toolsRoleOk && !roomBlocksExternalTools
+            // Only a room run gates them; a solo answer in a chat with several agents keeps them (Swarm off).
+            const roomAllowed = roomAllowsArmedTools({
+              roomMulti,
+              roomMode: options?.roomMode ?? session.roomMode,
+              roomToolsAllowed,
+              roomBlocksExternalTools,
+            })
             return {
               armed: !firstHandoff && !toolsOffForTurn && Boolean(session.computerArmed) && roomAllowed,
               sessionId,
