@@ -96,6 +96,8 @@ export type SyncCursor = {
   scope: string
   value: string
   updatedAt: number
+  /** Gmail: the mailbox's own address from `users/me/profile`, cached so polls need not ask again (preflight R12). */
+  ownAddress?: string
 }
 export const SyncCursorSchema: z.ZodType<SyncCursor> = z.looseObject({
   accountId: z.string(),
@@ -103,6 +105,7 @@ export const SyncCursorSchema: z.ZodType<SyncCursor> = z.looseObject({
   scope: z.string(),
   value: z.string(),
   updatedAt: z.number(),
+  ownAddress: z.string().optional(),
 })
 
 export type Tier = 'high' | 'medium' | 'low'

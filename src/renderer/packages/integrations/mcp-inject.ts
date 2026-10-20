@@ -26,7 +26,8 @@ export type InjectedTransportResult = {
   error?: string
 }
 
-async function refreshForAccount(
+/** Refresh an OAuth secret with the connector's token endpoint and store it. Also used by the PM pilot (slice 10). */
+export async function refreshForAccount(
   secret: IntegrationSecret,
   account: IntegrationAccount
 ): Promise<IntegrationSecret> {
