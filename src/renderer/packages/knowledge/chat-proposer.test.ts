@@ -2,7 +2,7 @@ import type { Message, SessionSettings } from '@shared/types'
 import type { KnowledgeProposal } from '@shared/types/knowledge'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { extractFactsFromTranscript } from '@/packages/memory/extract'
+import { extractFactsFromTranscript, transcriptFromMessages } from '@/packages/memory/extract'
 import { memoryStore } from '@/stores/memoryStore'
 import { _resetChatProposerForTests, proposeFromChatTurn } from './chat-proposer'
 import { proposeKnowledge } from './proposals'
@@ -27,6 +27,9 @@ vi.mock('@/stores/memoryStore', () => {
 vi.mock('@/packages/memory/extract', () => ({
   transcriptFromMessages: vi.fn(() => 'user: we launch on 13 Nov'),
   extractFactsFromTranscript: vi.fn(async () => ({ facts: [] })),
+}))
+vi.mock('@/packages/model-calls/toolsets/pm-pilot', () => ({
+  loadLocalOnlyQuestionIds: vi.fn(async (ids: string[]) => new Set(ids)),
 }))
 vi.mock('./proposals', () => ({
   proposeKnowledge: vi.fn(
@@ -160,5 +163,60 @@ describe('proposeFromChatTurn', () => {
     expect(extractFactsFromTranscript).toHaveBeenCalledTimes(1)
     release()
     await first
+  })
+})
+
+describe('proposeFromChatTurn and the PM pilot (ADR 0003)', () => {
+  const recallAnswer = {
+    id: 'm1',
+    role: 'assistant',
+    contentParts: [
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'c1',
+        toolName: 'client_recall',
+        args: { query: 'price' },
+        result: { ok: true, records: [{ text: 'The price is 4,200' }], localOnly: true },
+      },
+      { type: 'text', text: 'Jo said the price is 4,200.' },
+    ],
+  } as Message
+
+  it('a cloud model is never sent a local-only recall answer', async () => {
+    const chat = [
+      { id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'price?' }] },
+      recallAnswer,
+    ] as Message[]
+    for (let i = 0; i < 3; i++) await turn({ messages: chat, sessionSettings: { provider: 'openai' } })
+    expect(extractFactsFromTranscript).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(vi.mocked(transcriptFromMessages).mock.calls)).not.toContain('4,200')
+  })
+
+  it('a local model proposes nothing from a chat that used a local-only recall (final review I5)', async () => {
+    const chat = [
+      { id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'price?' }] },
+      recallAnswer,
+      { id: 'a2', role: 'assistant', contentParts: [{ type: 'text', text: 'So 4,620 with tax.' }] },
+    ] as Message[]
+    for (let i = 0; i < 6; i++) await turn({ sessionId: 's2', messages: chat, sessionSettings: { provider: 'ollama' } })
+    expect(transcriptFromMessages).not.toHaveBeenCalled()
+    expect(extractFactsFromTranscript).not.toHaveBeenCalled()
+
+    const summary = { id: 'm1', role: 'user', pmLocalOnly: true, contentParts: [{ type: 'text', text: 'S: 4,200' }] }
+    for (let i = 0; i < 6; i++) {
+      await turn({ sessionId: 's3', messages: [summary] as Message[], sessionSettings: { provider: 'lm-studio' } })
+    }
+    expect(extractFactsFromTranscript).not.toHaveBeenCalled()
+  })
+
+  it('a Needs you chat (CH6) is never read for proposals: its opening is client mail', async () => {
+    const chat = [
+      { id: 'o1', role: 'assistant', pmQuestionId: 'q1', contentParts: [{ type: 'text', text: 'Jo quoted 8,400' }] },
+      { id: 'u1', role: 'user', contentParts: [{ type: 'text', text: '9,100' }] },
+    ] as Message[]
+    for (let i = 0; i < 6; i++) await turn({ messages: chat, sessionSettings: { provider: 'ollama' } })
+    expect(transcriptFromMessages).not.toHaveBeenCalled()
+    expect(extractFactsFromTranscript).not.toHaveBeenCalled()
   })
 })

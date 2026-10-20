@@ -18,6 +18,7 @@ import { ShortcutConfig } from '@/components/Shortcut'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import platform, { platformCapabilities } from '@/platform'
 import storage, { StorageKey } from '@/storage'
+import { omitDeviceOnlyKeys } from '@/storage/exportFilter'
 import { migrateOnData } from '@/stores/migration'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 
@@ -159,7 +160,8 @@ function ExportAndImport(props: { onCancel: () => void }) {
   const importInputRef = useRef<HTMLInputElement>(null)
   const [importTips, setImportTips] = useState('')
   const onExport = async () => {
-    const data = await storage.getAll()
+    // Client mail and pilot records stay on this device.
+    const data = omitDeviceOnlyKeys(await storage.getAll())
     delete data[StorageKey.Configs] // uuid
     ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // (legacy)
     ;(data[StorageKey.Settings] as Settings).licenseInstances = undefined // (legacy)
@@ -224,7 +226,7 @@ function ExportAndImport(props: { onCancel: () => void }) {
           // (legacy comment)
           await storage.setAll({
             ...previousData, // importData ，
-            ...importData,
+            ...omitDeviceOnlyKeys(importData),
             [StorageKey.ChatSessionsList]: uniqBy(
               [
                 ...(previousData[StorageKey.ChatSessionsList] || []),

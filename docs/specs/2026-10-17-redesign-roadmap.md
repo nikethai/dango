@@ -110,6 +110,15 @@ Names one slice creates and others import. The owner builds it; nobody else re-c
 | Tool permission queue `requestToolPermission`, per-scope Always grants, `ToolPermissionSheet`; Swarm as one toggle under Tools ▾, `Message.swarm { runId, taskTitle, stoppedEarly }`, `SwarmLiveCard`, `SwarmWorkedWith`; `registerSearchProvider`, `SearchOverlay` (⌘K) | slice 6c files | 6c |
 | `'setup'` opener for the skipped-source entry; phone-only `/scopes` list | `src/renderer/packages/first-run/`, slice 9 files | 9 |
 | `'draft'` and `'question'` openers, a `'draft'` applier; Gmail and Asana registered with `registerSourceAdapter` | `src/renderer/packages/pm-pilot/` | 10 |
+| Existing names slice 10 imports (registered 2026-10-20, all already exported): `readScopes` | `src/renderer/hooks/useScopes.ts` | 3 |
+| `addKnowledge`, `resolveConflict`, `KnowledgeConflictError`, `ensureKnowledgeLoaded`, `recordKnowledgeUse`, `NEVER_SEND_EMAIL` | `src/renderer/packages/knowledge/` | 4 |
+| `applyReviewEntry` | `src/renderer/packages/review/trust.ts` | 5 |
+| `backgroundModelChoice`, `hasUsableModel`, `sourcesStore`, `LOCAL_PROVIDERS` (today a private constant in `packages/sources/review.ts`; slice 10 exports it); sync results may carry `quiet?: boolean` (no Done entry for that run), and a source adapter may ask for a shorter poll interval than the 15-minute check (slice 10: Gmail 60 s, Asana 120 s) | `src/renderer/packages/sources/`, `src/renderer/packages/background/` | 7 (changes made in slice 10) |
+| `openConfiguration(path)` | `src/renderer/components/sources/openConfiguration.ts` | 7 |
+| `switchCurrentSession(id)` | `src/renderer/stores/session/crud.ts` | chat store |
+| `reviewStore`, `loadReviewEntries`, `subscribeReviewEntries` (slice 10's bridge also re-exports these) | `src/renderer/packages/review/store.ts` | 1b |
+| `loadSources`; `isLocalModelProvider` (moved beside `LOCAL_PROVIDERS` by slice 10) | `src/renderer/packages/sources/store.ts`, `src/renderer/packages/sources/model-check.ts` | 7 (changes made in slice 10) |
+| `startNewChat` is also imported directly by slice 10's `answer.ts` (fallback for questions it doesn't own) | `src/renderer/lib/startNewChat.ts` | 1b |
 
 ## Decisions where the spec disagreed with itself
 

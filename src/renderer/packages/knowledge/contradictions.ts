@@ -1,5 +1,5 @@
 import type { Settings } from '@shared/types'
-import type { KnowledgeItem } from '@shared/types/knowledge'
+import type { KnowledgeItem, KnowledgeSourceInput } from '@shared/types/knowledge'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { getLogger } from '@/lib/utils'
 import { tokenizeForIndex } from '@/packages/memory/query-index'
@@ -8,11 +8,16 @@ import { ensureKnowledgeLoaded, knowledgeStore } from './store'
 
 const log = getLogger('knowledge')
 
-/** `sessionId`: the chat the statement came from; its model answers. Without one, the default chat model. */
+/**
+ * `sessionId`: the chat the statement came from; its model answers. Without one, the default chat model.
+ * `settings`: the settings `checkAgainstLayers` already resolved (and decided cloud or local on); the checker
+ * must then use exactly these, so the model it asks is the one the local-only filter was applied for.
+ */
 export type ContradictionChecker = (input: {
   text: string
   candidates: KnowledgeItem[]
   sessionId?: string
+  settings?: Settings
 }) => Promise<string[]>
 
 /** A checker call that takes longer than this fails (no conflict, `ok: false`). */
@@ -76,20 +81,12 @@ function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
  * gets). Ids that are not among the candidates are dropped. Throws when there is no model, the call
  * fails or it takes longer than `CHECK_TIMEOUT_MS`.
  */
-export const defaultContradictionChecker: ContradictionChecker = ({ text, candidates, sessionId }) =>
-  withTimeout(askModel(text, candidates, sessionId), CHECK_TIMEOUT_MS)
+export const defaultContradictionChecker: ContradictionChecker = ({ text, candidates, sessionId, settings }) =>
+  withTimeout(askModel(text, candidates, sessionId, settings), CHECK_TIMEOUT_MS)
 
-async function askModel(text: string, candidates: KnowledgeItem[], sessionId?: string): Promise<string[]> {
-  // Lazy: the model stack is heavy and reaches the platform.
-  const [{ getModel }, { createMessage }, { createModelDependencies }, { generateText }, platform, { settingsStore }] =
-    await Promise.all([
-      import('@shared/models'),
-      import('@shared/types'),
-      import('@/adapters'),
-      import('@/packages/model-calls'),
-      import('@/platform').then((m) => m.default),
-      import('@/stores/settingsStore'),
-    ])
+/** The checker's settings: the global ones overlaid with the session's, or with the default chat model. */
+async function resolveCheckerSettings(sessionId?: string): Promise<{ settings: Settings; global: Settings }> {
+  const { settingsStore } = await import('@/stores/settingsStore')
   const global = settingsStore.getState().getSettings()
   const session = sessionId ? await (await import('@/stores/chatStore')).getSession(sessionId) : null
   const settings = session
@@ -100,6 +97,28 @@ async function askModel(text: string, candidates: KnowledgeItem[], sessionId?: s
           ? { provider: global.defaultChatModel.provider, modelId: global.defaultChatModel.model }
           : {}),
       }
+  return { settings, global }
+}
+
+async function askModel(
+  text: string,
+  candidates: KnowledgeItem[],
+  sessionId?: string,
+  resolved?: Settings
+): Promise<string[]> {
+  // Lazy: the model stack is heavy and reaches the platform.
+  const [{ getModel }, { createMessage }, { createModelDependencies }, { generateText }, platform, { settingsStore }] =
+    await Promise.all([
+      import('@shared/models'),
+      import('@shared/types'),
+      import('@/adapters'),
+      import('@/packages/model-calls'),
+      import('@/platform').then((m) => m.default),
+      import('@/stores/settingsStore'),
+    ])
+  const { settings, global } = resolved
+    ? { settings: resolved, global: settingsStore.getState().getSettings() }
+    : await resolveCheckerSettings(sessionId)
   const dependencies = await createModelDependencies()
   const configs = await platform.getConfig()
   const model = getModel(settings, global, configs, dependencies)
@@ -122,16 +141,39 @@ export function setContradictionCheckerForTests(fn: ContradictionChecker | null)
   checkerOverride = fn
 }
 
+const hasSourceId = (sources: readonly { sourceId?: string; removed?: boolean }[] | undefined) =>
+  (sources ?? []).some((s) => !s.removed && !!s.sourceId)
+
+/** The connected sources marked "Keep on this device only"; null when they cannot be read (fail closed). */
+async function readLocalOnlySourceIds(): Promise<Set<string> | null> {
+  try {
+    const { loadLocalOnlySourceIds } = await import('@/packages/model-calls/toolsets/pm-pilot')
+    return await loadLocalOnlySourceIds()
+  } catch (error) {
+    log.log('warn', 'Local-only sources could not be read; items with a source are held back:', errorName(error))
+    return null
+  }
+}
+
+const errorName = (error: unknown) => (error instanceof Error ? error.name : 'unknown')
+
 /**
  * Compares `text` with the approved items of the target scope and, when the target is not Everywhere and
  * reads them (`getScopeReads(target).facts`), the approved Everywhere facts and decisions, in one checker call. Target-scope ids are conflicts;
  * Everywhere ids are overrides. A failed check (no model, provider offline, bad reply) finds nothing
  * and returns `ok: false`.
+ *
+ * Local-only (ADR 0003): when the text or a candidate carries a connected source id, the checker's model is resolved
+ * once. On a cloud model, candidates from a local-only source (any source, when they cannot be read) are left out,
+ * and text whose own `sources` are local-only is not checked at all (`ok: false`, no model call). The model is never
+ * switched.
  */
 export async function checkAgainstLayers(input: {
   text: string
   targetScopeId: string
   sessionId?: string
+  /** Where the new text came from; a local-only source keeps it off a cloud checker. */
+  sources?: KnowledgeSourceInput[]
 }): Promise<{ conflictsWith: string[]; overrides: string[]; ok: boolean }> {
   await ensureKnowledgeLoaded()
   const { targetScopeId } = input
@@ -146,7 +188,31 @@ export async function checkAgainstLayers(input: {
         (i.scopeId === targetScopeId ||
           (readsEverywhereFacts && i.scopeId === EVERYWHERE_SCOPE_ID && i.kind !== 'preference'))
     )
-  const candidates = selectCandidates(input.text, layer)
+  let settings: Settings | undefined
+  let reachable = layer
+  if (hasSourceId(input.sources) || layer.some((i) => hasSourceId(i.sources))) {
+    const [{ isLocalModelProvider }, { knowledgeMayReachCloud }] = await Promise.all([
+      import('@/packages/sources/model-check'),
+      import('@/packages/model-calls/toolsets/pm-pilot-history'),
+    ])
+    let provider: string | undefined
+    try {
+      settings = (await resolveCheckerSettings(input.sessionId)).settings
+      provider = (settings as { provider?: string }).provider
+    } catch (error) {
+      log.log('warn', 'Knowledge contradiction check: no model settings:', errorName(error))
+    }
+    if (!isLocalModelProvider(provider)) {
+      const localOnly = await readLocalOnlySourceIds()
+      if (
+        !knowledgeMayReachCloud({ id: 'new', sources: (input.sources ?? []) as KnowledgeItem['sources'] }, localOnly)
+      ) {
+        return { conflictsWith: [], overrides: [], ok: false }
+      }
+      reachable = layer.filter((i) => knowledgeMayReachCloud(i, localOnly))
+    }
+  }
+  const candidates = selectCandidates(input.text, reachable)
   if (candidates.length === 0) return { conflictsWith: [], overrides: [], ok: true }
 
   let found: string[]
@@ -155,6 +221,7 @@ export async function checkAgainstLayers(input: {
       text: input.text,
       candidates,
       ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+      ...(settings ? { settings } : {}),
     })
   } catch (error) {
     log.log('warn', 'Knowledge contradiction check failed:', error instanceof Error ? error.message : String(error))

@@ -17,6 +17,8 @@ import { add as addToast } from '@/stores/toastActions'
 import { openConfiguration, SOURCES_SETTINGS_ROUTE } from './AddSourceSheet'
 
 const REMOVE_DELAY_MS = 5_000
+/** Kinds whose text can be kept off cloud models (ADR 0003, slice 10). */
+const LOCAL_ONLY_KINDS: ReadonlySet<ConnectedSource['kind']> = new Set(['gmail', 'asana'])
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
@@ -134,7 +136,8 @@ export function focusSourceRow(sourceId: string): void {
 
 /**
  * A connected source: kind and label, status line (with the fix button when a job needs you), the Background review
- * switch for kinds that support it, and a menu with Sync now (kinds that sync, main window only) and Remove.
+ * switch for kinds that support it, the "Keep on this device only" switch for Gmail and Asana, and a menu with
+ * Sync now (kinds that sync, main window only) and Remove.
  * Outside the jobs window, changes open Sources in the main window instead. Until the window's role is known, the fix
  * is hidden and Remove and the switch are disabled, so a click never navigates where it should have acted.
  */
@@ -151,6 +154,8 @@ export function SourceRow({ source, scopeName }: { source: ConnectedSource; scop
   const menu = useRef<HTMLDivElement>(null)
   const switchLabelId = useId()
   const switchHintId = useId()
+  const localLabelId = useId()
+  const localHintId = useId()
 
   useEffect(() => {
     if (!menuOpen) return
@@ -240,6 +245,28 @@ export function SourceRow({ source, scopeName }: { source: ConnectedSource; scop
             </div>
             <span id={switchHintId} className="dg-item__meta">
               {t(BACKGROUND_REVIEW_LINE)}
+            </span>
+          </div>
+        ) : null}
+        {LOCAL_ONLY_KINDS.has(source.kind) ? (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                role="switch"
+                className="dg-switch"
+                aria-checked={source.localOnly ? 'true' : 'false'}
+                aria-labelledby={localLabelId}
+                aria-describedby={localHintId}
+                disabled={!roleKnown}
+                onClick={() => inJobsWindow(() => updateSource(source.id, { localOnly: !source.localOnly }))}
+              />
+              <span id={localLabelId} className="dg-type-callout">
+                {t('Keep on this device only')}
+              </span>
+            </div>
+            <span id={localHintId} className="dg-item__meta">
+              {t('Emails and tasks from this source are never sent to a cloud model')}
             </span>
           </div>
         ) : null}

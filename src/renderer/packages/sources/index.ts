@@ -22,7 +22,7 @@ export {
   registerSourceFixHandlers,
   syncJobLabel,
 } from './connect'
-export { dueReviews, dueSyncs, startDueJobs } from './jobs'
+export { dueCheckIntervalMs, dueReviews, dueSyncs, MIN_DUE_CHECK_MS, startDueJobs } from './jobs'
 export {
   _resetSourceKindsForTests,
   getSourceKind,

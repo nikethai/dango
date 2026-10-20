@@ -1,13 +1,12 @@
 import { JOB_FIX_LABELS } from '@shared/types/background'
 import type { KnowledgeKind } from '@shared/types/knowledge'
-import { ModelProviderEnum } from '@shared/types/provider'
 import { type ConnectedSource, KNOWLEDGE_SOURCE_KIND, type SourceItem } from '@shared/types/sources'
 import i18n from '@/i18n'
 import { type JobHandler, NeedsUserError } from '@/packages/background'
 import { proposeKnowledge } from '@/packages/knowledge'
 import { getSourceKind } from './kinds'
 import { throwIfAborted } from './kinds/common'
-import { backgroundModelChoice, hasUsableModel } from './model-check'
+import { backgroundModelChoice, hasUsableModel, isLocalModelProvider } from './model-check'
 import { _resetReviewStateForTests, forgetReviewState, reviewProgressFor } from './review-state'
 import { getSource, loadSources, SourcesUnreadableError, sourcesStore, updateSource } from './store'
 
@@ -16,7 +15,6 @@ export const REVIEW_BATCH_CHARS = 12_000
 const MAX_PROPOSALS_PER_BATCH = 8
 const MAX_PROPOSAL_CHARS = 280
 const KINDS: ReadonlySet<string> = new Set<KnowledgeKind>(['fact', 'decision', 'preference'])
-const LOCAL_PROVIDERS: ReadonlySet<string> = new Set<string>([ModelProviderEnum.Ollama, ModelProviderEnum.LMStudio])
 
 // NeedsUserError reasons (English keys, translated when the entry is written).
 const NO_MODEL_REASON = 'no model is set up'
@@ -180,7 +178,7 @@ async function checkModel(source: ConnectedSource): Promise<void> {
   const lastUsed = lastUsedModelStore.getState().chat
   if (!hasUsableModel(settings, lastUsed)) throw new NeedsUserError(NO_MODEL_REASON, chooseModel())
   const provider = backgroundModelChoice(settings, lastUsed)?.provider
-  if (source.localOnly && !LOCAL_PROVIDERS.has(provider ?? '')) {
+  if (source.localOnly && !isLocalModelProvider(provider)) {
     throw new NeedsUserError(LOCAL_ONLY_REASON, chooseModel())
   }
 }
@@ -244,16 +242,16 @@ export const reviewJobHandler: JobHandler = async ({ job, signal, progress }) =>
   return { summary: reviewSummary(items.length, proposals, source.label), addDoneEntry: proposals > 0 }
 }
 
-/** Runs the kind's sync and records `lastSyncAt`; every finished sync adds a Done entry. */
+/** Runs the kind's sync and records `lastSyncAt`; every finished sync adds a Done entry unless the kind says quiet. */
 export const syncJobHandler: JobHandler = async ({ job, signal, progress }) => {
   const source = await sourceFor(job.sourceId)
   if (!source) return removedOutcome()
   const def = getSourceKind(source.kind)
   if (!def?.sync) throw new Error(i18n.t('This source cannot be synced.'))
-  const { summary } = await def.sync(source, { signal, progress })
+  const { summary, quiet } = await def.sync(source, { signal, progress })
   throwIfAborted(signal)
   await updateSource(source.id, { lastSyncAt: Date.now() })
-  return { summary, addDoneEntry: true }
+  return { summary, addDoneEntry: quiet !== true }
 }
 
 export function _resetReviewForTests(): void {

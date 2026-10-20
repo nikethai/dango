@@ -1,0 +1,76 @@
+{
+  "id": "18f0d1b2c3d4e5fa",
+  "historyId": "1000",
+  "messages": [
+    {
+      "id": "18f0d1b2c3d4e5fa",
+      "threadId": "18f0d1b2c3d4e5fa",
+      "labelIds": [
+        "INBOX",
+        "UNREAD"
+      ],
+      "snippet": "",
+      "historyId": "1000",
+      "internalDate": "1788426000000",
+      "sizeEstimate": 1000,
+      "payload": {
+        "partId": "",
+        "mimeType": "multipart/alternative",
+        "filename": "",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Nguyễn Thị Lan <lan@khachhang.example.vn>"
+          },
+          {
+            "name": "To",
+            "value": "pm@agency.vn"
+          },
+          {
+            "name": "Subject",
+            "value": "Re: Báo giá thiết kế"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<CAvi001@mail.khachhang.example.vn>"
+          }
+        ],
+        "body": {
+          "size": 0
+        },
+        "parts": [
+          {
+            "partId": "0",
+            "mimeType": "text/plain",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=\"UTF-8\""
+              }
+            ],
+            "body": {
+              "size": 219,
+              "data": "Q2jDoG8gYW5oLAoKQ2jDum5nIHTDtGkgxJHDoyBj4bqtcCBuaOG6rXQgdGhp4bq_dCBr4bq_IHRoZW8gZ8OzcCDDvS4gQW5oIHhlbSBnacO6cCBlbSBiw6FvIGdpw6EgbeG7m2kgbmjDqS4KClbDoG8gMiB0aGcgOSwgMjAyNiBsw7pjIDA5OjAwIFBNIDxwbUBhZ2VuY3kudm4-IMSRw6Mgdmnhur90Ogo-IENo4buLIGfhu61pIGzhuqFpIGLhuqNuIHRoaeG6v3Qga-G6vyBnacO6cCBlbS4K"
+            }
+          },
+          {
+            "partId": "1",
+            "mimeType": "text/html",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=\"UTF-8\""
+              }
+            ],
+            "body": {
+              "size": 88,
+              "data": "PGRpdj5DaMOgbyBhbmgsPC9kaXY-PGRpdj5DaMO6bmcgdMO0aSDEkcOjIGPhuq1wIG5o4bqtdCB0aGnhur90IGvhur8gdGhlbyBnw7NwIMO9LjwvZGl2Pg"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

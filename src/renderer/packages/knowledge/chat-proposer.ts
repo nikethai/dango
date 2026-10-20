@@ -4,6 +4,8 @@ import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { getLogger } from '@/lib/utils'
 import { extractFactsFromTranscript, transcriptFromMessages } from '@/packages/memory/extract'
 import { isSessionMemoryAutoSaveAllowed } from '@/packages/memory/session-policy'
+import { cloudSafeMessages, holdsLocalOnlyRecall } from '@/packages/model-calls/toolsets/pm-pilot-history'
+import { isLocalModelProvider } from '@/packages/sources/model-check'
 import { ensureMemoryStoreInit, memoryStore } from '@/stores/memoryStore'
 import { proposeKnowledge } from './proposals'
 
@@ -38,13 +40,19 @@ export async function proposeFromChatTurn(o: {
   const settings = store.settings
   // Policy before the bump, so turning auto-save back on does not skip a cadence tick.
   if (!isSessionMemoryAutoSaveAllowed(settings, o.sessionSettings)) return []
+  // A Needs you chat (slice 10, CH6) opens with client mail: its facts reach knowledge only through client_answer.
+  if (o.messages.some((m) => m.pmQuestionId)) return []
+  // A local model would read a local-only recall (and the answers after it) in full, and its proposals would carry no
+  // source id, so once approved they could reach a cloud model (ADR 0003): such chats propose nothing on a local model.
+  if (isLocalModelProvider(o.sessionSettings?.provider) && o.messages.some(holdsLocalOnlyRecall)) return []
   if (inFlight.has(o.sessionId)) return []
   const every = Math.max(1, settings.retainEveryNTurns || 3)
   if (store.bumpSessionTurn(o.sessionId) % every !== 0) return []
 
   inFlight.add(o.sessionId)
   try {
-    const transcript = transcriptFromMessages(o.messages)
+    // ADR 0003: a cloud model (the session's; none set counts as cloud) never gets local-only mail or tasks.
+    const transcript = transcriptFromMessages(await cloudSafeMessages(o.messages, o.sessionSettings?.provider))
     if (!transcript.trim()) return []
     const extracted = await extractFactsFromTranscript({
       transcript,

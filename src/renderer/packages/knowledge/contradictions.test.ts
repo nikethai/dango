@@ -30,6 +30,10 @@ vi.mock('@/stores/settingsStore', () => ({
     }),
   },
 }))
+const loadLocalOnlySourceIds = vi.fn(async (): Promise<Set<string>> => new Set(['gmail-local']))
+vi.mock('@/packages/model-calls/toolsets/pm-pilot', () => ({
+  loadLocalOnlySourceIds: () => loadLocalOnlySourceIds(),
+}))
 
 const reply = (text: string) => ({ contentParts: [{ type: 'text', text }] })
 
@@ -48,6 +52,7 @@ beforeEach(() => {
   generateText.mockReset()
   getModel.mockClear()
   getSession.mockClear()
+  loadLocalOnlySourceIds.mockClear()
 })
 
 describe('selectCandidates', () => {
@@ -243,5 +248,88 @@ describe('checkAgainstLayers', () => {
       ok: false,
     })
     expect(generateText).not.toHaveBeenCalled()
+  })
+})
+
+describe('checkAgainstLayers keeps local-only knowledge off a cloud checker (ADR 0003)', () => {
+  const localMail = { kind: 'email' as const, label: 'Gmail', sourceId: 'gmail-local' }
+  async function seedLocalOnly() {
+    const plain = await makeItem({ id: 'a1', scopeId: 'acme', text: 'Launch is 6 Nov' })
+    const fromLocalMail = await makeItem({
+      id: 'g1',
+      scopeId: 'acme',
+      text: 'Launch quote is 9,100',
+      sources: [{ id: 's1', ...localMail }],
+    })
+    const fromCloudMail = await makeItem({
+      id: 'c1',
+      scopeId: 'acme',
+      text: 'Launch venue is Hall B',
+      sources: [{ id: 's1', kind: 'email', label: 'Gmail', sourceId: 'gmail-cloud' }],
+    })
+    await commitKnowledge((d) => {
+      d.items.push(plain, fromLocalMail, fromCloudMail)
+    })
+  }
+  const candidateIds = (checker: ReturnType<typeof vi.fn>) =>
+    (checker.mock.calls[0] as unknown as [{ candidates: KnowledgeItem[] }])[0].candidates.map((i) => i.id).sort()
+
+  it('a cloud checker (the default chat model) never gets an item from a local-only source', async () => {
+    await seedLocalOnly()
+    const checker = vi.fn(async () => [])
+    setContradictionCheckerForTests(checker)
+    await checkAgainstLayers({ text: 'Launch is 13 Nov', targetScopeId: 'acme' })
+    expect(candidateIds(checker)).toEqual(['a1', 'c1'])
+  })
+
+  it("a cloud session's checker never gets it either", async () => {
+    getSession.mockResolvedValue({ id: 's1', settings: { provider: 'claude', modelId: 'sonnet' } })
+    await seedLocalOnly()
+    const checker = vi.fn(async () => [])
+    setContradictionCheckerForTests(checker)
+    await checkAgainstLayers({ text: 'Launch is 13 Nov', targetScopeId: 'acme', sessionId: 's1' })
+    expect(candidateIds(checker)).toEqual(['a1', 'c1'])
+    getSession.mockReset()
+    getSession.mockResolvedValue(null)
+  })
+
+  it('a local checker (the session runs on Ollama) gets every item', async () => {
+    getSession.mockResolvedValue({ id: 's1', settings: { provider: 'ollama', modelId: 'llama3' } })
+    await seedLocalOnly()
+    const checker = vi.fn(async () => [])
+    setContradictionCheckerForTests(checker)
+    await checkAgainstLayers({ text: 'Launch is 13 Nov', targetScopeId: 'acme', sessionId: 's1' })
+    expect(candidateIds(checker)).toEqual(['a1', 'c1', 'g1'])
+    getSession.mockReset()
+    getSession.mockResolvedValue(null)
+  })
+
+  it('unreadable local-only sources hold back every item with a source id', async () => {
+    loadLocalOnlySourceIds.mockRejectedValueOnce(new Error('storage'))
+    await seedLocalOnly()
+    const checker = vi.fn(async () => [])
+    setContradictionCheckerForTests(checker)
+    await checkAgainstLayers({ text: 'Launch is 13 Nov', targetScopeId: 'acme' })
+    expect(candidateIds(checker)).toEqual(['a1'])
+  })
+
+  it('new text from a local-only source makes no cloud checker call', async () => {
+    await seedLocalOnly()
+    const checker = vi.fn(async () => [])
+    setContradictionCheckerForTests(checker)
+    expect(await checkAgainstLayers({ text: 'Launch is 13 Nov', targetScopeId: 'acme', sources: [localMail] })).toEqual(
+      { conflictsWith: [], overrides: [], ok: false }
+    )
+    expect(checker).not.toHaveBeenCalled()
+  })
+
+  it('the default checker asks the same model the provider was decided on', async () => {
+    await seedLocalOnly()
+    generateText.mockResolvedValue(reply('{"contradicts":[]}'))
+    await checkAgainstLayers({ text: 'Launch is 13 Nov', targetScopeId: 'acme' })
+    expect(getModel.mock.calls[0][0]).toMatchObject({ provider: 'acme', modelId: 'm1' })
+    const sent = JSON.stringify(generateText.mock.calls[0][1])
+    expect(sent).not.toContain('9,100')
+    expect(sent).toContain('Hall B')
   })
 })

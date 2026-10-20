@@ -22,6 +22,9 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
 | 06b | Agent Mode and Plan mode only appear on desktop, so the new Mode section in the Tools menu and the plan-mode toggle were not seen in a real window. The web build was walked headless in light and dark at 1280 and 375 px. | Desktop walk in the slice 06b PR. |
 | 06b | No real model has run a plan end to end. A scripted-model test covers it. | TASK-16 AC #3. |
 | 06c | The permission sheet in the Quick Chat window, real tool calls through MCP servers, and a live Swarm run with real agents were not exercised; the web build was walked headless (sheets triggered directly, Swarm runs seeded). | Desktop walk in the slice 06c PR. |
+| 10 | Gmail and Asana have only been tested against mocks (msw). Nobody has signed in, received mail, or seen a draft land in a real mailbox. | The manual walk in the slice 10 PR (macOS, Trust Auto and Ask). |
+| 10 | Asana's CORS was checked with curl from this container, not from the desktop webview. Whether a new comment updates a task's `modified_at` (the 90-day comment window relies on it) is unconfirmed. | Same walk: connect Asana in the desktop app, comment on an old task. |
+| 10 | The CH6 chat opened from the Quick Chat window and the draft edit sheet's real modal path were not seen in a window. | Same walk. |
 | all | No CI runs the tests. The local gates are the only check. | — |
 
 ## Trade-offs accepted on purpose
@@ -88,8 +91,42 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
 - TASK-31: multi-agent rooms have gaps in the ability, cost and plan-mode checks.
 - TASK-32: decide whether Redo on a tool-capable model turns tools back on after "Answer without tools".
 - TASK-34 to TASK-41: from slice 06c — search more source kinds, remove the unreachable Team room discuss/work code, name the requester on the permission sheet, hidden Quick Chat permission requests, per-chat live Swarm status, grant cleanup on scope delete and timeout wording, failed Swarm tasks on the card, risk-engine false positives.
+- TASK-42 to TASK-45: from slice 10 — remote local-model hosts, Gmail on Everywhere, PM pilot side effects on ordinary chats, local-only gaps outside the chat path.
 - TASK-33: phone-width polish (action row behind the composer, model name truncation, sidebar opening on load) and unused translation keys.
 
-## Per slice still to come
+## Slice 10: PM pilot sources
 
-Slice 10 adds its section here when its PR opens.
+Never sending mail, never approving a fact the user didn't give, and keeping local-only mail off cloud models are enforced in code and tested. What is left:
+
+- **Local model check (TASK-42).** "Local" means the provider is Ollama or LM Studio, so one running on another machine, or an Ollama cloud model, counts as local.
+- **Local-only gaps outside chat (TASK-45).** Follow-up suggestions after a model switch, legacy memory tools, a local model's web search query, PostToolUse hooks and settings export or history sync of chats that quote mail.
+- **Side effects on ordinary chats (TASK-44).**
+  - While any client has Gmail or Asana, Gemini's built-in Google search is off in every desktop chat.
+  - After a local-only recall, cloud turns in that chat lose all later answers, not only the recalled part.
+  - Quick Chat doesn't warn that a source needs signing in again.
+- **Gmail on Everywhere (TASK-43).** It stores and does nothing, silently. Should Add a source refuse it?
+- **No model set up.** Gmail keeps the mail but pauses that account's syncing until a model is chosen.
+- **Mail reading.**
+  - Mobile replies that quote without `>` keep the quoted text as new text.
+  - If the PM deletes the Dango label in Gmail, adding it fails (logged) until restart.
+  - Replies always go to From, never Reply-To.
+- **Drafts.**
+  - A draft that fails to write still uses one of the day's drafts.
+  - After a crash mid-write, Apply on that draft is refused for 5 minutes.
+  - Undo removes the Dango label thread-wide, unless another Dango draft is still written there.
+  - The Done line shows the model's answer even after the PM edited the draft.
+  - The "unexplained link" check misses bare domains and phone numbers.
+  - A Re-check of knowledge can merge over a waiting draft after an undo (slice 4).
+- **Facts from sent replies.**
+  - A proposed fact's ordinary words are not checked against the reply; only its dates, numbers and names are. It is still only a proposal.
+  - A crash between proposing and saving can propose the same change twice.
+  - The "the draft said…" note is missing if Review wasn't loaded in the jobs window.
+- **Asana.**
+  - After an expired sync token, tasks deleted meanwhile stay until the next change.
+  - One sign-in problem shows one Needs you per source.
+- **Questions.**
+  - A question is saved before its Review entry; if that write fails, the email has no visible entry.
+  - Overlapping option names ("Acme", "Acme Labs") need the number.
+  - "Which client is this?" answered outside the main window is applied on the next Gmail check.
+  - A failed draft after an answer is not retried.
+- **Housekeeping.** `mcp-inject.ts` has pre-existing biome errors.

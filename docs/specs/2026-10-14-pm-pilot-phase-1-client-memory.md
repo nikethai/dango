@@ -5,6 +5,8 @@ description: "PM Pilot Phase 1: Client Memory Implementation Plan"
 ---
 # PM Pilot Phase 1: Client Memory Implementation Plan
 
+Superseded by [slice 10](2026-10-17-slice-10-pm-pilot-sources.md) on 2026-10-17.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Sync a PM's Gmail and Asana into a per-client, source-linked ledger and let them ask "what's open with client X?" in any chat and get an answer with links and honest gaps.

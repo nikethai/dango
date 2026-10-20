@@ -154,6 +154,15 @@ vi.mock('./toolsets/knowledge-base', () => ({
   getToolSet: vi.fn(async () => null),
 }))
 
+const loadPmToolSetMock = vi.hoisted(() => vi.fn(async (_ctx: unknown): Promise<unknown> => null))
+const localOnlyIdsMock = vi.hoisted(() => vi.fn(async (): Promise<Set<string>> => new Set()))
+const localOnlyQuestionsMock = vi.hoisted(() => vi.fn(async (_ids: string[]): Promise<Set<string>> => new Set()))
+vi.mock('./toolsets/pm-pilot', () => ({
+  loadPmToolSet: (ctx: unknown) => loadPmToolSetMock(ctx),
+  loadLocalOnlySourceIds: () => localOnlyIdsMock(),
+  loadLocalOnlyQuestionIds: (ids: string[]) => localOnlyQuestionsMock(ids),
+}))
+
 vi.mock('./toolsets/file', () => ({
   default: {
     description: '',
@@ -597,5 +606,274 @@ describe('streamText tools-off turn', () => {
       toolDescriptions.videoUrl = ''
       settingsState.extension.videoUrl.enabled = false
     }
+  })
+})
+
+describe('streamText client_recall', () => {
+  const clientRecall = { description: 'client_recall', execute: vi.fn() }
+  beforeEach(() => {
+    loadPmToolSetMock
+      .mockReset()
+      .mockResolvedValue({ description: 'CLIENT RECALL TOOLS', tools: { client_recall: clientRecall } })
+  })
+
+  it('merges the PM toolset unwrapped, with its instructions, and decides cloud from the chat model', async () => {
+    const { streamText } = await import('./stream-text')
+    injectModelSystemPromptMock.mockClear()
+    clientRecall.execute.mockReset().mockResolvedValue({ ok: true, records: [], gaps: [] })
+    const chat = vi.fn(async (_messages, options) => {
+      await options.tools?.client_recall?.execute?.({ query: 'launch' }, { toolCallId: 't1', messages: [] })
+      return { contentParts: [], text: 'done' } as StreamTextResult
+    })
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'When is the Acme launch?')],
+      scopeId: 'acme',
+      sessionSettings: { provider: ModelProviderEnum.OpenAI },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(chat).toHaveBeenCalled()
+    expect(clientRecall.execute).toHaveBeenCalledTimes(1)
+    expect(loadPmToolSetMock).toHaveBeenLastCalledWith({
+      sessionScopeId: 'acme',
+      cloudModel: true,
+      userMessage: 'When is the Acme launch?',
+    })
+    expect(injectModelSystemPromptMock.mock.calls.map((call) => String(call[2] ?? '')).join('\n')).toContain(
+      'CLIENT RECALL TOOLS'
+    )
+
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'hello')],
+      sessionSettings: { provider: ModelProviderEnum.Ollama },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(loadPmToolSetMock).toHaveBeenLastCalledWith({
+      sessionScopeId: undefined,
+      cloudModel: false,
+      userMessage: 'hello',
+    })
+
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'hello')],
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(loadPmToolSetMock).toHaveBeenLastCalledWith({
+      sessionScopeId: undefined,
+      cloudModel: true,
+      userMessage: 'hello',
+    })
+  })
+
+  it('is not loaded for a turn with its own tools or a model without tool use', async () => {
+    const { streamText } = await import('./stream-text')
+    const chat = vi.fn((_messages, options) => {
+      expect(options.tools?.client_recall).toBeUndefined()
+      return Promise.resolve({ contentParts: [], text: 'done' } as StreamTextResult)
+    })
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'hello')],
+      tools: {},
+      onResultChangeWithCancel: vi.fn(),
+    })
+    await streamText(createTestModel(chat, false), {
+      messages: [createMessage('user', 'hello')],
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(loadPmToolSetMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps chatting when the PM toolset fails to load', async () => {
+    loadPmToolSetMock.mockRejectedValue(new Error('storage down'))
+    const { streamText } = await import('./stream-text')
+    const chat = vi.fn((_messages, options) => {
+      expect(options.tools?.client_recall).toBeUndefined()
+      return Promise.resolve({ contentParts: [], text: 'done' } as StreamTextResult)
+    })
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'hello')],
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(chat).toHaveBeenCalled()
+  })
+})
+
+describe('streamText local-only client data on a cloud turn', () => {
+  const recallAnswer = (localOnly: boolean): Message => ({
+    ...createMessage('assistant', ''),
+    contentParts: [
+      { type: 'reasoning', text: 'Jo wrote the price is 4,200 USD' },
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'c1',
+        toolName: 'client_recall',
+        args: { query: 'price' },
+        result: {
+          ok: true,
+          records: [{ text: 'The price is 4,200 USD' }],
+          gaps: [],
+          ...(localOnly ? { localOnly } : {}),
+        },
+      },
+      { type: 'text', text: 'Jo said the price is 4,200 USD.' },
+    ],
+  })
+  const history = (localOnly: boolean) => [
+    createMessage('user', 'What did Jo say about the price?'),
+    recallAnswer(localOnly),
+    createMessage('user', 'Write that up for the team'),
+  ]
+  const sent = () => JSON.stringify(convertToModelMessagesMock.mock.calls.at(-1)?.[0])
+  const chat = () => vi.fn(async () => ({ contentParts: [], text: 'done' }) as StreamTextResult)
+
+  beforeEach(() => {
+    loadPmToolSetMock.mockReset().mockResolvedValue(null)
+    localOnlyIdsMock.mockReset().mockResolvedValue(new Set(['g-local']))
+    knowledgeTurn.items = []
+  })
+
+  it('sends a placeholder for an earlier answer built from local-only records', async () => {
+    const { streamText } = await import('./stream-text')
+    await streamText(createTestModel(chat()), {
+      messages: history(true),
+      sessionSettings: { provider: ModelProviderEnum.OpenAI },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(sent()).not.toContain('4,200')
+    expect(sent()).toContain('kept on this device')
+    expect(sent()).toContain('Write that up for the team')
+  })
+
+  it('keeps that answer on a local model, and sends a shareable recall answer as is', async () => {
+    const { streamText } = await import('./stream-text')
+    await streamText(createTestModel(chat()), {
+      messages: history(true),
+      sessionSettings: { provider: ModelProviderEnum.Ollama },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(sent()).toContain('Jo said the price is 4,200 USD.')
+
+    await streamText(createTestModel(chat()), {
+      messages: history(false),
+      sessionSettings: { provider: ModelProviderEnum.OpenAI },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(sent()).toContain('Jo said the price is 4,200 USD.')
+    expect(sent()).not.toContain('kept on this device')
+  })
+
+  it('a cloud turn in a local-only Needs you chat sends no mail text', async () => {
+    const ch6 = (): Message[] => [
+      {
+        ...createMessage('assistant', "Jo asks for the quote. I found two answers:\n8,400 · Jo's 12 Sep email"),
+        pmQuestionId: 'q1',
+      },
+      createMessage('user', 'Which is newer?'),
+      createMessage('assistant', 'Jo wrote 8,400 on 12 Sep.'),
+      createMessage('user', 'Use the newer one'),
+    ]
+    const { streamText } = await import('./stream-text')
+    const run = (provider: string) =>
+      streamText(createTestModel(chat()), {
+        sessionId: 's1',
+        messages: ch6(),
+        sessionSettings: { provider },
+        onResultChangeWithCancel: vi.fn(),
+      })
+
+    localOnlyQuestionsMock.mockReset().mockResolvedValue(new Set(['q1']))
+    await run(ModelProviderEnum.OpenAI)
+    expect(localOnlyQuestionsMock).toHaveBeenCalledWith(['q1'])
+    expect(sent()).not.toContain('8,400')
+    expect(sent()).toContain('kept on this device')
+    expect(sent()).toContain('Use the newer one')
+    expect(loadPmToolSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 's1' }))
+
+    // Unknown (storage down): held back too.
+    localOnlyQuestionsMock.mockRejectedValue(new Error('storage down'))
+    await run(ModelProviderEnum.OpenAI)
+    expect(sent()).not.toContain('8,400')
+
+    // A shareable question's chat, or a local model, sends it.
+    localOnlyQuestionsMock.mockReset().mockResolvedValue(new Set())
+    await run(ModelProviderEnum.OpenAI)
+    expect(sent()).toContain('8,400')
+    localOnlyQuestionsMock.mockReset().mockResolvedValue(new Set(['q1']))
+    await run(ModelProviderEnum.Ollama)
+    expect(sent()).toContain('8,400')
+  })
+
+  it('leaves knowledge from a local-only source off a cloud turn', async () => {
+    const item = (id: string, text: string, sourceId?: string) => ({
+      id,
+      scopeId: 'acme',
+      kind: 'fact',
+      text,
+      status: 'approved',
+      updatedAt: 1,
+      sources: [{ id: `s-${id}`, kind: sourceId ? 'email' : 'user', label: 'x', ...(sourceId ? { sourceId } : {}) }],
+    })
+    knowledgeTurn.items = [
+      item('k1', 'Acme price is 4200', 'g-local'),
+      item('k2', 'Acme launch is 12 Sep', 'g-shared'),
+      item('k3', 'Acme prefers email'),
+    ]
+    const section = () => String(injectModelSystemPromptMock.mock.calls.at(-1)?.at(-1) ?? '')
+    const { streamText } = await import('./stream-text')
+    const run = (provider: string) =>
+      streamText(createTestModel(chat()), {
+        messages: [createMessage('user', 'Acme price launch email')],
+        knowledgeScopeId: 'acme',
+        sessionSettings: { provider },
+        onResultChangeWithCancel: vi.fn(),
+      })
+
+    const cloud = await run(ModelProviderEnum.OpenAI)
+    expect(section()).not.toContain('4200')
+    expect(section()).toContain('12 Sep')
+    expect(section()).toContain('prefers email')
+    expect(cloud.knowledgeIds.sort()).toEqual(['k2', 'k3'])
+
+    const local = await run(ModelProviderEnum.Ollama)
+    expect(section()).toContain('4200')
+    expect(local.knowledgeIds.sort()).toEqual(['k1', 'k2', 'k3'])
+
+    // Sources unreadable: only knowledge the user typed goes.
+    localOnlyIdsMock.mockRejectedValue(new Error('storage down'))
+    const unknown = await run(ModelProviderEnum.OpenAI)
+    expect(unknown.knowledgeIds).toEqual(['k3'])
+    knowledgeTurn.items = []
+  })
+
+  it('does not load or describe client_recall when tool access leaves it out', async () => {
+    loadPmToolSetMock.mockResolvedValue({ description: 'CLIENT RECALL TOOLS', tools: { client_recall: {} } })
+    const { streamText } = await import('./stream-text')
+    const instructions = () => injectModelSystemPromptMock.mock.calls.map((call) => String(call[2] ?? '')).join('\n')
+    injectModelSystemPromptMock.mockClear()
+    await streamText(createTestModel(chat()), {
+      messages: [createMessage('user', 'hello')],
+      toolAccess: { mode: 'denylist', tools: ['client_recall'] },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    await streamText(createTestModel(chat()), {
+      messages: [createMessage('user', 'hello')],
+      toolAccess: { mode: 'allowlist', tools: ['web_search'] },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    await streamText(createTestModel(chat()), {
+      messages: [createMessage('user', 'hello')],
+      allowedTools: ['create_task'],
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(loadPmToolSetMock).not.toHaveBeenCalled()
+    expect(instructions()).not.toContain('CLIENT RECALL TOOLS')
+
+    await streamText(createTestModel(chat()), {
+      messages: [createMessage('user', 'hello')],
+      toolAccess: { mode: 'allowlist', tools: ['client_recall'] },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(loadPmToolSetMock).toHaveBeenCalledTimes(1)
+    expect(instructions()).toContain('CLIENT RECALL TOOLS')
   })
 })

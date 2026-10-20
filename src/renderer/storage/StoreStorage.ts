@@ -48,6 +48,17 @@ export enum StorageKey {
   Sources = 'sources',
   /** Background job history (IndexedDB; shared by main and Quick Chat windows). */
   BackgroundJobs = 'background-jobs',
+  // PM pilot (slice 10). Client mail and pilot state: device-only, never in a settings export (`exportFilter.ts`).
+  /** Gmail and Asana sync cursors (`SyncCursor[]`). */
+  PmCursors = 'pm-cursors',
+  /** Reply drafts (`ClientDraft[]`); written through before any Gmail write. */
+  PmDrafts = 'pm-drafts',
+  /** Open and answered pilot questions (`ClientQuestion[]`). */
+  PmQuestions = 'pm-questions',
+  /** Message ids the pipeline has acted on, newest last, per account. */
+  PmProcessed = 'pm-processed',
+  /** Drafts written today (`{ day, count }`, local day). */
+  PmDraftCount = 'pm-draft-count',
 }
 
 export const StorageKeyGenerator = {
@@ -82,6 +93,10 @@ export const StorageKeyGenerator = {
   sourceCursor(id: string) {
     return `source-cursor:${id}`
   },
+  /** PM pilot records of one scope (one document, debounced: it can be large). Device-only, never exported. */
+  pmRecords(scopeId: string) {
+    return `pm:records:${scopeId}`
+  },
 }
 
 export default class StoreStorage extends BaseStorage {
@@ -102,6 +117,12 @@ export default class StoreStorage extends BaseStorage {
     // Scope lists hold a client scope's privacy switch (readsEverywhere); a debounced write can lose it on quit.
     StorageKey.MyProjects,
     StorageKey.MyFolders,
+    // A lost cursor, processed id or draft after a quit means re-judging mail and possibly a second Gmail draft.
+    StorageKey.PmCursors,
+    StorageKey.PmDrafts,
+    StorageKey.PmQuestions,
+    StorageKey.PmProcessed,
+    StorageKey.PmDraftCount,
   ])
 
   public async getItem<T>(key: string, initialValue: T): Promise<T> {

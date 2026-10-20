@@ -71,6 +71,7 @@ export async function fileProposal(
     text: input.text,
     targetScopeId: scopeId,
     ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+    sources: input.sources,
   })
   const conflictsWith = unique([...(input.conflictsWith ?? []), ...check.conflictsWith])
   const overrides = unique([...(input.overrides ?? []), ...check.overrides])

@@ -687,6 +687,38 @@ describe('fix handlers', () => {
     expect(await chooseModel(job())).toBe(true)
     expect(router.navigate).not.toHaveBeenCalled()
   })
+
+  it('choose-model for a local-only source accepts only a local model and opens default models otherwise', async () => {
+    registerSourceFixHandlers()
+    const chooseModel = handlerFor('choose-model')
+    const source = await addSource({
+      kind: 'gmail',
+      scopeId: 'acme',
+      label: 'jo@agency.com',
+      backgroundReview: false,
+      localOnly: true,
+      config: { accountId: 'acc1' },
+    })
+    h.settings = {
+      defaultChatModel: { provider: 'openai', model: 'gpt-4o' },
+      providers: { openai: { apiKey: 'sk-test' } },
+    }
+    // A usable cloud model is not enough for a source that stays on this device; Dango never switches models.
+    expect(await chooseModel(job({ sourceId: source.id }))).toBe(false)
+    expect(router.navigate).toHaveBeenCalledWith({ to: '/settings/default-models' })
+    expect(h.settings.defaultChatModel).toEqual({ provider: 'openai', model: 'gpt-4o' })
+    // The same cloud model is fine for a source that is not local-only.
+    vi.mocked(router.navigate).mockClear()
+    expect(await chooseModel(job())).toBe(true)
+    expect(router.navigate).not.toHaveBeenCalled()
+
+    h.settings = {
+      defaultChatModel: { provider: 'ollama', model: 'llama3' },
+      providers: { ollama: { models: [{ modelId: 'llama3' }] } },
+    }
+    expect(await chooseModel(job({ sourceId: source.id }))).toBe(true)
+    expect(router.navigate).not.toHaveBeenCalled()
+  })
 })
 
 it('one Background review line, shared by the sheet and the Sources rows', () => {

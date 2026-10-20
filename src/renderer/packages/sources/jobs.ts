@@ -3,7 +3,19 @@ import type { ConnectedSource } from '@shared/types/sources'
 import i18n from '@/i18n'
 import { startJob } from '@/packages/background'
 import { syncJobLabel } from './connect'
-import { getSourceKind } from './kinds'
+import { getSourceKind, listSourceKinds } from './kinds'
+
+/** The due check never runs more often than this, whatever a kind's `pollMs`. */
+export const MIN_DUE_CHECK_MS = 30_000
+
+/**
+ * How often to look for due work: `defaultMs`, or half the shortest registered `pollMs` when that is sooner (a sync is
+ * then started at most half an interval late), never under `MIN_DUE_CHECK_MS`. Kinds without `pollMs` change nothing.
+ */
+export function dueCheckIntervalMs(defaultMs: number): number {
+  const polls = listSourceKinds().flatMap((def) => (def.pollMs && def.pollMs > 0 ? [def.pollMs / 2] : []))
+  return Math.max(MIN_DUE_CHECK_MS, Math.min(defaultMs, ...polls))
+}
 
 /** The newest job of this source and kind. */
 function latestJob(jobs: BackgroundJob[], sourceId: string, kind: BackgroundJob['kind']): BackgroundJob | undefined {

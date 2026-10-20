@@ -28,6 +28,7 @@ import { navigateToSettings } from '@/modals/Settings'
 import { initKnowledge } from '@/packages/knowledge'
 import { useMenuBarSync } from '@/packages/menu-bar'
 import { getOS } from '@/packages/navigator'
+import { initPmPilotLazily } from '@/packages/pm-pilot/lazy'
 import { UndoToast, useUndoHotkey } from '@/packages/undo'
 import PictureDialog from '@/pages/PictureDialog'
 import RemoteDialogWindow from '@/pages/RemoteDialogWindow'
@@ -60,6 +61,10 @@ function Root() {
   }, [])
   // Review's default 'question' opener, app-wide (slice 10 may replace it).
   useEffect(() => registerDefaultQuestionOpener(), [])
+  // Slice 10's draft applier and opener, and its 'question' opener (the Needs you chat, CH6), in every desktop window
+  // that shows Review. Loaded lazily, so it registers after the default question opener above, which it replaces and
+  // falls back to for questions it does not own (preflight R10); web and mobile never load the package.
+  useEffect(() => initPmPilotLazily(platform.type === 'desktop'), [])
   // Change rows from a finished plan open the chat they came from (slice 6a).
   useEffect(() => registerChangeOpener(), [])
   // Needs you rows for a rate-limited chat open it and retry the answer (06b, ER3).

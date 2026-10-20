@@ -113,6 +113,7 @@ export async function approve(id: string, opts: ApproveOptions): Promise<Approve
       text,
       targetScopeId: scopeId,
       ...(p.sessionId !== undefined ? { sessionId: p.sessionId } : {}),
+      sources: p.sources,
     })
     // An edit replaces what the old text overrode; a re-check of the same text adds to it.
     overrides = unique([...(edited ? [] : overrides), ...check.overrides])

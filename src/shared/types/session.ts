@@ -407,6 +407,17 @@ export const MessageSchema = z.object({
   artifacts: z.array(MessageArtifactSchema).optional().catch(undefined),
   /** Memories explicitly attached to this user turn from the composer. */
   memoryAttachments: z.array(MemoryAttachmentSchema).optional().catch(undefined),
+  /**
+   * Slice 10: the PM pilot question whose Needs you chat (CH6) this assistant message opens. It quotes client mail, so a
+   * cloud chat turn sends a placeholder in its place while that question's source stays on this device (ADR 0003).
+   */
+  pmQuestionId: z.string().optional().catch(undefined),
+  /**
+   * Slice 10: a summary (compaction, New chat with summary) built from messages that used a local-only `client_recall`
+   * or `client_answer` result. A cloud chat turn sends a placeholder in its place and hides every later assistant
+   * message, as for the recall itself (ADR 0003).
+   */
+  pmLocalOnly: z.boolean().optional().catch(undefined),
   /** Quoted message (full or selection) attached to this user turn. */
   quoteAttachment: MessageQuoteAttachmentSchema.optional().catch(undefined),
   /** Explicit skill package ids selected via $ tags / chips on this user message */

@@ -1,0 +1,48 @@
+{
+  "id": "18f0b1b2c3d4e5f7",
+  "historyId": "1000",
+  "messages": [
+    {
+      "id": "18f0b1b2c3d4e5f7",
+      "threadId": "18f0b1b2c3d4e5f7",
+      "labelIds": [
+        "INBOX"
+      ],
+      "snippet": "",
+      "historyId": "1000",
+      "internalDate": "1788652800000",
+      "sizeEstimate": 1000,
+      "payload": {
+        "partId": "",
+        "mimeType": "text/html",
+        "filename": "",
+        "headers": [
+          {
+            "name": "From",
+            "value": "\"Tran, Jo\" <jo@acme.example>"
+          },
+          {
+            "name": "To",
+            "value": "pm@agency.vn"
+          },
+          {
+            "name": "Subject",
+            "value": "Launch date"
+          },
+          {
+            "name": "Message-Id",
+            "value": "<CAhtml001@mail.acme.example>"
+          },
+          {
+            "name": "Content-Type",
+            "value": "text/html; charset=\"UTF-8\""
+          }
+        ],
+        "body": {
+          "size": 278,
+          "data": "PGh0bWw-PGhlYWQ-PHN0eWxlPnB7Y29sb3I6cmVkfTwvc3R5bGU-PC9oZWFkPjxib2R5PjxwPkhpIHRlYW0sPC9wPjxwPkNhbiB5b3UgY29uZmlybSB0aGUgbGF1bmNoIGRhdGU_PC9wPjxwPlRoYW5rcyAmYW1wOyByZWdhcmRzLDxicj5KbzwvcD48ZGl2IGNsYXNzPSJnbWFpbF9xdW90ZSI-PGRpdj5PbiBGcmksIDI5IEF1ZyAyMDI2IFBNIHdyb3RlOjwvZGl2PjxibG9ja3F1b3RlIGNsYXNzPSJnbWFpbF9xdW90ZSI-T2xkIHRleHQ8L2Jsb2NrcXVvdGU-PC9kaXY-PC9ib2R5PjwvaHRtbD4"
+        }
+      }
+    }
+  ]
+}
