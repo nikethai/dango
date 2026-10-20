@@ -1,15 +1,19 @@
 import { type Evidence, mayReachCloud } from '@shared/pm-pilot'
 import type { Message } from '@shared/types'
 import type { KnowledgeItem } from '@shared/types/knowledge'
+import { t } from 'i18next'
+import { isLocalModelProvider } from '@/packages/sources/model-check'
 
 /*
- * What a cloud chat turn may carry from the PM pilot (ADR 0003: a local-only source's text never reaches a cloud
- * model). Pure; stream-text applies both only when the turn's model is cloud.
+ * What a cloud model may be sent from the PM pilot (ADR 0003: a local-only source's text never reaches a cloud
+ * model). `cloudSafeMessages` is the one entry for every path that sends a chat's messages to a model: chat turns
+ * (stream-text), the chat knowledge proposer, compaction and "New chat with summary" (the summary generator).
  * - An earlier answer that used a `client_recall` or `client_answer` result marked `localOnly` (records a local model
  *   was given) is sent as a fixed placeholder: its text, reasoning and the tool result all stay on the device.
  * - A Needs you chat (CH6) opens with a message that quotes client mail (`pmQuestionId`). While its question is
  *   local-only, or when that is not known, the opening and every later assistant message of the chat are sent as the
- *   placeholder; the user's own messages go.
+ *   placeholder; the user's own messages go. Any other message carrying that question (a summary of the chat) is
+ *   sent as the placeholder too.
  * - Approved knowledge follows the pipeline's rule (`mayReachCloud`): an item is dropped when any of its live sources
  *   is local-only; knowledge the user typed (no source id) goes.
  */
@@ -54,7 +58,9 @@ export function hideLocalOnlyRecalls(
   localOnlyQuestions: ReadonlySet<string> | null = null
 ): Message[] {
   const from = firstLocalOnlyOpening(messages, localOnlyQuestions)
-  const hidden = (m: Message, i: number) => usedLocalOnlyRecall(m) || (from >= 0 && i >= from && m.role === 'assistant')
+  const localQuestion = (id: string | undefined) => !!id && (localOnlyQuestions === null || localOnlyQuestions.has(id))
+  const hidden = (m: Message, i: number) =>
+    usedLocalOnlyRecall(m) || localQuestion(m.pmQuestionId) || (from >= 0 && i >= from && m.role === 'assistant')
   if (!messages.some(hidden)) return messages
   const text = placeholder || LOCAL_ONLY_ANSWER_PLACEHOLDER
   return messages.map((m, i) => {
@@ -70,6 +76,27 @@ export function hideLocalOnlyRecalls(
     } = m
     return { ...rest, contentParts: [{ type: 'text' as const, text }] }
   })
+}
+
+/**
+ * The messages as `provider`'s model may receive them: unchanged for a local model (Ollama, LM Studio); for any other
+ * provider, or none given, `hideLocalOnlyRecalls` with the CH6 questions that are local-only now (all of them when
+ * that cannot be read).
+ */
+export async function cloudSafeMessages(messages: Message[], provider: string | undefined | null): Promise<Message[]> {
+  if (isLocalModelProvider(provider)) return messages
+  const questionIds = ch6QuestionIds(messages)
+  let localOnly: Set<string> | null = new Set()
+  if (questionIds.length > 0) {
+    try {
+      const { loadLocalOnlyQuestionIds } = await import('./pm-pilot')
+      localOnly = await loadLocalOnlyQuestionIds(questionIds)
+    } catch (error) {
+      console.warn('[pm-pilot] Local-only questions could not be read; their chats are held back', error)
+      localOnly = null
+    }
+  }
+  return hideLocalOnlyRecalls(messages, t(LOCAL_ONLY_ANSWER_PLACEHOLDER), localOnly)
 }
 
 /**

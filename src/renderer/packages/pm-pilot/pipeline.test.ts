@@ -99,6 +99,15 @@ vi.mock('./store', () => {
       listPendingBackfills: vi.fn(async (accountId: string) =>
         h.questions.filter((q) => q.accountId === accountId && q.backfill !== undefined)
       ),
+      bumpBackfillAttempts: vi.fn((id: string) => {
+        let tries = 0
+        h.questions = h.questions.map((q) => {
+          if (q.id !== id || !q.backfill) return q
+          tries = (q.backfill.attempts ?? 0) + 1
+          return { ...q, backfill: { ...q.backfill, attempts: tries } }
+        })
+        return Promise.resolve(tries)
+      }),
       clearBackfill: vi.fn((id: string) => {
         h.calls.push('clear-backfill')
         h.questions = h.questions.map((q) => {
@@ -840,5 +849,42 @@ describe('a "Which client is this?" answer handed to the jobs window', () => {
     vi.mocked(getFreshToken).mockResolvedValueOnce({ ok: false } as never)
     await expect(runGmailPipeline(source(), ctx())).rejects.toBeInstanceOf(NeedsUserError)
     expect(h.questions[0].backfill).toEqual({ sourceId: 'g1', matcher: '@newco.com' })
+  })
+})
+
+describe('a backfill that keeps failing (fix round M2)', () => {
+  const pending = (): ClientQuestion => ({
+    id: 'q2',
+    kind: 'which-client',
+    scopeId: null,
+    accountId: 'acc1',
+    threadId: 't9',
+    subject: 'Hello',
+    from: 'ann@newco.com',
+    summary: '',
+    candidates: [],
+    domain: 'newco.com',
+    state: 'answered',
+    createdAt: 1,
+    backfill: { sourceId: 'g1', matcher: '@newco.com' },
+  })
+
+  it("does not block the account's run, and is handed to the user after three tries", async () => {
+    h.questions = [pending()]
+    for (let run = 1; run <= 3; run++) {
+      vi.mocked(syncGmailMailbox).mockRejectedValueOnce(new Error('Gmail 500')) // the backfill
+      syncReturns([mail({ externalId: `new-${run}` })]) // the poll still runs and acts
+      await runGmailPipeline(source(), ctx())
+      expect(vi.mocked(actOnThread).mock.calls.at(-1)?.[0].inbound.externalId).toBe(`new-${run}`)
+      if (run < 3) expect(h.questions[0].backfill?.attempts).toBe(run)
+    }
+    expect(h.questions[0].backfill).toBeUndefined()
+    expect(addReviewEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'needs-you',
+        ref: { type: 'question', id: 'q2' },
+        text: "Couldn't read earlier emails from this sender. New ones are filed.",
+      })
+    )
   })
 })

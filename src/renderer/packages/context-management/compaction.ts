@@ -3,6 +3,7 @@ import type { CompactionPoint, Message, Session, SessionSettings, Settings } fro
 import { createMessage } from '@shared/types'
 import { shouldPreserveReasoningInContext } from '@shared/utils/reasoning-replay'
 import type { ContextOverflowAction } from '@/modals/ContextOverflow'
+import { ch6QuestionIds } from '@/packages/model-calls/toolsets/pm-pilot-history'
 import { getTokenizerType } from '@/packages/token-estimation'
 import { setCompactionUIState } from '@/stores/atoms/compactionAtoms'
 import * as chatStore from '@/stores/chatStore'
@@ -107,7 +108,12 @@ export async function needsCompaction(sessionId: string): Promise<boolean> {
  * Returns isOverflow=false if compaction is disabled or model is unknown.
  */
 async function checkSessionOverflow(sessionId: string): Promise<OverflowCheckResult> {
-  const noOverflow: OverflowCheckResult = { isOverflow: false, contextWindow: null, thresholdTokens: null, currentTokens: 0 }
+  const noOverflow: OverflowCheckResult = {
+    isOverflow: false,
+    contextWindow: null,
+    thresholdTokens: null,
+    currentTokens: 0,
+  }
 
   // ===== Keep existing early returns (do not modify) =====
   const session = await chatStore.getSession(sessionId)
@@ -284,6 +290,10 @@ async function runCompactionWithStreaming(sessionId: string): Promise<Compaction
 
     const summaryMessage = createMessage('assistant', summaryResult.summary)
     summaryMessage.isSummary = true
+    // A summary of a Needs you chat (slice 10) may quote its client mail: it keeps the question, so a cloud turn holds
+    // it back while that mail stays on this device, even once the opening is compacted away (`cloudSafeMessages`).
+    const [questionId] = ch6QuestionIds(currentContext)
+    if (questionId) summaryMessage.pmQuestionId = questionId
 
     const lastNonSummaryMessage = [...session.messages].reverse().find((m) => !m.isSummary)
     if (!lastNonSummaryMessage) {

@@ -6,6 +6,7 @@ import { createModelDependencies } from '@/adapters'
 import { languageNameMap } from '@/i18n/locales'
 import { generateText } from '@/packages/model-calls'
 import { convertToModelMessages } from '@/packages/model-calls/message-utils'
+import { cloudSafeMessages } from '@/packages/model-calls/toolsets/pm-pilot-history'
 import * as promptFormat from '@/packages/prompts'
 import platform from '@/platform'
 import * as settingActions from '@/stores/settingActions'
@@ -41,7 +42,9 @@ export async function generateSummary(options: SummaryGeneratorOptions): Promise
     const configs = await platform.getConfig()
     const model = getModel(settings, globalSettings, configs, dependencies)
 
-    const promptMessages = promptFormat.summarizeConversation(messages, languageName)
+    // ADR 0003: the summarising model (which may differ from the chat's) gets no local-only mail or tasks.
+    const safeMessages = await cloudSafeMessages(messages, settings.provider)
+    const promptMessages = promptFormat.summarizeConversation(safeMessages, languageName)
     const result = await generateText(model, promptMessages)
 
     const summary =
@@ -142,7 +145,9 @@ export async function generateSummaryWithStream(options: StreamingSummaryOptions
     const configs = await platform.getConfig()
     const model = getModel(settings, globalSettings, configs, dependencies)
 
-    const promptMessages = promptFormat.summarizeConversation(messages, languageName)
+    // ADR 0003: the summarising model (which may differ from the chat's) gets no local-only mail or tasks.
+    const safeMessages = await cloudSafeMessages(messages, settings.provider)
+    const promptMessages = promptFormat.summarizeConversation(safeMessages, languageName)
     const coreMessages = await convertToModelMessages(promptMessages, { modelSupportVision: model.isSupportVision() })
 
     const result = await model.chat(coreMessages, {

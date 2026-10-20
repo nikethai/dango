@@ -693,11 +693,27 @@ export function backfillMatcher(source: ConnectedSource, matcher: string, ctx: B
   })
 }
 
+/** A pending backfill that failed this many runs is dropped and handed to the user. */
+export const MAX_BACKFILL_ATTEMPTS = 3
+
+/** Tells the user the earlier mail of an answered sender could not be read (new mail is filed all the same). */
+async function backfillGivenUp(ctx: RunContext, q: ClientQuestion, target: ConnectedSource | undefined): Promise<void> {
+  await addReviewEntry({
+    ...needsYouEntry(q, '', format),
+    id: `${q.id}:backfill`,
+    scopeId: target?.scopeId ?? EVERYWHERE_SCOPE_ID,
+    text: t("Couldn't read earlier emails from this sender. New ones are filed."),
+    actionLabel: t('Open'),
+  })
+  if (target) statsFor(ctx, target.id).notable = true
+}
+
 /**
  * "Which client is this?" answers waiting for their backfill (`client_answer` stores them on the question, in any
  * window), run at the start of the account's run, in the jobs window and its mailbox slot, so the answered thread is
  * stored under its client before the poll acts on new mail. Sources are read again first: the answer may have changed
- * one in another window. A backfill that fails stays pending (the run fails and is retried).
+ * one in another window. A backfill that fails stays pending for the next run without holding this one up; after
+ * `MAX_BACKFILL_ATTEMPTS` failures it is dropped and the user is told. A sign-in problem or a stop ends the run.
  */
 async function drainBackfills(ctx: RunContext): Promise<void> {
   const answered = await pmStore.listPendingBackfills(ctx.accountId)
@@ -707,10 +723,19 @@ async function drainBackfills(ctx: RunContext): Promise<void> {
     const backfill = q.backfill
     if (!backfill) continue
     const target = listSources({ kind: 'gmail' }).find((s) => s.id === backfill.sourceId)
-    if (target && gmailConfig(target).accountId === ctx.accountId) {
-      await readMatcher(target, backfill.matcher, { signal: ctx.signal, progress: ctx.progress })
+    try {
+      if (target && gmailConfig(target).accountId === ctx.accountId) {
+        await readMatcher(target, backfill.matcher, { signal: ctx.signal, progress: ctx.progress })
+      }
+      await pmStore.clearBackfill(q.id)
+    } catch (e) {
+      if (isAbort(e, ctx.signal) || e instanceof NeedsUserError || e instanceof GmailAuthError) throw e
+      warn('Earlier emails of an answered sender could not be read', e)
+      if ((await pmStore.bumpBackfillAttempts(q.id)) >= MAX_BACKFILL_ATTEMPTS) {
+        await pmStore.clearBackfill(q.id)
+        await backfillGivenUp(ctx, q, target)
+      }
     }
-    await pmStore.clearBackfill(q.id)
   }
 }
 

@@ -109,4 +109,12 @@ describe('startNewChatWithSummary', () => {
     expect(switchCurrentSession).not.toHaveBeenCalled()
     expect(toast).toHaveBeenCalledWith("Couldn't summarise this chat. Try again.")
   })
+
+  it("a Needs you chat's summary keeps its question, so a cloud turn holds it back while the mail is local-only", async () => {
+    const source = store.list[0]
+    source.messages = [{ ...msg('o1', 'assistant', 'Jo quoted 8,400'), pmQuestionId: 'q1' }, ...source.messages]
+    await startNewChatWithSummary('s1')
+    const created = store.list.find((s) => s.id === 'new-1') as Session
+    expect(created.messages[1].pmQuestionId).toBe('q1')
+  })
 })

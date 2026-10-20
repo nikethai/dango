@@ -85,14 +85,8 @@ import generateImageToolSet, {
   formatImageCatalogInstructions,
 } from './toolsets/generate-image'
 import { getToolSet } from './toolsets/knowledge-base'
-import { loadLocalOnlyQuestionIds, loadLocalOnlySourceIds, loadPmToolSet } from './toolsets/pm-pilot'
-import {
-  CLIENT_RECALL_TOOL,
-  ch6QuestionIds,
-  hideLocalOnlyRecalls,
-  knowledgeMayReachCloud,
-  LOCAL_ONLY_ANSWER_PLACEHOLDER,
-} from './toolsets/pm-pilot-history'
+import { loadLocalOnlySourceIds, loadPmToolSet } from './toolsets/pm-pilot'
+import { CLIENT_RECALL_TOOL, cloudSafeMessages, knowledgeMayReachCloud } from './toolsets/pm-pilot-history'
 import taskTrackingToolSet from './toolsets/task-tracking'
 import videoToolSet, { initVideoToolBudget, resetVideoToolBudget } from './toolsets/video'
 import videoUrlToolSet from './toolsets/video-url'
@@ -375,21 +369,8 @@ export async function streamText(
   // ADR 0003: whether this turn's model is cloud (the chat's own provider). A cloud turn never carries an earlier
   // answer built from local-only mail or tasks.
   const cloudModel = !isLocalModelProvider(sessionSettings?.provider)
-  if (cloudModel) {
-    // A Needs you chat (CH6) quotes client mail: while its question is local-only, or when that cannot be read, its
-    // assistant messages stay on this device too.
-    const questionIds = ch6QuestionIds(params.messages)
-    let localOnlyQuestions: Set<string> | null = new Set()
-    if (questionIds.length > 0) {
-      try {
-        localOnlyQuestions = await loadLocalOnlyQuestionIds(questionIds)
-      } catch (err) {
-        knowledgeLog.error('Failed to read local-only questions:', err)
-        localOnlyQuestions = null
-      }
-    }
-    params.messages = hideLocalOnlyRecalls(params.messages, t(LOCAL_ONLY_ANSWER_PLACEHOLDER), localOnlyQuestions)
-  }
+  // Local-only mail and tasks (recall answers, Needs you chats) are replaced by a placeholder for a cloud model.
+  params.messages = await cloudSafeMessages(params.messages, sessionSettings?.provider)
   const hasDocumentFileOrLink = params.messages.some(
     (m) => m.links?.length || m.files?.some((f) => f.mediaKind !== 'video')
   )

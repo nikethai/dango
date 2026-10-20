@@ -482,6 +482,15 @@ async function listPendingBackfills(accountId: string): Promise<ClientQuestion[]
   return (await readQuestions()).filter((q) => q.accountId === accountId && q.backfill !== undefined)
 }
 
+/** Counts one failed run of a question's pending backfill; returns the failures so far (0 when none is pending). */
+function bumpBackfillAttempts(id: string): Promise<number> {
+  return mutateQuestion(id, (q) => {
+    if (!q?.backfill) return { result: 0 }
+    const attempts = (q.backfill.attempts ?? 0) + 1
+    return { next: { ...q, backfill: { ...q.backfill, attempts } }, result: attempts }
+  })
+}
+
 function clearBackfill(id: string): Promise<void> {
   return mutateQuestion(id, (q) => {
     if (!q?.backfill) return { result: undefined }
@@ -567,6 +576,7 @@ export const pmStore = {
   setQuestionSession,
   findQuestionBySession,
   listPendingBackfills,
+  bumpBackfillAttempts,
   clearBackfill,
   countDraftsToday,
   bumpDraftsToday,

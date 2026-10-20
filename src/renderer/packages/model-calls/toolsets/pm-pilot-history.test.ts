@@ -1,6 +1,15 @@
 import { createMessage, type Message } from '@shared/types'
-import { describe, expect, it } from 'vitest'
-import { ch6QuestionIds, hideLocalOnlyRecalls, LOCAL_ONLY_ANSWER_PLACEHOLDER } from './pm-pilot-history'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const localOnlyQuestions = vi.hoisted(() => vi.fn(async (_ids: string[]): Promise<Set<string>> => new Set()))
+vi.mock('./pm-pilot', () => ({ loadLocalOnlyQuestionIds: (ids: string[]) => localOnlyQuestions(ids) }))
+
+import {
+  ch6QuestionIds,
+  cloudSafeMessages,
+  hideLocalOnlyRecalls,
+  LOCAL_ONLY_ANSWER_PLACEHOLDER,
+} from './pm-pilot-history'
 
 const opening = (questionId: string): Message => ({
   ...createMessage('assistant', 'Client asks for the quote. I found two answers: 8,400 · 9,100'),
@@ -55,5 +64,56 @@ describe('hideLocalOnlyRecalls in a Needs you chat', () => {
     }
     const out = hideLocalOnlyRecalls([createMessage('user', 'x'), answered], 'P', new Set())
     expect(out.map(text)).toEqual(['x', 'P'])
+  })
+})
+
+describe('cloudSafeMessages', () => {
+  const recall: Message = {
+    ...createMessage('assistant', ''),
+    contentParts: [
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'c1',
+        toolName: 'client_recall',
+        args: { query: 'price' },
+        result: { ok: true, records: [{ text: 'The price is 4,200' }], localOnly: true },
+      },
+      { type: 'text', text: 'Jo said 4,200.' },
+    ],
+  }
+  const chat = (): Message[] => [opening('q1'), createMessage('user', 'Which is newer?'), recall]
+
+  beforeEach(() => {
+    localOnlyQuestions.mockReset().mockResolvedValue(new Set(['q1']))
+  })
+
+  it('hides local-only CH6 text and recall answers for a cloud model', async () => {
+    const out = JSON.stringify(await cloudSafeMessages(chat(), 'openai'))
+    expect(out).not.toContain('8,400')
+    expect(out).not.toContain('4,200')
+    expect(out).toContain('Which is newer?')
+    expect(localOnlyQuestions).toHaveBeenCalledWith(['q1'])
+  })
+
+  it('treats an unknown provider as cloud, and an unreadable question as local-only', async () => {
+    localOnlyQuestions.mockRejectedValue(new Error('storage down'))
+    expect(JSON.stringify(await cloudSafeMessages(chat(), undefined))).not.toContain('8,400')
+  })
+
+  it('leaves everything for a local model', async () => {
+    const messages = chat()
+    expect(await cloudSafeMessages(messages, 'ollama')).toBe(messages)
+    expect(localOnlyQuestions).not.toHaveBeenCalled()
+  })
+
+  it('hides a message that carries a local-only question (a summary of that chat), whatever its role', async () => {
+    const summary: Message = {
+      ...createMessage('user', 'Previous conversation summary: Jo quoted 8,400'),
+      pmQuestionId: 'q1',
+    }
+    const out = await cloudSafeMessages([summary, createMessage('user', 'go on')], 'openai')
+    expect(JSON.stringify(out)).not.toContain('8,400')
+    expect(text(out[1])).toBe('go on')
   })
 })

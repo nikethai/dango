@@ -91,9 +91,18 @@ const ANSWERABLE: ReadonlySet<ClientQuestion['kind']> = new Set(['which-answer',
 
 const MARKDOWN_CHARS = /[\\`*_[\]<>#$~!|]/g
 
-/** External text as literal Markdown: no link, image, HTML, heading, emphasis or math can come out of it. */
+const ZWSP = '\u200b'
+
+/**
+ * External text as literal Markdown: no link, image, HTML, heading, emphasis or math can come out of it, and a zero
+ * width space breaks what GFM would turn into a link by itself (`https://`, `www.`, an email address).
+ */
 export function literalMarkdown(text: string): string {
-  return text.replace(MARKDOWN_CHARS, (c) => `\\${c}`)
+  return text
+    .replace(MARKDOWN_CHARS, (c) => `\\${c}`)
+    .replace(/:\/\//g, `:/${ZWSP}/`)
+    .replace(/\b(www)\./gi, `$1${ZWSP}.`)
+    .replace(/@/g, `${ZWSP}@`)
 }
 
 function literalQuestion(q: ClientQuestion): ClientQuestion {
@@ -115,6 +124,11 @@ const fill = (key: string, values: Record<string, string> = {}) => format(key, i
 
 function numbered(candidates: ClientQuestionCandidate[]): string[] {
   return candidates.map((c, i) => fill('{{n}}. {{name}}', { n: String(i + 1), name: c.value }))
+}
+
+/** `{n}. {line}` for each candidate line, so the user can answer with the option's number. */
+function numberLines(lines: string[]): string[] {
+  return lines.map((line, i) => fill('{{n}}. {{name}}', { n: String(i + 1), name: line }))
 }
 
 function candidateLine(c: ClientQuestionCandidate): string {
@@ -145,13 +159,18 @@ export function openingText(question: ClientQuestion, scopeName: string): string
         fill("Pick one and I'll read its tasks for {{scope}}.", { scope }),
       ].join('\n')
     default:
-      if (q.candidates.length >= 2) return ch6Opening(q, scope, format)
+      if (q.candidates.length >= 2) {
+        // The Task 8 copy, its candidate lines numbered.
+        const lines = ch6Opening(q, scope, format).split('\n')
+        const n = q.candidates.length
+        return [lines[0], ...numberLines(lines.slice(1, 1 + n)), ...lines.slice(1 + n)].join('\n')
+      }
       // No answer found (or one), or a message Dango could not check.
       return [
         q.summary
           ? fill("{{summary}} I couldn't find the answer.", { summary: q.summary })
           : fill('{{from}} · "{{subject}}"', { from: q.from, subject: q.subject }),
-        ...q.candidates.map(candidateLine),
+        ...numberLines(q.candidates.map(candidateLine)),
         fill("Type the answer. I'll save it for {{scope}} and draft the reply.", { scope }),
       ].join('\n')
   }
@@ -159,7 +178,9 @@ export function openingText(question: ClientQuestion, scopeName: string): string
 
 function chatName(q: ClientQuestion, scope: Scope | undefined): string {
   if (q.subject.trim()) return q.subject
-  return fill('Which Asana project is {{scope}}?', { scope: scope?.name ?? '' })
+  if (q.kind === 'which-project') return fill('Which Asana project is {{scope}}?', { scope: scope?.name ?? '' })
+  if (q.from.trim()) return fill('Email from {{from}}', { from: q.from })
+  return format('Client question', {})
 }
 
 /** Chats being opened per question: a second open at the same moment gets the same chat. */
@@ -353,9 +374,41 @@ export function containsSpan(haystack: string, needle: string): boolean {
   return false
 }
 
-/** The option number standing alone in `text` ("2", "option 2.", not the 1 of "9,100"). */
-function hasNumber(text: string, n: number): boolean {
-  return new RegExp(`(?<![\\p{N}.,])${n}(?![\\p{N}]|[.,]\\p{N})`, 'u').test(text)
+const ORDINALS: Record<string, number> = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6 }
+const LEAD = String.raw`(?:(?:it'?s|pick|take|use|choose)\s+)?(?:the\s+)?`
+const TAIL = String.raw`(?:\s+(?:one|option))?`
+const NUMBER_ONLY = new RegExp(String.raw`^${LEAD}(?:(?:option|number|no\.?|#)\s*)?(\d{1,2})(?:st|nd|rd|th)?${TAIL}$`)
+const ORDINAL_ONLY = new RegExp(`^${LEAD}(first|second|third|fourth|fifth|sixth)${TAIL}$`)
+
+/**
+ * The option number when `text` is (nearly) nothing but a reference to it: "2", "#2", "option 2.", "no. 2",
+ * "the 2nd one", "the second one". A number inside a longer message ("wrote on 2 Sep") is not one.
+ */
+export function optionReference(text: string): number | undefined {
+  const s = flat(text)
+    .toLowerCase()
+    .replace(/[’‘]/g, "'")
+    .replace(/[.!)]+$/, '')
+    .trim()
+  const digits = NUMBER_ONLY.exec(s)
+  if (digits) return Number(digits[1])
+  const word = ORDINAL_ONLY.exec(s)
+  return word ? ORDINALS[word[1]] : undefined
+}
+
+/**
+ * The one option the user's message identifies: its number when the message is only that reference, else the one
+ * option `mentions` finds in it. None, or two named at once, identifies nothing.
+ */
+function identifiedOption(
+  q: ClientQuestion,
+  userText: string,
+  mentions: (c: ClientQuestionCandidate, i: number) => boolean
+): number | undefined {
+  const ref = optionReference(userText)
+  if (ref !== undefined) return ref >= 1 && ref <= q.candidates.length ? ref : undefined
+  const hits = q.candidates.flatMap((c, i) => (mentions(c, i) ? [i + 1] : []))
+  return hits.length === 1 ? hits[0] : undefined
 }
 
 type Chosen = { candidate: ClientQuestionCandidate; number: number }
@@ -372,12 +425,32 @@ function resolveChoice(q: ClientQuestion, choice: string | undefined): Chosen | 
   return at(q.candidates.findIndex((c) => flat(c.value).toLowerCase() === flat(wanted).toLowerCase()))
 }
 
-/** The user picked this option: its number, its value, or every date, number and name of its value. */
-function userPicked(pick: Chosen, userText: string): boolean {
-  if (hasNumber(userText, pick.number) || containsSpan(userText, pick.candidate.value)) return true
-  const wanted = valueTokens(pick.candidate.value)
+/** The message mentions this value: the value itself, or every date, number and name of it. */
+function mentionsValue(userText: string, value: string): boolean {
+  if (containsSpan(userText, value)) return true
+  const wanted = valueTokens(value)
   const said = new Set(valueTokens(userText))
   return wanted.length > 0 && wanted.every((t) => said.has(t))
+}
+
+/** The option the user picked, when the message identifies exactly one and the model's `choice` (if any) agrees. */
+function userPickedOption(q: ClientQuestion, userText: string, choice: Chosen | undefined): Chosen | undefined {
+  const n = identifiedOption(q, userText, (c) => mentionsValue(userText, c.value))
+  if (n === undefined || (choice && choice.number !== n)) return undefined
+  return { candidate: q.candidates[n - 1], number: n }
+}
+
+/** True when `fact` is only a reference to an option ("2", "option 2", the choice itself), not an answer. */
+function isOptionReference(fact: string, choice: string | undefined): boolean {
+  if (optionReference(fact) !== undefined) return true
+  const wanted = (choice ?? '').trim().toLowerCase()
+  return wanted !== '' && flat(fact).toLowerCase() === wanted
+}
+
+/** A candidate's value as a saved fact: one line, capped. */
+function valueAsFact(value: string): string {
+  const printable = [...value].map((ch) => (ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127 ? ' ' : ch)).join('')
+  return flat(printable).slice(0, FACT_CHANGE_MAX_FACT_CHARS).trim()
 }
 
 /** The fact carries the option's value: the value itself, or every date, number and name of it. */
@@ -530,12 +603,14 @@ async function answerWhich(
 ): Promise<ClientAnswerResult> {
   const scope = q.scopeId ? await getScope(q.scopeId) : undefined
   if (!scope) return refuse('no_source', 'The client of this question is gone.', mark)
-  const fact = flat(input.fact || input.answer || '')
+  let fact = flat(input.fact || input.answer || '')
   const choice = resolveChoice(q, input.choice)
   if (input.choice?.trim() && !choice) {
     return refuse('not_a_candidate', `That is not one of the listed options. ${ASK_TO_TYPE}`, mark)
   }
-  const picked = choice && userPicked(choice, userText) ? choice : undefined
+  const picked = userPickedOption(q, userText, choice)
+  // "2" or "option 2" is never saved as the answer: the picked option's value is, or nothing.
+  if (isOptionReference(fact, input.choice)) fact = picked ? valueAsFact(picked.candidate.value) : ''
   if (!factFromUser(fact, userText, picked, scope.name)) {
     return refuse(
       'not_grounded',
@@ -554,11 +629,14 @@ async function answerWhich(
   }
   await closeEntry(q)
   const drafted = await draftReply(q, scope, evidence)
-  return { ok: true, message: `Saved for ${scope.name}: ${fact} ${drafted}`, ...mark }
+  // The saved text is not echoed: it may come from client mail, and this result goes back to the model.
+  return { ok: true, message: `Saved the answer for ${scope.name}. ${drafted}`, ...mark }
 }
 
-function userNamed(pick: Chosen, names: string[], userText: string): boolean {
-  return hasNumber(userText, pick.number) || names.some((n) => n.trim() !== '' && nameInMessage(n, userText))
+/** The user's message identifies exactly this option, by its number alone or by one of its names. */
+function userNamed(q: ClientQuestion, pick: Chosen, names: string[][], userText: string): boolean {
+  const named = (i: number) => (names[i] ?? []).some((n) => n.trim() !== '' && nameInMessage(n, userText))
+  return identifiedOption(q, userText, (_c, i) => named(i)) === pick.number
 }
 
 async function answerWhichClient(
@@ -572,7 +650,11 @@ async function answerWhichClient(
     return refuse('not_a_candidate', 'Pass choice: the number or id of one of the listed clients.', mark)
   }
   const scope = await getScope(pick.candidate.scopeId)
-  if (!userNamed(pick, [pick.candidate.value, scope?.name ?? ''], userText)) {
+  // Every option's names (as listed and as the scope is called now), so a message naming two picks neither.
+  const names = await Promise.all(
+    q.candidates.map(async (c) => [c.value, (c.scopeId ? (await getScope(c.scopeId))?.name : undefined) ?? ''])
+  )
+  if (!userNamed(q, pick, names, userText)) {
     return refuse('not_named', 'Ask the user which client this is, by name or number.', mark)
   }
   await loadSources()
@@ -604,7 +686,8 @@ async function answerWhichClient(
   }
   return {
     ok: true,
-    message: `Mail from ${matcher} is filed under ${scope?.name ?? pick.candidate.value} from now on; earlier mail is read in the background.`,
+    // No sender or domain in the result: it goes back to the model, which may be a cloud one.
+    message: `Mail from this sender is filed under ${scope?.name ?? pick.candidate.value} from now on; earlier mail is read in the background.`,
     ...mark,
   }
 }
@@ -619,7 +702,14 @@ async function answerWhichProject(
   if (!pick?.candidate.projectGid) {
     return refuse('not_a_candidate', 'Pass choice: the number or id of one of the listed projects.', mark)
   }
-  if (!userNamed(pick, [pick.candidate.value], userText)) {
+  if (
+    !userNamed(
+      q,
+      pick,
+      q.candidates.map((c) => [c.value]),
+      userText
+    )
+  ) {
     return refuse('not_named', 'Ask the user which project it is, by name or number.', mark)
   }
   await loadSources()

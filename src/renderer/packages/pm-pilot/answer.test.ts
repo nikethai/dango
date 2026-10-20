@@ -295,8 +295,8 @@ describe('openClientQuestion', () => {
         type: 'text',
         text: [
           "Client asks for the revised quote. I found two answers and can't tell which is current:",
-          "8,400 · 12 Sep · Jo's 12 Sep email",
-          '9,100 · 30 Sep · Asana "Quote"',
+          "1. 8,400 · 12 Sep · Jo's 12 Sep email",
+          '2. 9,100 · 30 Sep · Asana "Quote"',
           "Pick one, or type the answer. I'll save it for Acme Co and draft the reply.",
         ].join('\n'),
       },
@@ -324,7 +324,7 @@ describe('openClientQuestion', () => {
       {
         type: 'text',
         text: [
-          'Which client is this? ann@newco.com wrote about "New project".',
+          'Which client is this? ann\u200b@newco.com wrote about "New project".',
           '1. Acme Co',
           '2. Globex',
           "Pick one and I'll file this thread and others from newco.com there.",
@@ -583,10 +583,7 @@ describe('client_answer: which-client', () => {
   })
 
   it('a public mail domain adds the address', async () => {
-    const sessionId = await chatWith(
-      whichClient({ from: 'ann@gmail.com', domain: 'ann@gmail.com' }),
-      'that is Acme, option 1'
-    )
+    const sessionId = await chatWith(whichClient({ from: 'ann@gmail.com', domain: 'ann@gmail.com' }), 'Acme Co')
     await answerClientQuestion({ sessionId, answer: 'Acme', choice: 'acme' })
     expect(updateSource).toHaveBeenCalledWith('g1', {
       config: { accountId: 'acc1', matchers: ['@acme.com', 'ann@gmail.com'] },
@@ -674,4 +671,82 @@ describe('local-only CH6 chats', () => {
 
 it('the CH6 fixture matches the Task 8 opening', () => {
   expect(ch6Opening(whichAnswer(), 'Acme Co').split('\n')).toHaveLength(4)
+})
+
+describe('fix round: picking an option and what is saved', () => {
+  it('an option number counts only when the message is just that reference', async () => {
+    for (const text of ['They wrote on 2 Sep, who is this?', 'I have 1 question: who sent this?', 'Is it the 2nd?']) {
+      const sessionId = await chatWith(whichClient({ id: `q-${text.length}` }), text)
+      const choice = text.includes('1') ? 'acme' : 'globex'
+      expect(await answerClientQuestion({ sessionId, answer: 'x', choice })).toMatchObject({
+        ok: false,
+        code: 'not_named',
+      })
+    }
+    expect(updateSource).not.toHaveBeenCalled()
+    for (const [i, text] of ['#2', 'the 2nd one', 'Option 2.', 'the second one'].entries()) {
+      const sessionId = await chatWith(whichClient({ id: `q-ok-${i}`, domain: `d${i}.com` }), text)
+      expect((await answerClientQuestion({ sessionId, answer: 'Globex', choice: 'globex' })).ok).toBe(true)
+    }
+  })
+
+  it('a message that names two options picks neither', async () => {
+    let sessionId = await chatWith(whichClient(), 'Acme Co or Globex, not sure')
+    expect(await answerClientQuestion({ sessionId, answer: 'Globex', choice: 'globex' })).toMatchObject({
+      ok: false,
+      code: 'not_named',
+    })
+    sessionId = await chatWith(whichAnswer({ id: 'q8' }), "not 8,400, it's 9,100")
+    expect(
+      await answerClientQuestion({ sessionId, answer: '8,400', fact: 'The quote is 8,400.', choice: '1' })
+    ).toMatchObject({ ok: false, code: 'not_grounded' })
+    expect(proposeKnowledge).not.toHaveBeenCalled()
+  })
+
+  it('a bare option reference is never saved: the picked value is', async () => {
+    let sessionId = await chatWith(whichAnswer(), '2')
+    expect((await answerClientQuestion({ sessionId, answer: '2', choice: '2' })).ok).toBe(true)
+    expect(vi.mocked(proposeKnowledge).mock.calls[0][0].text).toBe('9,100')
+    expect(vi.mocked(actOnThread).mock.calls[0][0].judgement.answer).toBe('9,100')
+
+    sessionId = await chatWith(whichAnswer({ id: 'q9' }), 'option 1')
+    expect((await answerClientQuestion({ sessionId, answer: 'Option 1' })).ok).toBe(true)
+    expect(vi.mocked(proposeKnowledge).mock.calls[1][0].text).toBe('8,400')
+
+    sessionId = await chatWith(whichAnswer({ id: 'q10' }), 'hmm')
+    expect(await answerClientQuestion({ sessionId, answer: '2', choice: '2' })).toMatchObject({
+      ok: false,
+      code: 'not_grounded',
+    })
+    expect(proposeKnowledge).toHaveBeenCalledTimes(2)
+  })
+
+  it('results echo no sender, domain or saved value back to the model', async () => {
+    let sessionId = await chatWith(whichClient(), 'Globex')
+    const client = await answerClientQuestion({ sessionId, answer: 'Globex', choice: 'globex' })
+    expect(client.ok).toBe(true)
+    expect(client.message).not.toMatch(/newco|ann|@/)
+    sessionId = await chatWith(whichAnswer(), '2')
+    const answered = await answerClientQuestion({ sessionId, answer: '2', choice: '2' })
+    expect(answered.message).not.toContain('9,100')
+  })
+
+  it('bare links and addresses in the opening do not autolink', async () => {
+    await pmStore.saveQuestion(
+      whichAnswer({
+        subject: '',
+        summary: 'See https://evil.example/x or www.evil.example, ask ann@evil.example.',
+        candidates: [],
+      })
+    )
+    const text = (h.sessions.get(await openClientQuestion('q1'))?.messages[0].contentParts[0] as { text: string }).text
+    expect(text).not.toContain('https://')
+    expect(text).not.toMatch(/www\.evil/)
+    expect(text).not.toContain('ann@evil')
+  })
+
+  it('a chat without a subject is named after the sender, not the Asana question', async () => {
+    await pmStore.saveQuestion(whichAnswer({ subject: '' }))
+    expect(h.sessions.get(await openClientQuestion('q1'))?.name).toBe('Email from jo@acme.com')
+  })
 })
