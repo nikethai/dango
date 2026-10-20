@@ -72,8 +72,9 @@ const CRITICAL_PATH_PATTERNS = [
   /\/etc\/(passwd|shadow|sudoers|ssh)/,
   // SSH keys
   /\.ssh\/(id_|authorized_keys|known_hosts)/,
-  // Root-level system dirs (exact)
-  /^\/(boot|dev|proc|sys)\//,
+  // Root-level system dirs anywhere in a value (`cat /proc/kcore`, `of=/dev/sda`), except harmless devices
+  /(?:^|[\s"'=:<>(`])\/(?:boot|proc|sys)\//,
+  /(?:^|[\s"'=:<>(`])\/dev\/(?!(?:null|stdout|stderr|stdin|tty)\b|fd\/)/,
 ]
 
 const HIGH_PATH_PATTERNS = [
@@ -103,6 +104,17 @@ const CRITICAL_ARG_PATTERNS = [
   /-rf/,
   /--force/,
   /--no-preserve-root/,
+  // rm with a recursive and a force flag, in any order or form (-fr, -r -f, -rfv, --recursive --force)
+  /\brm\s+(?=(?:[^;&|]*\s)?-(?:[a-z]*r[a-z]*|-recursive)\b)(?=(?:[^;&|]*\s)?-(?:[a-z]*f[a-z]*|-force)\b)/,
+  // Recursive rm of the home directory or root, even without -f (rm -r ~/, rm -r "$HOME", rm -r /*)
+  /\brm\s+(?=(?:[^;&|]*\s)?-(?:[a-z]*r[a-z]*|-recursive)\b)[^;&|]*\s["']?(?:~|\$home|\$\{home\}|\/)\/?\*?["']?(?=[\s;&|]|$)/,
+  // find that deletes what it finds
+  /\bfind\s[^;&|]*\s-(?:delete|exec(?:dir)?\s+rm)\b/,
+  // Disk formatting / raw writes to a device
+  /\bmkfs\b/,
+  /\bdd\s[^;&|]*\bof=\/dev\//,
+  // Runs as root
+  /\bsudo\b/,
   // Pipe to shell (json: {"command":"curl ... | bash"})
   /\|\s*(sh|bash|zsh|eval)/,
   // Inline eval
@@ -110,14 +122,12 @@ const CRITICAL_ARG_PATTERNS = [
 ]
 
 const HIGH_ARG_PATTERNS = [
-  // Recursive flag on its own
-  /\b-[rR]\b/,
+  // Recursive flag on its own (-r, -R, -rt, --recursive); text is lowercased
+  /(?:^|[\s"'])-(?:[a-z]*r[a-z]*|-recursive)(?=[\s"']|$)/,
   // Wildcard glob that could be dangerous
   /[*?]\s/,
   // Redirect / append to file
   />{1,2}\s*\//,
-  // Sudo-prefixed arg strings
-  /\bsudo\b/,
 ]
 
 // ---------------------------------------------------------------------------
@@ -136,6 +146,35 @@ function flattenArgs(args: unknown): string {
   } catch {
     return String(args)
   }
+}
+
+const MAX_ARG_DEPTH = 8
+
+/**
+ * The texts the path and argument patterns run on, lowercased: the flattened args (as before), every string value
+ * (so JSON quoting does not hide `"/"` or the end of a command) and each string array joined by spaces
+ * (`["rm", "-r", "/"]`).
+ */
+function argTexts(args: unknown): string[] {
+  const texts = new Set<string>()
+  const flat = flattenArgs(args)
+  if (flat) texts.add(flat.toLowerCase())
+  const walk = (value: unknown, depth: number) => {
+    if (depth > MAX_ARG_DEPTH || value == null) return
+    if (typeof value === 'string') {
+      if (value) texts.add(value.toLowerCase())
+      return
+    }
+    if (typeof value !== 'object') return
+    const items = Array.isArray(value) ? value : Object.values(value)
+    if (Array.isArray(value)) {
+      const joined = value.filter((v): v is string => typeof v === 'string').join(' ')
+      if (joined) texts.add(joined.toLowerCase())
+    }
+    for (const item of items) walk(item, depth + 1)
+  }
+  walk(args, 0)
+  return [...texts]
 }
 
 // ---------------------------------------------------------------------------
@@ -195,14 +234,14 @@ export function classifyToolRisk(toolName: string, description?: string, args?: 
   const intentText = `${toolName} ${description ?? ''}`.toLowerCase()
   classifyIntent(intentText, signals)
 
-  const argsText = flattenArgs(args).toLowerCase()
-  if (argsText) {
-    classifyPaths(argsText, signals)
-    classifyArgs(argsText, signals)
+  const texts = argTexts(args)
+  if (texts.length > 0) {
+    classifyPaths(texts, signals)
+    classifyArgs(texts, signals)
   }
 
   // Also check paths that might appear in the description
-  classifyPaths(intentText, signals)
+  classifyPaths([intentText], signals)
 
   const tier =
     signals.length > 0
@@ -243,25 +282,27 @@ function classifyIntent(text: string, signals: RiskSignal[]): void {
   }
 }
 
-function classifyPaths(text: string, signals: RiskSignal[]): void {
-  if (testPatterns(text, CRITICAL_PATH_PATTERNS)) {
-    signals.push({ source: 'path', tier: ToolRiskTier.CRITICAL, matched: extractMatch(text, CRITICAL_PATH_PATTERNS) })
-  }
-  if (testPatterns(text, HIGH_PATH_PATTERNS)) {
-    signals.push({ source: 'path', tier: ToolRiskTier.HIGH, matched: extractMatch(text, HIGH_PATH_PATTERNS) })
-  }
-  if (testPatterns(text, MEDIUM_PATH_PATTERNS)) {
-    signals.push({ source: 'path', tier: ToolRiskTier.MEDIUM, matched: extractMatch(text, MEDIUM_PATH_PATTERNS) })
-  }
+function classifyPaths(texts: string[], signals: RiskSignal[]): void {
+  pushFirstMatch(texts, CRITICAL_PATH_PATTERNS, 'path', ToolRiskTier.CRITICAL, signals)
+  pushFirstMatch(texts, HIGH_PATH_PATTERNS, 'path', ToolRiskTier.HIGH, signals)
+  pushFirstMatch(texts, MEDIUM_PATH_PATTERNS, 'path', ToolRiskTier.MEDIUM, signals)
 }
 
-function classifyArgs(text: string, signals: RiskSignal[]): void {
-  if (testPatterns(text, CRITICAL_ARG_PATTERNS)) {
-    signals.push({ source: 'args', tier: ToolRiskTier.CRITICAL, matched: extractMatch(text, CRITICAL_ARG_PATTERNS) })
-  }
-  if (testPatterns(text, HIGH_ARG_PATTERNS)) {
-    signals.push({ source: 'args', tier: ToolRiskTier.HIGH, matched: extractMatch(text, HIGH_ARG_PATTERNS) })
-  }
+function classifyArgs(texts: string[], signals: RiskSignal[]): void {
+  pushFirstMatch(texts, CRITICAL_ARG_PATTERNS, 'args', ToolRiskTier.CRITICAL, signals)
+  pushFirstMatch(texts, HIGH_ARG_PATTERNS, 'args', ToolRiskTier.HIGH, signals)
+}
+
+/** One signal per tier: the first text any of the patterns matches. */
+function pushFirstMatch(
+  texts: string[],
+  patterns: RegExp[],
+  source: RiskSignal['source'],
+  tier: ToolRiskTier,
+  signals: RiskSignal[]
+): void {
+  const text = texts.find((t) => testPatterns(t, patterns))
+  if (text !== undefined) signals.push({ source, tier, matched: extractMatch(text, patterns) })
 }
 
 function extractMatch(text: string, patterns: RegExp[]): string {

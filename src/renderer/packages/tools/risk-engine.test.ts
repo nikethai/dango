@@ -138,12 +138,11 @@ describe('risk-engine', () => {
     })
 
     it('elevates risk based on args even when tool name is benign', () => {
-      // Tool name "helper" is unknown → MEDIUM, but args contain sudo → HIGH
-      // sudo alone is HIGH (requires elevation); requires destructive or escape patterns for CRITICAL
+      // Tool name "helper" is unknown → MEDIUM, but sudo in args runs as root → CRITICAL (asks every time)
       const result = classifyToolRisk('helper', 'A helper tool', {
         command: 'sudo apt-get install something',
       })
-      expect(result.tier).toBe(ToolRiskTier.HIGH)
+      expect(result.tier).toBe(ToolRiskTier.CRITICAL)
     })
 
     it('detects database operations as MEDIUM', () => {
@@ -154,6 +153,85 @@ describe('risk-engine', () => {
     it('detects package manager operations as HIGH', () => {
       expect(getToolRiskTier('npm_install', 'Install npm packages')).toBe(ToolRiskTier.HIGH)
       expect(getToolRiskTier('pip_install', 'Install Python packages')).toBe(ToolRiskTier.HIGH)
+    })
+  })
+
+  describe('destructive shell commands (real engine, run_command)', () => {
+    const shell = (command: unknown) => getToolRiskTier('run_command', 'Run a shell command', { command })
+
+    it.each([
+      'rm -fr /',
+      'rm -rf ~',
+      'rm -r -f ~/',
+      'rm -r ~/',
+      'rm -R /',
+      'rm -rfv ./build',
+      'rm -vfR src',
+      'rm --recursive --force ~',
+      'rm --force --recursive build',
+      'rm -f -R build',
+      'rm --recursive ~/',
+      'rm -r -- ~',
+      'rm -r $HOME',
+      'rm -r "$HOME"',
+      'rm -r "/"',
+      'rm -r ~/*',
+      'cd x && rm -r ~',
+      'find ~ -delete',
+      'find / -name x -delete',
+      'find . -name x -exec rm {} ;',
+      'find . -name x -execdir rm {} +',
+      'sudo rm -r /',
+      'sudo ls',
+      'dd if=/dev/zero of=/dev/sda',
+      'mkfs.ext4 /dev/sdb1',
+      'cat /proc/kcore',
+      'echo 1 > /sys/class/x',
+      'cat /dev/sda',
+      'rm -rf --no-preserve-root /',
+    ])('%s is CRITICAL', (command) => {
+      expect(shell(command)).toBe(ToolRiskTier.CRITICAL)
+    })
+
+    it.each([
+      'rm file.txt',
+      'rm -r build',
+      'rm -r ./tmp',
+      'rm -r /tmp/build-cache',
+      'rm -f x.txt',
+      'ls -rt',
+      'ls -R',
+      'grep -r foo .',
+      'npm run perf',
+      'npm run format',
+      'echo /dev/null',
+      'echo hi > /dev/null',
+      'cmd 2>/dev/null',
+      'echo hi > /dev/stderr',
+      'cat ~/notes.md',
+      'cat src/dev/index.ts',
+      'find . -name "*.ts"',
+      'git rm -r --cached dist',
+    ])('%s is not CRITICAL', (command) => {
+      expect(shell(command)).not.toBe(ToolRiskTier.CRITICAL)
+    })
+
+    it('classifies each string value, also nested and in arrays', () => {
+      expect(getToolRiskTier('run_command', 'Run a shell command', { opts: { cmd: 'rm -r ~/' } })).toBe(
+        ToolRiskTier.CRITICAL
+      )
+      expect(getToolRiskTier('run_command', 'Run a shell command', { argv: ['rm', '-r', '-f', 'build'] })).toBe(
+        ToolRiskTier.CRITICAL
+      )
+      expect(getToolRiskTier('run_command', 'Run a shell command', { argv: ['rm', '-r', '/'] })).toBe(
+        ToolRiskTier.CRITICAL
+      )
+    })
+
+    it('a lone recursive flag raises a MEDIUM tool to HIGH', () => {
+      expect(getToolRiskTier('read_file', 'Read a file')).toBe(ToolRiskTier.MEDIUM)
+      expect(getToolRiskTier('read_file', 'Read a file', { path: 'x', flags: '-r' })).toBe(ToolRiskTier.HIGH)
+      expect(getToolRiskTier('read_file', 'Read a file', { path: 'x', flags: '--recursive' })).toBe(ToolRiskTier.HIGH)
     })
   })
 })

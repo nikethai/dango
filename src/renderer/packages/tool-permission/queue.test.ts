@@ -2,6 +2,7 @@
 import { ToolRiskTier } from '@shared/types/mcp'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { getToolRiskTier } from '../tools/risk-engine'
 import {
   getPermissionHead,
   type PermissionRequest,
@@ -93,6 +94,26 @@ describe('permission queue', () => {
     resolvePermission(headId(), 'always')
     await expect(first).resolves.toBe('once')
     expect(getPermissionHead()?.toolName).toBe('delete_file')
+  })
+
+  it('always on a HIGH call leaves a CRITICAL call to the same tool queued (real risk engine)', async () => {
+    const shell = (command: string) =>
+      req({
+        toolName: 'run_command',
+        riskTier: getToolRiskTier('run_command', 'Run a shell command', { command }),
+        summary: { what: 'Run a command', touches: [command] },
+        allowAlways: true,
+      })
+    const benign = requestToolPermission(shell('ls'))
+    const destructive = requestToolPermission(shell('rm -r ~/'))
+    expect(getPermissionHead()?.riskTier).toBe(ToolRiskTier.HIGH)
+    resolvePermission(headId(), 'always')
+    await expect(benign).resolves.toBe('always')
+    const head = getPermissionHead()
+    expect(head?.riskTier).toBe(ToolRiskTier.CRITICAL)
+    expect(head?.allowAlways).toBe(false)
+    resolvePermission(headId(), 'deny')
+    await expect(destructive).resolves.toBe('deny')
   })
 
   it('timeout denies', async () => {
