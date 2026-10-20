@@ -5,6 +5,7 @@ import { FetchError, ofetch } from 'ofetch'
 // Task names, notes, comments and author names are untrusted text, carried as plain data.
 
 export const ASANA_API = 'https://app.asana.com/api/1.0'
+const ASANA_PERMALINK_PREFIX = 'https://app.asana.com/'
 
 /** Tasks read by one full read; the rest of a huge project is left out. */
 export const ASANA_MAX_TASKS = 2000
@@ -18,7 +19,10 @@ const WORKSPACE_MAX_PAGES = 10
 const PAGE_SIZE = 100
 const CONCURRENCY = 3
 const MAX_TEXT_CHARS = 20_000
-/** Comments are read only for tasks modified this recently (a new comment updates `modified_at`). */
+/**
+ * Comments are read only for tasks modified this recently. Assumption to confirm live (slice 10 T4 review, checked in
+ * Task 9): Asana docs say a story created on a task updates its `modified_at`, so a recent comment keeps a task here.
+ */
 const COMMENT_WINDOW_MS = 90 * 86_400_000
 const RETRY_AFTER_MAX_S = 60
 const RETRY_AFTER_DEFAULT_S = 10
@@ -36,11 +40,23 @@ const TASK_FIELDS = [
 ].join(',')
 const STORY_FIELDS = 'resource_subtype,text,created_at,created_by.name'
 
-/** Asana refused the token (401, or a 403 that is not a usage limit): the account needs signing in again. */
+/** Asana refused the token (401): the account needs signing in again. */
 export class AsanaAuthError extends Error {
   constructor(readonly status: number) {
     super(`Asana refused the sign-in (${status})`)
     this.name = 'AsanaAuthError'
+  }
+}
+
+/**
+ * Asana refused access (a 403 that is not a usage limit): the user can no longer see this project or resource.
+ * Signing in again does not fix it.
+ */
+export class AsanaForbiddenError extends Error {
+  readonly status = 403
+  constructor() {
+    super('Asana refused access (403)')
+    this.name = 'AsanaForbiddenError'
   }
 }
 
@@ -137,7 +153,8 @@ function wait(ms: number, signal?: AbortSignal): Promise<void> {
 
 /**
  * One GET on the Asana API. A 429 waits `Retry-After` (at most 60 s) and retries once; a second 429 throws
- * `AsanaRateLimitedError`. 401/403 throw `AsanaAuthError` (a 403 usage limit is rate-limited instead), 412 throws
+ * `AsanaRateLimitedError`. 401 throws `AsanaAuthError`, 403 `AsanaForbiddenError` (a 403 usage limit is
+ * rate-limited instead), 412 throws
  * the internal sync-token error, anything else `AsanaRequestError`. No error holds the URL, the token or a cause.
  */
 async function asanaGet<T>(token: string, path: string, query: Query, signal?: AbortSignal): Promise<T> {
@@ -163,7 +180,8 @@ async function asanaGet<T>(token: string, path: string, query: Query, signal?: A
         throw new AsanaRateLimitedError(429, seconds)
       }
       if (status === 403 && isUsageLimit(error)) throw new AsanaRateLimitedError(403, retryAfterSeconds(error))
-      if (status === 401 || status === 403) throw new AsanaAuthError(status)
+      if (status === 401) throw new AsanaAuthError(status)
+      if (status === 403) throw new AsanaForbiddenError()
       if (status === 412) {
         const sync = (error.data as { sync?: unknown } | undefined)?.sync
         throw new AsanaSyncTokenError(typeof sync === 'string' && sync ? sync : undefined)
@@ -273,7 +291,9 @@ function inProject(task: AsanaTask, projectGid: string): boolean {
 }
 
 function taskLink(task: AsanaTask): { label: string; url: string } {
-  return { label: `Asana "${task.name ?? ''}"`, url: task.permalink_url ?? '' }
+  // Only Asana's own pages: the link is opened later, so any other URL or scheme is dropped.
+  const url = task.permalink_url ?? ''
+  return { label: `Asana "${task.name ?? ''}"`, url: url.startsWith(ASANA_PERMALINK_PREFIX) ? url : '' }
 }
 
 function baseRecord(ctx: Ctx, externalId: string, taskGid: string) {
@@ -434,9 +454,10 @@ async function readTask(ctx: Ctx, gid: string): Promise<AsanaTask | null> {
  * days), with the sync token taken just before it so nothing changed meanwhile is missed. With a cursor: the events
  * since its token; changed tasks are re-read with their comments, and deleted tasks, tasks removed from the
  * project, tasks gone on re-read and deleted comments go to `deletedExternalIds`. An expired token (412), or more
- * changed tasks than `ASANA_MAX_CHANGED_TASKS`, falls back to a full read. Records carry `sourceId` and `scopeId`.
- * The caller stores the cursor. Throws `AsanaAuthError` (sign in again), `AsanaRateLimitedError` or
- * `AsanaRequestError`; on a throw the caller keeps its old cursor.
+ * changed tasks than `ASANA_MAX_CHANGED_TASKS`, falls back to a full read; on the overflow path the deletions the
+ * events reported are still returned. Records carry `sourceId` and `scopeId`.
+ * The caller stores the cursor. Throws `AsanaAuthError` (401, sign in again), `AsanaForbiddenError` (403, access to
+ * the project lost), `AsanaRateLimitedError` or `AsanaRequestError`; on a throw the caller keeps its old cursor.
  */
 export async function syncAsanaProject(input: AsanaSyncInput): Promise<AsanaSyncResult> {
   const now = input.now ?? Date.now()
@@ -468,7 +489,8 @@ export async function syncAsanaProject(input: AsanaSyncInput): Promise<AsanaSync
       return { records: tasks.flat(), cursor: cursorFor(batch.sync), deletedExternalIds: [...deleted] }
     }
     const sync = expiredWith ?? batch?.sync ?? (await freshSyncToken(ctx))
-    return { records: await fullRead(ctx), cursor: cursorFor(sync), deletedExternalIds: [] }
+    // Deletions the events already reported still count; a full read cannot see them (empty after a 412).
+    return { records: await fullRead(ctx), cursor: cursorFor(sync), deletedExternalIds: [...(batch?.deleted ?? [])] }
   }
 
   const sync = await freshSyncToken(ctx)

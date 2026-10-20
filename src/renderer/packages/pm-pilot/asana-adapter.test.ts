@@ -4,8 +4,10 @@ import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   ASANA_EVENT_MAX_PAGES,
+  ASANA_MAX_CHANGED_TASKS,
   ASANA_MAX_TASKS,
   AsanaAuthError,
+  AsanaForbiddenError,
   AsanaRateLimitedError,
   AsanaRequestError,
   listAsanaProjects,
@@ -179,8 +181,14 @@ describe('syncAsanaProject', () => {
     })
   })
 
-  it('obtains a sync token after the first full read', async () => {
+  // Brief name kept for traceability; the token is taken before the read on purpose, so changes made while the
+  // full read runs are replayed on the next poll (T4 review ruling 1).
+  it('obtains a sync token after the first full read (token is taken before the task reads)', async () => {
     const calls = { list: 0, get: [] as string[], stories: [] as string[] }
+    const order: string[] = []
+    const log = ({ request }: { request: Request }) =>
+      order.push(new URL(request.url).pathname.replace('/api/1.0/', ''))
+    server.events.on('request:start', log)
     let eventCalls = 0
     server.use(
       ...projectHandlers({ t1: task('t1') }, {}, calls),
@@ -191,8 +199,10 @@ describe('syncAsanaProject', () => {
       })
     )
     const result = await syncAsanaProject({ ...baseInput, cursor: null, now: NOW })
+    server.events.removeListener('request:start', log)
     expect(calls.list).toBe(1)
     expect(eventCalls).toBe(1)
+    expect(order).toEqual(['events', 'tasks', 'tasks/t1/stories'])
     expect(result.cursor).toEqual({
       accountId: 'acc-1',
       sourceKind: 'asana',
@@ -407,7 +417,7 @@ describe('syncAsanaProject', () => {
 
   it.each([
     [401, { errors: [{ message: 'Not Authorized' }] }, AsanaAuthError],
-    [403, { errors: [{ message: 'Forbidden' }] }, AsanaAuthError],
+    [403, { errors: [{ message: 'Forbidden' }] }, AsanaForbiddenError],
     [403, { errors: [{ message: 'You have exceeded the rate limit' }] }, AsanaRateLimitedError],
     [500, { errors: [{ message: 'Server error' }] }, AsanaRequestError],
   ])('maps %s to the right error without leaking the request', async (status, body, ErrorClass) => {
@@ -421,6 +431,107 @@ describe('syncAsanaProject', () => {
     expect(e.message).not.toContain('app.asana.com')
     expect(e.cause).toBeUndefined()
     expect(JSON.stringify(e)).not.toContain(TOKEN)
+  })
+})
+
+describe('syncAsanaProject fix round', () => {
+  it('keeps deletions reported by events when too many changes force a full read', async () => {
+    const calls = { list: 0, get: [] as string[], stories: [] as string[] }
+    const changed = Array.from({ length: ASANA_MAX_CHANGED_TASKS + 1 }, (_, i) => ({
+      action: 'changed',
+      resource: { gid: `x${i}`, resource_type: 'task' },
+      parent: null,
+    }))
+    server.use(
+      ...projectHandlers({ t1: task('t1') }, {}, calls),
+      eventsHandler(() =>
+        HttpResponse.json({
+          data: [...changed, { action: 'deleted', resource: { gid: 'gone', resource_type: 'task' }, parent: null }],
+          sync: 'tok-2',
+          has_more: false,
+        })
+      )
+    )
+    const result = await syncAsanaProject({ ...baseInput, cursor, now: NOW })
+    expect(calls.list).toBe(1)
+    expect(calls.get).toEqual([])
+    expect(result.records.map((r) => r.externalId)).toEqual(['t1'])
+    expect(result.deletedExternalIds).toEqual(['gone'])
+    expect(result.cursor.value).toBe('tok-2')
+  })
+
+  it('throws AsanaForbiddenError, not AsanaAuthError, for a 403 that is not a rate limit', async () => {
+    server.use(eventsHandler(() => HttpResponse.json({ errors: [{ message: 'Forbidden' }] }, { status: 403 })))
+    const error = await syncAsanaProject({ ...baseInput, cursor, now: NOW }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(AsanaForbiddenError)
+    expect(error).not.toBeInstanceOf(AsanaAuthError)
+    const e = error as AsanaForbiddenError & { cause?: unknown }
+    expect(e.name).toBe('AsanaForbiddenError')
+    expect(e.status).toBe(403)
+    expect(e.message).toBe('Asana refused access (403)')
+    expect(e.cause).toBeUndefined()
+  })
+
+  it('keeps only Asana permalinks', async () => {
+    server.use(
+      ...projectHandlers(
+        {
+          t1: task('t1', { permalink_url: 'javascript:alert(1)' }),
+          t2: task('t2', { permalink_url: 'https://evil.example/https://app.asana.com/' }),
+          t3: task('t3'),
+        },
+        { t1: [comment('c1', 'Hi')] }
+      ),
+      eventsHandler(() => expired412('tok'))
+    )
+    const { records } = await syncAsanaProject({ ...baseInput, cursor: null, now: NOW })
+    const url = (id: string) => records.find((r) => r.externalId === id)?.link.url
+    expect(url('t1')).toBe('')
+    expect(url('c1')).toBe('')
+    expect(url('t2')).toBe('')
+    expect(url('t3')).toBe('https://app.asana.com/0/p1/t3')
+    expect(records.find((r) => r.externalId === 't1')?.link.label).toBe('Asana "Task t1"')
+  })
+
+  it('reads comments only for tasks modified in the last 90 days on a full read', async () => {
+    const calls = { list: 0, get: [] as string[], stories: [] as string[] }
+    const day = 86_400_000
+    server.use(
+      ...projectHandlers(
+        {
+          fresh: task('fresh', { modified_at: new Date(NOW - 89 * day).toISOString() }),
+          stale: task('stale', { modified_at: new Date(NOW - 91 * day).toISOString() }),
+        },
+        { fresh: [comment('cf', 'Recent')], stale: [comment('cs', 'Old')] },
+        calls
+      ),
+      eventsHandler(() => expired412('tok'))
+    )
+    const { records } = await syncAsanaProject({ ...baseInput, cursor: null, now: NOW })
+    expect(calls.stories).toEqual(['fresh'])
+    expect(records.map((r) => r.externalId).sort()).toEqual(['cf', 'fresh', 'stale'])
+  })
+
+  it('stops waiting for Retry-After when the signal aborts', async () => {
+    vi.useFakeTimers()
+    let hits = 0
+    server.use(
+      eventsHandler(() => {
+        hits += 1
+        return HttpResponse.json({}, { status: 429, headers: { 'Retry-After': '30' } })
+      })
+    )
+    const controller = new AbortController()
+    const settled = syncAsanaProject({ ...baseInput, cursor, now: NOW, signal: controller.signal }).catch(
+      (e: unknown) => e
+    )
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(hits).toBe(1)
+    const reason = new Error('stopped')
+    controller.abort(reason)
+    expect(await settled).toBe(reason)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(hits).toBe(1)
   })
 })
 
