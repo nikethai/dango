@@ -5,6 +5,7 @@ import type { ModelProvider } from '@shared/types'
 import { createModelDependencies } from '@/adapters'
 import { languageNameMap } from '@/i18n/locales'
 import { generateText } from '@/packages/model-calls'
+import { cloudSafeMessages } from '@/packages/model-calls/toolsets/pm-pilot-history'
 import * as promptFormat from '@/packages/prompts'
 import platform from '@/platform'
 import * as chatStore from '../chatStore'
@@ -53,12 +54,14 @@ async function _generateName(sessionId: string, modifyName: (sessionId: string, 
     const configs = await platform.getConfig()
     const dependencies = await createModelDependencies()
     const model = getModel(settings, globalSettings, configs, dependencies)
+    // The naming model may be a cloud model while the chat ran on a local one (ADR 0003): as for every chat model call.
+    const messages = await cloudSafeMessages(
+      session.messages.filter((m) => m.role !== 'system'),
+      settings.provider
+    )
     const result = await generateText(
       model,
-      promptFormat.nameConversation(
-        session.messages.filter((m) => m.role !== 'system').slice(0, 4),
-        languageNameMap[settings.language]
-      )
+      promptFormat.nameConversation(messages.slice(0, 4), languageNameMap[settings.language])
     )
     let name =
       result.contentParts

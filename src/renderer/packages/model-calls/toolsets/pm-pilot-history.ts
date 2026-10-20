@@ -14,6 +14,8 @@ import { isLocalModelProvider } from '@/packages/sources/model-check'
  *   local-only, or when that is not known, the opening and every later assistant message of the chat are sent as the
  *   placeholder; the user's own messages go. Any other message carrying that question (a summary of the chat) is
  *   sent as the placeholder too.
+ * - After the first local-only recall (or a summary marked `pmLocalOnly` that was built from one), every later
+ *   assistant message is sent as the placeholder too: a local model may repeat the records in later answers.
  * - Approved knowledge follows the pipeline's rule (`mayReachCloud`): an item is dropped when any of its live sources
  *   is local-only; knowledge the user typed (no source id) goes.
  */
@@ -37,6 +39,25 @@ export function usedLocalOnlyRecall(message: Pick<Message, 'contentParts'>): boo
   )
 }
 
+/** True when the message used a local-only recall, or is a summary built from messages that did. */
+function holdsLocalOnlyRecall(message: Pick<Message, 'contentParts' | 'pmLocalOnly'>): boolean {
+  return message.pmLocalOnly === true || usedLocalOnlyRecall(message)
+}
+
+/**
+ * The marks a summary of these messages carries (compaction, New chat with summary), so a cloud turn holds it back
+ * like the messages it was built from: the Needs you question, and `pmLocalOnly` after a local-only recall.
+ */
+export function summaryLocalOnlyMarks(
+  messages: Pick<Message, 'contentParts' | 'pmLocalOnly' | 'pmQuestionId'>[]
+): Pick<Message, 'pmQuestionId' | 'pmLocalOnly'> {
+  const [questionId] = ch6QuestionIds(messages)
+  return {
+    ...(questionId ? { pmQuestionId: questionId } : {}),
+    ...(messages.some(holdsLocalOnlyRecall) ? { pmLocalOnly: true } : {}),
+  }
+}
+
 /** The questions whose Needs you chats these messages open, once each. */
 export function ch6QuestionIds(messages: Pick<Message, 'pmQuestionId'>[]): string[] {
   return [...new Set(messages.flatMap((m) => (m.pmQuestionId ? [m.pmQuestionId] : [])))]
@@ -57,10 +78,11 @@ export function hideLocalOnlyRecalls(
   placeholder: string,
   localOnlyQuestions: ReadonlySet<string> | null = null
 ): Message[] {
-  const from = firstLocalOnlyOpening(messages, localOnlyQuestions)
+  const starts = [firstLocalOnlyOpening(messages, localOnlyQuestions), messages.findIndex(holdsLocalOnlyRecall)]
+  const from = Math.min(...starts.map((i) => (i < 0 ? Number.POSITIVE_INFINITY : i)))
   const localQuestion = (id: string | undefined) => !!id && (localOnlyQuestions === null || localOnlyQuestions.has(id))
   const hidden = (m: Message, i: number) =>
-    usedLocalOnlyRecall(m) || localQuestion(m.pmQuestionId) || (from >= 0 && i >= from && m.role === 'assistant')
+    holdsLocalOnlyRecall(m) || localQuestion(m.pmQuestionId) || (i >= from && m.role === 'assistant')
   if (!messages.some(hidden)) return messages
   const text = placeholder || LOCAL_ONLY_ANSWER_PLACEHOLDER
   return messages.map((m, i) => {

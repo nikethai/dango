@@ -2,7 +2,7 @@ import { createMessage, type Message } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
 import { t } from 'i18next'
 import { generateSummary } from '@/packages/context-management/summary-generator'
-import { ch6QuestionIds } from '@/packages/model-calls/toolsets/pm-pilot-history'
+import { summaryLocalOnlyMarks } from '@/packages/model-calls/toolsets/pm-pilot-history'
 import * as chatStore from '../chatStore'
 import { initEmptyChatSession } from '../sessionHelpers'
 import * as toastActions from '../toastActions'
@@ -29,12 +29,11 @@ export async function startNewChatWithSummary(sessionId: string): Promise<string
   if (systemPrompt) {
     messages.push(createMessage('system', getMessageText(systemPrompt)))
   }
-  // A summary of a Needs you chat (slice 10) may quote its client mail: it keeps the question, so a cloud turn holds
-  // it back while that mail stays on this device (`cloudSafeMessages`).
-  const [questionId] = ch6QuestionIds(conversation)
+  // A summary of a Needs you chat, or of a chat that used a local-only recall (slice 10), may quote client mail: it
+  // keeps the marks, so a cloud turn holds it back while that mail stays on this device (`cloudSafeMessages`).
   messages.push({
     ...createMessage('user', `Previous conversation summary:\n\n${result.summary}`),
-    ...(questionId ? { pmQuestionId: questionId } : {}),
+    ...summaryLocalOnlyMarks(conversation),
   })
 
   const projectId = source.projectId || source.folderId

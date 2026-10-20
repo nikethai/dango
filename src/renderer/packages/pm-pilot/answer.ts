@@ -464,7 +464,8 @@ function carriesValue(fact: string, value: string): boolean {
 /**
  * A fact the user gave: one sentence of at most `FACT_CHANGE_MAX_FACT_CHARS`, and either the user's own words or
  * built on the option the user picked, with every date, number and name in it found in that option, the user's
- * message or the scope's name, and no link or address they lack.
+ * message or the scope's name, and no link or address they lack. A fact that passes on the picked path is still not
+ * saved as written: `answerWhich` saves the option's value instead.
  */
 function factFromUser(fact: string, userText: string, picked: Chosen | undefined, scopeName: string): boolean {
   if (!fact || fact.length > FACT_CHANGE_MAX_FACT_CHARS || !oneSentence(fact)) return false
@@ -618,6 +619,8 @@ async function answerWhich(
       mark
     )
   }
+  // On the picked path only the option's own value is saved: never wording the model added around it (constraint 2).
+  if (picked && !containsSpan(userText, fact)) fact = valueAsFact(picked.candidate.value)
   if (!(await pmStore.claimQuestion(q.id))) return refuse('answered', 'This question was already answered.', mark)
   let evidence: Evidence
   try {

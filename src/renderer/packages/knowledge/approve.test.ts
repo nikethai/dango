@@ -21,6 +21,12 @@ vi.mock('@/packages/review', () => ({
   addReviewEntry: vi.fn(async () => undefined),
   setReviewEntryState: vi.fn(async () => undefined),
 }))
+vi.mock('@/stores/settingsStore', () => ({
+  settingsStore: { getState: () => ({ getSettings: () => ({ provider: 'openai', modelId: 'gpt' }) }) },
+}))
+vi.mock('@/packages/model-calls/toolsets/pm-pilot', () => ({
+  loadLocalOnlySourceIds: async () => new Set(['gmail-local']),
+}))
 
 type ProposeInput = Parameters<typeof proposeKnowledge>[0]
 const input = (over: Partial<ProposeInput> = {}): ProposeInput => ({
@@ -93,6 +99,14 @@ describe('approveProposal', () => {
     expect(stored().proposals).toEqual([])
     expect(lastUndo().message).toBe('Approved "Launch is 13 Nov" for Acme')
     expect(setReviewEntryState).toHaveBeenLastCalledWith({ ref: { type: 'proposal', id: p.id } }, 'done')
+  })
+
+  it('approving an edited local-only proposal never sends it to a cloud checker', async () => {
+    await seedAcmeItem()
+    const p = await propose({ sources: [{ kind: 'email', label: 'Gmail', sourceId: 'gmail-local' }] })
+    const item = await approveProposal(p.id, { text: 'Launch is 14 Nov' })
+    expect(item.text).toBe('Launch is 14 Nov')
+    expect(checker).not.toHaveBeenCalled()
   })
 
   it('maps background-review origin to its history actor', async () => {

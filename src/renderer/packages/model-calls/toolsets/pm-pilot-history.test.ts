@@ -9,6 +9,7 @@ import {
   cloudSafeMessages,
   hideLocalOnlyRecalls,
   LOCAL_ONLY_ANSWER_PLACEHOLDER,
+  summaryLocalOnlyMarks,
 } from './pm-pilot-history'
 
 const opening = (questionId: string): Message => ({
@@ -115,5 +116,60 @@ describe('cloudSafeMessages', () => {
     const out = await cloudSafeMessages([summary, createMessage('user', 'go on')], 'openai')
     expect(JSON.stringify(out)).not.toContain('8,400')
     expect(text(out[1])).toBe('go on')
+  })
+})
+
+describe('after a local-only recall (final review I2)', () => {
+  const recall = (): Message => ({
+    ...createMessage('assistant', ''),
+    contentParts: [
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'c1',
+        toolName: 'client_recall',
+        args: { query: 'price' },
+        result: { ok: true, records: [{ text: 'The price is 4,200' }], localOnly: true },
+      },
+      { type: 'text', text: 'Jo said 4,200.' },
+    ],
+  })
+  const chat = (): Message[] => [
+    createMessage('user', 'What did Jo quote?'),
+    createMessage('assistant', 'Let me look.'),
+    recall(),
+    createMessage('user', 'And with tax?'),
+    createMessage('assistant', '4,200 plus 10% is 4,620.'),
+    createMessage('user', 'Thanks'),
+  ]
+
+  it('hides every later assistant message too, keeping earlier answers and the user words', () => {
+    const out = hideLocalOnlyRecalls(chat(), 'P', new Set())
+    expect(out.map(text)).toEqual(['What did Jo quote?', 'Let me look.', 'P', 'And with tax?', 'P', 'Thanks'])
+    expect(JSON.stringify(out)).not.toContain('4,620')
+  })
+
+  it('a cloud turn after a switch from a local model gets none of it', async () => {
+    const out = JSON.stringify(await cloudSafeMessages(chat(), 'openai'))
+    expect(out).not.toContain('4,200')
+    expect(out).not.toContain('4,620')
+  })
+
+  it('a summary marked local-only is hidden, whatever its role, and so is every later answer', () => {
+    const summary: Message = { ...createMessage('user', 'Summary: Jo quoted 4,200'), pmLocalOnly: true }
+    const out = hideLocalOnlyRecalls(
+      [summary, createMessage('user', 'go on'), createMessage('assistant', 'So 4,620 with tax.')],
+      'P',
+      new Set()
+    )
+    expect(out.map(text)).toEqual(['P', 'go on', 'P'])
+  })
+
+  it('marks a summary built from such messages, and from a marked summary', () => {
+    expect(summaryLocalOnlyMarks(chat())).toEqual({ pmLocalOnly: true })
+    expect(summaryLocalOnlyMarks([{ ...createMessage('user', 'S'), pmLocalOnly: true }])).toEqual({ pmLocalOnly: true })
+    expect(summaryLocalOnlyMarks([opening('q1'), recall()])).toEqual({ pmQuestionId: 'q1', pmLocalOnly: true })
+    expect(summaryLocalOnlyMarks([opening('q1')])).toEqual({ pmQuestionId: 'q1' })
+    expect(summaryLocalOnlyMarks([createMessage('user', 'hi')])).toEqual({})
   })
 })

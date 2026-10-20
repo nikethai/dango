@@ -29,6 +29,12 @@ vi.mock('@/packages/review', () => ({
   addReviewEntry: vi.fn(async () => undefined),
   setReviewEntryState: vi.fn(async () => undefined),
 }))
+vi.mock('@/stores/settingsStore', () => ({
+  settingsStore: { getState: () => ({ getSettings: () => ({ provider: 'openai', modelId: 'gpt' }) }) },
+}))
+vi.mock('@/packages/model-calls/toolsets/pm-pilot', () => ({
+  loadLocalOnlySourceIds: async () => new Set(['gmail-local']),
+}))
 
 type ProposeInput = Parameters<typeof proposeKnowledge>[0]
 const input = (over: Partial<ProposeInput> = {}): ProposeInput => ({
@@ -151,6 +157,16 @@ describe('proposeKnowledge', () => {
     expect(await proposeKnowledge(input())).not.toBeNull()
     expect(await proposeKnowledge(input({ text: ' Launch  is 13 nov! ' }))).toBeNull()
     expect(stored().proposals).toHaveLength(1)
+  })
+
+  it('a proposal from a local-only source is not sent to a cloud checker (no checkedAt)', async () => {
+    await seedItems()
+    const p = (await proposeKnowledge(
+      input({ sources: [{ kind: 'email', label: 'Gmail', sourceId: 'gmail-local' }] })
+    )) as KnowledgeProposal
+    expect(p).not.toBeNull()
+    expect(p.checkedAt).toBeUndefined()
+    expect(checker).not.toHaveBeenCalled()
   })
 
   it('checker failure is no conflict: a plain proposal without checkedAt', async () => {

@@ -399,7 +399,7 @@ describe('initPmQuestions', () => {
 })
 
 describe('client_answer: which-answer', () => {
-  it("answering approves the user's fact in the question's scope and adds a safe draft proposal", async () => {
+  it("answering approves the picked value in the question's scope and adds a safe draft proposal", async () => {
     const sessionId = await chatWith(whichAnswer(), 'It is 9,100 now')
     const result = await answerClientQuestion({
       sessionId,
@@ -412,7 +412,7 @@ describe('client_answer: which-answer', () => {
       expect.objectContaining({
         scopeId: 'acme',
         kind: 'fact',
-        text: 'The revised quote is 9,100.',
+        text: '9,100',
         origin: 'user',
         sources: [
           { kind: 'user', label: 'your answer in chat' },
@@ -420,11 +420,11 @@ describe('client_answer: which-answer', () => {
         ],
       })
     )
-    expect(approveProposal).toHaveBeenCalledWith('p1', { text: 'The revised quote is 9,100.' })
+    expect(approveProposal).toHaveBeenCalledWith('p1', { text: '9,100' })
     const call = vi.mocked(actOnThread).mock.calls[0][0]
     expect(call.scope.id).toBe('acme')
     expect(call.inbound.externalId).toBe('m1')
-    expect(call.judgement.answer).toBe('The revised quote is 9,100.')
+    expect(call.judgement.answer).toBe('9,100')
     expect(tierFor(call.judgement)).toBe('high')
     expect(call.evidence.map((e) => e.id)).toEqual(['k:k-p1'])
     expect(call.localOnlyBlocked).toBe(false)
@@ -445,7 +445,7 @@ describe('client_answer: which-answer', () => {
     vi.mocked(proposeKnowledge).mockResolvedValueOnce(null)
     let sessionId = await chatWith(whichAnswer(), 'It is 9,100 now')
     await answerClientQuestion({ sessionId, answer: '9,100', fact: 'The quote is 9,100.', choice: '2' })
-    expect(addKnowledge).toHaveBeenCalledWith({ scopeId: 'acme', kind: 'fact', text: 'The quote is 9,100.' })
+    expect(addKnowledge).toHaveBeenCalledWith({ scopeId: 'acme', kind: 'fact', text: '9,100' })
 
     vi.mocked(approveProposal).mockRejectedValueOnce(new h.KnowledgeConflictError({ id: 'c1' }))
     sessionId = await chatWith(whichAnswer({ id: 'q5', threadId: 't1' }), 'It is 9,100 now')
@@ -455,7 +455,7 @@ describe('client_answer: which-answer', () => {
   })
 
   it('an answer already approved in the scope counts as saved', async () => {
-    h.knowledge = [{ id: 'k9', scopeId: 'acme', text: 'The quote is 9,100.' }]
+    h.knowledge = [{ id: 'k9', scopeId: 'acme', text: '9,100' }]
     vi.mocked(proposeKnowledge).mockResolvedValueOnce(null)
     const sessionId = await chatWith(whichAnswer(), 'It is 9,100 now')
     const result = await answerClientQuestion({ sessionId, answer: '9,100', fact: 'The quote is 9,100.', choice: '2' })
@@ -719,6 +719,31 @@ describe('fix round: picking an option and what is saved', () => {
       code: 'not_grounded',
     })
     expect(proposeKnowledge).toHaveBeenCalledTimes(2)
+  })
+
+  it("a picked option saves only the option's value, never the model's embellished sentence (final review I4)", async () => {
+    const sessionId = await chatWith(whichAnswer(), '2')
+    const result = await answerClientQuestion({
+      sessionId,
+      answer: '9,100',
+      fact: 'The revised quote is 9,100 and includes free hosting',
+      choice: '2',
+    })
+    expect(result.ok).toBe(true)
+    expect(vi.mocked(proposeKnowledge).mock.calls[0][0].text).toBe('9,100')
+    expect(approveProposal).toHaveBeenCalledWith('p1', { text: '9,100' })
+    expect(JSON.stringify(vi.mocked(actOnThread).mock.calls[0][0])).not.toContain('hosting')
+  })
+
+  it("a typed answer keeps the user's own sentence", async () => {
+    const sessionId = await chatWith(whichAnswer(), 'The revised quote is 9,100 with hosting')
+    const result = await answerClientQuestion({
+      sessionId,
+      answer: '9,100',
+      fact: 'The revised quote is 9,100 with hosting',
+    })
+    expect(result.ok).toBe(true)
+    expect(vi.mocked(proposeKnowledge).mock.calls[0][0].text).toBe('The revised quote is 9,100 with hosting')
   })
 
   it('results echo no sender, domain or saved value back to the model', async () => {
