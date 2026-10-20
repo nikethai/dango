@@ -1,0 +1,80 @@
+{
+  "id": "18f0e1b2c3d4e5fb",
+  "historyId": "1000",
+  "messages": [
+    {
+      "id": "18f0e1b2c3d4e5fb",
+      "threadId": "18f0e1b2c3d4e5fb",
+      "labelIds": [
+        "INBOX",
+        "CATEGORY_PROMOTIONS"
+      ],
+      "snippet": "",
+      "historyId": "1000",
+      "internalDate": "1788512400000",
+      "sizeEstimate": 1000,
+      "payload": {
+        "partId": "",
+        "mimeType": "multipart/alternative",
+        "filename": "",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Tools Weekly <news@tools.example>"
+          },
+          {
+            "name": "To",
+            "value": "pm@agency.vn"
+          },
+          {
+            "name": "Subject",
+            "value": "This week in tools"
+          },
+          {
+            "name": "List-Unsubscribe",
+            "value": "<https://tools.example/unsub>"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<news001@tools.example>"
+          }
+        ],
+        "body": {
+          "size": 0
+        },
+        "parts": [
+          {
+            "partId": "0",
+            "mimeType": "text/plain",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=\"UTF-8\""
+              }
+            ],
+            "body": {
+              "size": 23,
+              "data": "VG9wIHN0b3JpZXMgdGhpcyB3ZWVrLgo"
+            }
+          },
+          {
+            "partId": "1",
+            "mimeType": "text/html",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=\"UTF-8\""
+              }
+            ],
+            "body": {
+              "size": 29,
+              "data": "PHA-VG9wIHN0b3JpZXMgdGhpcyB3ZWVrLjwvcD4"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

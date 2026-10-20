@@ -1,0 +1,85 @@
+{
+  "id": "18f0a1b2c3d4e5f6",
+  "historyId": "1000",
+  "messages": [
+    {
+      "id": "18f0a1b2c3d4e5f6",
+      "threadId": "18f0a1b2c3d4e5f6",
+      "labelIds": [
+        "INBOX",
+        "UNREAD",
+        "IMPORTANT"
+      ],
+      "snippet": "",
+      "historyId": "1000",
+      "internalDate": "1788566400000",
+      "sizeEstimate": 1000,
+      "payload": {
+        "partId": "",
+        "mimeType": "multipart/alternative",
+        "filename": "",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Jo Tran <jo@acme.example>"
+          },
+          {
+            "name": "To",
+            "value": "PM <pm@agency.vn>"
+          },
+          {
+            "name": "Cc",
+            "value": "Kim Le <KIM@acme.example>"
+          },
+          {
+            "name": "Subject",
+            "value": "Homepage copy"
+          },
+          {
+            "name": "Date",
+            "value": "Mon, 1 Sep 2026 10:00:00 +0700"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<CAplain001@mail.acme.example>"
+          }
+        ],
+        "body": {
+          "size": 0
+        },
+        "parts": [
+          {
+            "partId": "0",
+            "mimeType": "text/plain",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=\"UTF-8\""
+              }
+            ],
+            "body": {
+              "size": 80,
+              "data": "SGksCgpUaGUgaG9tZXBhZ2UgY29weSBpcyBhcHByb3ZlZC4gUGxlYXNlIGdvIGFoZWFkIHdpdGggdGhlIGJ1aWxkLgoKVGhhbmtzLApKbwo"
+            }
+          },
+          {
+            "partId": "1",
+            "mimeType": "text/html",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=\"UTF-8\""
+              }
+            ],
+            "body": {
+              "size": 133,
+              "data": "PGRpdj5IaSw8L2Rpdj48ZGl2Pjxicj48L2Rpdj48ZGl2PlRoZSBob21lcGFnZSBjb3B5IGlzIDxiPmFwcHJvdmVkPC9iPi4gUGxlYXNlIGdvIGFoZWFkIHdpdGggdGhlIGJ1aWxkLjwvZGl2PjxkaXY-VGhhbmtzLDxicj5KbzwvZGl2Pg"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

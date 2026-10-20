@@ -1,0 +1,148 @@
+{
+  "id": "18f0c1b2c3d4e5f8",
+  "historyId": "1000",
+  "messages": [
+    {
+      "id": "18f0c1b2c3d4e5f8",
+      "threadId": "18f0c1b2c3d4e5f8",
+      "labelIds": [
+        "INBOX"
+      ],
+      "snippet": "",
+      "historyId": "1000",
+      "internalDate": "1788246000000",
+      "sizeEstimate": 1000,
+      "payload": {
+        "partId": "",
+        "mimeType": "multipart/alternative",
+        "filename": "",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Jo Tran <jo@acme.example>"
+          },
+          {
+            "name": "To",
+            "value": "pm@agency.vn"
+          },
+          {
+            "name": "Subject",
+            "value": "Staging access"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<CAquote001@mail.acme.example>"
+          }
+        ],
+        "body": {
+          "size": 0
+        },
+        "parts": [
+          {
+            "partId": "0",
+            "mimeType": "text/plain",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=\"UTF-8\""
+              }
+            ],
+            "body": {
+              "size": 37,
+              "data": "Q2FuIHdlIGdldCBzdGFnaW5nIGFjY2VzcyB0aGlzIHdlZWs_Cg"
+            }
+          },
+          {
+            "partId": "1",
+            "mimeType": "text/html",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=\"UTF-8\""
+              }
+            ],
+            "body": {
+              "size": 47,
+              "data": "PGRpdj5DYW4gd2UgZ2V0IHN0YWdpbmcgYWNjZXNzIHRoaXMgd2Vlaz88L2Rpdj4"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "18f0c1b2c3d4e5f9",
+      "threadId": "18f0c1b2c3d4e5f8",
+      "labelIds": [
+        "INBOX"
+      ],
+      "snippet": "",
+      "historyId": "1000",
+      "internalDate": "1788339600000",
+      "sizeEstimate": 1000,
+      "payload": {
+        "partId": "",
+        "mimeType": "multipart/alternative",
+        "filename": "",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Jo Tran <jo@acme.example>"
+          },
+          {
+            "name": "To",
+            "value": "pm@agency.vn"
+          },
+          {
+            "name": "Subject",
+            "value": "Re: Staging access"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<CAquote002@mail.acme.example>"
+          },
+          {
+            "name": "In-Reply-To",
+            "value": "<CAquote001@mail.acme.example>"
+          }
+        ],
+        "body": {
+          "size": 0
+        },
+        "parts": [
+          {
+            "partId": "0",
+            "mimeType": "text/plain",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=\"UTF-8\""
+              }
+            ],
+            "body": {
+              "size": 137,
+              "data": "QWxzbywgRnJpZGF5IHdvcmtzIGZvciB0aGUgZGVtby4KCk9uIE1vbiwgMSBTZXAgMjAyNiBhdCAxMDowMCwgSm8gVHJhbiA8am9AYWNtZS5leGFtcGxlPgp3cm90ZToKPiBDYW4gd2UgZ2V0IHN0YWdpbmcgYWNjZXNzIHRoaXMgd2Vlaz8KPgo"
+            }
+          },
+          {
+            "partId": "1",
+            "mimeType": "text/html",
+            "filename": "",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=\"UTF-8\""
+              }
+            ],
+            "body": {
+              "size": 182,
+              "data": "PGRpdj5BbHNvLCBGcmlkYXkgd29ya3MgZm9yIHRoZSBkZW1vLjwvZGl2Pjxicj48ZGl2IGNsYXNzPSJnbWFpbF9xdW90ZSI-T24gTW9uLCAxIFNlcCAyMDI2IGF0IDEwOjAwLCBKbyBUcmFuIHdyb3RlOjxibG9ja3F1b3RlPkNhbiB3ZSBnZXQgc3RhZ2luZyBhY2Nlc3MgdGhpcyB3ZWVrPzwvYmxvY2txdW90ZT48L2Rpdj4"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
