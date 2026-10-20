@@ -22,7 +22,16 @@ A tool that runs shell commands or arbitrary code is a **command tool**. A tool 
 - They never use a scope or session grant, and grants stored for them before this decision are ignored.
 - Their sheet says "Dango always asks before it runs commands."
 
-Simple read-only commands are the exception and run without asking. A call counts as read-only only when it is a single command, from a short allowlist (for example `ls`, `df`, `pwd`, `cat`, `grep`, `git status`), with no chaining, piping, redirection, command substitution or `sudo`, and the engine does not rate it CRITICAL (so `cat ~/.ssh/id_rsa` still asks). An allowlist fails safe: anything it doesn't recognise asks.
+Simple read-only commands are the exception and run without asking. A call counts as read-only only when all of these hold:
+
+- the tool is a local shell tool (never SQL, code, REPL, remote or other exec tools);
+- it is a single command from a short allowlist (`ls`, `pwd`, `df`, `du`, `ps`, `cat`, `head`, `tail`, `wc`, `grep`, `find`, `git status`/`log`/`diff`/`show`…) with only allowed flags;
+- the text uses plain characters only, so no quotes, `$`, `%`, `~`, wildcards, brackets, chaining, pipes or redirects;
+- every argument key is a known one (`command`, `args`, `cwd`, `reason`…), so a decoy field can't hide the real request;
+- it reads only inside the working folder (no absolute, `..` or drive paths) and no secret files (`.env`, `.ssh`, `.aws`, shell history…);
+- the arguments on their own rate no higher than MEDIUM.
+
+An allowlist fails safe: anything it doesn't recognise asks. `cat "my file"` asks because of the quotes.
 
 The model's own judgement of whether a command is safe is not used, because text the model reads (web pages, files, tool output) can tell it to call something harmless-sounding.
 
@@ -32,6 +41,8 @@ The risk engine keeps rating command calls. Its tier still decides how the sheet
 
 - Every command outside the read-only allowlist costs one click per call. Adding a command to the allowlist is a code change with tests, never a grant.
 - Detection by name and description can miss a command tool that hides its purpose. Such a tool still asks for anything the engine rates CRITICAL.
+- The read-only shortcut uses the server's own working folder when a call gives none; if that folder is home, plain reads there run without asking (secret files still ask).
+- `git status`, `git diff` and `git log` can run programs set in the repository's own git config (fsmonitor, textconv, an external diff or pager). Changing that config needs a command that asks, so this is accepted.
 - Read-only tools whose names mention commands (for example `list_commands`) keep "Always" unless their description says they run something.
 
 ## Links
