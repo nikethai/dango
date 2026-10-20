@@ -252,6 +252,84 @@ describe('risk-engine', () => {
       expect(shell(command)).not.toBe(ToolRiskTier.CRITICAL)
     })
 
+    it.each([
+      'rm -r /etc',
+      'rm -r /usr',
+      'rm -r /var/lib',
+      'rm -r /Users/me',
+      'rm -r /home/me',
+      'rm -r /Users/*',
+      'rm -r /home/*',
+      `rm -r "\${HOME}"/`,
+      `rm -r \${HOME:?}/`,
+      'rm -r ~//',
+      'rm -r ~/.*',
+      'rm -r $HOME/.*',
+      'rm -r $HOME/..',
+      'rm -r ~/Documents',
+      'rm -r ~/Library',
+      'rm -r ~/.ssh',
+      'rm -r $HOME/Documents',
+      '(rm -r ~)',
+      'x=$(rm -r ~)',
+      'echo `rm -r ~`',
+      'find . -name x -exec /bin/rm {} ;',
+      'find ~ -type f -exec shred -u {} ;',
+      'shred -u secrets.txt',
+      'diskutil eraseDisk APFS X disk2',
+      'diskutil eraseVolume APFS X disk2s1',
+      'diskutil zeroDisk disk2',
+      'diskutil secureErase 0 disk2',
+      'diskutil partitionDisk disk2 GPT APFS X 100%',
+      'diskutil reformat disk2s1',
+      'rsync -a --delete empty/ ~/',
+      'rsync -a --delete ./site/ $HOME',
+      'rsync -a --delete-after ./site/ ~/Documents',
+      'python -c "import shutil; shutil.rmtree(\'/\')"',
+      'python -c "import shutil, os; shutil.rmtree(os.path.expanduser(\'~\'))"',
+      "node -e \"require('fs').rmSync('/', { recursive: true })\"",
+      'npx rimraf ~',
+      'node -e "rimraf.sync(\'/\')"',
+      'git push -f origin main',
+      'git push origin main -f',
+    ])('%s is CRITICAL (system roots, home targets, other destroyers)', (command) => {
+      expect(shell(command)).toBe(ToolRiskTier.CRITICAL)
+    })
+
+    it.each([
+      'chmod -R 755 ./scripts',
+      'chown -R $USER ./',
+      'rm -r ~/.cache/pnpm',
+      'rm -r ~/.cache',
+      'rm -r ~/.npm',
+      'rm -r ~/tmp',
+      'rm -r ~/project/dist',
+      'git rm -r --cached .',
+      'grep -rn foo src',
+      'ls -la',
+      'rsync -a --delete ./dist/ ./backup/',
+      'rsync -a ./site/ ~/',
+      'python -c "import shutil; shutil.rmtree(\'build\')"',
+      'npx rimraf dist',
+      'git push -u origin main',
+      'git push --follow-tags origin main',
+      'cat ~/Documents/notes.md',
+    ])('%s is not CRITICAL (more look-alikes)', (command) => {
+      expect(shell(command)).not.toBe(ToolRiskTier.CRITICAL)
+    })
+
+    it('pairs a spawn-style command with its args, but not unrelated fields', () => {
+      const tier = (args: unknown) => getToolRiskTier('run_command', 'Run a shell command', args)
+      expect(tier({ command: 'rm', args: ['-r', '~'] })).toBe(ToolRiskTier.CRITICAL)
+      expect(tier({ command: 'find', args: ['~', '-delete'] })).toBe(ToolRiskTier.CRITICAL)
+      expect(tier({ command: 'chmod', args: ['-R', '777', '/'] })).toBe(ToolRiskTier.CRITICAL)
+      expect(tier({ program: 'rm', argv: ['-r', '/'] })).toBe(ToolRiskTier.CRITICAL)
+      expect(tier({ executable: 'rm', arguments: ['-r', '-f', 'build'] })).toBe(ToolRiskTier.CRITICAL)
+      expect(tier({ spawn: { bin: 'rm', args: ['-r', '~/'] } })).toBe(ToolRiskTier.CRITICAL)
+      expect(tier({ cmd: 'rm -r build', cwd: '/' })).not.toBe(ToolRiskTier.CRITICAL)
+      expect(tier({ command: 'ls', args: ['-la', '/'] })).not.toBe(ToolRiskTier.CRITICAL)
+    })
+
     it('classifies each string value, also nested and in arrays', () => {
       expect(getToolRiskTier('run_command', 'Run a shell command', { opts: { cmd: 'rm -r ~/' } })).toBe(
         ToolRiskTier.CRITICAL

@@ -102,10 +102,22 @@ const MEDIUM_PATH_PATTERNS = [
 const HAS_RECURSIVE_FLAG = String.raw`(?=(?:[^;&|]*\s)?-(?:[a-z]*r[a-z]*|-recursive)\b)`
 /** Somewhere in this command, a force flag: -f, -rf, --force. */
 const HAS_FORCE_FLAG = String.raw`(?=(?:[^;&|]*\s)?-(?:[a-z]*f[a-z]*|-force)\b)`
-/** A whole argument that means home, root, the parent or everything here: ~ ~/ ~bob $HOME / /* .. ../* * .* ./* */
-const BROAD_TARGET = String.raw`["']?(?:(?:~[\w.-]*|\$home|\$\{home\}|\.\.)\/?\*?|\/\*?|\*|\.\*|\.\/\*)["']?(?=[\s;&|]|$)`
-/** A whole argument that is root or a top-level system directory: / /etc /usr/ … */
-const SYSTEM_ROOT_TARGET = String.raw`["']?\/(?:(?:etc|usr|bin|sbin|lib|lib64|var|boot|sys|proc|dev|root|home|opt|system|library|applications|users)\/?)?\*?["']?(?=[\s;&|]|$)`
+/** Where a whole argument ends: space, a shell separator, `)` or a backtick (`$(rm -r ~)`), or the end. */
+const ARG_END = String.raw`(?=[\s;&|)\x60]|$)`
+/** One path segment. */
+const SEGMENT = String.raw`[^/\s;&|"'()\x60]+`
+/** First-level home folders that are only caches or scratch space: deleting them is not CRITICAL. */
+const DISPOSABLE_HOME_FOLDER = String.raw`(?:\.cache|\.npm|\.pnpm-store|\.yarn|\.bun|\.gradle|\.m2|tmp|temp|\.tmp)(?=[/"']|${ARG_END})`
+/** Home, or a first-level folder in it: ~ ~/ ~// ~bob "${HOME}"/ ${HOME:?}/ ~/.* $HOME/.. ~/Documents ~/.ssh */
+const HOME_TARGET = String.raw`["']?(?:~[\w.-]*|\$home|\$\{home(?::[^}]*)?\})["']?(?:\/+(?:(?!${DISPOSABLE_HOME_FOLDER})${SEGMENT})?\/?\*?)?["']?${ARG_END}`
+/** A whole argument that means home, root, the parent or everything here: home targets, / /* .. ../* * .* ./* */
+const BROAD_TARGET = String.raw`(?:${HOME_TARGET}|["']?(?:\.\.\/?\*?|\/\*?|\*|\.\*|\.\/\*)["']?${ARG_END})`
+/** Root, a top-level system directory or one folder in it: / /etc /usr/ /var/lib /Users/me /home/* */
+const SYSTEM_ROOT_TARGET = String.raw`["']?\/(?:(?:etc|usr|bin|sbin|lib|lib64|var|boot|sys|proc|dev|root|home|opt|system|library|applications|users)(?:\/${SEGMENT})?\/?)?\*?["']?${ARG_END}`
+
+/** Spawn-style args: the command field and the args-array field that go together. */
+const SPAWN_COMMAND_KEYS = ['command', 'cmd', 'program', 'executable', 'bin']
+const SPAWN_ARGS_KEYS = ['args', 'argv', 'arguments']
 
 const CRITICAL_ARG_PATTERNS = [
   // Force / recursive destructive flags
@@ -116,15 +128,23 @@ const CRITICAL_ARG_PATTERNS = [
   /--no-preserve-root/,
   // rm with a recursive and a force flag, in any order or form (-fr, -r -f, -rfv, --recursive --force)
   new RegExp(`\\brm\\s+${HAS_RECURSIVE_FLAG}${HAS_FORCE_FLAG}`),
-  // Recursive rm, chmod or chown of home, root, the parent or everything here, even without -f
-  // (rm -r ~/, rm -r "$HOME", rm -r ~bob, rm -r .., rm -r *, chmod -R 777 /, chown -R me $HOME)
-  new RegExp(`\\b(?:rm|chmod|chown)\\s+${HAS_RECURSIVE_FLAG}[^;&|]*\\s${BROAD_TARGET}`),
-  // chmod / chown of root or a top-level system directory (chmod 777 /, chown root /usr/)
+  // Recursive rm, chmod or chown of home (or a first-level folder in it), root, a system directory, the parent or
+  // everything here, even without -f (rm -r ~/, rm -r ~/Documents, rm -r /var/lib, rm -r .., chmod -R 777 /)
+  new RegExp(`\\b(?:rm|chmod|chown)\\s+${HAS_RECURSIVE_FLAG}[^;&|]*\\s(?:${BROAD_TARGET}|${SYSTEM_ROOT_TARGET})`),
+  // chmod / chown of root or a system directory (chmod 777 /, chown root /usr/)
   new RegExp(`\\b(?:chmod|chown)\\s+[^;&|]*\\s${SYSTEM_ROOT_TARGET}`),
-  // find that deletes what it finds
-  /\bfind\s[^;&|]*\s-(?:delete|exec(?:dir)?\s+rm)\b/,
+  // find that deletes or shreds what it finds (-delete, -exec rm, -exec /bin/rm, -exec shred)
+  /\bfind\s[^;&|]*\s-(?:delete|exec(?:dir)?\s+(?:\S*\/)?(?:rm|shred))\b/,
+  /\bshred\b/,
+  // rsync that deletes extra files in home or a first-level home folder
+  new RegExp(`\\brsync\\s(?=[^;&|]*\\s--delete)[^;&|]*\\s${HOME_TARGET}`),
+  // Recursive delete from code: shutil.rmtree / fs.rmSync / rimraf of / or ~
+  /\b(?:shutil\.rmtree|rmsync|rimraf)\b\s*\(?\s*(?:[\w.]+\(\s*)?["']?(?:\/|~|\$home)\/?["']?(?=[\s,);&|`]|$)/,
+  // Force push (-f, like --force above)
+  /\bgit\s+push\b[^;&|]*\s-[a-z]*f[a-z]*\b/,
   // Disk formatting / raw writes to a device
   /\bmkfs\b/,
+  /\bdiskutil\s+(?:erase\w*|zerodisk|secureerase|partitiondisk|reformat)\b/,
   /\bdd\s[^;&|]*\bof=\/dev\//,
   // Runs as root
   /\bsudo\b/,
@@ -163,10 +183,14 @@ function flattenArgs(args: unknown): string {
 
 const MAX_ARG_DEPTH = 8
 
+function stringItems(list: unknown[]): string[] {
+  return list.filter((v): v is string => typeof v === 'string')
+}
+
 /**
  * The texts the path and argument patterns run on, lowercased: the flattened args (as before), every string value
- * (so JSON quoting does not hide `"/"` or the end of a command) and each string array joined by spaces
- * (`["rm", "-r", "/"]`).
+ * (so JSON quoting does not hide `"/"` or the end of a command), each string array joined by spaces
+ * (`["rm", "-r", "/"]`) and each spawn-style command with its args (`{ command: "rm", args: ["-r", "~"] }`).
  */
 function argTexts(args: unknown): string[] {
   const texts = new Set<string>()
@@ -179,12 +203,24 @@ function argTexts(args: unknown): string[] {
       return
     }
     if (typeof value !== 'object') return
-    const items = Array.isArray(value) ? value : Object.values(value)
     if (Array.isArray(value)) {
-      const joined = value.filter((v): v is string => typeof v === 'string').join(' ')
+      const joined = stringItems(value).join(' ')
       if (joined) texts.add(joined.toLowerCase())
+      for (const item of value) walk(item, depth + 1)
+      return
     }
-    for (const item of items) walk(item, depth + 1)
+    const record = value as Record<string, unknown>
+    // Spawn-style call: { command: 'rm', args: ['-r', '~'] } reads as `rm -r ~`. Only these key pairs are joined, so
+    // unrelated fields ({ cmd: 'rm -r build', cwd: '/' }) never combine.
+    for (const commandKey of SPAWN_COMMAND_KEYS) {
+      const command = record[commandKey]
+      if (typeof command !== 'string' || !command) continue
+      for (const argsKey of SPAWN_ARGS_KEYS) {
+        const list = record[argsKey]
+        if (Array.isArray(list)) texts.add(`${command} ${stringItems(list).join(' ')}`.toLowerCase())
+      }
+    }
+    for (const item of Object.values(record)) walk(item, depth + 1)
   }
   walk(args, 0)
   return [...texts]
