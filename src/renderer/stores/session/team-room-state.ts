@@ -56,7 +56,17 @@ export function getTeamRoomActions(): TeamRoomActionsState {
   return actions
 }
 
+/** When the current captain answer (live phase 'deliver') started, for the double-Stop guard. */
+let deliverStartedAt: number | undefined
+
 export function setTeamRoomLive(next: TeamRoomLiveStatus) {
+  const sameDeliverTurn =
+    live?.phase === 'deliver' &&
+    next?.phase === 'deliver' &&
+    live.sessionId === next.sessionId &&
+    live.runId === next.runId
+  if (next?.phase !== 'deliver') deliverStartedAt = undefined
+  else if (!sameDeliverTurn) deliverStartedAt = Date.now()
   live = next
   notify()
 }
@@ -107,17 +117,23 @@ export function isSwarmStoppable(sessionId: string): boolean {
   return live?.mode === 'swarm' && live.sessionId === sessionId && live.phase !== 'deliver'
 }
 
+/** After the first Stop, a press this soon after the captain's answer starts (with no text yet) is a double press. */
+export const SWARM_DOUBLE_STOP_GUARD_MS = 1_500
+
 /**
  * What a Stop press in this chat should do while it may run a Swarm:
  * - 'swarm': first Stop during the run, so stop the run and let the captain answer (requestSwarmStop)
- * - 'ignore': Stop was already requested and the captain's answer has written nothing yet (a double press must not
- *   kill the answer the first press asked for)
- * - 'stop': an ordinary Stop of the message that is generating
+ * - 'ignore': Stop was already requested and the captain's answer has not started, or started less than 1.5 s ago and
+ *   has written nothing yet (a double press must not kill the answer the first press asked for)
+ * - 'stop': an ordinary Stop of the message that is generating, including the captain's answer after the guard
  */
 export function swarmStopRoute(sessionId: string, generating?: Message | null): 'swarm' | 'ignore' | 'stop' {
   if (isSwarmStopRequested(sessionId)) {
     const hasText = Boolean(generating && getMessageText(generating, false, false).trim())
-    return hasText ? 'stop' : 'ignore'
+    if (hasText) return 'stop'
+    const deliverStarted = live?.sessionId === sessionId && live.phase === 'deliver' && deliverStartedAt !== undefined
+    if (!deliverStarted) return 'ignore'
+    return Date.now() - (deliverStartedAt ?? 0) < SWARM_DOUBLE_STOP_GUARD_MS ? 'ignore' : 'stop'
   }
   return isSwarmStoppable(sessionId) ? 'swarm' : 'stop'
 }

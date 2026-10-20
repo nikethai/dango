@@ -302,4 +302,34 @@ describe('swarmStopRoute (composer and message Stop)', () => {
     expect(swarmStopRoute(SESSION, deliver('Partial answer'))).toBe('stop')
     expect(h.stopChatIfRunning).toHaveBeenCalledTimes(1)
   })
+
+  it('after Stop, the captain answer can be stopped 1.5 s after it starts, even before any text', async () => {
+    let now = 1_000_000
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    try {
+      setTeamRoomLive({ sessionId: SESSION, phase: 'do', mode: 'swarm', runId: 'swarm-1' })
+      await requestSwarmStop(SESSION)
+      now += 10_000
+      // Before the answer turn starts: ignored, however long the do turn takes to stop.
+      expect(swarmStopRoute(SESSION, null)).toBe('ignore')
+      setTeamRoomLive({ sessionId: SESSION, phase: 'deliver', mode: 'swarm', runId: 'swarm-1' })
+      now += 1_499
+      expect(swarmStopRoute(SESSION, deliver(''))).toBe('ignore')
+      // A repeated live update of the same answer turn does not restart the guard.
+      setTeamRoomLive({ sessionId: SESSION, phase: 'deliver', mode: 'swarm', runId: 'swarm-1', speakerName: 'Ana' })
+      now += 1
+      // Slow first token or waiting on a tool: an ordinary Stop of the answer.
+      expect(swarmStopRoute(SESSION, deliver(''))).toBe('stop')
+      expect(swarmStopRoute(SESSION, null)).toBe('stop')
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it('within the guard, an answer that already has text stops', async () => {
+    setTeamRoomLive({ sessionId: SESSION, phase: 'do', mode: 'swarm' })
+    await requestSwarmStop(SESSION)
+    setTeamRoomLive({ sessionId: SESSION, phase: 'deliver', mode: 'swarm' })
+    expect(swarmStopRoute(SESSION, deliver('Partial answer'))).toBe('stop')
+  })
 })
