@@ -1,7 +1,7 @@
-import { type CSSProperties, useEffect, useRef } from 'react'
+import { type CSSProperties, useLayoutEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Sheet } from '@/components/ui/Sheet'
-import type { PermissionChoice, PermissionRequest } from '@/packages/tool-permission'
+import { alwaysAsks, type PermissionChoice, type PermissionRequest } from '@/packages/tool-permission'
 
 export type ToolPermissionSheetProps = {
   request: PermissionRequest | null
@@ -9,8 +9,11 @@ export type ToolPermissionSheetProps = {
 }
 
 const MAX_TOUCHES = 5
-/** After the head changes under the pointer, clicks are ignored this long so a double-click can't answer the next sheet. */
-const NEXT_HEAD_GUARD_MS = 400
+/**
+ * Each new head ignores clicks this long, so a click or Enter meant for the composer, Stop or the previous sheet
+ * can't answer it.
+ */
+const NEW_HEAD_GUARD_MS = 400
 
 const touchStyle: CSSProperties = {
   fontFamily: 'var(--dango-font-mono)',
@@ -28,16 +31,17 @@ export function ToolPermissionSheet({ request, onChoose }: ToolPermissionSheetPr
   const guardedRef = useRef(false)
   const requestId = request?.id ?? null
 
-  useEffect(() => {
+  // Layout effect: the guard is up before the new sheet paints.
+  useLayoutEffect(() => {
     const previous = shownIdRef.current
     shownIdRef.current = requestId
-    // First open: the Sheet focuses Allow once itself. A new head while open: refocus and guard clicks.
-    if (!requestId || !previous || previous === requestId) return
-    allowRef.current?.focus()
+    if (!requestId) return
+    // First open: the Sheet focuses Allow once itself. A new head while open: refocus it.
+    if (previous && previous !== requestId) allowRef.current?.focus()
     guardedRef.current = true
     const timer = setTimeout(() => {
       guardedRef.current = false
-    }, NEXT_HEAD_GUARD_MS)
+    }, NEW_HEAD_GUARD_MS)
     return () => {
       clearTimeout(timer)
       guardedRef.current = false
@@ -57,9 +61,13 @@ export function ToolPermissionSheet({ request, onChoose }: ToolPermissionSheetPr
   return (
     <Sheet
       opened
-      onClose={() => onChoose('deny')}
+      onClose={() => choose('deny')}
       title={what}
-      hint={request.allowAlways ? undefined : t('Dango always asks before it sends, deletes or changes your files.')}
+      hint={
+        alwaysAsks(request.toolName)
+          ? t('Dango always asks before it sends, deletes or changes your files.')
+          : undefined
+      }
       actions={
         <>
           <button type="button" className="dg-btn dg-btn--ghost" onClick={() => choose('deny')}>

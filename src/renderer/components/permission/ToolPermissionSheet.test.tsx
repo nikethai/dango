@@ -68,20 +68,73 @@ describe('ToolPermissionSheet', () => {
   })
 
   it('Esc is Not now', () => {
+    vi.useFakeTimers()
     const onChoose = vi.fn()
     render(<ToolPermissionSheet request={makeRequest()} onChoose={onChoose} />)
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onChoose).toHaveBeenCalledTimes(1)
     expect(onChoose).toHaveBeenCalledWith('deny')
   })
 
   it('buttons call onChoose with once, always and deny', () => {
+    vi.useFakeTimers()
     const onChoose = vi.fn()
     render(<ToolPermissionSheet request={makeRequest()} onChoose={onChoose} />)
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
     fireEvent.click(screen.getByRole('button', { name: 'Always in this scope' }))
     fireEvent.click(screen.getByRole('button', { name: 'Not now' }))
     expect(onChoose.mock.calls).toEqual([['once'], ['always'], ['deny']])
+  })
+
+  it('first open ignores an immediate click, Enter or scrim click', () => {
+    vi.useFakeTimers()
+    const onChoose = vi.fn()
+    render(<ToolPermissionSheet request={makeRequest()} onChoose={onChoose} />)
+    // The user was pressing Enter in the composer or clicking Stop as the sheet appeared.
+    const allow = screen.getByRole('button', { name: 'Allow once' })
+    fireEvent.keyDown(allow, { key: 'Enter' })
+    fireEvent.click(allow)
+    fireEvent.click(screen.getByRole('button', { name: 'Not now' }))
+    fireEvent.click(document.querySelector('[aria-hidden="true"]') as Element)
+    expect(onChoose).not.toHaveBeenCalled()
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    fireEvent.click(allow)
+    expect(onChoose.mock.calls).toEqual([['once']])
+  })
+
+  it('a CRITICAL call that is not always-asks hides Always and shows no hint', () => {
+    render(
+      <ToolPermissionSheet
+        request={makeRequest({
+          toolName: 'computer_click',
+          riskTier: ToolRiskTier.CRITICAL,
+          allowAlways: false,
+          summary: { what: 'Use your computer: click', touches: [] },
+        })}
+        onChoose={() => {}}
+      />
+    )
+    expect(screen.queryByRole('button', { name: /^Always/ })).toBeNull()
+    expect(screen.queryByText(HINT)).toBeNull()
+  })
+
+  it('scrim click after the guard is Not now', () => {
+    vi.useFakeTimers()
+    const onChoose = vi.fn()
+    render(<ToolPermissionSheet request={makeRequest()} onChoose={onChoose} />)
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    fireEvent.click(document.querySelector('[aria-hidden="true"]') as Element)
+    expect(onChoose.mock.calls).toEqual([['deny']])
   })
 
   it('delete hides always and shows the always-asks hint', () => {
@@ -215,6 +268,9 @@ describe('ToolPermissionHost', () => {
     })
     expect(screen.getByRole('dialog', { name: 'Edit docs/a.md' })).toBeTruthy()
 
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
     act(() => {
       fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
     })
