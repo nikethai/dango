@@ -718,15 +718,12 @@ describe('theme mapping onto Dango', () => {
 
   test('every focus ring is drawn with --dango-focus', () => {
     const files = ['src/renderer/static/globals.css', 'src/renderer/static/dango-components.css']
-    // where a ring is deliberately off: the composer text field, the flush search-dialog input and its cmdk list
-    // (focus stays in the input; the list shows the active item with aria-selected), and the model-picker search
+    // where a ring is deliberately off: the composer text field and the model-picker search
     // field's inner input (the field shell draws the ring on :focus-within)
     const SILENCED = [
       '.composer-card .composer-textarea:focus-visible',
       '.composer-card .composer-rich-input:focus-visible',
       '.composer-rich-input:focus-visible',
-      '.search-dialog-input:focus-visible',
-      '.search-dialog-content :focus-visible',
       '.model-picker-search-field *:focus-visible',
     ]
     const RING_PROPS = ['outline', 'box-shadow']

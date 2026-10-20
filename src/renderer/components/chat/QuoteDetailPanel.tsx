@@ -82,7 +82,7 @@ export function QuoteDetailPanel({ quote, className, compact }: QuoteDetailPanel
         )}
       >
         {enableMarkdownRendering ? (
-          // Markdown code fences require this provider (same as MessageList / SearchDialog)
+          // Markdown code fences require this provider (same as MessageList)
           <BlockCodeCollapsedStateProvider defaultCollapsed>
             <Markdown
               uniqueId={`quote-preview-${markdownId}`}

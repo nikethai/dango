@@ -7,7 +7,7 @@ export const LINEAR_HISTORY_SEARCH_RESULT_CAP = 50
 
 /**
  * Escape user input so history search is a case-insensitive substring, not a regex.
- * Preserves the existing SearchDialog contract.
+ * The search overlay relies on this: typed characters never act as regex syntax.
  */
 export function escapeHistorySearchInput(searchInput: string): string {
   return searchInput.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')

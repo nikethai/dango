@@ -1,5 +1,6 @@
 import { getDefaultStore } from 'jotai'
 import { useEffect } from 'react'
+import { hasOpenSheet, topSheet } from '@/components/ui/useSheetFocus'
 import { startNewChat } from '@/lib/startNewChat'
 import { navigateToSettings } from '@/modals/Settings'
 import { newChatScopeId } from '@/projects/scope-navigation'
@@ -95,9 +96,12 @@ export default function useShortcut() {
       e.preventDefault()
       const { openSearchDialog, setOpenSearchDialog } = uiStore.getState()
       if (openSearchDialog) {
-        setOpenSearchDialog(false)
-      } else {
-        setOpenSearchDialog(true, true)
+        // Close only when the overlay is the top layer; a sheet above it keeps the keys.
+        const top = topSheet()
+        if (!top || top.classList.contains('dg-search')) setOpenSearchDialog(false)
+      } else if (!hasOpenSheet()) {
+        // A sheet (e.g. a permission request) is modal: the overlay must not cover it.
+        setOpenSearchDialog(true)
       }
     }
     if (e.key === ',' && ctrlKey) {

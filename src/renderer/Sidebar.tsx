@@ -269,7 +269,7 @@ export default function Sidebar() {
                     type="button"
                     className="rail-icon-btn active:scale-[0.96]"
                     onClick={() => {
-                      setOpenSearchDialog(true, true)
+                      setOpenSearchDialog(true)
                       closeSidebarIfMobile()
                     }}
                     aria-label={t('Search')}
@@ -295,7 +295,7 @@ export default function Sidebar() {
                   type="button"
                   className="rail-nav-item"
                   onClick={() => {
-                    setOpenSearchDialog(true, true)
+                    setOpenSearchDialog(true)
                     closeSidebarIfMobile()
                   }}
                 >

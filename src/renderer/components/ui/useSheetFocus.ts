@@ -22,6 +22,16 @@ const OPEN_CONTROL = [
 // Open sheets, oldest first. Only the last one reacts to keys.
 const openSheets: HTMLElement[] = []
 
+/** True while any sheet (including the search overlay) is mounted. */
+export function hasOpenSheet(): boolean {
+  return openSheets.length > 0
+}
+
+/** The sheet that currently takes keys, if any. */
+export function topSheet(): HTMLElement | undefined {
+  return openSheets[openSheets.length - 1]
+}
+
 const tabbableIn = (el: HTMLElement) => Array.from(el.querySelectorAll<HTMLElement>(TABBABLE))
 
 /** Focus handling for a mounted modal sheet: first focus, Tab wrap, Esc, and focus return. */
