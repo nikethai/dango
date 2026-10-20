@@ -5,11 +5,12 @@ import {
   type SourceRecord,
   type SyncCursor,
 } from '@shared/pm-pilot'
-import { FetchError, ofetch } from 'ofetch'
+import { gmailRequest, gmailStatus } from './gmail-http'
+
+export { GmailAuthError, GmailRateLimitError, GmailRequestError } from './gmail-http'
 
 // Slice 10: read-only Gmail sync by history polling. Reads only; nothing here writes to Gmail.
 
-const API = 'https://gmail.googleapis.com/gmail/v1/users/me'
 const THREAD_CONCURRENCY = 5
 const DAY_MS = 86_400_000
 /** Messages that are not mail the PM received or sent: Dango's own drafts among them. */
@@ -19,51 +20,6 @@ export const BACKFILL_MAX_MESSAGES = 2000
 /** More history than this is treated like an expired id: a bounded backfill instead. */
 export const HISTORY_MAX_PAGES = 20
 const PAGE_SIZE = 500
-/** 403 reasons that mean "slow down", not "sign in again". */
-const RATE_LIMIT_REASONS = new Set([
-  'rateLimitExceeded',
-  'userRateLimitExceeded',
-  'dailyLimitExceeded',
-  'quotaExceeded',
-])
-
-/** Gmail refused the token (401 or 403): the account needs signing in again. */
-export class GmailAuthError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly reason?: string
-  ) {
-    super(message)
-    this.name = 'GmailAuthError'
-  }
-}
-
-/** Gmail is rate-limiting or out of quota (429, or a 403 with a usage-limit reason). Retry later; not a sign-in problem. */
-export class GmailRateLimitError extends Error {
-  constructor(
-    readonly status: number,
-    readonly retryAfter?: number,
-    readonly reason?: string
-  ) {
-    super(`Gmail is busy, try again later (${status})`)
-    this.name = 'GmailRateLimitError'
-  }
-}
-
-/**
- * Any other failed Gmail request. These errors carry only status, Gmail's reason and retryAfter: never the URL
- * (whose `q=` names client addresses) and no `cause`, so nothing about the request can reach logs or Sentry.
- */
-export class GmailRequestError extends Error {
-  constructor(
-    readonly status: number | undefined,
-    readonly reason?: string
-  ) {
-    super(`Gmail request failed (${status ?? 'network'})`)
-    this.name = 'GmailRequestError'
-  }
-}
 
 /** `from:(@a.com OR x@b.com) OR to:(@a.com OR x@b.com)`; `''` when there are no matchers. */
 export function buildMatcherQuery(matchers: string[]): string {
@@ -102,51 +58,13 @@ type HistoryList = {
   nextPageToken?: string
 }
 
-function statusOf(error: unknown): number | undefined {
-  if (error instanceof GmailRequestError) return error.status
-  if (error instanceof FetchError) return error.status ?? error.response?.status
-  return undefined
-}
-
-function errorReasons(error: FetchError): string[] {
-  const errors = (error.data as { error?: { errors?: Array<{ reason?: unknown }> } } | undefined)?.error?.errors
-  return Array.isArray(errors) ? errors.map((e) => String(e?.reason ?? '')) : []
-}
-
-function retryAfterSeconds(error: FetchError): number | undefined {
-  const value = Number(error.response?.headers.get('retry-after'))
-  return Number.isFinite(value) && value > 0 ? value : undefined
-}
-
-async function gmailGet<T>(
+function gmailGet<T>(
   token: string,
   path: string,
   query: Record<string, string | number | undefined>,
   signal?: AbortSignal
 ): Promise<T> {
-  try {
-    return await ofetch<T>(`${API}/${path}`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-      query,
-      signal,
-      // The job runner retries; an immediate retry would only hammer a rate limit.
-      retry: 0,
-    })
-  } catch (error) {
-    if (!(error instanceof FetchError)) throw error
-    if (signal?.aborted) throw signal.reason ?? error
-    const status = statusOf(error)
-    const reasons = errorReasons(error)
-    const reason = reasons.find((r) => r.length > 0)
-    if (status === 429 || (status === 403 && reasons.some((r) => RATE_LIMIT_REASONS.has(r)))) {
-      throw new GmailRateLimitError(status, retryAfterSeconds(error), reason)
-    }
-    if (status === 401 || status === 403) {
-      throw new GmailAuthError(`Gmail refused the sign-in (${status})`, status, reason)
-    }
-    throw new GmailRequestError(status, reason)
-  }
+  return gmailRequest<T>(token, 'GET', path, { query, signal })
 }
 
 async function readProfile(token: string, signal?: AbortSignal): Promise<{ ownAddress: string; historyId: string }> {
@@ -215,7 +133,7 @@ async function listHistoryThreads(
       }
     } while (pageToken)
   } catch (error) {
-    if (statusOf(error) === 404) return null
+    if (gmailStatus(error) === 404) return null
     throw error
   }
   return { threadIds: [...threadIds], historyId }
@@ -237,7 +155,7 @@ async function fetchThreads(token: string, threadIds: string[], signal?: AbortSi
           await gmailGet<GmailThread>(token, `threads/${encodeURIComponent(id)}`, { format: 'full' }, signal)
         )
       } catch (error) {
-        if (statusOf(error) !== 404) {
+        if (gmailStatus(error) !== 404) {
           failed = true
           throw error
         }
