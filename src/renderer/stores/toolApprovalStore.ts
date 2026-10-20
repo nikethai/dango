@@ -1,4 +1,4 @@
-import type { ToolRiskTier } from '@shared/types/mcp'
+import { ToolRiskTier } from '@shared/types/mcp'
 import { useMemo } from 'react'
 import { createStore, useStore } from 'zustand'
 import { combine, persist } from 'zustand/middleware'
@@ -60,6 +60,32 @@ function serializeMap(map: Map<string, ToolApprovalRecord>): Record<string, Tool
 
 function deserializeMap(obj: Record<string, ToolApprovalRecord>): Map<string, ToolApprovalRecord> {
   return new Map(Object.entries(obj))
+}
+
+const RISK_TIERS = new Set<unknown>(Object.values(ToolRiskTier))
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Keep only well-formed grants from a persisted payload; anything else is dropped. */
+function sanitizeScopeGrants(raw: unknown): ScopeGrants {
+  if (!isPlainObject(raw)) return {}
+  const result: ScopeGrants = {}
+  for (const [scopeId, tools] of Object.entries(raw)) {
+    if (!isPlainObject(tools)) continue
+    const kept: Record<string, ScopeToolGrant> = {}
+    for (const [toolName, grant] of Object.entries(tools)) {
+      if (!isPlainObject(grant) || typeof grant.toolName !== 'string' || !RISK_TIERS.has(grant.riskTier)) continue
+      kept[toolName] = {
+        toolName: grant.toolName,
+        riskTier: grant.riskTier as ToolRiskTier,
+        grantedAt: typeof grant.grantedAt === 'number' ? grant.grantedAt : 0,
+      }
+    }
+    if (Object.keys(kept).length > 0) result[scopeId] = kept
+  }
+  return result
 }
 
 export const toolApprovalStore = createStore<ToolApprovalState>()(
@@ -126,8 +152,7 @@ export const toolApprovalStore = createStore<ToolApprovalState>()(
         const persisted = persistedState as
           | { approvedTools?: Record<string, ToolApprovalRecord>; scopeGrants?: ScopeGrants }
           | undefined
-        const scopeGrants =
-          persisted?.scopeGrants && typeof persisted.scopeGrants === 'object' ? persisted.scopeGrants : {}
+        const scopeGrants = sanitizeScopeGrants(persisted?.scopeGrants)
         return {
           ...currentState,
           ...(persisted?.approvedTools ? { approvedTools: deserializeMap(persisted.approvedTools) } : {}),

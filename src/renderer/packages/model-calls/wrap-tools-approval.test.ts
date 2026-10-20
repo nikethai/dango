@@ -28,7 +28,11 @@ vi.mock('@/packages/tool-permission', async (importOriginal) => ({
 }))
 
 vi.mock('../tools/risk-engine', () => ({
-  getToolRiskTier: (name: string) => {
+  getToolRiskTier: (name: string, _description?: string, args?: unknown) => {
+    const text = JSON.stringify(args ?? '')
+    if (text.includes('-rf') || text.includes('.ssh')) return ToolRiskTier.CRITICAL
+    if (name === 'run_command') return ToolRiskTier.HIGH
+    if (name === 'read_text') return ToolRiskTier.LOW
     if (name === 'delete_file' || name === 'edit_file' || name === 'create_file') return ToolRiskTier.HIGH
     if (name === 'browser_click') return ToolRiskTier.HIGH
     if (name === 'wipe_disk_now') return ToolRiskTier.CRITICAL
@@ -255,6 +259,67 @@ describe('wrapToolsWithApproval shipped wrapper', () => {
     expect(execute).not.toHaveBeenCalled()
     expect(addAuditEntryMock).toHaveBeenCalledWith(expect.objectContaining({ decision: 'deny', scope: 'none' }))
   })
+
+  it('grant does not cover a call whose args raise the tier', async () => {
+    getScopeGrantMock.mockReturnValue({ toolName: 'run_command', riskTier: ToolRiskTier.HIGH, grantedAt: 1 })
+    requestToolPermissionMock.mockResolvedValue('always')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const wrapped = wrapToolsWithApproval('sess-1', { run_command: { description: 'run', execute } } as never, {
+      scopeId: 's1',
+    })
+
+    await (wrapped.run_command as Exec).execute({ command: 'ls' }, {})
+    expect(requestToolPermissionMock).not.toHaveBeenCalled()
+    expect(execute).toHaveBeenCalledTimes(1)
+
+    requestToolPermissionMock.mockResolvedValue('deny')
+    const denied = await (wrapped.run_command as Exec).execute({ command: 'rm -rf ~/' }, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+    expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ toolName: 'run_command', riskTier: ToolRiskTier.CRITICAL, allowAlways: false })
+    )
+    expect(denied).toEqual(expect.objectContaining({ denied: true, riskTier: ToolRiskTier.CRITICAL }))
+    expect(execute).toHaveBeenCalledTimes(1)
+
+    requestToolPermissionMock.mockResolvedValue('always')
+    await (wrapped.run_command as Exec).execute({ command: 'rm -rf ~/' }, {})
+    expect(execute).toHaveBeenCalledTimes(2)
+    // 'always' on a CRITICAL call is only once: nothing is stored.
+    expect(addScopeGrantMock).not.toHaveBeenCalled()
+  })
+
+  it('a LOW-by-name tool with a dangerous path arg is not auto-approved', async () => {
+    requestToolPermissionMock.mockResolvedValue('deny')
+    const execute = vi.fn(async () => ({ text: '' }))
+    const wrapped = wrapToolsWithApproval('sess-1', { read_text: { description: 'read', execute } } as never)
+    await (wrapped.read_text as Exec).execute({ path: 'notes.txt' }, {})
+    expect(requestToolPermissionMock).not.toHaveBeenCalled()
+    await (wrapped.read_text as Exec).execute({ path: '~/.ssh/id_rsa' }, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ riskTier: ToolRiskTier.CRITICAL, allowAlways: false }),
+      expect.anything()
+    )
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('Stop is not audited as a refusal and returns a stopped result', async () => {
+    const controller = new AbortController()
+    requestToolPermissionMock.mockImplementation(() => {
+      controller.abort()
+      return Promise.resolve('deny')
+    })
+    const execute = vi.fn(async () => ({ ok: true }))
+    const wrapped = wrapToolsWithApproval('sess-1', { browser_click: { description: 'click', execute } } as never)
+    const result = (await (wrapped.browser_click as Exec).execute({}, { abortSignal: controller.signal })) as {
+      denied?: boolean
+      stopped?: boolean
+      message?: string
+    }
+    expect(execute).not.toHaveBeenCalled()
+    expect(result.stopped).toBe(true)
+    expect(result.message).not.toBe(REFUSAL)
+    expect(addAuditEntryMock).not.toHaveBeenCalledWith(expect.objectContaining({ decision: 'deny' }))
+  })
 })
 
 describe('toolApprovalStore merge', () => {
@@ -295,5 +360,30 @@ describe('toolApprovalStore merge', () => {
       toolApprovalStore.getState()
     ) as ReturnType<typeof toolApprovalStore.getState>
     expect(roundTrip.scopeGrants.s1.browser_type.grantedAt).toBe(2)
+  })
+
+  it('drops malformed scopeGrants entries on merge', async () => {
+    const { toolApprovalStore } =
+      await vi.importActual<typeof import('@/stores/toolApprovalStore')>('@/stores/toolApprovalStore')
+    const merge = toolApprovalStore.persist.getOptions().merge
+    const state = toolApprovalStore.getState()
+    const asArray = merge?.({ scopeGrants: [1, 2] }, state) as ReturnType<typeof toolApprovalStore.getState>
+    expect(asArray.scopeGrants).toEqual({})
+    const junk = merge?.(
+      {
+        scopeGrants: {
+          s1: {
+            ok: { toolName: 'ok', riskTier: ToolRiskTier.HIGH, grantedAt: 5 },
+            noName: { riskTier: ToolRiskTier.HIGH, grantedAt: 1 },
+            badTier: { toolName: 'badTier', riskTier: 7, grantedAt: 1 },
+            str: 'x',
+          },
+          s2: 'nope',
+          s3: [],
+        },
+      },
+      state
+    ) as ReturnType<typeof toolApprovalStore.getState>
+    expect(junk.scopeGrants).toEqual({ s1: { ok: { toolName: 'ok', riskTier: ToolRiskTier.HIGH, grantedAt: 5 } } })
   })
 })

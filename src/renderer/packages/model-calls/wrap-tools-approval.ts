@@ -27,6 +27,24 @@ export function workspaceApprovalFingerprint(toolName: string, args: unknown): s
   return fingerprintSensitiveToolArgs(toolName, args)
 }
 
+/** Sent to the model when Stop ended the wait for an answer. */
+export const TOOL_STOPPED_MESSAGE = 'The user stopped this run before answering. Do not retry this action.'
+
+const TIER_RANK: Record<ToolRiskTier, number> = {
+  [ToolRiskTier.LOW]: 0,
+  [ToolRiskTier.MEDIUM]: 1,
+  [ToolRiskTier.HIGH]: 2,
+  [ToolRiskTier.CRITICAL]: 3,
+}
+
+function maxTier(a: ToolRiskTier, b: ToolRiskTier): ToolRiskTier {
+  return (TIER_RANK[b] ?? 0) > (TIER_RANK[a] ?? 0) ? b : a
+}
+
+function createToolStoppedResult(toolName: string, riskTier: ToolRiskTier) {
+  return { denied: true, stopped: true, toolName, riskTier, message: TOOL_STOPPED_MESSAGE }
+}
+
 function createToolDeniedResult(toolName: string, riskTier: ToolRiskTier) {
   return {
     denied: true,
@@ -79,16 +97,18 @@ export function wrapToolsWithApproval(
 
   return Object.fromEntries(
     Object.entries(tools).map(([toolName, definition]) => {
-      const riskTier = getToolRiskTier(toolName, definition?.description)
+      const wrapTier = getToolRiskTier(toolName, definition?.description)
       const asksEveryTime = alwaysAsks(toolName)
-      // R9: never Always, and never a grant, for tools that always ask or CRITICAL calls.
-      const grantable = canAlways(toolName, riskTier) && riskTier !== ToolRiskTier.CRITICAL && !asksEveryTime
 
       return [
         toolName,
         {
           ...definition,
           execute: async (args: unknown, context) => {
+            // Args can raise the tier (`rm -rf ~/`, `~/.ssh/id_rsa`): classify this call, never below the wrap tier.
+            const riskTier = maxTier(wrapTier, getToolRiskTier(toolName, definition?.description, args))
+            // R9: never Always, and never a grant, for tools that always ask or CRITICAL calls.
+            const grantable = canAlways(toolName, riskTier) && riskTier !== ToolRiskTier.CRITICAL && !asksEveryTime
             const fingerprint = workspaceApprovalFingerprint(toolName, args) ?? undefined
             const audit = (scope: ToolApprovalAuditEntry['scope'], decision: ToolApprovalAuditEntry['decision']) =>
               toolApprovalStore.getState().addAuditEntry({
@@ -121,6 +141,10 @@ export function wrapToolsWithApproval(
                 { signal: context?.abortSignal }
               )
 
+              if (choice === 'deny' && context?.abortSignal?.aborted) {
+                // Stop, not a refusal: no "Not now" audit entry.
+                return createToolStoppedResult(toolName, riskTier)
+              }
               if (choice === 'deny') {
                 audit('none', 'deny')
                 return createToolDeniedResult(toolName, riskTier)
