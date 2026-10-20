@@ -819,7 +819,8 @@ export async function generate(
   }
 
   // ER4 "Answer without tools": decided before sending (InputBox), only honoured here; no ability check mid-turn.
-  const toolsOffForTurn = isToolsOffTurn(messages, targetMsg.id)
+  // A Swarm answer after the user pressed Stop is tools-off too: no tool may run after Stop.
+  const toolsOffForTurn = isToolsOffTurn(messages, targetMsg.id) || Boolean(options?.swarmStoppedEarly)
 
   // Shared stream UI coalescing — visible to catch so error path can cancel pending writes.
   // ~32ms (~30fps) is smoother token growth than 50ms without the 16ms Virtuoso thrash.
@@ -1136,7 +1137,9 @@ export async function generate(
         )
         const roomRoleForTools = options?.roomRole ?? targetMsg.roomRole
         const roomModeForTools = options?.roomMode
-        const roomToolsAllowed = Boolean(roomMulti && roomRoleAllowsTools(roomRoleForTools))
+        const roomToolsAllowed = Boolean(
+          roomMulti && roomRoleAllowsTools(roomRoleForTools) && !options?.swarmStoppedEarly
+        )
         const roomTaskToolsOnly = Boolean(roomMulti && roomRoleAllowsTaskToolsOnly(roomRoleForTools, roomModeForTools))
         const isPlanMode = Boolean(!roomMulti && isAgentEnabled && session.agentMode && effectiveSettings.planMode)
         const isPendingPlan = existingPlanPart?.status === 'pending'

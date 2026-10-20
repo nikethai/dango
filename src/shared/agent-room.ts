@@ -215,7 +215,7 @@ export function buildRoomContinuePrompt(
       return `(Your turn as "${speakerName}". Review the lead's work briefly: what works, what to fix. Markdown OK; no tools. Never return blank.)`
     case 'deliver':
       if (isSwarm && options?.stoppedEarly) {
-        return `(Your turn as "${speakerName}". The user stopped the run early. Write the best answer from the work so far and say in one line what was not done. ${MERMAID_DIAGRAM_REMINDER} Use tools only if a fix requires them. Never return blank.)`
+        return `(Your turn as "${speakerName}". The user stopped the run early. Write the best answer from the work so far and say in one line what was not done. ${MERMAID_DIAGRAM_REMINDER} Do not call tools. Never return blank.)`
       }
       if (isSwarm) {
         return `(Your turn as "${speakerName}". Merge completed Swarm tasks into the final deliverable for the user. ${MERMAID_DIAGRAM_REMINDER} Use tools only if a fix requires them. Never return blank.)`
@@ -369,6 +369,9 @@ export function buildSwarmExecuteProtocol(
 export const SWARM_STOPPED_EARLY_RULE =
   '- The user stopped the run early. Write the best answer from the work so far and say in one line what was not done.'
 
+/** After Stop no tool may run: the deliver turn gets none (generation.ts) and is told so. */
+export const SWARM_STOPPED_EARLY_NO_TOOLS_RULE = '- Do not call tools.'
+
 export function buildSwarmDeliverProtocol(
   leadName: string,
   participantNames: string[],
@@ -382,7 +385,7 @@ export function buildSwarmDeliverProtocol(
     'Rules:',
     '- Merge the work above into one clear final deliverable for the user.',
     options?.stoppedEarly ? SWARM_STOPPED_EARLY_RULE : '',
-    '- Use tools only if a fix requires them.',
+    options?.stoppedEarly ? SWARM_STOPPED_EARLY_NO_TOOLS_RULE : '- Use tools only if a fix requires them.',
     '- Note any failed or skipped tasks briefly. Do not re-run the whole board.',
     '- Do not prefix with your name. Never return blank.',
     MERMAID_DIAGRAM_GUIDANCE,

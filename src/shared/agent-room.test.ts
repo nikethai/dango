@@ -207,4 +207,16 @@ describe('agent-room', () => {
     )
     expect(buildRoomContinuePrompt('Ana', 'deliver', { roomMode: 'swarm' })).not.toContain('stopped the run early')
   })
+
+  it('the stopped-early Swarm deliver turn says not to call tools', () => {
+    const stoppedPrompt = buildRoomContinuePrompt('Ana', 'deliver', { roomMode: 'swarm', stoppedEarly: true })
+    expect(stoppedPrompt).toContain('Do not call tools.')
+    expect(stoppedPrompt).not.toContain('Use tools')
+    const stoppedProtocol = buildSwarmDeliverProtocol('Ana', ['Ana', 'Bo'], { stoppedEarly: true })
+    expect(stoppedProtocol).toContain('Do not call tools.')
+    expect(stoppedProtocol).not.toContain('Use tools')
+    // A normal deliver turn may still fix things with tools.
+    expect(buildRoomContinuePrompt('Ana', 'deliver', { roomMode: 'swarm' })).toContain('Use tools only if a fix')
+    expect(buildSwarmDeliverProtocol('Ana', ['Ana', 'Bo'])).toContain('Use tools only if a fix')
+  })
 })
