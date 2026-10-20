@@ -38,6 +38,7 @@ import { thinkingOpenByDefault } from '@/packages/thinking/thinking'
 import { platformCapabilities } from '@/platform'
 import * as atoms from '@/stores/atoms'
 import { turnOnChatPlanMode } from '@/stores/session/plan-mode'
+import { useSwarmLive } from '@/stores/session/team-room-state'
 import {
   deleteFork,
   expandFork,
@@ -59,6 +60,9 @@ import { BlockCodeCollapsedStateProvider } from '../Markdown'
 import EmptyThreadState, { firstChatChipsShown } from './EmptyThreadState'
 import Message from './Message'
 import SummaryMessage from './SummaryMessage'
+import { foldSwarmRuns } from './swarm/foldSwarmRuns'
+import { SwarmLiveCard } from './swarm/SwarmLiveCard'
+import { SwarmWorkedWith } from './swarm/SwarmWorkedWith'
 
 // LRU-like cache with max size to prevent unbounded memory growth
 const MAX_SCROLL_CACHE_SIZE = 100
@@ -95,8 +99,9 @@ export interface MessageListProps {
   alignToBottom?: boolean
 }
 
-function isTeamRoomCompactRole(msg: { role?: string; roomRole?: string } | undefined): boolean {
-  if (!msg || msg.role !== 'assistant') return false
+/** Legacy discuss/work room turns sit in a compact group; Swarm turns fold into one item instead. */
+function isTeamRoomCompactRole(msg: { role?: string; roomRole?: string; swarm?: unknown } | undefined): boolean {
+  if (!msg || msg.role !== 'assistant' || msg.swarm) return false
   return msg.roomRole === 'turn' || msg.roomRole === 'plan' || msg.roomRole === 'review'
 }
 
@@ -127,9 +132,32 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   )
   // System prompts are config (Session options), not conversation turns.
   // Never render them as bubbles — product threads only show user/assistant/tool.
-  const currentMessageList = useMemo(() => {
+  const allMessages = useMemo(() => {
     return getAllMessageList(currentSession).filter((message) => message.role !== 'system')
   }, [currentSession])
+  // A Swarm run shows as one item: its answer with "Worked with" below, or the live card while it runs.
+  const swarmFold = useMemo(() => foldSwarmRuns(allMessages), [allMessages])
+  const currentMessageList = swarmFold.visible
+  const swarmLive = useSwarmLive(currentSession.id)
+  // A fork made on a folded turn (Redo of an answer forks at the turn before it) keeps its switcher on the run's item.
+  const forksMovedTo = useMemo(() => {
+    const moved: Record<string, string[]> = {}
+    const forks = currentSession.messageForksHash
+    if (!forks || currentMessageList === allMessages) return moved
+    const visibleIds = new Set(currentMessageList.map((m) => m.id))
+    let pending: string[] = []
+    for (const m of allMessages) {
+      if (visibleIds.has(m.id)) {
+        if (pending.length > 0) {
+          moved[m.id] = pending
+          pending = []
+        }
+      } else if ((forks[m.id]?.lists.length ?? 0) > 1) {
+        pending.push(m.id)
+      }
+    }
+    return moved
+  }, [allMessages, currentMessageList, currentSession.messageForksHash])
 
   const latestSummaryMessageId = useMemo(() => {
     for (let i = currentMessageList.length - 1; i >= 0; i--) {
@@ -289,6 +317,19 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                 const discussionGroupStart = Boolean(isTeamDiscussRole && !prevIsTeamDiscussRole)
                 const discussionGroupEnd = Boolean(isTeamDiscussRole && !nextIsTeamDiscussRole)
                 const isCompactRoomTurn = isTeamDiscussRole
+                const swarmRun = swarmFold.anchorOf[msg.id] ? swarmFold.runs[swarmFold.anchorOf[msg.id]] : undefined
+                // Only the run that is running right now gets the live card (an earlier stopped run never does).
+                const swarmCard = swarmRun ? (
+                  swarmLive?.runId === swarmRun.runId ? (
+                    <SwarmLiveCard sessionId={currentSession.id} runId={swarmRun.runId} />
+                  ) : (
+                    <SwarmWorkedWith run={swarmRun} />
+                  )
+                ) : null
+                const forkNavIds = [
+                  ...(forksMovedTo[msg.id] ?? []),
+                  ...((currentSession.messageForksHash?.[msg.id]?.lists.length ?? 0) > 1 ? [msg.id] : []),
+                ]
                 return (
                   <Stack
                     key={msg.id}
@@ -306,7 +347,9 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                       <ThreadLabel thread={currentThreadHash[msg.id]} sessionId={currentSession.id} />
                     )}
                     <ErrorBoundary name={`message-item`}>
-                      {msg.isSummary ? (
+                      {swarmRun && swarmRun.answerId !== msg.id ? (
+                        swarmCard
+                      ) : msg.isSummary ? (
                         <SummaryMessage
                           msg={msg}
                           className={index === 0 ? 'pt-4' : index === currentMessageList.length - 1 ? '!pb-4' : ''}
@@ -344,17 +387,16 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                           onTurnOnPlanMode={turnOnPlanModeOffered ? onTurnOnPlanMode : undefined}
                         />
                       )}
+                      {swarmRun && swarmRun.answerId === msg.id ? swarmCard : null}
                     </ErrorBoundary>
-                    {currentSession.messageForksHash?.[msg.id] &&
-                      currentSession.messageForksHash[msg.id].lists.length > 1 && (
-                        <Flex justify="flex-end" mt={4} pr="md" mr="md" className="self-end">
-                          <ForkNav
-                            sessionId={currentSession.id}
-                            msgId={msg.id}
-                            forks={currentSession.messageForksHash[msg.id]}
-                          />
+                    {forkNavIds.map((forkId) => {
+                      const forks = currentSession.messageForksHash?.[forkId]
+                      return forks ? (
+                        <Flex key={forkId} justify="flex-end" mt={4} pr="md" mr="md" className="self-end">
+                          <ForkNav sessionId={currentSession.id} msgId={forkId} forks={forks} />
                         </Flex>
-                      )}
+                      ) : null
+                    })}
                   </Stack>
                 )
               }}
