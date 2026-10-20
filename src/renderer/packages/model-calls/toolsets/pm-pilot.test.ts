@@ -2,10 +2,20 @@ import type { Scope } from '@shared/types/scope'
 import type { ConnectedSource } from '@shared/types/sources'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { state, recallClient, loadSources } = vi.hoisted(() => ({
-  state: { platformType: 'desktop', scopes: [] as Scope[], sources: [] as ConnectedSource[] },
+const { state, recallClient, loadSources, answer } = vi.hoisted(() => ({
+  state: {
+    platformType: 'desktop',
+    scopes: [] as Scope[],
+    sources: [] as ConnectedSource[],
+    questions: {} as Record<string, { id: string }>,
+  },
   recallClient: vi.fn(async (_input: unknown): Promise<unknown> => ({ ok: true, records: [], gaps: [] })),
   loadSources: vi.fn(async () => undefined),
+  answer: {
+    answerClientQuestion: vi.fn(async (_input: unknown): Promise<unknown> => ({ ok: true, message: 'saved' })),
+    clientAnswerDescription: vi.fn(async (_q: unknown, _opts: unknown) => 'ANSWER THE QUESTION'),
+    localOnlyQuestionIds: vi.fn(async (ids: string[]) => new Set(ids.filter((id) => id.startsWith('local')))),
+  },
 }))
 
 vi.mock('@/platform', () => ({
@@ -21,8 +31,14 @@ vi.mock('@/packages/pm-pilot/bridge', () => ({
   listSources: () => state.sources,
 }))
 vi.mock('@/packages/pm-pilot/recall', () => ({ recallClient: (input: unknown) => recallClient(input) }))
+vi.mock('@/packages/pm-pilot/answer', () => ({
+  findAnswerableQuestion: async (sessionId: string) => state.questions[sessionId],
+  answerClientQuestion: (input: unknown) => answer.answerClientQuestion(input),
+  clientAnswerDescription: (q: unknown, opts: unknown) => answer.clientAnswerDescription(q, opts),
+  localOnlyQuestionIds: (ids: string[]) => answer.localOnlyQuestionIds(ids),
+}))
 
-import { loadPmToolSet, pmToolSet } from './pm-pilot'
+import { loadLocalOnlyQuestionIds, loadPmToolSet, pmToolSet } from './pm-pilot'
 
 const scope = (id: string, kind: 'client' | 'project') => ({ id, name: id, kind }) as Scope
 const source = (id: string, scopeId: string, kind: ConnectedSource['kind']) =>
@@ -41,8 +57,11 @@ beforeEach(() => {
   state.platformType = 'desktop'
   state.scopes = [scope('acme', 'client'), scope('site', 'project')]
   state.sources = [source('g1', 'acme', 'gmail')]
+  state.questions = {}
   recallClient.mockClear()
   loadSources.mockClear()
+  answer.answerClientQuestion.mockClear()
+  answer.clientAnswerDescription.mockClear()
 })
 
 describe('loadPmToolSet', () => {
@@ -95,5 +114,49 @@ describe('pmToolSet', () => {
       cloudModel: true,
       userMessage: 'What did Acme say?',
     })
+  })
+})
+
+describe('client_answer', () => {
+  it('client_answer is absent in an ordinary chat', async () => {
+    const set = await loadPmToolSet({ sessionId: 's-plain', sessionScopeId: 'acme', cloudModel: true })
+    expect(Object.keys(set?.tools ?? {})).toEqual(['client_recall'])
+    expect(set?.description).not.toMatch(/client_answer/)
+  })
+
+  it("is offered in a question's chat, with the question's description, even with no recall sources", async () => {
+    state.questions = { s1: { id: 'q1' } }
+    state.sources = []
+    const set = await loadPmToolSet({ sessionId: 's1', cloudModel: true })
+    expect(Object.keys(set?.tools ?? {})).toEqual(['client_answer'])
+    expect((set?.tools.client_answer as { description?: string }).description).toContain('ANSWER THE QUESTION')
+    expect(answer.clientAnswerDescription).toHaveBeenCalledWith({ id: 'q1' }, { cloudModel: true })
+    expect(set?.description).toMatch(/client_answer/)
+  })
+
+  it("answers for the turn's own chat, never a session the model names", async () => {
+    state.questions = { s1: { id: 'q1' } }
+    const set = await loadPmToolSet({ sessionId: 's1', sessionScopeId: 'acme', cloudModel: true })
+    const execute = (set?.tools.client_answer as { execute: (input: unknown, opts: unknown) => Promise<unknown> })
+      .execute
+    await execute({ answer: '9,100', fact: 'The quote is 9,100.', choice: '2', sessionId: 'other' }, {})
+    expect(answer.answerClientQuestion).toHaveBeenCalledWith({
+      sessionId: 's1',
+      answer: '9,100',
+      fact: 'The quote is 9,100.',
+      choice: '2',
+    })
+    expect(Object.keys(set?.tools ?? {}).some((name) => /send|reply/.test(name))).toBe(false)
+  })
+
+  it('is not offered off desktop', async () => {
+    state.platformType = 'web'
+    state.questions = { s1: { id: 'q1' } }
+    expect(await loadPmToolSet({ sessionId: 's1', cloudModel: true })).toBeNull()
+  })
+
+  it('names the local-only questions of a chat', async () => {
+    expect(await loadLocalOnlyQuestionIds([])).toEqual(new Set())
+    expect(await loadLocalOnlyQuestionIds(['local-1', 'shared-2'])).toEqual(new Set(['local-1']))
   })
 })

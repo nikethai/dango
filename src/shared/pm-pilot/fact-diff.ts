@@ -306,6 +306,20 @@ const keyed = (t: FactTokens) => [
 /** Every token of a text, names included wherever they stand (for grounding a fact in that text). */
 const allTokens = (text: string) => new Set(keyed(tokensOf(flat(text), true)))
 
+/**
+ * True when every date, number and name `extractFactTokens` finds in `fact` is in one of `texts` (names counted
+ * wherever they stand there). A fact with none of them is trivially grounded: callers check its value separately.
+ */
+export function factTokensGrounded(fact: string, texts: string[]): boolean {
+  const grounded = new Set(texts.flatMap((text) => [...allTokens(text)]))
+  return keyed(extractFactTokens(fact)).every((token) => grounded.has(token))
+}
+
+/** The keyed dates, numbers and names of a short value, a name counted even at its start (`tokensOf` span mode). */
+export function valueTokens(value: string): string[] {
+  return [...allTokens(value)]
+}
+
 /** True when the said value carries a fact token its own text states and the other text does not. */
 function carriesChange(said: string, own: Set<string>, other: Set<string>): boolean {
   return keyed(tokensOf(said, true)).some((t) => own.has(t) && !other.has(t))
@@ -314,14 +328,14 @@ function carriesChange(said: string, own: Set<string>, other: Set<string>): bool
 const LINK = /https?:\/\/[^\s<>"']+|www\.[^\s<>"']+|[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+/giu
 
 /** The fact adds no link, email address or `@` the sent text does not have. */
-function noNewLinks(fact: string, sent: string): boolean {
+export function noNewLinks(fact: string, sent: string): boolean {
   const lowerSent = sent.toLowerCase()
   if (fact.includes('@') && !sent.includes('@')) return false
   return [...fact.matchAll(LINK)].every((m) => lowerSent.includes(m[0].replace(/[.,!?]+$/, '').toLowerCase()))
 }
 
 /** One sentence: no line break or `;`, and at most one `.`, `!` or `?` ending a sentence, at the very end. */
-function oneSentence(raw: string): boolean {
+export function oneSentence(raw: string): boolean {
   if (/[\n\r;]/.test(raw)) return false
   const fact = raw.trim()
   const ends = [...fact.matchAll(/[.!?]+(?=\s|$)/g)]

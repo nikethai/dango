@@ -392,3 +392,43 @@ describe('pmStore draft writes', () => {
     await expect(pmStore.setDraftEdit('d1', 'Edited')).resolves.toBe(false)
   })
 })
+
+describe('pmStore questions answered in chat', () => {
+  it('claims an open question once, with its patch; a second claim gets nothing', async () => {
+    await pmStore.saveQuestion(question())
+    const backfill = { sourceId: 'g2', matcher: '@newco.com' }
+    const [a, b] = await Promise.all([
+      pmStore.claimQuestion('q1', { backfill }),
+      pmStore.claimQuestion('q1', { backfill }),
+    ])
+    expect([a, b].filter(Boolean)).toHaveLength(1)
+    const stored = await pmStore.getQuestion('q1')
+    expect(stored?.state).toBe('answered')
+    expect(stored?.backfill).toEqual(backfill)
+    await expect(pmStore.claimQuestion('missing')).resolves.toBeUndefined()
+  })
+
+  it('reopens a claimed question without its pending backfill', async () => {
+    await pmStore.saveQuestion(question())
+    await pmStore.claimQuestion('q1', { backfill: { sourceId: 'g2', matcher: '@newco.com' } })
+    await pmStore.reopenQuestion('q1')
+    const q = await pmStore.getQuestion('q1')
+    expect(q?.state).toBe('open')
+    expect(q && 'backfill' in q).toBe(false)
+  })
+
+  it('finds a question by its chat and lists pending backfills per account until cleared', async () => {
+    await pmStore.saveQuestion(question({ id: 'q1' }))
+    await pmStore.saveQuestion(question({ id: 'q2', accountId: 'acc2', domain: 'other.com' }))
+    await pmStore.setQuestionSession('q1', 's1')
+    expect((await pmStore.findQuestionBySession('s1'))?.id).toBe('q1')
+    expect(await pmStore.findQuestionBySession('s2')).toBeUndefined()
+
+    await pmStore.claimQuestion('q1', { backfill: { sourceId: 'g2', matcher: '@newco.com' } })
+    await pmStore.claimQuestion('q2', { backfill: { sourceId: 'g3', matcher: '@other.com' } })
+    expect((await pmStore.listPendingBackfills('acc1')).map((q) => q.id)).toEqual(['q1'])
+    await pmStore.clearBackfill('q1')
+    expect(await pmStore.listPendingBackfills('acc1')).toEqual([])
+    expect((await pmStore.getQuestion('q1'))?.state).toBe('answered')
+  })
+})

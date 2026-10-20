@@ -205,10 +205,16 @@ export type ClientQuestion = {
   summary: string
   candidates: ClientQuestionCandidate[]
   domain?: string
+  /** The CH6 chat opened for this question (Task 11). */
   sessionId?: string
   reviewEntryId?: string
   state: 'open' | 'answered'
   createdAt: number
+  /**
+   * A "Which client is this?" answer whose mail backfill is still to run: set by `client_answer` in any window, run
+   * and cleared by the jobs window's next Gmail poll (record changes happen there only).
+   */
+  backfill?: { sourceId: string; matcher: string }
 }
 export const ClientQuestionSchema: z.ZodType<ClientQuestion> = z.looseObject({
   id: z.string(),
@@ -235,4 +241,5 @@ export const ClientQuestionSchema: z.ZodType<ClientQuestion> = z.looseObject({
   reviewEntryId: z.string().optional(),
   state: z.enum(['open', 'answered']),
   createdAt: z.number(),
+  backfill: z.looseObject({ sourceId: z.string(), matcher: z.string() }).optional(),
 })

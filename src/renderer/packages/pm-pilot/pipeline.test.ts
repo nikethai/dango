@@ -96,6 +96,18 @@ vi.mock('./store', () => {
         h.questions = [...h.questions.filter((x) => x.id !== q.id), q]
         return Promise.resolve()
       }),
+      listPendingBackfills: vi.fn(async (accountId: string) =>
+        h.questions.filter((q) => q.accountId === accountId && q.backfill !== undefined)
+      ),
+      clearBackfill: vi.fn((id: string) => {
+        h.calls.push('clear-backfill')
+        h.questions = h.questions.map((q) => {
+          if (q.id !== id) return q
+          const { backfill: _b, ...rest } = q
+          return rest
+        })
+        return Promise.resolve()
+      }),
       findOpenQuestion: vi.fn(async (by: Record<string, string>) =>
         h.questions.find(
           (q) =>
@@ -134,7 +146,7 @@ vi.mock('./sent-readback', () => ({ readBackSent: vi.fn(async () => undefined) }
 import { NeedsUserError } from '@/packages/background/errors'
 import { actOnThread } from './act-call'
 import { resolveBackgroundModel } from './background-model'
-import { addReviewEntry, ensureKnowledgeLoaded, setReviewEntryState } from './bridge'
+import { addReviewEntry, ensureKnowledgeLoaded, loadSources, setReviewEntryState } from './bridge'
 import { GmailAuthError, GmailRateLimitError, syncGmailMailbox } from './gmail-sync'
 import { JUDGE_FAILED, JUDGE_LOCAL_ONLY, JUDGE_UNREADABLE, judgeThread } from './judge-call'
 import {
@@ -748,5 +760,85 @@ describe('backfillMatcher', () => {
     a.abort()
     await expect(backfillMatcher(source(), '@newco.com', { signal: a.signal })).rejects.toBeDefined()
     expect(syncGmailMailbox).not.toHaveBeenCalled()
+  })
+})
+
+describe('a "Which client is this?" answer handed to the jobs window', () => {
+  it('the next Gmail run reloads sources, backfills the answered domain, then routes and acts on the thread', async () => {
+    // Answered in another window: g2's matcher and the pending backfill are in storage, not in this window yet.
+    h.sources = [source(), source({ id: 'g2', scopeId: 'globex', config: { accountId: 'acc1', matchers: [] } })]
+    vi.mocked(loadSources).mockImplementationOnce(() => {
+      h.sources = [
+        source(),
+        source({ id: 'g2', scopeId: 'globex', config: { accountId: 'acc1', matchers: ['@newco.com'] } }),
+      ]
+      return Promise.resolve()
+    })
+    h.questions = [
+      {
+        id: 'q2',
+        kind: 'which-client',
+        scopeId: null,
+        accountId: 'acc1',
+        threadId: 't-new',
+        subject: 'Hello',
+        from: 'ann@newco.com',
+        summary: '',
+        candidates: [],
+        domain: 'newco.com',
+        state: 'answered',
+        createdAt: 1,
+        backfill: { sourceId: 'g2', matcher: '@newco.com' },
+      },
+    ]
+    h.cursors = [
+      { accountId: 'acc1', sourceKind: 'gmail', scope: 'mailbox', value: 'h1', updatedAt: 1, ownAddress: OWN },
+    ]
+    const asked = mail({
+      externalId: 'm-new',
+      threadOrTaskId: 't-new',
+      author: 'ann@newco.com',
+      participants: ['ann@newco.com', OWN],
+    })
+    syncReturns([asked], true) // the backfill
+    syncReturns([]) // the poll
+    await runGmailPipeline(source({ id: 'g2', scopeId: 'globex' }), ctx())
+    expect(loadSources).toHaveBeenCalled()
+    expect(vi.mocked(syncGmailMailbox).mock.calls[0][0]).toMatchObject({
+      cursor: null,
+      backfillQuery: 'from:(@newco.com) OR to:(@newco.com)',
+    })
+    expect(h.records.find((r) => r.externalId === 'm-new')).toMatchObject({ scopeId: 'globex', sourceId: 'g2' })
+    expect(h.questions[0].backfill).toBeUndefined()
+    // The thread the question was about is now client mail, and is acted on once.
+    expect(actOnThread).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(actOnThread).mock.calls[0][0].inbound.externalId).toBe('m-new')
+
+    // Nothing pending: the next run backfills nothing.
+    syncReturns([])
+    await runGmailPipeline(source(), ctx())
+    expect(syncGmailMailbox).toHaveBeenCalledTimes(3)
+  })
+
+  it('a failed backfill stays pending for the next run', async () => {
+    h.questions = [
+      {
+        id: 'q2',
+        kind: 'which-client',
+        scopeId: null,
+        accountId: 'acc1',
+        threadId: 't9',
+        subject: 'Hello',
+        from: 'ann@newco.com',
+        summary: '',
+        candidates: [],
+        state: 'answered',
+        createdAt: 1,
+        backfill: { sourceId: 'g1', matcher: '@newco.com' },
+      },
+    ]
+    vi.mocked(getFreshToken).mockResolvedValueOnce({ ok: false } as never)
+    await expect(runGmailPipeline(source(), ctx())).rejects.toBeInstanceOf(NeedsUserError)
+    expect(h.questions[0].backfill).toEqual({ sourceId: 'g1', matcher: '@newco.com' })
   })
 })

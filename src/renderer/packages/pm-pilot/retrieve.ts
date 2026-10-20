@@ -75,7 +75,7 @@ export function knowledgeLabel(item: Pick<KnowledgeItem, 'text'>): string {
   return i18n.t('approved: {{text}}', inertValues({ text: item.text.trim().slice(0, KNOWLEDGE_LABEL_CHARS) }))
 }
 
-function recordEvidence(record: SourceRecord): Evidence {
+export function recordEvidence(record: SourceRecord): Evidence {
   const label = recordLabel(record)
   const kind = record.sourceKind === 'asana' ? 'task' : 'email'
   return {
@@ -87,7 +87,7 @@ function recordEvidence(record: SourceRecord): Evidence {
   }
 }
 
-function knowledgeEvidence(item: KnowledgeItem): Evidence {
+export function knowledgeEvidence(item: KnowledgeItem): Evidence {
   const label = knowledgeLabel(item)
   const text = item.condition ? `${item.text} (when ${item.condition})` : item.text
   const live = item.sources.filter((s) => !s.removed)

@@ -156,9 +156,11 @@ vi.mock('./toolsets/knowledge-base', () => ({
 
 const loadPmToolSetMock = vi.hoisted(() => vi.fn(async (_ctx: unknown): Promise<unknown> => null))
 const localOnlyIdsMock = vi.hoisted(() => vi.fn(async (): Promise<Set<string>> => new Set()))
+const localOnlyQuestionsMock = vi.hoisted(() => vi.fn(async (_ids: string[]): Promise<Set<string>> => new Set()))
 vi.mock('./toolsets/pm-pilot', () => ({
   loadPmToolSet: (ctx: unknown) => loadPmToolSetMock(ctx),
   loadLocalOnlySourceIds: () => localOnlyIdsMock(),
+  loadLocalOnlyQuestionIds: (ids: string[]) => localOnlyQuestionsMock(ids),
 }))
 
 vi.mock('./toolsets/file', () => ({
@@ -758,6 +760,47 @@ describe('streamText local-only client data on a cloud turn', () => {
     })
     expect(sent()).toContain('Jo said the price is 4,200 USD.')
     expect(sent()).not.toContain('kept on this device')
+  })
+
+  it('a cloud turn in a local-only Needs you chat sends no mail text', async () => {
+    const ch6 = (): Message[] => [
+      {
+        ...createMessage('assistant', "Jo asks for the quote. I found two answers:\n8,400 · Jo's 12 Sep email"),
+        pmQuestionId: 'q1',
+      },
+      createMessage('user', 'Which is newer?'),
+      createMessage('assistant', 'Jo wrote 8,400 on 12 Sep.'),
+      createMessage('user', 'Use the newer one'),
+    ]
+    const { streamText } = await import('./stream-text')
+    const run = (provider: string) =>
+      streamText(createTestModel(chat()), {
+        sessionId: 's1',
+        messages: ch6(),
+        sessionSettings: { provider },
+        onResultChangeWithCancel: vi.fn(),
+      })
+
+    localOnlyQuestionsMock.mockReset().mockResolvedValue(new Set(['q1']))
+    await run(ModelProviderEnum.OpenAI)
+    expect(localOnlyQuestionsMock).toHaveBeenCalledWith(['q1'])
+    expect(sent()).not.toContain('8,400')
+    expect(sent()).toContain('kept on this device')
+    expect(sent()).toContain('Use the newer one')
+    expect(loadPmToolSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 's1' }))
+
+    // Unknown (storage down): held back too.
+    localOnlyQuestionsMock.mockRejectedValue(new Error('storage down'))
+    await run(ModelProviderEnum.OpenAI)
+    expect(sent()).not.toContain('8,400')
+
+    // A shareable question's chat, or a local model, sends it.
+    localOnlyQuestionsMock.mockReset().mockResolvedValue(new Set())
+    await run(ModelProviderEnum.OpenAI)
+    expect(sent()).toContain('8,400')
+    localOnlyQuestionsMock.mockReset().mockResolvedValue(new Set(['q1']))
+    await run(ModelProviderEnum.Ollama)
+    expect(sent()).toContain('8,400')
   })
 
   it('leaves knowledge from a local-only source off a cloud turn', async () => {

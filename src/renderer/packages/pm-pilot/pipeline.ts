@@ -604,6 +604,7 @@ function accountRun(accountId: string, joiner: Joiner, now: number): Promise<Run
   }
   run.promise = onAccount(accountId, async () => {
     try {
+      await drainBackfills(ctx)
       await runAccount(ctx)
       return ctx.stats
     } catch (e) {
@@ -642,50 +643,75 @@ export async function runGmailPipeline(
   }
 }
 
+type BackfillContext = { signal?: AbortSignal; progress?(text: string): void }
+
+/** The backfill itself; the caller holds the account's mailbox slot. Errors are not mapped here. */
+async function readMatcher(source: ConnectedSource, matcher: string, ctx: BackfillContext): Promise<number> {
+  const { accountId } = gmailConfig(source)
+  if (ctx.signal) throwIfAborted(ctx.signal)
+  const token = await getFreshToken(accountId)
+  if (!token.ok) throw signInAgain()
+  const cursor = await pmStore.getCursor(accountId, 'gmail', 'mailbox')
+  ctx.progress?.(t('Reading earlier emails…'))
+  const result = await syncGmailMailbox({
+    accountId,
+    accessToken: token.token,
+    cursor: null,
+    backfillQuery: buildMatcherQuery([matcher]),
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
+  })
+  if (ctx.signal) throwIfAborted(ctx.signal)
+  const sources = (await gmailSources())
+    .filter((s) => gmailConfig(s).accountId === accountId)
+    .map((s) => {
+      if (s.id !== source.id) return s
+      const matchers = [...new Set([...gmailConfig(s).matchers, matcher])]
+      return { ...s, config: { ...s.config, matchers } }
+    })
+  const ownAddress = result.ownAddress || cursor?.ownAddress || ''
+  const { stored } = routeRecords(result.records, routeSourcesOf(sources), ownAddress)
+  await pmStore.upsertRecords(stored)
+  await pmStore.flushRecords()
+  return stored.length
+}
+
 /**
  * After "Which client is this?" adds `matcher` to `source`: reads `GMAIL_BACKFILL_DAYS` of the account's mail
  * matching it and stores the threads that now route to a client scope. Leaves the account cursor alone and acts on
  * nothing. It takes the account's mailbox slot: it starts after the poll in flight, and a poll waits for it. Runs in
  * the jobs window (record changes happen there). Returns how many records it stored.
  */
-export function backfillMatcher(
-  source: ConnectedSource,
-  matcher: string,
-  ctx: { signal?: AbortSignal; progress?(text: string): void } = {}
-): Promise<number> {
+export function backfillMatcher(source: ConnectedSource, matcher: string, ctx: BackfillContext = {}): Promise<number> {
   const { accountId } = gmailConfig(source)
   if (!accountId) return Promise.reject(signInAgain())
   return onAccount(accountId, async () => {
     try {
-      if (ctx.signal) throwIfAborted(ctx.signal)
-      const token = await getFreshToken(accountId)
-      if (!token.ok) throw signInAgain()
-      const cursor = await pmStore.getCursor(accountId, 'gmail', 'mailbox')
-      ctx.progress?.(t('Reading earlier emails…'))
-      const result = await syncGmailMailbox({
-        accountId,
-        accessToken: token.token,
-        cursor: null,
-        backfillQuery: buildMatcherQuery([matcher]),
-        ...(ctx.signal ? { signal: ctx.signal } : {}),
-      })
-      if (ctx.signal) throwIfAborted(ctx.signal)
-      const sources = (await gmailSources())
-        .filter((s) => gmailConfig(s).accountId === accountId)
-        .map((s) => {
-          if (s.id !== source.id) return s
-          const matchers = [...new Set([...gmailConfig(s).matchers, matcher])]
-          return { ...s, config: { ...s.config, matchers } }
-        })
-      const ownAddress = result.ownAddress || cursor?.ownAddress || ''
-      const { stored } = routeRecords(result.records, routeSourcesOf(sources), ownAddress)
-      await pmStore.upsertRecords(stored)
-      await pmStore.flushRecords()
-      return stored.length
+      return await readMatcher(source, matcher, ctx)
     } catch (e) {
       throw mapGmailError(e, ctx.signal)
     }
   })
+}
+
+/**
+ * "Which client is this?" answers waiting for their backfill (`client_answer` stores them on the question, in any
+ * window), run at the start of the account's run, in the jobs window and its mailbox slot, so the answered thread is
+ * stored under its client before the poll acts on new mail. Sources are read again first: the answer may have changed
+ * one in another window. A backfill that fails stays pending (the run fails and is retried).
+ */
+async function drainBackfills(ctx: RunContext): Promise<void> {
+  const answered = await pmStore.listPendingBackfills(ctx.accountId)
+  if (answered.length === 0) return
+  await loadSources()
+  for (const q of answered) {
+    const backfill = q.backfill
+    if (!backfill) continue
+    const target = listSources({ kind: 'gmail' }).find((s) => s.id === backfill.sourceId)
+    if (target && gmailConfig(target).accountId === ctx.accountId) {
+      await readMatcher(target, backfill.matcher, { signal: ctx.signal, progress: ctx.progress })
+    }
+    await pmStore.clearBackfill(q.id)
+  }
 }
 
 export function _resetPipelineForTests(): void {

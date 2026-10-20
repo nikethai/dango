@@ -5,13 +5,18 @@ import type { KnowledgeItem } from '@shared/types/knowledge'
 /*
  * What a cloud chat turn may carry from the PM pilot (ADR 0003: a local-only source's text never reaches a cloud
  * model). Pure; stream-text applies both only when the turn's model is cloud.
- * - An earlier answer that used a `client_recall` result marked `localOnly` (records a local model was given) is sent
- *   as a fixed placeholder: its text, reasoning and the tool result all stay on the device.
+ * - An earlier answer that used a `client_recall` or `client_answer` result marked `localOnly` (records a local model
+ *   was given) is sent as a fixed placeholder: its text, reasoning and the tool result all stay on the device.
+ * - A Needs you chat (CH6) opens with a message that quotes client mail (`pmQuestionId`). While its question is
+ *   local-only, or when that is not known, the opening and every later assistant message of the chat are sent as the
+ *   placeholder; the user's own messages go.
  * - Approved knowledge follows the pipeline's rule (`mayReachCloud`): an item is dropped when any of its live sources
  *   is local-only; knowledge the user typed (no source id) goes.
  */
 
 export const CLIENT_RECALL_TOOL = 'client_recall'
+export const CLIENT_ANSWER_TOOL = 'client_answer'
+const PM_TOOLS: ReadonlySet<string> = new Set([CLIENT_RECALL_TOOL, CLIENT_ANSWER_TOOL])
 
 /** Translation key (en value = key) of what a cloud model sees in place of such an answer. */
 export const LOCAL_ONLY_ANSWER_PLACEHOLDER =
@@ -21,22 +26,39 @@ function isLocalOnlyRecallResult(result: unknown): boolean {
   return typeof result === 'object' && result !== null && (result as { localOnly?: unknown }).localOnly === true
 }
 
-/** True when the message holds a `client_recall` result that carried local-only records. */
+/** True when the message holds a `client_recall` or `client_answer` result marked local-only. */
 export function usedLocalOnlyRecall(message: Pick<Message, 'contentParts'>): boolean {
   return (message.contentParts ?? []).some(
-    (p) => p.type === 'tool-call' && p.toolName === CLIENT_RECALL_TOOL && isLocalOnlyRecallResult(p.result)
+    (p) => p.type === 'tool-call' && PM_TOOLS.has(p.toolName) && isLocalOnlyRecallResult(p.result)
   )
+}
+
+/** The questions whose Needs you chats these messages open, once each. */
+export function ch6QuestionIds(messages: Pick<Message, 'pmQuestionId'>[]): string[] {
+  return [...new Set(messages.flatMap((m) => (m.pmQuestionId ? [m.pmQuestionId] : [])))]
+}
+
+/** Index of the first opening whose question is local-only (all are, when `localOnly` is null); -1 when none. */
+function firstLocalOnlyOpening(messages: Message[], localOnly: ReadonlySet<string> | null): number {
+  return messages.findIndex((m) => !!m.pmQuestionId && (localOnly === null || localOnly.has(m.pmQuestionId)))
 }
 
 /**
  * The messages with every such answer replaced by `placeholder` (nothing else of it kept); an empty placeholder (no
- * translation loaded) falls back to the English text.
+ * translation loaded) falls back to the English text. `localOnlyQuestions`: the questions of Needs you chats that are
+ * local-only now; null (the default) when unknown, which hides every Needs you chat's assistant messages.
  */
-export function hideLocalOnlyRecalls(messages: Message[], placeholder: string): Message[] {
-  if (!messages.some(usedLocalOnlyRecall)) return messages
+export function hideLocalOnlyRecalls(
+  messages: Message[],
+  placeholder: string,
+  localOnlyQuestions: ReadonlySet<string> | null = null
+): Message[] {
+  const from = firstLocalOnlyOpening(messages, localOnlyQuestions)
+  const hidden = (m: Message, i: number) => usedLocalOnlyRecall(m) || (from >= 0 && i >= from && m.role === 'assistant')
+  if (!messages.some(hidden)) return messages
   const text = placeholder || LOCAL_ONLY_ANSWER_PLACEHOLDER
-  return messages.map((m) => {
-    if (!usedLocalOnlyRecall(m)) return m
+  return messages.map((m, i) => {
+    if (!hidden(m, i)) return m
     const {
       reasoningContent: _r,
       citations: _c,

@@ -85,9 +85,10 @@ import generateImageToolSet, {
   formatImageCatalogInstructions,
 } from './toolsets/generate-image'
 import { getToolSet } from './toolsets/knowledge-base'
-import { loadLocalOnlySourceIds, loadPmToolSet } from './toolsets/pm-pilot'
+import { loadLocalOnlyQuestionIds, loadLocalOnlySourceIds, loadPmToolSet } from './toolsets/pm-pilot'
 import {
   CLIENT_RECALL_TOOL,
+  ch6QuestionIds,
   hideLocalOnlyRecalls,
   knowledgeMayReachCloud,
   LOCAL_ONLY_ANSWER_PLACEHOLDER,
@@ -374,7 +375,21 @@ export async function streamText(
   // ADR 0003: whether this turn's model is cloud (the chat's own provider). A cloud turn never carries an earlier
   // answer built from local-only mail or tasks.
   const cloudModel = !isLocalModelProvider(sessionSettings?.provider)
-  if (cloudModel) params.messages = hideLocalOnlyRecalls(params.messages, t(LOCAL_ONLY_ANSWER_PLACEHOLDER))
+  if (cloudModel) {
+    // A Needs you chat (CH6) quotes client mail: while its question is local-only, or when that cannot be read, its
+    // assistant messages stay on this device too.
+    const questionIds = ch6QuestionIds(params.messages)
+    let localOnlyQuestions: Set<string> | null = new Set()
+    if (questionIds.length > 0) {
+      try {
+        localOnlyQuestions = await loadLocalOnlyQuestionIds(questionIds)
+      } catch (err) {
+        knowledgeLog.error('Failed to read local-only questions:', err)
+        localOnlyQuestions = null
+      }
+    }
+    params.messages = hideLocalOnlyRecalls(params.messages, t(LOCAL_ONLY_ANSWER_PLACEHOLDER), localOnlyQuestions)
+  }
   const hasDocumentFileOrLink = params.messages.some(
     (m) => m.links?.length || m.files?.some((f) => f.mediaKind !== 'video')
   )
@@ -520,6 +535,7 @@ export async function streamText(
         sessionScopeId: scopeId,
         cloudModel,
         userMessage: lastUser ? getMessageText(lastUser, false, false) : '',
+        ...(sessionId ? { sessionId } : {}),
       })
     } catch (err) {
       console.error('Failed to load client email and tasks toolset:', err)

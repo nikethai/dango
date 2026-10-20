@@ -428,6 +428,68 @@ async function getQuestion(id: string): Promise<ClientQuestion | undefined> {
   return (await readQuestions()).find((q) => q.id === id)
 }
 
+/** Changes one question inside the lock; `fn` returns the replacement (or undefined to leave it) and a result. */
+async function mutateQuestion<R>(
+  id: string,
+  fn: (q: ClientQuestion | undefined) => { next?: ClientQuestion; result: R }
+): Promise<R> {
+  const { next, result } = await mutateDoc('PmQuestions', parseQuestions, (questions) => {
+    const at = questions.findIndex((q) => q.id === id)
+    const out = fn(at < 0 ? undefined : questions[at])
+    if (!out.next || at < 0) return { next: questions, result: out.result }
+    const list = [...questions]
+    list[at] = ClientQuestionSchema.parse(out.next)
+    return { next: list, result: out.result }
+  })
+  pmStateStore.setState({ questions: next })
+  return result
+}
+
+/**
+ * Marks an open question answered, with `patch`, in one step under the lock, and returns it as it was; undefined when
+ * it is missing or already answered. A question is answered once, even from two windows at the same moment.
+ */
+function claimQuestion(
+  id: string,
+  patch: Partial<Pick<ClientQuestion, 'backfill'>> = {}
+): Promise<ClientQuestion | undefined> {
+  return mutateQuestion(id, (q) => {
+    if (!q || q.state !== 'open') return { result: undefined }
+    return { next: { ...q, ...patch, state: 'answered' }, result: q }
+  })
+}
+
+/** Opens a claimed question again (its answer could not be saved), without a pending backfill. */
+function reopenQuestion(id: string): Promise<void> {
+  return mutateQuestion(id, (q) => {
+    if (!q) return { result: undefined }
+    const { backfill: _b, ...rest } = q
+    return { next: { ...rest, state: 'open' }, result: undefined }
+  })
+}
+
+function setQuestionSession(id: string, sessionId: string): Promise<void> {
+  return mutateQuestion(id, (q) => (q ? { next: { ...q, sessionId }, result: undefined } : { result: undefined }))
+}
+
+/** The question whose CH6 chat is `sessionId`, in any state. */
+async function findQuestionBySession(sessionId: string): Promise<ClientQuestion | undefined> {
+  return (await readQuestions()).find((q) => q.sessionId === sessionId)
+}
+
+/** Answered "Which client is this?" questions of an account whose backfill has not run yet. */
+async function listPendingBackfills(accountId: string): Promise<ClientQuestion[]> {
+  return (await readQuestions()).filter((q) => q.accountId === accountId && q.backfill !== undefined)
+}
+
+function clearBackfill(id: string): Promise<void> {
+  return mutateQuestion(id, (q) => {
+    if (!q?.backfill) return { result: undefined }
+    const { backfill: _b, ...rest } = q
+    return { next: rest, result: undefined }
+  })
+}
+
 type QuestionLookup = { domain: string } | { threadId: string } | { kind: ClientQuestion['kind']; sourceId: string }
 
 function questionMatches(q: ClientQuestion, by: QuestionLookup): boolean {
@@ -500,6 +562,12 @@ export const pmStore = {
   saveQuestion,
   getQuestion,
   findOpenQuestion,
+  claimQuestion,
+  reopenQuestion,
+  setQuestionSession,
+  findQuestionBySession,
+  listPendingBackfills,
+  clearBackfill,
   countDraftsToday,
   bumpDraftsToday,
   tryBumpDraftsToday,

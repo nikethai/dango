@@ -120,7 +120,7 @@ import {
   listAsanaProjects,
   syncAsanaProject,
 } from './asana-adapter'
-import { addReviewEntry, registerSourceAdapter } from './bridge'
+import { addReviewEntry, loadSources, registerSourceAdapter } from './bridge'
 import { _resetPipelineForTests, getSourceHealth, runGmailPipeline } from './pipeline'
 import { pmStore } from './store'
 import { getFreshToken } from './tokens'
@@ -266,6 +266,26 @@ describe('syncAsanaSource', () => {
     expect(listAsanaProjects).toHaveBeenCalledTimes(1)
     expect(addReviewEntry).toHaveBeenCalledTimes(1)
     expect(syncAsanaProject).not.toHaveBeenCalled()
+  })
+
+  it('reads a project picked in another window instead of asking again', async () => {
+    // The runner's copy of the source has no project; storage has the one the user picked in a chat elsewhere.
+    const stale = asanaSource({ config: { accountId: 'acc-asana' } })
+    h.sources = [stale]
+    vi.mocked(loadSources).mockImplementationOnce(() => {
+      h.sources = [asanaSource({ config: { accountId: 'acc-asana', projectGid: 'p2' } })]
+      return Promise.resolve()
+    })
+    vi.mocked(syncAsanaProject).mockResolvedValueOnce({
+      records: [],
+      cursor: cursorOf('sync-1'),
+      deletedExternalIds: [],
+    })
+    await syncAsanaSource(stale, ctx())
+    expect(listAsanaProjects).not.toHaveBeenCalled()
+    expect(h.questions).toHaveLength(0)
+    expect(vi.mocked(syncAsanaProject).mock.calls[0][0]).toMatchObject({ projectGid: 'p2' })
+    expect(pmStore.setCursor).toHaveBeenCalledWith(expect.objectContaining({ scope: 'a1:p2' }))
   })
 
   it('stores tasks and comments, then saves the cursor per source and project', async () => {

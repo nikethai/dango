@@ -122,10 +122,17 @@ async function askWhichProject(source: ConnectedSource, accountId: string, signa
 }
 
 async function syncAsana(
-  source: ConnectedSource,
+  given: ConnectedSource,
   ctx: { signal: AbortSignal; progress(text: string): void }
 ): Promise<{ summary: string; quiet: boolean }> {
   await pruneRemovedSources('asana', await asanaSources())
+  let source = given
+  if (!asanaConfig(source).projectGid) {
+    // The project may have been picked in a chat in another window (Task 11), which this window's copy of the
+    // sources does not follow: read them again before asking.
+    await loadSources()
+    source = listSources({ kind: 'asana' }).find((s) => s.id === given.id) ?? given
+  }
   const { accountId, projectGid } = asanaConfig(source)
   if (!projectGid) {
     const asked = await askWhichProject(source, accountId, ctx.signal)
