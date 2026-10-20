@@ -52,12 +52,8 @@ export function cancelSessionGeneration(sessionId: string): boolean {
   void import('@/packages/model-calls/toolsets/browser')
     .then(({ stopBrowserSession }) => stopBrowserSession(sessionId))
     .catch(() => {})
-  void import('@/platform')
-    .then((m) => m.default.computerAbort?.())
-    .catch(() => {})
-  void import('@/packages/browser/lock')
-    .then(({ releaseBrowserLock }) => releaseBrowserLock(sessionId))
-    .catch(() => {})
+  void import('@/platform').then((m) => m.default.computerAbort?.()).catch(() => {})
+  void import('@/packages/browser/lock').then(({ releaseBrowserLock }) => releaseBrowserLock(sessionId)).catch(() => {})
   return true
 }
 
@@ -78,4 +74,19 @@ export function wasGenerationCancelled(sessionId: string, messageId: string): bo
 /** Forget the Stop mark for this message; generate() calls it once its finish path has read the mark. */
 export function clearGenerationCancelled(sessionId: string, messageId: string): void {
   cancelledRuns.delete(runKey(sessionId, messageId))
+}
+
+/** Per chat: the message the user last stopped. generate() clears its own cancel mark, so callers that look after it
+ * returns (room turns deciding whether to retry an empty turn) read this instead. */
+const userStoppedBySession = new Map<string, string>()
+
+export function markGenerationStoppedByUser(sessionId: string, messageId: string): void {
+  userStoppedBySession.set(sessionId, messageId)
+}
+
+/** True (once) when the user stopped this message's run; the mark is removed. */
+export function consumeGenerationStoppedByUser(sessionId: string, messageId: string): boolean {
+  if (userStoppedBySession.get(sessionId) !== messageId) return false
+  userStoppedBySession.delete(sessionId)
+  return true
 }

@@ -4,6 +4,8 @@
  */
 
 import type { RoomMode, RoomRole } from '@shared/agent-room'
+import type { Message } from '@shared/types'
+import { getMessageText } from '@shared/utils/message'
 import { atom } from 'jotai'
 import { useMemo, useSyncExternalStore } from 'react'
 
@@ -103,6 +105,21 @@ export async function requestSwarmStop(sessionId: string): Promise<void> {
 /** Whether Stop in this chat should go to the running Swarm (any phase but the captain's answer). */
 export function isSwarmStoppable(sessionId: string): boolean {
   return live?.mode === 'swarm' && live.sessionId === sessionId && live.phase !== 'deliver'
+}
+
+/**
+ * What a Stop press in this chat should do while it may run a Swarm:
+ * - 'swarm': first Stop during the run, so stop the run and let the captain answer (requestSwarmStop)
+ * - 'ignore': Stop was already requested and the captain's answer has written nothing yet (a double press must not
+ *   kill the answer the first press asked for)
+ * - 'stop': an ordinary Stop of the message that is generating
+ */
+export function swarmStopRoute(sessionId: string, generating?: Message | null): 'swarm' | 'ignore' | 'stop' {
+  if (isSwarmStopRequested(sessionId)) {
+    const hasText = Boolean(generating && getMessageText(generating, false, false).trim())
+    return hasText ? 'stop' : 'ignore'
+  }
+  return isSwarmStoppable(sessionId) ? 'swarm' : 'stop'
 }
 
 /** Called by the Swarm orchestrator when a run ends. */

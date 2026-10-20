@@ -73,10 +73,13 @@ export async function runAgentRoomSwarm(
   }
 ): Promise<void> {
   if (params.speakers.length < 2) return
+  // A flag left by an earlier run (or a Stop pressed before this run started) must not stop this one.
+  clearSwarmStopRequest(sessionId)
   try {
     await runSwarm(sessionId, params)
   } finally {
     clearSwarmStopRequest(sessionId)
+    clearTeamRoomState(sessionId)
   }
 }
 

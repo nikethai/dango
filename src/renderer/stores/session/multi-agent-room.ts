@@ -27,14 +27,11 @@ import { type AgentMeta, resolveAgentMeta } from '@/packages/agents'
 import * as chatStore from '../chatStore'
 import * as scrollActions from '../scrollActions'
 import { generate } from './generation'
+import { consumeGenerationStoppedByUser } from './generation-cancel'
 import { messageQueueStore } from './messageQueue'
 import { insertMessage, modifyMessage, submitNewUserMessage } from './messages'
 import { runAgentRoomSwarm as runSwarmLoop } from './multi-agent-room-swarm'
-import {
-  clearTeamRoomState,
-  setTeamRoomActions,
-  setTeamRoomLive,
-} from './team-room-state'
+import { clearTeamRoomState, isSwarmStopRequested, setTeamRoomActions, setTeamRoomLive } from './team-room-state'
 
 export type RoomAgentMeta = AgentMeta
 
@@ -192,10 +189,22 @@ async function generateSpeakerTurn(
 
   await runOnce()
 
+  // A stopped turn is not an empty answer: never re-run it or write a placeholder. A Swarm Stop counts for every turn
+  // but the captain's answer (which still runs after Stop); a Stop on the turn itself counts for any turn.
+  const userStopped = consumeGenerationStoppedByUser(sessionId, assistantMsg.id)
+  const swarmStopped = Boolean(params.runId) && params.roomRole !== 'deliver' && isSwarmStopRequested(sessionId)
+  const stopped = userStopped || swarmStopped
+
   let after = await chatStore.getSession(sessionId)
   let justGenerated = after?.messages.find((m) => m.id === assistantMsg.id)
 
-  if (justGenerated && !justGenerated.cancel && !messageHasUsableText(justGenerated) && !justGenerated.error) {
+  if (
+    !stopped &&
+    justGenerated &&
+    !justGenerated.cancel &&
+    !messageHasUsableText(justGenerated) &&
+    !justGenerated.error
+  ) {
     await modifyMessage(sessionId, {
       ...justGenerated,
       generating: true,
@@ -208,7 +217,13 @@ async function generateSpeakerTurn(
     justGenerated = after?.messages.find((m) => m.id === assistantMsg.id)
   }
 
-  if (justGenerated && !messageHasUsableText(justGenerated) && !justGenerated.error && !justGenerated.cancel) {
+  if (
+    !stopped &&
+    justGenerated &&
+    !messageHasUsableText(justGenerated) &&
+    !justGenerated.error &&
+    !justGenerated.cancel
+  ) {
     const placeholder =
       params.roomRole === 'synthesis'
         ? '_Team answer returned no content. Try again or re-@ the agents._'
@@ -225,7 +240,7 @@ async function generateSpeakerTurn(
   after = await chatStore.getSession(sessionId)
   justGenerated = after?.messages.find((m) => m.id === assistantMsg.id) ?? assistantMsg
   const latest = after?.messages[after.messages.length - 1]
-  const interrupted = Boolean(justGenerated.cancel || latest?.role === 'user')
+  const interrupted = Boolean(stopped || justGenerated.cancel || latest?.role === 'user')
 
   // Re-pin after stream/placeholder so long turns stay in view
   if (!interrupted) {

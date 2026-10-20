@@ -78,11 +78,13 @@ vi.mock('../taskStore', () => {
 
 import { runAgentRoomSwarm, type SwarmSpeakerTurn } from './multi-agent-room-swarm'
 import {
+  clearSwarmStopRequest,
   getTeamRoomLive,
   isSwarmStoppable,
   isSwarmStopRequested,
   requestSwarmStop,
   setTeamRoomLive,
+  swarmStopRoute,
 } from './team-room-state'
 
 type TurnParams = Parameters<SwarmSpeakerTurn>[1]
@@ -231,5 +233,73 @@ describe('runAgentRoomSwarm', () => {
     setTeamRoomLive({ sessionId: SESSION, phase: 'turn', mode: 'discuss' })
     expect(isSwarmStoppable(SESSION)).toBe(false)
     setTeamRoomLive(null)
+  })
+
+  it('stop wins even when the stopped turn does not report itself interrupted', async () => {
+    let first = true
+    const { turn, calls } = fakeTurns(async (params) => {
+      if (params.roomRole === 'do' && first) {
+        first = false
+        await requestSwarmStop(SESSION)
+        return { interrupted: false }
+      }
+      return undefined
+    })
+    await run(turn)
+    expect(calls.map((c) => c.roomRole)).toEqual(['plan', 'do', 'deliver'])
+    expect(calls[2].stoppedEarly).toBe(true)
+    expect(h.state.tasks.map((t) => t.status)).toEqual(['pending', 'pending', 'pending'])
+  })
+
+  it('a run that throws leaves no live status and no stop flag', async () => {
+    const turn: SwarmSpeakerTurn = async (sessionId) => {
+      await requestSwarmStop(sessionId)
+      throw new Error('boom')
+    }
+    await expect(run(turn)).rejects.toThrow('boom')
+    expect(getTeamRoomLive()).toBeNull()
+    expect(isSwarmStopRequested(SESSION)).toBe(false)
+  })
+
+  it('a stale stop flag from an earlier run is cleared when a run starts', async () => {
+    await requestSwarmStop(SESSION)
+    const { turn, calls } = fakeTurns()
+    await run(turn)
+    expect(calls.map((c) => c.roomRole)).toEqual(['plan', 'do', 'do', 'do', 'deliver'])
+    expect(calls.every((c) => !c.stoppedEarly)).toBe(true)
+  })
+})
+
+describe('swarmStopRoute (composer and message Stop)', () => {
+  const deliver = (text: string): Message => ({
+    ...createMessage('assistant', text),
+    generating: true,
+    roomRole: 'deliver',
+    swarm: { runId: 'swarm-1' },
+  })
+
+  beforeEach(() => {
+    setTeamRoomLive(null)
+    clearSwarmStopRequest(SESSION)
+  })
+
+  it('an ordinary chat stops as before', () => {
+    expect(swarmStopRoute(SESSION, deliver('x'))).toBe('stop')
+  })
+
+  it('a running Swarm routes the first Stop to the run', () => {
+    setTeamRoomLive({ sessionId: SESSION, phase: 'do', mode: 'swarm' })
+    expect(swarmStopRoute(SESSION, null)).toBe('swarm')
+  })
+
+  it('a second Stop is ignored until the captain has written something, then stops the answer', async () => {
+    setTeamRoomLive({ sessionId: SESSION, phase: 'do', mode: 'swarm' })
+    await requestSwarmStop(SESSION)
+    // The deliver turn may already stream before the live phase says so.
+    expect(swarmStopRoute(SESSION, deliver(''))).toBe('ignore')
+    setTeamRoomLive({ sessionId: SESSION, phase: 'deliver', mode: 'swarm' })
+    expect(swarmStopRoute(SESSION, deliver(''))).toBe('ignore')
+    expect(swarmStopRoute(SESSION, deliver('Partial answer'))).toBe('stop')
+    expect(h.stopChatIfRunning).toHaveBeenCalledTimes(1)
   })
 })

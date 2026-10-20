@@ -221,15 +221,19 @@ function RouteComponent() {
       return false
     }
     const sessionId = currentSession.id
-    void import('@/stores/session/team-room-state').then(async ({ isSwarmStoppable, requestSwarmStop }) => {
-      // A running Swarm stops its board and still lets the captain answer; Stop during that answer stops it.
-      if (isSwarmStoppable(sessionId)) {
-        await requestSwarmStop(sessionId)
-        return
-      }
-      const { stopSessionGeneration } = await import('@/stores/session/stop-generation')
-      await stopSessionGeneration(sessionId, lastGeneratingMessage)
-    })
+    void import('@/stores/session/team-room-state')
+      .then(async ({ requestSwarmStop, swarmStopRoute }) => {
+        // A running Swarm stops its board and still lets the captain answer; a second press waits for that answer.
+        const route = swarmStopRoute(sessionId, lastGeneratingMessage)
+        if (route === 'ignore') return
+        if (route === 'swarm') {
+          await requestSwarmStop(sessionId)
+          return
+        }
+        const { stopSessionGeneration } = await import('@/stores/session/stop-generation')
+        await stopSessionGeneration(sessionId, lastGeneratingMessage)
+      })
+      .catch((error) => console.error('Failed to stop generation', error))
     return true
   }, [currentSession, lastGeneratingMessage])
 

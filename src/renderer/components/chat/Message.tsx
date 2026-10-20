@@ -326,9 +326,11 @@ const _Message: FC<Props> = (props) => {
 
   const onStopGeneration = useCallback(() => {
     void import('@/stores/session/team-room-state')
-      .then(async ({ isSwarmStoppable, requestSwarmStop }) => {
-        // Stop on a Swarm turn stops the run and still lets the captain answer.
-        if (msg.swarm && isSwarmStoppable(sessionId)) {
+      .then(async ({ requestSwarmStop, swarmStopRoute }) => {
+        // Stop on a Swarm turn stops the run and still lets the captain answer; a second press waits for that answer.
+        const route = msg.swarm ? swarmStopRoute(sessionId, msg) : 'stop'
+        if (route === 'ignore') return
+        if (route === 'swarm') {
           await requestSwarmStop(sessionId)
           return
         }
