@@ -1782,5 +1782,19 @@
   "What's still open with {{scope}}?": "What's still open with {{scope}}?",
   "Plan mode": "Plan mode",
   "Propose a plan first. Nothing runs until you choose Run plan.": "Propose a plan first. Nothing runs until you choose Run plan.",
-  "Turn on plan mode": "Turn on plan mode"
+  "Turn on plan mode": "Turn on plan mode",
+  "Edit {{path}}": "Edit {{path}}",
+  "Edit {{count}} files_one": "Edit {{count}} file",
+  "Edit {{count}} files_other": "Edit {{count}} files",
+  "Edit files": "Edit files",
+  "Delete {{path}}": "Delete {{path}}",
+  "Delete a file": "Delete a file",
+  "Run a command": "Run a command",
+  "Open {{host}}": "Open {{host}}",
+  "Use the browser on {{host}}": "Use the browser on {{host}}",
+  "Use the browser": "Use the browser",
+  "Use your computer: {{action}}": "Use your computer: {{action}}",
+  "Use your computer": "Use your computer",
+  "Send a message": "Send a message",
+  "Use {{toolLabel}}": "Use {{toolLabel}}"
 }
