@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import platform from '@/platform'
 import storage, { StorageKey } from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { _resetPmStoreForTests, PROCESSED_PER_ACCOUNT, pmStore } from './store'
+import { _resetPmStoreForTests, PmRecordError, PmStoreUnreadableError, PROCESSED_PER_ACCOUNT, pmStore } from './store'
 
 function rec(over: Partial<SourceRecord> & { externalId: string }): SourceRecord {
   return {
@@ -110,6 +110,41 @@ describe('pmStore records', () => {
     expect(await pmStore.getRecords('acme')).toEqual([])
   })
 
+  it('a refusal is a PmRecordError and writes nothing', async () => {
+    const error = await pmStore
+      .upsertRecords([rec({ externalId: 'm1' }), rec({ externalId: 'm2', scopeId: null })])
+      .catch((e) => e)
+    expect(error).toBeInstanceOf(PmRecordError)
+    const missingSource = await pmStore.upsertRecords([rec({ externalId: 'm3', sourceId: null })]).catch((e) => e)
+    expect(missingSource).toBeInstanceOf(PmRecordError)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(await platform.getAllStoreKeys()).not.toContain(StorageKeyGenerator.pmRecords('acme'))
+  })
+
+  it('an unchanged upsert writes nothing', async () => {
+    await pmStore.upsertRecords([rec({ externalId: 'm1' })])
+    await vi.advanceTimersByTimeAsync(5000)
+    const write = vi.spyOn(platform, 'setStoreValue')
+    try {
+      await pmStore.upsertRecords([rec({ externalId: 'm1' })])
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(write).not.toHaveBeenCalled()
+    } finally {
+      write.mockRestore()
+    }
+  })
+
+  it('setCursor writes pending records first, so a quit right after keeps them', async () => {
+    await pmStore.upsertRecords([rec({ externalId: 'm1' })])
+    await pmStore.setCursor({ accountId: 'acc1', sourceKind: 'gmail', scope: 'mailbox', value: 'h2', updatedAt: 1 })
+    // No timers advanced: the debounced write has not run, as after a quit.
+    expect(await platform.getStoreValue(StorageKeyGenerator.pmRecords('acme'))).toEqual([
+      expect.objectContaining({ id: 'gmail:m1' }),
+    ])
+    _resetPmStoreForTests()
+    expect((await pmStore.getRecords('acme')).map((r) => r.id)).toEqual(['gmail:m1'])
+  })
+
   it('refuses records without a source', async () => {
     await expect(pmStore.upsertRecords([rec({ externalId: 'm1', sourceId: null })])).rejects.toThrow()
     expect(await pmStore.getRecords('acme')).toEqual([])
@@ -186,6 +221,30 @@ describe('pmStore cursors, processed ids, drafts and questions', () => {
     expect(await pmStore.countDraftsToday(nextMorning)).toBe(0)
     expect(await pmStore.bumpDraftsToday(nextMorning)).toBe(1)
     expect(DAILY_DRAFT_CAP).toBe(20)
+  })
+
+  it('tryBumpDraftsToday lets exactly one of two runs past the cap', async () => {
+    const now = new Date(2026, 9, 20, 12, 0).getTime()
+    for (let i = 0; i < DAILY_DRAFT_CAP - 1; i++) await pmStore.bumpDraftsToday(now)
+    const results = await Promise.all([
+      pmStore.tryBumpDraftsToday(now, DAILY_DRAFT_CAP),
+      pmStore.tryBumpDraftsToday(now, DAILY_DRAFT_CAP),
+    ])
+    expect(results.filter(Boolean)).toHaveLength(1)
+    expect(await pmStore.countDraftsToday(now)).toBe(DAILY_DRAFT_CAP)
+  })
+
+  it('a malformed stored drafts or questions value throws and is not overwritten', async () => {
+    await platform.setStoreValue(StorageKey.PmDrafts, { secret: 'client words' })
+    await platform.setStoreValue(StorageKey.PmQuestions, 'client words')
+    const error = await pmStore.saveDraft(draft()).catch((e) => e)
+    expect(error).toBeInstanceOf(PmStoreUnreadableError)
+    expect(String(error.message)).not.toContain('client words')
+    await expect(pmStore.getDraft('d1')).rejects.toBeInstanceOf(PmStoreUnreadableError)
+    await expect(pmStore.saveQuestion(question())).rejects.toBeInstanceOf(PmStoreUnreadableError)
+    await expect(pmStore.findOpenQuestion({ domain: 'newco.com' })).rejects.toBeInstanceOf(PmStoreUnreadableError)
+    expect(await platform.getStoreValue(StorageKey.PmDrafts)).toEqual({ secret: 'client words' })
+    expect(await platform.getStoreValue(StorageKey.PmQuestions)).toBe('client words')
   })
 
   it('saveDraft writes through at once', async () => {

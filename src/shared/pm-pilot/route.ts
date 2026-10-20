@@ -31,13 +31,19 @@ export function ownMatchers(ownAddress: string): { address: string; domain?: str
   return domain && !isPublicDomain(domain) ? { address, domain } : { address }
 }
 
-/** `@acme.com` or `acme.com` match the domain; `jo@acme.com` matches that address only. */
+/** True for the domain itself or one of its subdomains (`eu.acme.com`), never a look-alike (`notacme.com`). */
+function inDomain(address: string, domain: string): boolean {
+  const d = domainOf(address)
+  return !!domain && (d === domain || d.endsWith(`.${domain}`))
+}
+
+/** `@acme.com` or `acme.com` match the domain and its subdomains; `jo@acme.com` matches that address only. */
 function matches(matcher: string, address: string): boolean {
   const m = matcher.trim().toLowerCase()
   if (!m) return false
-  if (m.startsWith('@')) return domainOf(address) === m.slice(1)
+  if (m.startsWith('@')) return inDomain(address, m.slice(1))
   if (m.includes('@')) return address === m
-  return domainOf(address) === m
+  return inDomain(address, m)
 }
 
 /** How an outside address is keyed for a question: its domain, or the whole address on a public domain. */
@@ -55,9 +61,12 @@ export function routeThread(records: SourceRecord[], sources: RouteSource[], own
   const newestInbound = byNewest.find((r) => !r.sentByMe) ?? byNewest[0]
   if (newestInbound?.noise) return { type: 'noise' }
 
-  const own = ownMatchers(ownAddress)
-  const isOwn = (address: string) =>
-    (!!own.address && address === own.address) || (!!own.domain && domainOf(address) === own.domain)
+  // The user's own addresses: the mailbox address, and the From of every message Gmail filed as SENT (`sentByMe`
+  // trusts only that label, so an inbound From cannot claim it). Their domains count too unless public.
+  const ownList = [ownMatchers(ownAddress), ...records.filter((r) => r.sentByMe).map((r) => ownMatchers(r.author))]
+  const ownAddresses = new Set(ownList.map((o) => o.address).filter(Boolean))
+  const ownDomains = new Set(ownList.flatMap((o) => (o.domain ? [o.domain] : [])))
+  const isOwn = (address: string) => ownAddresses.has(address) || ownDomains.has(domainOf(address))
 
   const addresses = unique(
     records

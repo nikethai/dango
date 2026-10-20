@@ -125,6 +125,47 @@ describe('routeThread', () => {
     })
   })
 
+  it('a newest inbound newsletter is noise even when older mail is not', () => {
+    const records = [
+      rec({ externalId: 'm1', occurredAt: 1000, noise: false }),
+      rec({ externalId: 'm2', occurredAt: 2000, author: 'news@acme.com', noise: true }),
+    ]
+    expect(routeThread(records, [src('s-a', 'scope-a', ['@acme.com'])], OWN)).toEqual({ type: 'noise' })
+  })
+
+  it('a domain matcher matches subdomains but not look-alikes', () => {
+    const sources = [src('s-a', 'scope-a', ['acme.com']), src('s-b', 'scope-b', ['@beta.io'])]
+    const from = (address: string) => [rec({ externalId: 'm1', author: address, participants: [address, OWN] })]
+    expect(routeThread(from('jo@eu.acme.com'), sources, OWN)).toMatchObject({ type: 'scope', scopeId: 'scope-a' })
+    expect(routeThread(from('x@acme.com.evil.io'), sources, OWN)).toMatchObject({ type: 'unknown' })
+    expect(routeThread(from('x@notacme.com'), sources, OWN)).toMatchObject({ type: 'unknown' })
+    expect(routeThread(from('x@eu.beta.io'), sources, OWN)).toMatchObject({ type: 'scope', scopeId: 'scope-b' })
+  })
+
+  it("an empty own address still treats the user's sent mail as own", () => {
+    const records = [
+      rec({
+        externalId: 'm1',
+        occurredAt: 1000,
+        author: 'me@agency.com',
+        participants: ['me@agency.com', 'lan@agency.com'],
+        sentByMe: true,
+      }),
+      rec({
+        externalId: 'm2',
+        occurredAt: 2000,
+        author: 'lan@agency.com',
+        participants: ['lan@agency.com', 'me@agency.com'],
+      }),
+    ]
+    expect(routeThread(records, [src('s-a', 'scope-a', ['@acme.com'])], '')).toEqual({ type: 'own' })
+  })
+
+  it('an inbound From claiming the user is not trusted as own', () => {
+    const records = [rec({ externalId: 'm1', author: 'jo@acme.com', participants: ['jo@acme.com'], sentByMe: false })]
+    expect(routeThread(records, [src('s-a', 'scope-a', ['@acme.com'])], '')).toMatchObject({ type: 'scope' })
+  })
+
   it('an empty own address is not an error', () => {
     const sources = [src('s-a', 'scope-a', ['@acme.com'])]
     expect(routeThread([rec({ externalId: 'm1' })], sources, '').type).toBe('scope')

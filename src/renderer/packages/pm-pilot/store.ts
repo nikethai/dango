@@ -18,8 +18,10 @@ import { createLockedQueue } from '@/lib/lockedQueue'
  *
  * - Records: one document per scope (`pm:records:{scopeId}`), written debounced because 90 days of mail can be large
  *   (preflight R25). A record is keyed by its source and id: one Asana task in two synced projects is two copies, and
- *   a write or delete from one source never touches the other's. Only the jobs window writes records; this window's
- *   copy is authoritative while it runs. Another window calls `reloadRecords()` before reading (R24).
+ *   a write or delete from one source never touches the other's. Every record change (upserts, deletes and
+ *   `removeSourceRecords`) must run in the jobs window: its copy is authoritative, and a change made in another window
+ *   would be written back over by the jobs window's cache. Another window calls `reloadRecords()` before reading (R24).
+ *   `setCursor` flushes pending record writes first, so a cursor is never stored ahead of its records.
  * - Cursors, processed ids, drafts, questions and the daily draft count: small documents written through at once
  *   (`setItemNow`), each change a read-modify-write of the stored value under a Web Lock, so the main and jobs
  *   windows never drop each other's writes. Reads go to storage too, so a window never acts on a stale draft.
@@ -41,6 +43,14 @@ const initialState = (): PmState => ({ records: {}, cursors: [], drafts: [], que
 
 /** This window's view of the pilot state, updated after every read and write. */
 export const pmStateStore = createStore<PmState>()(initialState)
+
+/** A stored drafts or questions document is not a list: nothing is written over it (no stored text in the message). */
+export class PmStoreUnreadableError extends Error {
+  constructor(what: string) {
+    super(`Stored PM ${what} could not be read`)
+    this.name = 'PmStoreUnreadableError'
+  }
+}
 
 export class PmRecordError extends Error {
   constructor(message: string) {
@@ -65,6 +75,13 @@ function parseList<T>(schema: z.ZodType<T>, value: unknown): T[] {
   })
 }
 
+/** Like `parseList`, but a stored value that is present and not a list throws rather than reading as empty. */
+function parseStrictList<T>(schema: z.ZodType<T>, value: unknown, what: string): T[] {
+  if (value === null || value === undefined) return []
+  if (!Array.isArray(value)) throw new PmStoreUnreadableError(what)
+  return parseList(schema, value)
+}
+
 const ProcessedSchema = z.record(z.string(), z.array(z.string())).catch({})
 const DraftCountSchema = z.object({ day: z.string(), count: z.number() }).catch({ day: '', count: 0 })
 
@@ -73,6 +90,8 @@ const DraftCountSchema = z.object({ day: z.string(), count: z.number() }).catch(
 
 const recordsQueue = createLockedQueue('dango:pm-records')
 let recordCache = new Map<string, SourceRecord[]>()
+/** Scopes whose records were changed here and may still sit in the debounced write. */
+let dirtyScopes = new Set<string>()
 
 function recordKey(r: Pick<SourceRecord, 'sourceId' | 'id'>): string {
   return `${r.sourceId}\u0000${r.id}`
@@ -90,10 +109,27 @@ async function loadScope(scopeId: string): Promise<SourceRecord[]> {
 
 async function writeScope(scopeId: string, list: SourceRecord[]): Promise<void> {
   recordCache.set(scopeId, list)
+  dirtyScopes.add(scopeId)
   pmStateStore.setState((s) => ({ records: { ...s.records, [scopeId]: list } }))
   const { storage, recordsKey } = await getStorage()
   // Debounced: an empty list is written rather than removed, so a pending write never brings old records back.
   await storage.setItem(recordsKey(scopeId), list)
+}
+
+/**
+ * Writes every scope changed here at once. `setCursor` calls it first: a cursor stored ahead of its records would
+ * skip those messages for good after a quit.
+ */
+function flushRecords(): Promise<void> {
+  return recordsQueue(async () => {
+    if (dirtyScopes.size === 0) return
+    const { storage, recordsKey } = await getStorage()
+    for (const scopeId of [...dirtyScopes]) {
+      const list = recordCache.get(scopeId)
+      if (list) await storage.setItemNow(recordsKey(scopeId), list)
+      dirtyScopes.delete(scopeId)
+    }
+  })
 }
 
 /** Every scope that may hold records: the ones loaded here and the ones in storage. */
@@ -201,8 +237,8 @@ function mutateDoc<T, R>(key: DocKey, parse: (v: unknown) => T, fn: (current: T)
 }
 
 const parseCursors = (v: unknown) => parseList(SyncCursorSchema, v)
-const parseDrafts = (v: unknown) => parseList(ClientDraftSchema, v)
-const parseQuestions = (v: unknown) => parseList(ClientQuestionSchema, v)
+const parseDrafts = (v: unknown) => parseStrictList(ClientDraftSchema, v, 'drafts')
+const parseQuestions = (v: unknown) => parseStrictList(ClientQuestionSchema, v, 'questions')
 const parseProcessed = (v: unknown) => ProcessedSchema.parse(v ?? {})
 const parseDraftCount = (v: unknown) => DraftCountSchema.parse(v ?? {})
 
@@ -222,6 +258,7 @@ async function getCursor(accountId: string, kind: PmSourceKind, scope: string): 
 
 async function setCursor(cursor: SyncCursor): Promise<void> {
   const parsed = SyncCursorSchema.parse(cursor)
+  await flushRecords()
   const { next } = await mutateDoc('PmCursors', parseCursors, (cursors) => ({
     next: replaceBy(
       cursors,
@@ -324,6 +361,19 @@ async function bumpDraftsToday(now: number): Promise<number> {
   return result
 }
 
+/**
+ * Bumps today's count only when it is below `cap`, in one step under the lock, so two runs at `cap - 1` cannot both
+ * pass. True when it bumped.
+ */
+async function tryBumpDraftsToday(now: number, cap: number): Promise<boolean> {
+  const day = localDay(now)
+  const { result } = await mutateDoc('PmDraftCount', parseDraftCount, (stored) => {
+    const count = stored.day === day ? stored.count : 0
+    return count < cap ? { next: { day, count: count + 1 }, result: true } : { next: stored, result: false }
+  })
+  return result
+}
+
 export const pmStore = {
   upsertRecords,
   deleteRecords,
@@ -331,6 +381,7 @@ export const pmStore = {
   removeSourceRecords,
   getRecords,
   reloadRecords,
+  flushRecords,
   getCursor,
   setCursor,
   markProcessed,
@@ -343,10 +394,12 @@ export const pmStore = {
   findOpenQuestion,
   countDraftsToday,
   bumpDraftsToday,
+  tryBumpDraftsToday,
 }
 
 /** Forgets this window's in-memory state (storage is left as is), as a new window would start. */
 export function _resetPmStoreForTests(): void {
   recordCache = new Map()
+  dirtyScopes = new Set()
   pmStateStore.setState(initialState())
 }
