@@ -28,7 +28,16 @@ const touchStyle: CSSProperties = {
   minWidth: 0,
 }
 
-/** Asks before a tool call runs. Tool-provided text (what, why, touches) renders as plain React children. */
+/** Dango's own account of a recognised command: a warning block with a danger rule on the leading edge. */
+const explainsStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'var(--dango-space-1)',
+  paddingInlineStart: 'var(--dango-space-2)',
+  borderInlineStart: '2px solid var(--dango-danger)',
+}
+
+/** Asks before a tool call runs. Tool-provided text (what, why, touches) and command targets in `explains` render as plain React children. */
 export function ToolPermissionSheet({ request, onChoose }: ToolPermissionSheetProps) {
   const { t } = useTranslation()
   const allowRef = useRef<HTMLButtonElement>(null)
@@ -59,7 +68,7 @@ export function ToolPermissionSheet({ request, onChoose }: ToolPermissionSheetPr
     if (guardedRef.current) return
     onChoose(choice)
   }
-  const { what, why, touches } = request.summary
+  const { what, why, touches, explains } = request.summary
   const shown = touches.slice(0, MAX_TOUCHES)
   const hidden = touches.length - shown.length
 
@@ -97,6 +106,18 @@ export function ToolPermissionSheet({ request, onChoose }: ToolPermissionSheetPr
         </>
       }
     >
+      {explains && explains.length > 0 ? (
+        <section aria-label={t('What this does')} style={explainsStyle}>
+          <span className="dg-type-caption" style={{ color: 'var(--dango-danger)' }}>
+            {t('What this does')}
+          </span>
+          {explains.map((line) => (
+            <p key={line} className="dg-type-callout" style={{ margin: 0, color: 'var(--dango-ink)' }}>
+              {line}
+            </p>
+          ))}
+        </section>
+      ) : null}
       {why ? (
         <p className="dg-type-body" style={{ margin: 0, color: 'var(--dango-ink-2)' }}>
           {why}

@@ -23,6 +23,7 @@ import { ensureKnowledgeLoaded } from '@/packages/knowledge/store'
 import { hostPreSearchMemories } from '@/packages/memory/host-presearch'
 import { isSessionMemoryToolRetainAllowed } from '@/packages/memory/session-policy'
 import { getMemoryToolSet, MEMORY_TOOL_NAMES } from '@/packages/memory/tools'
+import { commandToolInstructions } from '@/packages/tool-permission'
 import platform from '@/platform'
 import { ensureMemoryStoreInit, memoryStore } from '@/stores/memoryStore'
 import { settingsStore } from '@/stores/settingsStore'
@@ -660,6 +661,9 @@ Do not open with repeated web searches when personal memory may apply.
       toolSetInstructions += `\n\n${agentImageFlowInstructions}`
     }
   }
+
+  // Command tools always ask: have the model say in `reason` what the command does (the sheet shows it as "why").
+  toolSetInstructions += commandToolInstructions(customTools ?? { ...mcpTools, ...(workspaceFileToolSet?.tools ?? {}) })
 
   const memoryForceHybridFallback =
     memorySettings.enabled && memorySettings.retrievalMode === 'on_demand' && !model.isSupportToolUse()

@@ -341,6 +341,46 @@ export function isReadOnlyCommand(args: unknown): boolean {
   return commands.length > 0 && commands.every(isReadOnlyCommandText)
 }
 
+/**
+ * The command texts a call carries, in their original case: a bare string, each `command`/`cmd`/`program`/
+ * `executable`/`bin` field (joined with its spawn-style `args`/`argv`/`arguments`, as the risk engine reads them),
+ * `script` and `code` fields, and string arrays (`["rm", "-r", "~"]`), at any depth.
+ */
+export function commandTexts(args: unknown): string[] {
+  const texts = new Set<string>()
+  const walk = (value: unknown, depth: number) => {
+    if (depth > MAX_ARG_DEPTH || value == null) return
+    if (typeof value === 'string') {
+      if (depth === 0 && value.trim()) texts.add(value)
+      return
+    }
+    if (typeof value !== 'object') return
+    if (Array.isArray(value)) {
+      const joined = stringItems(value).join(' ')
+      if (joined.trim()) texts.add(joined)
+      for (const item of value) if (typeof item === 'object') walk(item, depth + 1)
+      return
+    }
+    const record = value as Record<string, unknown>
+    for (const commandKey of SPAWN_COMMAND_KEYS) {
+      const command = record[commandKey]
+      if (typeof command !== 'string' || !command.trim()) continue
+      const lists = SPAWN_ARGS_KEYS.map((key) => record[key]).filter(Array.isArray)
+      if (lists.length === 0) texts.add(command)
+      for (const list of lists) texts.add(`${command} ${stringItems(list).join(' ')}`)
+    }
+    for (const key of CODE_KEYS) {
+      const code = record[key]
+      if (typeof code === 'string' && code.trim()) texts.add(code)
+    }
+    for (const [key, item] of Object.entries(record)) {
+      if (typeof item === 'object' && !SPAWN_ARGS_KEYS.includes(key)) walk(item, depth + 1)
+    }
+  }
+  walk(args, 0)
+  return [...texts]
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------

@@ -133,6 +133,14 @@ describe('describeToolAction', () => {
     expect(describeToolAction('slack_post_message', {}).what).toBe('Send a message')
   })
 
+  it('adds what the command does, in Dango words, only when it recognises the command', () => {
+    expect(describeToolAction('run_command', { command: 'rm -rf ~' }).explains).toEqual([
+      'Deletes your home folder and everything inside it.',
+      'Skips the confirmation prompts.',
+    ])
+    expect(describeToolAction('run_command', { command: 'ls -la' })).not.toHaveProperty('explains')
+  })
+
   it('tolerates args that are not objects', () => {
     expect(describeToolAction('web_search', null)).toEqual({ what: 'Use Web search', touches: [] })
   })

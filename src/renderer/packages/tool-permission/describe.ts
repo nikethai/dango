@@ -1,11 +1,16 @@
 import { isSensitiveToolName } from '@shared/privacy/sensitive-tools'
 import { ToolRiskTier } from '@shared/types/mcp'
+import type { ToolSet } from 'ai'
 import { t } from 'i18next'
+import { explainCommand } from './explain'
 
 export type PermissionChoice = 'once' | 'always' | 'deny'
 
-/** What a tool call will do, in words for the permission sheet. Built from raw args, shown once, never persisted. */
-export type ToolActionSummary = { what: string; why?: string; touches: string[] }
+/**
+ * What a tool call will do, in words for the permission sheet. Built from raw args, shown once, never persisted.
+ * `explains` is Dango's own plain-words account of a recognised command (`explainCommand`), never the model's.
+ */
+export type ToolActionSummary = { what: string; why?: string; touches: string[]; explains?: string[] }
 
 const ALWAYS_ASKS_WORDS = new Set([
   'send',
@@ -113,6 +118,18 @@ export function canAlways(toolName: string, riskTier: ToolRiskTier, description?
   return !alwaysAsks(toolName, description) && riskTier !== ToolRiskTier.CRITICAL
 }
 
+/** Sent to the model with the tool instructions, not shown as UI copy. */
+export const COMMAND_EXPLAIN_INSTRUCTION =
+  "\n\nBefore you call a tool that runs commands, put a one-line plain explanation of what the command will do in the call's `reason` argument (or in your message text if the tool has no `reason` argument).\n"
+
+/** The instruction asking the model to explain its commands, when any offered tool runs commands; else ''. */
+export function commandToolInstructions(tools: ToolSet | Record<string, { description?: string }>): string {
+  const offersCommands = Object.entries(tools).some(([name, definition]) =>
+    isCommandTool(name, (definition as { description?: string } | undefined)?.description)
+  )
+  return offersCommands ? COMMAND_EXPLAIN_INSTRUCTION : ''
+}
+
 /** `browser_click` → `Browser click`. */
 export function toolLabel(toolName: string): string {
   const words = toolName.replace(/[_-]+/g, ' ').trim().toLowerCase()
@@ -211,7 +228,7 @@ function describeWhat(toolName: string, args: Record<string, unknown>): string {
 /**
  * Summarise a tool call for the permission sheet. Only names paths, hosts, the command (`command`, else `cmd`,
  * `script` or `code`; one line, head and tail kept, at most 80 chars) and recipients; never file content, diffs or
- * stdin.
+ * stdin. `explains` adds what a recognised command will do, in Dango's words (`explainCommand`).
  */
 export function describeToolAction(toolName: string, args: unknown, description?: string): ToolActionSummary {
   const rec = asRecord(args)
@@ -229,5 +246,7 @@ export function describeToolAction(toolName: string, args: unknown, description?
 
   const summary: ToolActionSummary = { what: describeWhat(toolName, rec), touches: [...new Set(touches)] }
   if (why) summary.why = why
+  const explains = explainCommand(args)
+  if (explains.length > 0) summary.explains = explains
   return summary
 }

@@ -6,6 +6,7 @@ import { ToolRiskTier } from '@shared/types/mcp'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  describeToolAction,
   getPermissionHead,
   type PermissionRequest,
   requestToolPermission,
@@ -177,6 +178,39 @@ describe('ToolPermissionSheet', () => {
       />
     )
     expect(screen.getByText(COMMAND_HINT)).toBeTruthy()
+  })
+
+  it('rm -rf ~ shows what Dango says the command does, before the why line', () => {
+    const summary = describeToolAction('run_command', { command: 'rm -rf ~', reason: 'Clean up' })
+    render(
+      <ToolPermissionSheet
+        request={makeRequest({ toolName: 'run_command', summary, allowAlways: false })}
+        onChoose={() => {}}
+      />
+    )
+    const heading = screen.getByText('What this does')
+    const line = screen.getByText('Deletes your home folder and everything inside it.')
+    expect(screen.getByText('Skips the confirmation prompts.')).toBeTruthy()
+    const why = screen.getByText('Clean up')
+    expect(heading.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(line.compareDocumentPosition(why) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('rm -rf ~')).toBeTruthy()
+  })
+
+  it('ls -la shows no "What this does"', () => {
+    const summary = describeToolAction('run_command', { command: 'ls -la' })
+    render(<ToolPermissionSheet request={makeRequest({ toolName: 'run_command', summary })} onChoose={() => {}} />)
+    expect(screen.queryByText('What this does')).toBeNull()
+  })
+
+  it('a target from the command renders as text, not markup', () => {
+    const summary = describeToolAction('run_command', { command: 'rm -r <b>boom</b>' })
+    const { container } = render(
+      <ToolPermissionSheet request={makeRequest({ toolName: 'run_command', summary })} onChoose={() => {}} />
+    )
+    expect(screen.getByText('Deletes <b>boom</b> and everything inside it.')).toBeTruthy()
+    expect(document.querySelector('b')).toBeNull()
+    expect(container).toBeTruthy()
   })
 
   it('no hint when Always is offered', () => {
