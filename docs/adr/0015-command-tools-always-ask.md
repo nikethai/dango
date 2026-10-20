@@ -26,7 +26,7 @@ Simple read-only commands are the exception and run without asking. A call count
 
 The model's own judgement of whether a command is safe is not used, because text the model reads (web pages, files, tool output) can tell it to call something harmless-sounding.
 
-The risk engine keeps rating command calls. Its tier still decides how the sheet reads and how calls are audited, but no tier lets a command tool run without asking.
+The risk engine keeps rating command calls. Its tier still decides how the sheet reads and how calls are audited, but no tier on its own lets a command tool run without asking; only the read-only allowlist does.
 
 ## Consequences
 
