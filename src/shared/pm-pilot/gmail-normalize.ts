@@ -54,13 +54,38 @@ function displayName(value: string | undefined): string | undefined {
   return name || undefined
 }
 
-function decodeBase64Url(data: string): string {
-  const b64 = data.replace(/-/g, '+').replace(/_/g, '/')
-  const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
-  const binary = atob(padded)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+/** Hostile-input bounds: cut decoded bodies before any regex runs, and cap the stored text. */
+export const MAX_HTML_CHARS = 200_000
+export const MAX_PLAIN_CHARS = 50_000
+export const MAX_TEXT_CHARS = 20_000
+
+function decodeBytes(bytes: Uint8Array, charset: string | undefined): string {
+  if (charset) {
+    try {
+      return new TextDecoder(charset).decode(bytes)
+    } catch {
+      // Unknown label: fall back to UTF-8.
+    }
+  }
   return new TextDecoder('utf-8').decode(bytes)
+}
+
+function decodeBase64Url(data: string, charset: string | undefined): string {
+  try {
+    const b64 = data.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
+    const binary = atob(padded)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    return decodeBytes(bytes, charset)
+  } catch {
+    return ''
+  }
+}
+
+function partCharset(part: GmailMessagePart): string | undefined {
+  const type = header(part.headers, 'Content-Type')
+  return type ? /charset\s*=\s*"?([^";\s]+)/i.exec(type)?.[1] : undefined
 }
 
 /** The first inline (non-attachment) part of the given type, depth first. */
@@ -85,24 +110,75 @@ function decodeEntities(text: string): string {
   })
 }
 
+/**
+ * Removes every span from an opener match to its closer, or to the end of the text when unclosed.
+ * Linear: each search starts where the last one ended, and an unclosed opener ends the scan.
+ */
+function removeSpans(s: string, opener: RegExp, closer: (open: RegExpExecArray) => RegExp): string {
+  const open = new RegExp(opener.source, 'gi')
+  let out = ''
+  let pos = 0
+  for (;;) {
+    open.lastIndex = pos
+    const o = open.exec(s)
+    if (!o) return out + s.slice(pos)
+    out += s.slice(pos, o.index)
+    const close = closer(o)
+    close.lastIndex = o.index + o[0].length
+    const c = close.exec(s)
+    if (!c) return out
+    pos = c.index + c[0].length
+  }
+}
+
+const DROPPED_ELEMENTS = /<(style|script|head|title|noscript|template|textarea)\b/
+const QUOTE_CLASS = /\b(gmail_quote|gmail_attr|yahoo_quoted)\b/i
+
+/** The index of the first Gmail/Yahoo quote container (`<div|blockquote class="gmail_quote">`), or -1. */
+function quoteStart(s: string): number {
+  const open = /<(div|blockquote)\b/gi
+  for (let o = open.exec(s); o; o = open.exec(s)) {
+    const end = s.indexOf('>', o.index)
+    if (end < 0) return -1
+    if (QUOTE_CLASS.test(s.slice(o.index, end))) return o.index
+    open.lastIndex = end + 1
+  }
+  return -1
+}
+
+/** Drops every tag; an unclosed `<` drops the rest. Linear. */
+function stripTags(s: string): string {
+  let out = ''
+  let pos = 0
+  for (;;) {
+    const lt = s.indexOf('<', pos)
+    if (lt < 0) return out + s.slice(pos)
+    out += s.slice(pos, lt)
+    const gt = s.indexOf('>', lt + 1)
+    if (gt < 0) return out
+    pos = gt + 1
+  }
+}
+
 /** Plain text from an HTML body: drops styles, scripts and Gmail/Outlook quote blocks, keeps line breaks. */
 export function htmlToText(html: string): string {
-  let s = html.replace(/<(style|script|head|title)\b[\s\S]*?<\/\1\s*>/gi, '').replace(/<!--[\s\S]*?-->/g, '')
+  let s = removeSpans(html, /<!--/, () => /-->/g)
+  s = removeSpans(s, DROPPED_ELEMENTS, (o) => new RegExp(`</${o[1]}\\s*>`, 'gi'))
   // Gmail wraps quoted history in a gmail_quote div or blockquote; anything after it is history.
-  const quote = /<(div|blockquote)\b[^>]*class="[^"]*\b(gmail_quote|gmail_attr|yahoo_quoted)\b[^"]*"[^>]*>/i.exec(s)
-  if (quote) s = s.slice(0, quote.index)
-  s = s.replace(/<blockquote\b[\s\S]*?<\/blockquote\s*>/gi, '')
-  s = s.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|tr|h[1-6]|blockquote|pre|table)\s*>/gi, '\n')
+  const quote = quoteStart(s)
+  if (quote >= 0) s = s.slice(0, quote)
+  s = removeSpans(s, /<blockquote\b/, () => /<\/blockquote\s*>/gi)
+  s = s.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|tr|h[1-6]|pre|table)\s*>/gi, '\n')
   let text: string
   if (typeof DOMParser !== 'undefined') {
     text = new DOMParser().parseFromString(s, 'text/html').body.textContent ?? ''
   } else {
-    text = decodeEntities(s.replace(/<[^>]*>/g, ''))
+    text = decodeEntities(stripTags(s))
   }
   return text
     .replace(/ /g, ' ')
     .split('\n')
-    .map((line) => line.replace(/[ \t]+$/g, ''))
+    .map((line) => line.trimEnd())
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
@@ -111,23 +187,46 @@ export function htmlToText(html: string): string {
 const QUOTE_HEADERS = [/^On .+ wrote:$/, /^Vào .+ đã viết:$/]
 const QUOTE_HEADER_STARTS = [/^On /, /^Vào /]
 const QUOTE_HEADER_ENDS = [/wrote:$/, /đã viết:$/]
+/** A real quote header names an address, a year or a time; prose rarely does. */
+const HEADER_DETAIL = /<[^<>]*>|\S@\S|\b\d{4}\b|\b\d{1,2}:\d{2}\b/
+
+/** True when the first non-blank line from `from` on is `>`-quoted, or there is none. */
+function quotedOrEnd(lines: string[], from: number): boolean {
+  for (let i = from; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (line) return line.startsWith('>')
+  }
+  return true
+}
+
+/** The number of lines (1 or 2) of a quote header starting at line `i`, or 0. */
+function quoteHeaderAt(lines: string[], i: number): number {
+  const line = lines[i].trim()
+  let size = 0
+  let joined = line
+  if (QUOTE_HEADERS.some((re) => re.test(line))) size = 1
+  else {
+    const next = (lines[i + 1] ?? '').trim()
+    if (QUOTE_HEADER_STARTS.some((re, k) => re.test(line) && QUOTE_HEADER_ENDS[k].test(next))) {
+      size = 2
+      joined = `${line} ${next}`
+    }
+  }
+  if (!size || !HEADER_DETAIL.test(joined) || !quotedOrEnd(lines, i + size)) return 0
+  return size
+}
 
 /**
  * The new text of a reply: everything before the first quote header (`On … wrote:`, `Vào … đã viết:`,
- * including headers Gmail wraps onto two lines), the first `>` line, or an Outlook "Original Message" line.
+ * including headers Gmail wraps onto two lines, when they name an address, year or time and are followed by
+ * `>` lines or nothing), the first `>` line, or an Outlook "Original Message" line.
  */
 export function extractNewText(body: string): string {
   const lines = body.normalize('NFC').replace(/\r\n?/g, '\n').split('\n')
   let cut = lines.length
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
-    const next = (lines[i + 1] ?? '').trim()
-    if (
-      line.startsWith('>') ||
-      /^-{2,}\s*Original Message\s*-{2,}$/i.test(line) ||
-      QUOTE_HEADERS.some((re) => re.test(line)) ||
-      QUOTE_HEADER_STARTS.some((re, k) => re.test(line) && QUOTE_HEADER_ENDS[k].test(next))
-    ) {
+    if (line.startsWith('>') || /^-{2,}\s*Original Message\s*-{2,}$/i.test(line) || quoteHeaderAt(lines, i)) {
       cut = i
       break
     }
@@ -137,9 +236,9 @@ export function extractNewText(body: string): string {
 
 function messageBody(payload: GmailMessagePart | undefined): string {
   const plain = findPart(payload, 'text/plain')
-  if (plain?.body?.data) return decodeBase64Url(plain.body.data)
+  if (plain?.body?.data) return decodeBase64Url(plain.body.data, partCharset(plain)).slice(0, MAX_PLAIN_CHARS)
   const html = findPart(payload, 'text/html')
-  if (html?.body?.data) return htmlToText(decodeBase64Url(html.body.data))
+  if (html?.body?.data) return htmlToText(decodeBase64Url(html.body.data, partCharset(html)).slice(0, MAX_HTML_CHARS))
   return ''
 }
 
@@ -151,10 +250,12 @@ function isNoise(labels: string[], headers: GmailHeader[] | undefined, from: str
   return local.startsWith('no-reply') || local.startsWith('noreply')
 }
 
-/** One record per message, unrouted (`scopeId` and `sourceId` null). */
-export function normalizeGmailThread(thread: GmailThread, accountId: string, ownAddress: string): SourceRecord[] {
-  const own = ownAddress.trim().toLowerCase()
-  return thread.messages.map((m) => {
+/**
+ * One record per message, unrouted (`scopeId` and `sourceId` null). `sentByMe` trusts only Gmail's `SENT` label:
+ * a From header can be spoofed. `ownAddress` is kept for routing callers.
+ */
+export function normalizeGmailThread(thread: GmailThread, accountId: string, _ownAddress: string): SourceRecord[] {
+  return (thread.messages ?? []).map((m) => {
     const headers = m.payload?.headers
     const labels = m.labelIds ?? []
     const fromHeader = header(headers, 'From')
@@ -182,8 +283,8 @@ export function normalizeGmailThread(thread: GmailThread, accountId: string, own
       participants,
       occurredAt: Number(m.internalDate ?? 0) || 0,
       title,
-      text: extractNewText(messageBody(m.payload)),
-      sentByMe: labels.includes('SENT') || (!!own && from === own),
+      text: extractNewText(messageBody(m.payload)).slice(0, MAX_TEXT_CHARS),
+      sentByMe: labels.includes('SENT'),
       noise: isNoise(labels, headers, from),
       link: { label: `Gmail thread "${title}"`, url: `https://mail.google.com/mail/#all/${threadId}` },
     }

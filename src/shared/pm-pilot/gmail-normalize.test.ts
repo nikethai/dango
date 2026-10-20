@@ -4,7 +4,7 @@ import plainJson from '../../../test/fixtures/pm-pilot/gmail/plain.json'
 import quotedReplyJson from '../../../test/fixtures/pm-pilot/gmail/quoted-reply.json'
 import sentReplyJson from '../../../test/fixtures/pm-pilot/gmail/sent-reply.json'
 import vietnameseJson from '../../../test/fixtures/pm-pilot/gmail/vietnamese.json'
-import { extractNewText, type GmailThread, normalizeGmailThread } from './gmail-normalize'
+import { extractNewText, type GmailThread, htmlToText, normalizeGmailThread } from './gmail-normalize'
 import { ClientQuestionSchema, recordId, SourceRecordSchema } from './types'
 
 const plain = plainJson as GmailThread
@@ -124,9 +124,41 @@ describe('normalizeGmailThread', () => {
     expect(normalizeGmailThread(oneMessage({ From: 'Jo <jo@b.example>' }), 'a1', 'pm@agency.vn')[0].noise).toBe(false)
   })
 
-  it('treats mail from the own address as sent by me', () => {
+  it('does not trust a spoofed own-address From without the SENT label', () => {
     const [r] = normalizeGmailThread(oneMessage({ From: 'PM <PM@agency.vn>' }), 'a1', 'pm@agency.vn')
-    expect(r.sentByMe).toBe(true)
+    expect(r.sentByMe).toBe(false)
+  })
+
+  it('decodes a part in its declared charset', () => {
+    const thread = oneMessage({ From: 'a@b.example' })
+    const payload = thread.messages[0].payload
+    if (!payload) throw new Error('fixture')
+    payload.headers = [...(payload.headers ?? []), { name: 'Content-Type', value: 'text/plain; charset="ISO-8859-1"' }]
+    payload.body = { data: Buffer.from([0x43, 0x61, 0x66, 0xe9]).toString('base64url') }
+    expect(normalizeGmailThread(thread, 'a1', 'pm@agency.vn')[0].text).toBe('Café')
+  })
+
+  it('falls back to UTF-8 for an unknown charset', () => {
+    const thread = oneMessage(
+      { From: 'a@b.example', 'Content-Type': 'text/plain; charset=x-made-up' },
+      ['INBOX'],
+      'Chào'
+    )
+    expect(normalizeGmailThread(thread, 'a1', 'pm@agency.vn')[0].text).toBe('Chào')
+  })
+
+  it('gives empty text for an undecodable body and survives a thread without messages', () => {
+    const thread = oneMessage({ From: 'a@b.example' })
+    const payload = thread.messages[0].payload
+    if (!payload) throw new Error('fixture')
+    payload.body = { data: '%%%not base64%%%' }
+    expect(normalizeGmailThread(thread, 'a1', 'pm@agency.vn')[0].text).toBe('')
+    expect(normalizeGmailThread({ id: 't' } as GmailThread, 'a1', 'pm@agency.vn')).toEqual([])
+  })
+
+  it('caps the text of a huge message', () => {
+    const thread = oneMessage({ From: 'a@b.example' }, ['INBOX'], 'x'.repeat(500_000))
+    expect(normalizeGmailThread(thread, 'a1', 'pm@agency.vn')[0].text.length).toBeLessThanOrEqual(20_000)
   })
 
   it('skips attachments and falls back to an empty subject title', () => {
@@ -161,6 +193,24 @@ describe('extractNewText', () => {
   })
 
   it('keeps a message with no quote', () => expect(extractNewText('  Just this.\n')).toBe('Just this.'))
+
+  it('keeps prose that only looks like a two-line quote header', () => {
+    const en = 'On Friday we ship v2.\nHere is what the client wrote:\nThe launch is 6 Nov.'
+    expect(extractNewText(en)).toBe(en)
+    const vi = 'Vào thứ Hai em sẽ gửi bản mới.\nĐây là những gì chị đã viết:\nOK'
+    expect(extractNewText(vi)).toBe(vi)
+  })
+
+  it('keeps a header-shaped line that is not followed by quoted text', () => {
+    const text = 'Thanks.\nOn Monday the client wrote:\nShip it on 6 Nov.'
+    expect(extractNewText(text)).toBe(text)
+  })
+
+  it('still cuts at a real header, on one line or wrapped', () => {
+    expect(extractNewText('Sure.\n\nOn Mon, 3 Nov 2025 at 10:42, An <an@x.vn> wrote:\n> Can you?')).toBe('Sure.')
+    expect(extractNewText('Sure.\n\nOn Mon, 3 Nov 2025 at 10:42, An <an@x.vn>\nwrote:\n\n> Can you?')).toBe('Sure.')
+    expect(extractNewText('Sure.\nOn Mon, 3 Nov 2025 at 10:42, An wrote:')).toBe('Sure.')
+  })
 })
 
 describe('types', () => {
@@ -181,5 +231,30 @@ describe('types', () => {
       createdAt: 1,
     }
     expect(ClientQuestionSchema.safeParse(q).success).toBe(true)
+  })
+})
+
+describe('htmlToText without DOMParser', () => {
+  it('drops an unclosed script and everything after it', () =>
+    expect(htmlToText('<p>Hi</p><script>alert(1); secret()')).toBe('Hi'))
+
+  it('drops noscript, template and textarea contents', () =>
+    expect(htmlToText('<p>A</p><noscript>n</noscript><template>t</template><textarea>x</textarea><p>B</p>')).toBe(
+      'A\nB'
+    ))
+
+  it('stays linear on hostile markup', () => {
+    for (const hostile of [
+      '<style>'.repeat(200_000),
+      '<'.repeat(200_000),
+      '<!--'.repeat(200_000),
+      '<div '.repeat(200_000),
+      `<p>a${' '.repeat(200_000)}b</p>`,
+      '<blockquote>'.repeat(200_000),
+    ]) {
+      const start = performance.now()
+      htmlToText(hostile)
+      expect(performance.now() - start).toBeLessThan(1000)
+    }
   })
 })
