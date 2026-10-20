@@ -8,6 +8,8 @@ import {
   tierFor,
   validateJudgement,
 } from './judge'
+import { inboundMayReachCloud, mayReachCloud } from './local-only'
+import type { Evidence } from './types'
 
 function j(over: Partial<Judgement> = {}): Judgement {
   return {
@@ -139,5 +141,50 @@ describe('parseJudgement', () => {
     for (const over of bad) expect(parseJudgement(JSON.stringify({ ...j(), ...over }))).toBeNull()
     expect(parseJudgement('[1,2]')).toBeNull()
     expect(parseJudgement('null')).toBeNull()
+  })
+
+  it('strips only a leading and trailing fence, so fences inside the answer survive', () => {
+    const answer = 'Use this:\n```json\n{"a":1}\n```\nThen run ```npm i```.'
+    const body = JSON.stringify(j({ answer }))
+    expect(parseJudgement(`\`\`\`json\n${body}\n\`\`\``)?.answer).toBe(answer)
+    expect(parseJudgement(body)?.answer).toBe(answer)
+    expect(parseJudgement(`  \`\`\`\n${body}\`\`\`  `)?.answer).toBe(answer)
+  })
+
+  it('strips a leading think block, closed or unclosed', () => {
+    const body = JSON.stringify(j({ summary: 'About <think> tags.' }))
+    expect(parseJudgement(`<think>let me {think}</think>\n${body}`)?.summary).toBe('About <think> tags.')
+    expect(parseJudgement(`<think>reasoning that never closes\n${body}`)?.summary).toBe('About <think> tags.')
+  })
+})
+
+describe('mayReachCloud', () => {
+  const local = new Set(['src-local'])
+  const ev = (id: string, sourceIds?: string[], sourceId?: string): Evidence => ({
+    id,
+    label: 'x',
+    date: 0,
+    text: 't',
+    source: { kind: 'email', label: 'x', ...(sourceId ? { sourceId } : {}) },
+    ...(sourceIds ? { sourceIds } : {}),
+  })
+
+  it('drops knowledge when any of its sources is local-only', () => {
+    expect(mayReachCloud(ev('k:1', ['src-cloud', 'src-local']), local)).toBe(false)
+    expect(mayReachCloud(ev('k:2', ['src-cloud']), local)).toBe(true)
+    // Knowledge the user typed has no source id and is the user's own text.
+    expect(mayReachCloud(ev('k:3', []), local)).toBe(true)
+  })
+
+  it('drops a record with a local-only source or with no source id', () => {
+    expect(mayReachCloud(ev('r:gmail:1', undefined, 'src-local'), local)).toBe(false)
+    expect(mayReachCloud(ev('r:gmail:2', undefined, 'src-cloud'), local)).toBe(true)
+    expect(mayReachCloud(ev('r:gmail:3'), local)).toBe(false)
+  })
+
+  it('inboundMayReachCloud refuses a local-only record and one without a source id', () => {
+    expect(inboundMayReachCloud({ sourceId: 'src-local' }, local)).toBe(false)
+    expect(inboundMayReachCloud({ sourceId: null }, local)).toBe(false)
+    expect(inboundMayReachCloud({ sourceId: 'src-cloud' }, local)).toBe(true)
   })
 })

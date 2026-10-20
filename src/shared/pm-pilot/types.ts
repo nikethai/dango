@@ -111,14 +111,25 @@ export const SyncCursorSchema: z.ZodType<SyncCursor> = z.looseObject({
 export type Tier = 'high' | 'medium' | 'low'
 export const TierSchema = z.enum(['high', 'medium', 'low'])
 
-/** `id` is `r:{recordId}` or `k:{knowledgeId}`. */
-export type Evidence = { id: string; label: string; date: number; text: string; source: KnowledgeSourceInput }
+/**
+ * `id` is `r:{recordId}` or `k:{knowledgeId}`. `sourceIds`: every connected source the item came from (a knowledge
+ * item's non-removed sources); when absent, `source.sourceId` alone. See `mayReachCloud`.
+ */
+export type Evidence = {
+  id: string
+  label: string
+  date: number
+  text: string
+  source: KnowledgeSourceInput
+  sourceIds?: string[]
+}
 export const EvidenceSchema: z.ZodType<Evidence> = z.looseObject({
   id: z.string(),
   label: z.string(),
   date: z.number(),
   text: z.string(),
   source: KnowledgeSourceInputSchema,
+  sourceIds: z.array(z.string()).optional(),
 })
 
 export type ClientDraftState = 'proposed' | 'written' | 'undone' | 'sent' | 'dismissed'

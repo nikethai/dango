@@ -48,7 +48,7 @@ const inbound: SourceRecord = {
   link: { label: 'Gmail thread', url: 'https://mail.google.com/mail/#all/x' },
 }
 
-function ev(id: string, sourceId?: string): Evidence {
+function ev(id: string, sourceId = 'src-gmail'): Evidence {
   return {
     id,
     label: 'your 12 Sep email',
@@ -161,5 +161,27 @@ describe('judgeThread', () => {
     reply(json)
     await judgeThread({ scopeName: 'Acme', inbound, evidence: [ev('r:gmail:a'), ev('r:gmail:secret', 'src-local')] })
     expect(promptOf()).toContain('r:gmail:secret')
+  })
+
+  it('refuses an inbound record without a source id on a cloud model', async () => {
+    const out = await judgeThread({ scopeName: 'Acme', inbound: { ...inbound, sourceId: null }, evidence: [] })
+    expect(out).toMatchObject({ judgement: null, error: expect.any(String) })
+    expect(getModel).not.toHaveBeenCalled()
+    expect(generateText).not.toHaveBeenCalled()
+  })
+
+  it('drops knowledge with any local-only source on a cloud model, by the same rule as retrieval', async () => {
+    state.sources = [{ id: 'src-local', localOnly: true }]
+    const knowledge = (id: string, sourceIds: string[]): Evidence => ({ ...ev(id, sourceIds[0]), sourceIds })
+    const json = JSON.stringify({ intent: 'fyi', summary: 'x', evidenceIds: [], confidence: 0, candidates: [] })
+    reply(json)
+    await judgeThread({
+      scopeName: 'Acme',
+      inbound,
+      evidence: [knowledge('k:mixed', ['src-cloud', 'src-local']), knowledge('k:typed', []), ev('r:gmail:none', '')],
+    })
+    expect(promptOf()).toContain('k:typed')
+    expect(promptOf()).not.toContain('k:mixed')
+    expect(promptOf()).not.toContain('r:gmail:none')
   })
 })

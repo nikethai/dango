@@ -26,9 +26,21 @@ export const JUDGE_MAX_EVIDENCE_IDS = 32
 const INTENTS: ReadonlySet<string> = new Set(['question', 'fyi', 'noise'])
 
 function jsonOf(raw: string): unknown {
-  const cleaned = raw
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/```(?:json)?/gi, '')
+  // Only a leading reasoning block and an outer fence are removed: fences inside string values must survive.
+  let cleaned = raw.trim()
+  if (/^<think>/i.test(cleaned)) {
+    const close = cleaned.search(/<\/think>/i)
+    if (close >= 0) cleaned = cleaned.slice(close + '</think>'.length)
+    else {
+      // A truncated reasoning model: the block never closes; skip to the first brace.
+      const brace = cleaned.indexOf('{')
+      cleaned = brace >= 0 ? cleaned.slice(brace) : ''
+    }
+  }
+  cleaned = cleaned
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
     .trim()
   try {
     return JSON.parse(cleaned)

@@ -1,4 +1,10 @@
-import { type Evidence, RETRIEVE_MAX_RECORDS, type SourceRecord } from '@shared/pm-pilot'
+import {
+  type Evidence,
+  inboundMayReachCloud,
+  mayReachCloud,
+  RETRIEVE_MAX_RECORDS,
+  type SourceRecord,
+} from '@shared/pm-pilot'
 import type { KnowledgeItem } from '@shared/types/knowledge'
 import dayjs from 'dayjs'
 import i18n from '@/i18n'
@@ -83,7 +89,9 @@ function recordEvidence(record: SourceRecord): Evidence {
 function knowledgeEvidence(item: KnowledgeItem): Evidence {
   const label = knowledgeLabel(item)
   const text = item.condition ? `${item.text} (when ${item.condition})` : item.text
-  const first = item.sources.find((s) => !s.removed)
+  const live = item.sources.filter((s) => !s.removed)
+  const first = live[0]
+  const sourceIds = [...new Set(live.flatMap((s) => (s.sourceId ? [s.sourceId] : [])))]
   return {
     id: `k:${item.id}`,
     label,
@@ -95,13 +103,15 @@ function knowledgeEvidence(item: KnowledgeItem): Evidence {
       ref: `k:${item.id}`,
       ...(first?.sourceId ? { sourceId: first.sourceId } : {}),
     },
+    sourceIds,
   }
 }
 
 /**
  * Records of the scope outside the inbound thread that share words with it (best first, newest on a tie, at most
  * `RETRIEVE_MAX_RECORDS`), then every approved knowledge item for the scope except the built-in "Never send email".
- * On a cloud model, records of local-only sources are skipped; an inbound record from one throws `LocalOnlyModelError`.
+ * On a cloud model, evidence `mayReachCloud` refuses is skipped, and an inbound record `inboundMayReachCloud` refuses
+ * (local-only, or no source id) throws `LocalOnlyModelError`.
  */
 export async function retrieveEvidence(input: {
   scopeId: string
@@ -110,8 +120,8 @@ export async function retrieveEvidence(input: {
   cloudModel: boolean
 }): Promise<Evidence[]> {
   const { scopeId, inbound, localOnlySourceIds, cloudModel } = input
-  const isLocalOnly = (r: SourceRecord) => !!r.sourceId && localOnlySourceIds.has(r.sourceId)
-  if (cloudModel && isLocalOnly(inbound)) throw new LocalOnlyModelError()
+  if (cloudModel && !inboundMayReachCloud(inbound, localOnlySourceIds)) throw new LocalOnlyModelError()
+  const allowed = (e: Evidence) => !cloudModel || mayReachCloud(e, localOnlySourceIds)
 
   const wanted = tokens(`${inbound.title}\n${inbound.text}`)
   const records = await pmStore.getRecords(scopeId)
@@ -121,19 +131,21 @@ export async function retrieveEvidence(input: {
         r.scopeId === scopeId &&
         !r.noise &&
         r.id !== inbound.id &&
-        !(r.sourceKind === inbound.sourceKind && r.threadOrTaskId === inbound.threadOrTaskId) &&
-        !(cloudModel && isLocalOnly(r))
+        !(r.sourceKind === inbound.sourceKind && r.threadOrTaskId === inbound.threadOrTaskId)
     )
-    .map((r) => ({ r, score: overlap(wanted, tokens(`${r.title}\n${r.text}`)) }))
+    .map((r) => ({ r, e: recordEvidence(r) }))
+    .filter(({ e }) => allowed(e))
+    .map(({ r, e }) => ({ r, e, score: overlap(wanted, tokens(`${r.title}\n${r.text}`)) }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score || b.r.occurredAt - a.r.occurredAt)
     .slice(0, RETRIEVE_MAX_RECORDS)
-    .map((x) => recordEvidence(x.r))
+    .map((x) => x.e)
 
   await ensureKnowledgeLoaded({ fresh: true })
   const knowledge = knowledgeForTurn(scopeId)
     .filter((item) => item.id !== NEVER_SEND_EMAIL.id)
     .map(knowledgeEvidence)
+    .filter(allowed)
 
   return [...ranked, ...knowledge]
 }

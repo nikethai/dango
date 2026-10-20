@@ -185,4 +185,57 @@ describe('retrieveEvidence', () => {
     })
     expect(out.map((e) => e.id)).toEqual(['r:gmail:vn'])
   })
+
+  it('on a cloud model drops knowledge when any of its sources is local-only', async () => {
+    knowledgeForTurn.mockReturnValue([
+      item({
+        id: 'mixed',
+        text: 'Launch is 12 Sep.',
+        sources: [
+          { id: 's1', kind: 'email', label: 'a', sourceId: 'src-cloud' },
+          { id: 's2', kind: 'email', label: 'b', sourceId: 'src-local' },
+        ],
+      }),
+      item({ id: 'typed', text: 'Launch is 12 Sep.' }),
+      item({
+        id: 'removed-local',
+        text: 'Launch is 12 Sep.',
+        sources: [
+          { id: 's1', kind: 'email', label: 'a', sourceId: 'src-cloud' },
+          { id: 's2', kind: 'email', label: 'b', sourceId: 'src-local', removed: true },
+        ],
+      }),
+    ])
+    const local = new Set(['src-local'])
+    const onCloud = await retrieveEvidence({ scopeId: 'acme', inbound, localOnlySourceIds: local, cloudModel: true })
+    expect(onCloud.map((e) => e.id)).toEqual(['k:typed', 'k:removed-local'])
+    const onLocal = await retrieveEvidence({ scopeId: 'acme', inbound, localOnlySourceIds: local, cloudModel: false })
+    expect(onLocal.map((e) => e.id)).toEqual(['k:mixed', 'k:typed', 'k:removed-local'])
+    expect(onLocal[0].sourceIds).toEqual(['src-cloud', 'src-local'])
+  })
+
+  it('on a cloud model refuses an inbound record without a source id and skips records without one', async () => {
+    getRecords.mockResolvedValue([
+      rec({ externalId: 'orphan', sourceId: null, text: 'website launch date' }),
+      rec({ externalId: 'ok', text: 'website launch date' }),
+    ])
+    const orphanInbound = { ...inbound, sourceId: null }
+    await expect(
+      retrieveEvidence({ scopeId: 'acme', inbound: orphanInbound, localOnlySourceIds: new Set(), cloudModel: true })
+    ).rejects.toBeInstanceOf(LocalOnlyModelError)
+    const onCloud = await retrieveEvidence({
+      scopeId: 'acme',
+      inbound,
+      localOnlySourceIds: new Set(),
+      cloudModel: true,
+    })
+    expect(onCloud.map((e) => e.id)).toEqual(['r:gmail:ok'])
+    const onLocal = await retrieveEvidence({
+      scopeId: 'acme',
+      inbound: orphanInbound,
+      localOnlySourceIds: new Set(),
+      cloudModel: false,
+    })
+    expect(onLocal.map((e) => e.id).sort()).toEqual(['r:gmail:ok', 'r:gmail:orphan'])
+  })
 })

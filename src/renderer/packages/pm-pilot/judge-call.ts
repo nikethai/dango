@@ -1,4 +1,12 @@
-import { type Evidence, type Judgement, parseJudgement, type SourceRecord, validateJudgement } from '@shared/pm-pilot'
+import {
+  type Evidence,
+  inboundMayReachCloud,
+  type Judgement,
+  mayReachCloud,
+  parseJudgement,
+  type SourceRecord,
+  validateJudgement,
+} from '@shared/pm-pilot'
 import { backgroundModelChoice, hasUsableModel, isLocalModelProvider, listSources, loadSources } from './bridge'
 import { buildJudgePrompt } from './prompts'
 
@@ -33,8 +41,8 @@ async function localOnlyIds(given?: Set<string>): Promise<Set<string>> {
 
 /**
  * Judges an inbound client message against the evidence. Never throws. With a cloud model, a local-only inbound record
- * is refused before any call, and local-only evidence is dropped (ADR 0003). `localOnlySourceIds` defaults to the
- * connected sources marked "Keep on this device only".
+ * (or one with no source id) is refused before any call, and evidence `mayReachCloud` refuses is dropped (ADR 0003).
+ * `localOnlySourceIds` defaults to the connected sources marked "Keep on this device only".
  */
 export async function judgeThread(input: {
   scopeName: string
@@ -54,9 +62,8 @@ export async function judgeThread(input: {
 
     const cloud = !isLocalModelProvider(choice.provider)
     const localOnly = await localOnlyIds(input.localOnlySourceIds)
-    const isLocalOnly = (sourceId: string | null | undefined) => !!sourceId && localOnly.has(sourceId)
-    if (cloud && isLocalOnly(input.inbound.sourceId)) return { judgement: null, error: JUDGE_LOCAL_ONLY }
-    const evidence = cloud ? input.evidence.filter((e) => !isLocalOnly(e.source.sourceId)) : input.evidence
+    if (cloud && !inboundMayReachCloud(input.inbound, localOnly)) return { judgement: null, error: JUDGE_LOCAL_ONLY }
+    const evidence = cloud ? input.evidence.filter((e) => mayReachCloud(e, localOnly)) : input.evidence
 
     const { system, user, evidenceIds } = buildJudgePrompt(input.scopeName, input.inbound, evidence)
     const [{ getModel }, { createModelDependencies }, { generateText }, { default: platform }, { createMessage }] =

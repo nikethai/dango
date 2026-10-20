@@ -10,8 +10,14 @@ import dayjs from 'dayjs'
 
 /** Characters of one evidence item's text in the prompt. */
 export const JUDGE_RECORD_CHARS = 2_000
-/** Characters of all evidence text together; items past it are left out (knowledge is placed first). */
+/** Characters of all evidence blocks together; items past it are left out. */
 export const JUDGE_EVIDENCE_TOTAL_CHARS = 20_000
+/** Characters each block costs beyond its text (tags, label, date), counted in the budget. */
+export const JUDGE_BLOCK_OVERHEAD = 80
+/** Knowledge blocks in one prompt. */
+export const JUDGE_MAX_KNOWLEDGE = 40
+/** Share of the evidence budget knowledge may use; the rest is kept for records. */
+const KNOWLEDGE_SHARE = 0.5
 /** Characters of the inbound message's text. */
 export const JUDGE_INBOUND_CHARS = 6_000
 const LINE_CHARS = 200
@@ -33,6 +39,7 @@ function attr(id: string): string {
 }
 
 const day = (at: number) => dayjs(at).format('D MMM YYYY')
+const isKnowledge = (e: Evidence) => e.id.startsWith('k:')
 
 function evidenceBlock(e: Evidence): string {
   return [
@@ -62,7 +69,8 @@ Reply with one JSON object and nothing else, in this shape:
 
 /**
  * The judge's system and user prompts, and the ids of the evidence blocks actually included (the only ids a reply may
- * cite). Approved knowledge is placed in the budget first, then records in the given order.
+ * cite). Approved knowledge is placed first (at most `JUDGE_MAX_KNOWLEDGE`, within half the budget), then records in
+ * the given order. The client name is data like the rest and sits inside the inbound block.
  */
 export function buildJudgePrompt(
   scopeName: string,
@@ -70,25 +78,27 @@ export function buildJudgePrompt(
   evidence: Evidence[]
 ): { system: string; user: string; evidenceIds: string[] } {
   const included = new Set<Evidence>()
+  const cost = (e: Evidence) => Math.min(e.text.trim().length, JUDGE_RECORD_CHARS) + JUDGE_BLOCK_OVERHEAD
+  // Knowledge first, within its share and count; records then fill what is left of the whole budget.
   let used = 0
-  const byPriority = [
-    ...evidence.filter((e) => e.id.startsWith('k:')),
-    ...evidence.filter((e) => !e.id.startsWith('k:')),
-  ]
-  for (const e of byPriority) {
-    const size = Math.min(e.text.trim().length, JUDGE_RECORD_CHARS)
-    if (used + size > JUDGE_EVIDENCE_TOTAL_CHARS) continue
-    used += size
+  for (const e of evidence.filter(isKnowledge)) {
+    if (included.size >= JUDGE_MAX_KNOWLEDGE) break
+    if (used + cost(e) > JUDGE_EVIDENCE_TOTAL_CHARS * KNOWLEDGE_SHARE) continue
+    used += cost(e)
+    included.add(e)
+  }
+  for (const e of evidence.filter((x) => !isKnowledge(x))) {
+    if (used + cost(e) > JUDGE_EVIDENCE_TOTAL_CHARS) continue
+    used += cost(e)
     included.add(e)
   }
   const shown = evidence.filter((e) => included.has(e))
 
   const from = inbound.authorName ? `${inbound.authorName} (${inbound.author})` : inbound.author
   const user = [
-    `Client: ${dataLine(scopeName)}`,
-    '',
     'The inbound message:',
     '<inbound>',
+    `client: ${dataLine(scopeName)}`,
     `from: ${dataLine(from)}`,
     `date: ${day(inbound.occurredAt)}`,
     `subject: ${dataLine(inbound.title)}`,
