@@ -2,7 +2,14 @@ import { GMAIL_BACKFILL_DAYS, type GmailMessage, type GmailThread, type SyncCurs
 import { HttpResponse, http } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { buildMatcherQuery, GmailAuthError, syncGmailMailbox } from './gmail-sync'
+import {
+  BACKFILL_MAX_MESSAGES,
+  buildMatcherQuery,
+  GmailAuthError,
+  GmailRateLimitError,
+  HISTORY_MAX_PAGES,
+  syncGmailMailbox,
+} from './gmail-sync'
 
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me'
 const NOW = Date.UTC(2026, 9, 20, 12, 0, 0)
@@ -375,5 +382,176 @@ describe('syncGmailMailbox', () => {
 
     expect(sends).toEqual([])
     expect(Object.keys(await import('./gmail-sync')).filter((name) => /send/i.test(name))).toEqual([])
+  })
+})
+
+describe('syncGmailMailbox bounds and errors (fix round)', () => {
+  function gmailError(status: number, reason: string, domain = 'global') {
+    return HttpResponse.json(
+      { error: { code: status, message: 'nope', errors: [{ reason, domain, message: 'nope' }] } },
+      { status }
+    )
+  }
+
+  it('stops backfill paging at the message cap', async () => {
+    let calls = 0
+    server.use(
+      profileHandler(),
+      http.get(`${API}/messages`, () => {
+        calls += 1
+        const messages = Array.from({ length: 500 }, (_, i) => ({ id: `m${calls}-${i}`, threadId: 't1' }))
+        return HttpResponse.json({ messages, nextPageToken: `p${calls}` })
+      }),
+      threadHandler({ t1: thread('t1') })
+    )
+
+    const result = await syncGmailMailbox({
+      accountId: 'acc-1',
+      accessToken: 'tok',
+      cursor: null,
+      backfillQuery: 'from:(@a.com)',
+    })
+
+    expect(BACKFILL_MAX_MESSAGES).toBe(2000)
+    expect(calls).toBeLessThanOrEqual(BACKFILL_MAX_MESSAGES / 500)
+    expect(result.backfilled).toBe(true)
+  })
+
+  it('stops paging when a page token repeats', async () => {
+    let calls = 0
+    server.use(
+      profileHandler(),
+      http.get(`${API}/messages`, () => {
+        calls += 1
+        return HttpResponse.json({ messages: [{ id: `m${calls}`, threadId: 't1' }], nextPageToken: 'same' })
+      }),
+      threadHandler({ t1: thread('t1') })
+    )
+
+    await syncGmailMailbox({ accountId: 'acc-1', accessToken: 'tok', cursor: null, backfillQuery: 'from:(@a.com)' })
+
+    expect(calls).toBe(2)
+  })
+
+  it('treats endless history as expired: bounded pages, then a backfill from the profile', async () => {
+    let historyCalls = 0
+    let listed = 0
+    server.use(
+      profileHandler(undefined, '999'),
+      http.get(`${API}/history`, () => {
+        historyCalls += 1
+        return HttpResponse.json({
+          history: [{ id: String(historyCalls), messagesAdded: [{ message: { id: 'x', threadId: 't1' } }] }],
+          historyId: '5000',
+          nextPageToken: `h${historyCalls}`,
+        })
+      }),
+      http.get(`${API}/messages`, () => {
+        listed += 1
+        return HttpResponse.json({ messages: [] })
+      })
+    )
+
+    const result = await syncGmailMailbox({
+      accountId: 'acc-1',
+      accessToken: 'tok',
+      cursor,
+      backfillQuery: 'from:(@a.com)',
+    })
+
+    expect(HISTORY_MAX_PAGES).toBe(20)
+    expect(historyCalls).toBeLessThanOrEqual(HISTORY_MAX_PAGES)
+    expect(listed).toBe(1)
+    expect(result.backfilled).toBe(true)
+    expect(result.cursor.value).toBe('999')
+  })
+
+  it('throws GmailRateLimitError, not GmailAuthError, on a 403 rate limit', async () => {
+    server.use(http.get(`${API}/profile`, () => gmailError(403, 'userRateLimitExceeded', 'usageLimits')))
+
+    const error = await syncGmailMailbox({
+      accountId: 'acc-1',
+      accessToken: 'tok',
+      cursor: null,
+      backfillQuery: '',
+    }).catch((e) => e)
+
+    expect(error).toBeInstanceOf(GmailRateLimitError)
+    expect(error).not.toBeInstanceOf(GmailAuthError)
+    expect(error.status).toBe(403)
+  })
+
+  it('throws GmailRateLimitError with retryAfter on 429', async () => {
+    server.use(
+      http.get(`${API}/profile`, () =>
+        HttpResponse.json({ error: { code: 429 } }, { status: 429, headers: { 'Retry-After': '30' } })
+      )
+    )
+
+    const error = await syncGmailMailbox({
+      accountId: 'acc-1',
+      accessToken: 'tok',
+      cursor: null,
+      backfillQuery: '',
+    }).catch((e) => e)
+
+    expect(error).toBeInstanceOf(GmailRateLimitError)
+    expect(error.status).toBe(429)
+    expect(error.retryAfter).toBe(30)
+  })
+
+  it('throws GmailAuthError on a 403 permissions error', async () => {
+    server.use(http.get(`${API}/profile`, () => gmailError(403, 'insufficientPermissions')))
+
+    await expect(
+      syncGmailMailbox({ accountId: 'acc-1', accessToken: 'tok', cursor: null, backfillQuery: '' })
+    ).rejects.toBeInstanceOf(GmailAuthError)
+  })
+
+  it('stops fetching threads after the first failure', async () => {
+    const ids = Array.from({ length: 20 }, (_, i) => `t${i}`)
+    let requests = 0
+    server.use(
+      http.get(`${API}/history`, () =>
+        HttpResponse.json({
+          history: ids.map((id, i) => ({
+            id: String(i),
+            messagesAdded: [{ message: { id: `${id}-m1`, threadId: id } }],
+          })),
+          historyId: '600',
+        })
+      ),
+      http.get(`${API}/threads/:id`, async ({ params }) => {
+        requests += 1
+        if (params.id === 't0') return new HttpResponse(null, { status: 400 })
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        return HttpResponse.json(thread(String(params.id)))
+      })
+    )
+
+    await expect(
+      syncGmailMailbox({ accountId: 'acc-1', accessToken: 'tok', cursor, backfillQuery: '' })
+    ).rejects.toThrow()
+
+    expect(requests).toBeLessThanOrEqual(5)
+  })
+
+  it('keeps the request URL and query out of error messages', async () => {
+    server.use(
+      profileHandler(),
+      http.get(`${API}/messages`, () => new HttpResponse(null, { status: 500 }))
+    )
+
+    const error = await syncGmailMailbox({
+      accountId: 'acc-1',
+      accessToken: 'tok',
+      cursor: null,
+      backfillQuery: buildMatcherQuery(['jo@acme.example']),
+    }).catch((e) => e)
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error.message).toBe('Gmail request failed (500)')
+    expect(String(error.stack)).not.toMatch(/acme|googleapis/)
+    expect(error.cause).toBeDefined()
   })
 })

@@ -14,6 +14,18 @@ const THREAD_CONCURRENCY = 5
 const DAY_MS = 86_400_000
 /** Messages that are not mail the PM received or sent: Dango's own drafts among them. */
 const SKIPPED_LABELS = ['DRAFT', 'SPAM', 'TRASH']
+/** `messages.list` is newest first, so the cap keeps the most recent mail. */
+export const BACKFILL_MAX_MESSAGES = 2000
+/** More history than this is treated like an expired id: a bounded backfill instead. */
+export const HISTORY_MAX_PAGES = 20
+const PAGE_SIZE = 500
+/** 403 reasons that mean "slow down", not "sign in again". */
+const RATE_LIMIT_REASONS = new Set([
+  'rateLimitExceeded',
+  'userRateLimitExceeded',
+  'dailyLimitExceeded',
+  'quotaExceeded',
+])
 
 /** Gmail refused the token (401 or 403): the account needs signing in again. */
 export class GmailAuthError extends Error {
@@ -23,6 +35,28 @@ export class GmailAuthError extends Error {
   ) {
     super(message)
     this.name = 'GmailAuthError'
+  }
+}
+
+/** Gmail is rate-limiting or out of quota (429, or a 403 with a usage-limit reason). Retry later; not a sign-in problem. */
+export class GmailRateLimitError extends Error {
+  constructor(
+    readonly status: number,
+    readonly retryAfter?: number
+  ) {
+    super(`Gmail is busy, try again later (${status})`)
+    this.name = 'GmailRateLimitError'
+  }
+}
+
+/** Any other failed Gmail request. The message never holds the URL, whose `q=` names client addresses. */
+export class GmailRequestError extends Error {
+  constructor(
+    readonly status: number | undefined,
+    options?: { cause?: unknown }
+  ) {
+    super(`Gmail request failed (${status ?? 'network'})`, options)
+    this.name = 'GmailRequestError'
   }
 }
 
@@ -64,8 +98,19 @@ type HistoryList = {
 }
 
 function statusOf(error: unknown): number | undefined {
+  if (error instanceof GmailRequestError) return error.status
   if (error instanceof FetchError) return error.status ?? error.response?.status
   return undefined
+}
+
+function errorReasons(error: FetchError): string[] {
+  const errors = (error.data as { error?: { errors?: Array<{ reason?: unknown }> } } | undefined)?.error?.errors
+  return Array.isArray(errors) ? errors.map((e) => String(e?.reason ?? '')) : []
+}
+
+function retryAfterSeconds(error: FetchError): number | undefined {
+  const value = Number(error.response?.headers.get('retry-after'))
+  return Number.isFinite(value) && value > 0 ? value : undefined
 }
 
 async function gmailGet<T>(
@@ -80,13 +125,20 @@ async function gmailGet<T>(
       headers: { Authorization: `Bearer ${token}` },
       query,
       signal,
+      // The job runner retries; an immediate retry would only hammer a rate limit.
+      retry: 0,
     })
   } catch (error) {
+    if (!(error instanceof FetchError)) throw error
+    if (signal?.aborted) throw signal.reason ?? error
     const status = statusOf(error)
+    if (status === 429 || (status === 403 && errorReasons(error).some((r) => RATE_LIMIT_REASONS.has(r)))) {
+      throw new GmailRateLimitError(status, retryAfterSeconds(error))
+    }
     if (status === 401 || status === 403) {
       throw new GmailAuthError(`Gmail refused the sign-in (${status})`, status)
     }
-    throw error
+    throw new GmailRequestError(status, { cause: error })
   }
 }
 
@@ -100,26 +152,43 @@ async function listBackfillThreads(token: string, query: string, now: number, si
   const after = Math.floor((now - GMAIL_BACKFILL_DAYS * DAY_MS) / 1000)
   const q = `after:${after} (${query})`
   const threadIds = new Set<string>()
+  const seenTokens = new Set<string>()
+  let count = 0
   let pageToken: string | undefined
   do {
-    const page = await gmailGet<MessageList>(token, 'messages', { q, maxResults: 500, pageToken }, signal)
-    for (const m of page.messages ?? []) if (m.threadId) threadIds.add(m.threadId)
+    const maxResults = Math.min(PAGE_SIZE, BACKFILL_MAX_MESSAGES - count)
+    const page = await gmailGet<MessageList>(token, 'messages', { q, maxResults, pageToken }, signal)
+    for (const m of (page.messages ?? []).slice(0, maxResults)) {
+      count += 1
+      if (m.threadId) threadIds.add(m.threadId)
+    }
     pageToken = page.nextPageToken
-  } while (pageToken)
+    if (pageToken) {
+      if (seenTokens.has(pageToken)) break
+      seenTokens.add(pageToken)
+    }
+  } while (pageToken && count < BACKFILL_MAX_MESSAGES)
   return [...threadIds]
 }
 
-/** Thread ids touched since `startHistoryId`, and the mailbox's history id now; null when the id has expired (404). */
+/**
+ * Thread ids touched since `startHistoryId`, and the mailbox's history id now. Null when the id has expired (404)
+ * or the history is longer than `HISTORY_MAX_PAGES` (or loops): the caller then backfills instead of advancing.
+ */
 async function listHistoryThreads(
   token: string,
   startHistoryId: string,
   signal?: AbortSignal
 ): Promise<{ threadIds: string[]; historyId: string } | null> {
   const threadIds = new Set<string>()
+  const seenTokens = new Set<string>()
   let historyId = startHistoryId
   let pageToken: string | undefined
+  let pages = 0
   try {
     do {
+      if (pages >= HISTORY_MAX_PAGES) return null
+      pages += 1
       const page = await gmailGet<HistoryList>(
         token,
         'history',
@@ -133,6 +202,10 @@ async function listHistoryThreads(
       }
       if (page.historyId) historyId = page.historyId
       pageToken = page.nextPageToken
+      if (pageToken) {
+        if (seenTokens.has(pageToken)) return null
+        seenTokens.add(pageToken)
+      }
     } while (pageToken)
   } catch (error) {
     if (statusOf(error) === 404) return null
@@ -141,19 +214,26 @@ async function listHistoryThreads(
   return { threadIds: [...threadIds], historyId }
 }
 
-/** Fetches threads `THREAD_CONCURRENCY` at a time. A thread deleted since it was listed (404) is skipped. */
+/**
+ * Fetches threads `THREAD_CONCURRENCY` at a time. A thread deleted since it was listed (404) is skipped; any other
+ * failure stops every worker and rejects.
+ */
 async function fetchThreads(token: string, threadIds: string[], signal?: AbortSignal): Promise<GmailThread[]> {
   const threads: GmailThread[] = []
   let next = 0
+  let failed = false
   const worker = async () => {
-    while (next < threadIds.length) {
+    while (!failed && next < threadIds.length) {
       const id = threadIds[next++]
       try {
         threads.push(
           await gmailGet<GmailThread>(token, `threads/${encodeURIComponent(id)}`, { format: 'full' }, signal)
         )
       } catch (error) {
-        if (statusOf(error) !== 404) throw error
+        if (statusOf(error) !== 404) {
+          failed = true
+          throw error
+        }
       }
     }
   }
