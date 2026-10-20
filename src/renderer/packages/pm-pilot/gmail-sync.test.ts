@@ -7,6 +7,7 @@ import {
   buildMatcherQuery,
   GmailAuthError,
   GmailRateLimitError,
+  GmailRequestError,
   HISTORY_MAX_PAGES,
   syncGmailMailbox,
 } from './gmail-sync'
@@ -536,11 +537,12 @@ describe('syncGmailMailbox bounds and errors (fix round)', () => {
     expect(requests).toBeLessThanOrEqual(5)
   })
 
-  it('keeps the request URL and query out of error messages', async () => {
-    server.use(
-      profileHandler(),
-      http.get(`${API}/messages`, () => new HttpResponse(null, { status: 500 }))
-    )
+  it.each([
+    ['request', () => new HttpResponse(null, { status: 500 }), GmailRequestError, undefined],
+    ['rate limit', () => gmailError(403, 'quotaExceeded', 'usageLimits'), GmailRateLimitError, 'quotaExceeded'],
+    ['auth', () => gmailError(403, 'insufficientPermissions'), GmailAuthError, 'insufficientPermissions'],
+  ] as const)('keeps the request URL and query out of a %s error', async (_kind, respond, ErrorClass, reason) => {
+    server.use(profileHandler(), http.get(`${API}/messages`, respond))
 
     const error = await syncGmailMailbox({
       accountId: 'acc-1',
@@ -549,9 +551,14 @@ describe('syncGmailMailbox bounds and errors (fix round)', () => {
       backfillQuery: buildMatcherQuery(['jo@acme.example']),
     }).catch((e) => e)
 
-    expect(error).toBeInstanceOf(Error)
-    expect(error.message).toBe('Gmail request failed (500)')
-    expect(String(error.stack)).not.toMatch(/acme|googleapis/)
-    expect(error.cause).toBeDefined()
+    expect(error).toBeInstanceOf(ErrorClass)
+    expect(error.status).toBe(_kind === 'request' ? 500 : 403)
+    expect(error.reason).toBe(reason)
+    expect(error.cause).toBeUndefined()
+    const leaks = /acme|googleapis|after:|messages\?/
+    expect(error.message).not.toMatch(leaks)
+    expect(String(error.stack)).not.toMatch(leaks)
+    expect(JSON.stringify({ ...error })).not.toMatch(leaks)
+    for (const key of Object.keys(error)) expect(String(error[key])).not.toMatch(leaks)
   })
 })

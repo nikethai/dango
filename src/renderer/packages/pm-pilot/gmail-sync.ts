@@ -31,7 +31,8 @@ const RATE_LIMIT_REASONS = new Set([
 export class GmailAuthError extends Error {
   constructor(
     message: string,
-    readonly status: number
+    readonly status: number,
+    readonly reason?: string
   ) {
     super(message)
     this.name = 'GmailAuthError'
@@ -42,20 +43,24 @@ export class GmailAuthError extends Error {
 export class GmailRateLimitError extends Error {
   constructor(
     readonly status: number,
-    readonly retryAfter?: number
+    readonly retryAfter?: number,
+    readonly reason?: string
   ) {
     super(`Gmail is busy, try again later (${status})`)
     this.name = 'GmailRateLimitError'
   }
 }
 
-/** Any other failed Gmail request. The message never holds the URL, whose `q=` names client addresses. */
+/**
+ * Any other failed Gmail request. These errors carry only status, Gmail's reason and retryAfter: never the URL
+ * (whose `q=` names client addresses) and no `cause`, so nothing about the request can reach logs or Sentry.
+ */
 export class GmailRequestError extends Error {
   constructor(
     readonly status: number | undefined,
-    options?: { cause?: unknown }
+    readonly reason?: string
   ) {
-    super(`Gmail request failed (${status ?? 'network'})`, options)
+    super(`Gmail request failed (${status ?? 'network'})`)
     this.name = 'GmailRequestError'
   }
 }
@@ -132,13 +137,15 @@ async function gmailGet<T>(
     if (!(error instanceof FetchError)) throw error
     if (signal?.aborted) throw signal.reason ?? error
     const status = statusOf(error)
-    if (status === 429 || (status === 403 && errorReasons(error).some((r) => RATE_LIMIT_REASONS.has(r)))) {
-      throw new GmailRateLimitError(status, retryAfterSeconds(error))
+    const reasons = errorReasons(error)
+    const reason = reasons.find((r) => r.length > 0)
+    if (status === 429 || (status === 403 && reasons.some((r) => RATE_LIMIT_REASONS.has(r)))) {
+      throw new GmailRateLimitError(status, retryAfterSeconds(error), reason)
     }
     if (status === 401 || status === 403) {
-      throw new GmailAuthError(`Gmail refused the sign-in (${status})`, status)
+      throw new GmailAuthError(`Gmail refused the sign-in (${status})`, status, reason)
     }
-    throw new GmailRequestError(status, { cause: error })
+    throw new GmailRequestError(status, reason)
   }
 }
 
