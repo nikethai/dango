@@ -62,7 +62,11 @@ function warn(what: string, e?: unknown): void {
   console.warn(`[pm-pilot] ${what}`, ...(name ? [name] : []))
 }
 
-const threadUrl = (threadId: string) => `https://mail.google.com/mail/#all/${encodeURIComponent(threadId)}`
+/** The thread in Gmail, in the mailbox's own account when its address is known (several accounts signed in). */
+function threadUrl(threadId: string, ownAddress?: string): string {
+  const account = ownAddress ? `?authuser=${encodeURIComponent(ownAddress)}` : ''
+  return `https://mail.google.com/mail/${account}#all/${encodeURIComponent(threadId)}`
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The draft text
@@ -239,13 +243,16 @@ export async function actOnThread(input: {
 // ---------------------------------------------------------------------------------------------------------------------
 // The applier
 
-/** The Gmail call answered with a refusal (or Dango refused before calling): no draft was created. */
+/**
+ * Gmail refused the request (4xx) or Dango refused before calling: no draft was created. A 5xx or a network failure
+ * proves nothing (Gmail may have created the draft), so those keep the write marker.
+ */
 function refusedBeforeWrite(error: unknown): boolean {
   return (
     error instanceof GmailRecipientError ||
     error instanceof GmailAuthError ||
     error instanceof GmailRateLimitError ||
-    (error instanceof GmailRequestError && error.status !== undefined)
+    (error instanceof GmailRequestError && error.status !== undefined && error.status >= 400 && error.status < 500)
   )
 }
 
@@ -274,39 +281,52 @@ async function proposeEdit(original: ClientDraft, edited: string): Promise<void>
 }
 
 async function apply(e: ReviewEntry): Promise<void> {
-  const draft = await pmStore.getDraft(e.ref.id)
-  if (!draft) throw new Error('The draft is gone')
-  if (draft.state === 'written') return
-  if (draft.state !== 'proposed' && draft.state !== 'undone') throw new Error('The draft can no longer be applied')
-  if (draft.writeStartedAt !== undefined) {
-    // An earlier write was cut off and Gmail may hold it: tell the user once rather than write a second copy.
-    await pmStore.saveDraft({ ...draft, writeStartedAt: undefined })
-    await updateReviewEntry(e.id, {
-      sub: t('This reply may already be in Gmail. Check the thread before you apply again.'),
-    })
-    throw new Error('An earlier write may have reached Gmail')
-  }
-
-  const edited = e.text !== draft.text && e.text.trim() !== ''
-  const next: ClientDraft = edited ? { ...draft, text: e.text } : draft
-  const token = await getFreshToken(draft.accountId)
-  if (!token.ok) throw new Error('Gmail needs signing in again')
-
   const now = Date.now()
+  // Checked and marked in one step under the store lock, so two windows never both write this draft.
+  const claim = await pmStore.claimDraftWrite(e.ref.id, now)
+  if (!claim.ok) {
+    if (claim.reason === 'written') return
+    if (claim.reason === 'interrupted') {
+      // An earlier write was cut off and Gmail may hold it: tell the user once rather than write a second copy.
+      await updateReviewEntry(e.id, {
+        sub: t('This reply may already be in Gmail. Check the thread before you apply again.'),
+      })
+      throw new Error('An earlier write may have reached Gmail')
+    }
+    if (claim.reason === 'in-progress') throw new Error('This draft is being written to Gmail')
+    throw new Error('The draft can no longer be applied')
+  }
+  const original = claim.draft
+  // An edit is only what the edit sheet stored on the draft, never inferred from the row's text.
+  const body = original.editedText ?? original.text
+  const edited = body !== original.text && body.trim() !== ''
+  const next: ClientDraft = edited ? { ...original, text: body } : original
+  const release = () => pmStore.settleDraftWrite(original.id, now, {})
+
   const auto = arriving.has(e.id)
-  if (auto && !(await pmStore.tryBumpDraftsToday(now, DAILY_DRAFT_CAP))) {
-    await updateReviewEntry(e.id, { risk: 'risky' })
-    throw new Error('Today’s draft limit is reached')
+  let token: Awaited<ReturnType<typeof getFreshToken>>
+  try {
+    if (auto && !(await pmStore.tryBumpDraftsToday(now, DAILY_DRAFT_CAP))) {
+      await release()
+      await updateReviewEntry(e.id, { risk: 'risky' })
+      throw new Error('Today’s draft limit is reached')
+    }
+    token = await getFreshToken(original.accountId)
+  } catch (error) {
+    await release()
+    throw error
+  }
+  if (!token.ok) {
+    await release()
+    throw new Error('Gmail needs signing in again')
   }
 
-  // Stored before the write: a crash during it leaves the marker, so a retry never writes a second copy blindly.
-  await pmStore.saveDraft({ ...next, writeStartedAt: now })
-  const from = (await pmStore.getCursor(draft.accountId, 'gmail', 'mailbox'))?.ownAddress ?? ''
+  const from = (await pmStore.getCursor(original.accountId, 'gmail', 'mailbox'))?.ownAddress ?? ''
   let ids: { gmailDraftId: string; gmailMessageId?: string }
   try {
     ids = await writeDraft(token.token, next, from)
   } catch (error) {
-    if (refusedBeforeWrite(error)) await pmStore.saveDraft({ ...next, writeStartedAt: undefined })
+    if (refusedBeforeWrite(error)) await release()
     if (error instanceof GmailRecipientError) {
       await updateReviewEntry(e.id, { sub: t('Not in Gmail: the reply would go to someone who is not on the thread') })
     }
@@ -318,12 +338,12 @@ async function apply(e: ReviewEntry): Promise<void> {
     gmailMessageId: ids.gmailMessageId,
     state: 'written',
     reviewEntryId: e.id,
-    writeStartedAt: undefined,
+    editedText: undefined,
   }
-  await pmStore.saveDraft(written)
+  await pmStore.settleDraftWrite(original.id, now, written)
   if (!auto) await pmStore.bumpDraftsToday(now)
   await recordUses(written)
-  if (edited) await proposeEdit(draft, e.text)
+  if (edited) await proposeEdit(original, body)
 }
 
 async function undo(e: ReviewEntry): Promise<void> {
@@ -349,10 +369,22 @@ async function undo(e: ReviewEntry): Promise<void> {
 /** The one path that writes a draft into Gmail and the one that takes it back. */
 export const draftApplier = { apply, undo }
 
-/** Applies a waiting draft with the user's edited text, as the edit sheet's Apply (preflight R2). */
+/**
+ * Applies a waiting draft with the user's edited text, as the edit sheet's Apply (preflight R2). The edit is stored on
+ * the draft and on the row first, so a failed Apply keeps it (Cancel changes nothing only before the first Apply).
+ * The current row and draft are read again: an entry already Done or a draft already written is not written again
+ * (true), and a row that is no longer an open proposal is left alone (false). The apply uses the stored row, so a sub
+ * changed by an earlier attempt does not make slice 5 take the write back.
+ */
 export async function applyEditedDraft(e: ReviewEntry, text: string): Promise<boolean> {
-  await updateReviewEntry(e.id, { text })
-  return applyReviewEntry({ ...e, text }, { silent: false, message: t('Reply drafted in Gmail') })
+  const draft = await pmStore.getDraft(e.ref.id)
+  const current = listReviewEntries().find((x) => x.id === e.id)
+  if (draft?.state === 'written' || current?.kind === 'done') return true
+  if (!draft || (current && (current.kind !== 'proposal' || current.state !== 'open'))) return false
+  if (!(await pmStore.setDraftEdit(draft.id, text))) return false
+  const updated = await updateReviewEntry(e.id, { text })
+  if (!updated || updated.kind !== 'proposal' || updated.state !== 'open') return updated?.kind === 'done'
+  return applyReviewEntry(updated, { silent: false, message: t('Reply drafted in Gmail') })
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -371,6 +403,8 @@ function patchDoneCopy(e: ReviewEntry): Promise<void> {
     const patch = doneDraftPatch(draft, format)
     const current = listReviewEntries().find((x) => x.id === e.id) ?? e
     if (current.kind !== 'done' || (current.text === patch.text && current.sub === patch.sub)) return
+    // Again just before writing: an undo may have taken the draft back meanwhile.
+    if ((await pmStore.getDraft(e.ref.id))?.state !== 'written') return
     await updateReviewEntry(e.id, patch)
   })().finally(() => patching.delete(e.id))
   patching.set(e.id, run)
@@ -396,7 +430,8 @@ export async function openDraftEntry(e: ReviewEntry): Promise<void> {
     }
   }
   const { default: platform } = await import('@/platform')
-  await platform.openLink(threadUrl(draft.threadId))
+  const ownAddress = (await pmStore.getCursor(draft.accountId, 'gmail', 'mailbox'))?.ownAddress
+  await platform.openLink(threadUrl(draft.threadId, ownAddress))
 }
 
 /** Registers the `'draft'` applier and opener, and keeps Done draft rows on the Done copy. Returns the cleanup. */

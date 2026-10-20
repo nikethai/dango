@@ -456,16 +456,73 @@ describe('draftApplier', () => {
     expect(writeDraft).toHaveBeenCalledTimes(1)
   })
 
-  it('a network failure during the write keeps the marker; a Gmail refusal clears it', async () => {
+  it('a network failure or a Gmail 5xx keeps the marker; a Gmail 4xx refusal clears it', async () => {
     const e = await waitingDraft()
+    const clear = async () => pmStore.saveDraft({ ...(await onlyDraft()), writeStartedAt: undefined })
     vi.mocked(writeDraft).mockRejectedValueOnce(new GmailRequestError(undefined))
     await expect(applyReviewEntry(e, { silent: false })).resolves.toBe(false)
     expect((await onlyDraft()).writeStartedAt).toBeTypeOf('number')
 
-    await pmStore.saveDraft({ ...(await onlyDraft()), writeStartedAt: undefined })
-    vi.mocked(writeDraft).mockRejectedValueOnce(new GmailRequestError(500))
+    await clear()
+    // A 5xx on POST drafts does not prove Gmail created nothing.
+    vi.mocked(writeDraft).mockRejectedValueOnce(new GmailRequestError(503))
+    await expect(applyReviewEntry(draftEntry(), { silent: false })).resolves.toBe(false)
+    expect((await onlyDraft()).writeStartedAt).toBeTypeOf('number')
+
+    await clear()
+    vi.mocked(writeDraft).mockRejectedValueOnce(new GmailRequestError(400))
     await expect(applyReviewEntry(draftEntry(), { silent: false })).resolves.toBe(false)
     expect((await onlyDraft()).writeStartedAt).toBeUndefined()
+  })
+
+  it('two applies of one draft at once write it once', async () => {
+    const e = await waitingDraft()
+    let finish: () => void = () => {}
+    vi.mocked(writeDraft).mockImplementationOnce(
+      (_t, d) =>
+        new Promise((resolve) => {
+          finish = () => resolve({ gmailDraftId: `g-${d.id}`, gmailMessageId: `gm-${d.id}` })
+        })
+    )
+    // Straight to the applier and at the same moment, as two windows would: slice 5's in-window guard covers neither.
+    const both = Promise.allSettled([draftApplier.apply(e), draftApplier.apply(e)])
+    await vi.waitFor(() => expect(writeDraft).toHaveBeenCalledTimes(1))
+    finish()
+    const results = await both
+    expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected'])
+    // Once written, another apply is a no-op.
+    await expect(draftApplier.apply(e)).resolves.toBeUndefined()
+    expect(writeDraft).toHaveBeenCalledTimes(1)
+    expect(await onlyDraft()).toMatchObject({ state: 'written', gmailDraftId: expect.any(String) })
+    expect((await onlyDraft()).writeStartedAt).toBeUndefined()
+  })
+
+  it('never takes the row text for an edit: a row showing the Done copy writes the draft body', async () => {
+    const e = await waitingDraft()
+    const stale = { ...e, text: 'Reply drafted in Gmail: launch is 4 Nov, per Asana "Launch plan".' }
+    await draftApplier.apply(stale)
+    expect(vi.mocked(writeDraft).mock.calls[0][1].text).toBe(REPLY)
+    expect((await onlyDraft()).text).toBe(REPLY)
+    expect(proposeFactChanges).not.toHaveBeenCalled()
+  })
+
+  it("the sheet's second Apply after the interrupted-write warning writes once and keeps it", async () => {
+    const e = await waitingDraft()
+    await pmStore.saveDraft({ ...(await onlyDraft()), writeStartedAt: 1 })
+    const edited = 'Hi Jo, it is 6 Nov.'
+    await expect(applyEditedDraft(e, edited)).resolves.toBe(false)
+    expect(draftEntry().sub).toBe('This reply may already be in Gmail. Check the thread before you apply again.')
+    // The same sheet, still holding the entry it opened with.
+    await expect(applyEditedDraft(e, edited)).resolves.toBe(true)
+    expect(writeDraft).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(writeDraft).mock.calls[0][1].text).toBe(edited)
+    expect(undoDraft).not.toHaveBeenCalled()
+    expect(draftEntry()).toMatchObject({ kind: 'done', state: 'done' })
+    expect(await onlyDraft()).toMatchObject({ state: 'written', text: edited })
+    expect((await onlyDraft()).editedText).toBeUndefined()
+    // A third Apply on a row already Done writes nothing more.
+    await expect(applyEditedDraft(e, edited)).resolves.toBe(true)
+    expect(writeDraft).toHaveBeenCalledTimes(1)
   })
 
   it('undo of a draft edited in Gmail throws and keeps it', async () => {
@@ -576,6 +633,20 @@ describe('openDraftEntry', () => {
     await openReviewEntry(draftEntry())
     expect(platform.openLink).toHaveBeenCalledWith('https://mail.google.com/mail/#all/t1')
     expect(NiceModal.show).not.toHaveBeenCalled()
+  })
+
+  it('the thread link names the account when its address is known', async () => {
+    await pmStore.setCursor({
+      accountId: 'acc1',
+      sourceKind: 'gmail',
+      scope: 'mailbox',
+      value: 'h1',
+      updatedAt: 1,
+      ownAddress: 'pm+x@agency.com',
+    })
+    await act()
+    await openReviewEntry(draftEntry())
+    expect(platform.openLink).toHaveBeenCalledWith('https://mail.google.com/mail/?authuser=pm%2Bx%40agency.com#all/t1')
   })
 
   it('a waiting draft opens the edit sheet in the main window, the thread elsewhere', async () => {

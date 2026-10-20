@@ -10,7 +10,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import platform from '@/platform'
 import storage, { StorageKey } from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
-import { _resetPmStoreForTests, PmRecordError, PmStoreUnreadableError, PROCESSED_PER_ACCOUNT, pmStore } from './store'
+import {
+  _resetPmStoreForTests,
+  DRAFT_WRITE_STALE_MS,
+  PmRecordError,
+  PmStoreUnreadableError,
+  PROCESSED_PER_ACCOUNT,
+  pmStore,
+} from './store'
 
 function rec(over: Partial<SourceRecord> & { externalId: string }): SourceRecord {
   return {
@@ -300,5 +307,54 @@ describe('pmStore cursors, processed ids, drafts and questions', () => {
     expect((await pmStore.findOpenQuestion({ domain: 'newco.com' }))?.id).toBe('q1')
     expect(await pmStore.countDraftsToday(now)).toBe(1)
     expect(await storage.getAllKeys()).toContain(StorageKeyGenerator.pmRecords('acme'))
+  })
+})
+
+describe('pmStore draft writes', () => {
+  it('claims a draft once: a second claim while the write runs is in progress', async () => {
+    await pmStore.saveDraft(draft())
+    const [a, b] = await Promise.all([pmStore.claimDraftWrite('d1', 5000), pmStore.claimDraftWrite('d1', 5000)])
+    expect([a.ok, b.ok].sort()).toEqual([false, true])
+    expect(a.ok ? b : a).toEqual({ ok: false, reason: 'in-progress' })
+    expect((await pmStore.getDraft('d1'))?.writeStartedAt).toBe(5000)
+  })
+
+  it('a stale marker is cleared and reported once, then the draft can be claimed', async () => {
+    await pmStore.saveDraft(draft({ writeStartedAt: 1 }))
+    await expect(pmStore.claimDraftWrite('d1', 1 + DRAFT_WRITE_STALE_MS)).resolves.toEqual({
+      ok: false,
+      reason: 'interrupted',
+    })
+    expect((await pmStore.getDraft('d1'))?.writeStartedAt).toBeUndefined()
+    expect((await pmStore.claimDraftWrite('d1', 2 + DRAFT_WRITE_STALE_MS)).ok).toBe(true)
+  })
+
+  it('refuses written, sent and missing drafts', async () => {
+    await pmStore.saveDraft(draft({ state: 'written' }))
+    await expect(pmStore.claimDraftWrite('d1', 1)).resolves.toEqual({ ok: false, reason: 'written' })
+    await pmStore.saveDraft(draft({ state: 'sent' }))
+    await expect(pmStore.claimDraftWrite('d1', 1)).resolves.toEqual({ ok: false, reason: 'not-appliable' })
+    await expect(pmStore.claimDraftWrite('nope', 1)).resolves.toEqual({ ok: false, reason: 'missing' })
+  })
+
+  it('settles only the claim that holds the marker', async () => {
+    await pmStore.saveDraft(draft())
+    await pmStore.claimDraftWrite('d1', 7)
+    await expect(pmStore.settleDraftWrite('d1', 8, { state: 'written' })).resolves.toBe(false)
+    await expect(pmStore.settleDraftWrite('d1', 7, { state: 'written', editedText: undefined })).resolves.toBe(true)
+    const d = await pmStore.getDraft('d1')
+    expect(d?.state).toBe('written')
+    expect(d && 'writeStartedAt' in d).toBe(false)
+    expect(d && 'editedText' in d).toBe(false)
+  })
+
+  it('stores an edit on an appliable draft; the body itself clears it', async () => {
+    await pmStore.saveDraft(draft())
+    await expect(pmStore.setDraftEdit('d1', 'Edited')).resolves.toBe(true)
+    expect((await pmStore.getDraft('d1'))?.editedText).toBe('Edited')
+    await pmStore.setDraftEdit('d1', 'Hello')
+    expect((await pmStore.getDraft('d1'))?.editedText).toBeUndefined()
+    await pmStore.saveDraft(draft({ state: 'written' }))
+    await expect(pmStore.setDraftEdit('d1', 'Edited')).resolves.toBe(false)
   })
 })

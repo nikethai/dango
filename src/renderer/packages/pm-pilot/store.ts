@@ -294,6 +294,77 @@ async function saveDraft(draft: ClientDraft): Promise<void> {
   pmStateStore.setState({ drafts: next })
 }
 
+/** A write marker younger than this belongs to a write still under way (maybe in another window), not a crash. */
+export const DRAFT_WRITE_STALE_MS = 5 * 60_000
+
+export type DraftClaim =
+  | { ok: true; draft: ClientDraft }
+  | { ok: false; reason: 'missing' | 'written' | 'not-appliable' | 'in-progress' | 'interrupted' }
+
+function withoutMarker(d: ClientDraft): ClientDraft {
+  const { writeStartedAt: _w, ...rest } = d
+  return rest
+}
+
+/** Changes one draft inside the lock; `fn` returns the replacement (or undefined to leave it) and a result. */
+async function mutateDraft<R>(
+  id: string,
+  fn: (d: ClientDraft | undefined) => { next?: ClientDraft; result: R }
+): Promise<R> {
+  const { next, result } = await mutateDoc('PmDrafts', parseDrafts, (drafts) => {
+    const at = drafts.findIndex((d) => d.id === id)
+    const out = fn(at < 0 ? undefined : drafts[at])
+    if (!out.next || at < 0) return { next: drafts, result: out.result }
+    const list = [...drafts]
+    list[at] = ClientDraftSchema.parse(out.next)
+    return { next: list, result: out.result }
+  })
+  pmStateStore.setState({ drafts: next })
+  return result
+}
+
+/**
+ * Claims a draft for one Gmail write, in one step under the lock: only a `proposed` or `undone` draft with no write
+ * marker is claimed, and the marker (`now`) is set as it is. A fresh marker means a write is under way
+ * (`'in-progress'`, nothing changed); a stale one is left by a write that was cut off: it is cleared and reported once
+ * (`'interrupted'`), so the user is told before a second write.
+ */
+function claimDraftWrite(id: string, now: number): Promise<DraftClaim> {
+  return mutateDraft<DraftClaim>(id, (d) => {
+    if (!d) return { result: { ok: false, reason: 'missing' } }
+    if (d.state === 'written') return { result: { ok: false, reason: 'written' } }
+    if (d.state !== 'proposed' && d.state !== 'undone') return { result: { ok: false, reason: 'not-appliable' } }
+    if (d.writeStartedAt !== undefined) {
+      if (now - d.writeStartedAt < DRAFT_WRITE_STALE_MS) return { result: { ok: false, reason: 'in-progress' } }
+      return { next: withoutMarker(d), result: { ok: false, reason: 'interrupted' } }
+    }
+    const claimed = { ...d, writeStartedAt: now }
+    return { next: claimed, result: { ok: true, draft: claimed } }
+  })
+}
+
+/**
+ * Ends a claimed write: applies `patch` and clears the marker, only while the marker is still `marker` (no other
+ * write took the draft meanwhile). An empty patch just releases the claim. True when it applied.
+ */
+function settleDraftWrite(id: string, marker: number, patch: Partial<ClientDraft>): Promise<boolean> {
+  return mutateDraft(id, (d) => {
+    if (!d || d.writeStartedAt !== marker) return { result: false }
+    const next = withoutMarker({ ...d, ...patch })
+    for (const key of Object.keys(next) as Array<keyof ClientDraft>) if (next[key] === undefined) delete next[key]
+    return { next, result: true }
+  })
+}
+
+/** Stores the user's edited body on a draft that can still be applied; the same text as the body clears it. */
+function setDraftEdit(id: string, text: string): Promise<boolean> {
+  return mutateDraft(id, (d) => {
+    if (!d || (d.state !== 'proposed' && d.state !== 'undone')) return { result: false }
+    const { editedText: _e, ...rest } = d
+    return { next: text === d.text ? rest : { ...rest, editedText: text }, result: true }
+  })
+}
+
 async function readDrafts(): Promise<ClientDraft[]> {
   const drafts = parseDrafts(await readDoc('PmDrafts'))
   pmStateStore.setState({ drafts })
@@ -392,6 +463,9 @@ export const pmStore = {
   markProcessed,
   isProcessed,
   saveDraft,
+  claimDraftWrite,
+  settleDraftWrite,
+  setDraftEdit,
   getDraft,
   findDraftByThread,
   listDraftsByThread,

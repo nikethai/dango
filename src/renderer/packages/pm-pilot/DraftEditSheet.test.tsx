@@ -37,6 +37,7 @@ vi.mock('./background-model', () => ({
 import { addReviewEntry, setReviewStorageForTests } from '@/packages/review/store'
 import { setReviewApplierForTests } from '@/packages/review/trust'
 import { DraftEditSheet } from './DraftEditSheet'
+import { _resetPmStoreForTests, pmStore } from './store'
 
 const KEY = 'review-entries'
 let data: Record<string, unknown>
@@ -56,6 +57,21 @@ beforeEach(async () => {
     },
   })
   apply.mockClear()
+  _resetPmStoreForTests()
+  await pmStore.saveDraft({
+    id: 'd1',
+    scopeId: 'acme',
+    accountId: 'acc1',
+    threadId: 't1',
+    inboundMessageId: 'm1',
+    to: 'jo@acme.com',
+    subject: 'Launch',
+    text: BODY,
+    answer: '4 Nov',
+    evidence: [],
+    state: 'proposed',
+    createdAt: 1,
+  })
   undoMock.pushUndo.mockClear()
   setReviewApplierForTests('draft', { apply, undo: vi.fn(async () => {}) })
   entry = await addReviewEntry({
@@ -93,6 +109,7 @@ describe('DraftEditSheet', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
     await waitFor(() => expect(onClose).toHaveBeenCalled())
     expect(apply).toHaveBeenCalledWith(expect.objectContaining({ id: entry.id, text: 'Hi Jo, it is 6 Nov.' }))
+    expect((await pmStore.getDraft('d1'))?.editedText).toBe('Hi Jo, it is 6 Nov.')
     expect(stored()).toMatchObject({ kind: 'done', state: 'done', text: 'Hi Jo, it is 6 Nov.' })
     expect(undoMock.pushUndo).toHaveBeenCalledWith(
       expect.objectContaining({ silent: false, message: 'Reply drafted in Gmail' })

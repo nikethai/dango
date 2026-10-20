@@ -157,6 +157,8 @@ export type ClientDraft = {
    * cut off (a crash) and Gmail may hold the draft: it is not written again without telling the user.
    */
   writeStartedAt?: number
+  /** The user's edited body, set by the edit sheet before Apply; `apply` writes it and never infers an edit. */
+  editedText?: string
 }
 export const ClientDraftSchema: z.ZodType<ClientDraft> = z.looseObject({
   id: z.string(),
@@ -177,6 +179,7 @@ export const ClientDraftSchema: z.ZodType<ClientDraft> = z.looseObject({
   reviewEntryId: z.string().optional(),
   createdAt: z.number(),
   writeStartedAt: z.number().optional(),
+  editedText: z.string().optional(),
 })
 
 /** `'choose-model'`: a local-only source, or no usable model (preflight R9). */
