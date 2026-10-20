@@ -104,6 +104,43 @@ describe('permission queue', () => {
     expect(getPermissionHead()).toBeNull()
   })
 
+  it('the timeout runs from when a request shows, not from queueing', async () => {
+    const first = requestToolPermission(req())
+    const second = requestToolPermission(req({ toolName: 'browser_type' }))
+    let secondChoice: string | undefined
+    void second.then((choice) => {
+      secondChoice = choice
+    })
+    vi.advanceTimersByTime(100_000)
+    resolvePermission(headId(), 'once')
+    await expect(first).resolves.toBe('once')
+    vi.advanceTimersByTime(100_000)
+    await Promise.resolve()
+    expect(secondChoice).toBeUndefined()
+    expect(getPermissionHead()?.toolName).toBe('browser_type')
+    vi.advanceTimersByTime(20_000)
+    await expect(second).resolves.toBe('deny')
+    expect(getPermissionHead()).toBeNull()
+  })
+
+  it('abort of a queued request removes it before it shows', async () => {
+    const controller = new AbortController()
+    void requestToolPermission(req())
+    const queued = requestToolPermission(req({ toolName: 'browser_type' }), { signal: controller.signal })
+    controller.abort()
+    await expect(queued).resolves.toBe('deny')
+    expect(getPermissionHead()?.toolName).toBe('browser_click')
+  })
+
+  it('does not trust allowAlways for a tool that always asks', async () => {
+    const first = requestToolPermission(req({ toolName: 'delete_file', allowAlways: true }))
+    void requestToolPermission(req({ toolName: 'delete_file', allowAlways: true }))
+    expect(getPermissionHead()?.allowAlways).toBe(false)
+    resolvePermission(headId(), 'always')
+    await expect(first).resolves.toBe('once')
+    expect(getPermissionHead()?.toolName).toBe('delete_file')
+  })
+
   it('abort denies', async () => {
     const controller = new AbortController()
     const first = requestToolPermission(req(), { signal: controller.signal })

@@ -1,6 +1,6 @@
 import type { ToolRiskTier } from '@shared/types/mcp'
 import { useSyncExternalStore } from 'react'
-import type { PermissionChoice, ToolActionSummary } from './describe'
+import { canAlways, type PermissionChoice, type ToolActionSummary } from './describe'
 
 export type PermissionRequest = {
   id: string
@@ -14,6 +14,9 @@ export type PermissionRequest = {
 
 type Entry = {
   request: PermissionRequest
+  timeoutMs: number
+  /** Started only when the entry becomes head, so each sheet gets the full timeout. */
+  timer?: ReturnType<typeof setTimeout>
   settle: (choice: PermissionChoice) => void
 }
 
@@ -23,6 +26,14 @@ const DEFAULT_TIMEOUT_MS = 120_000
 let queue: Entry[] = []
 const listeners = new Set<() => void>()
 let nextId = 0
+
+/** Start the head's timeout if it has none yet. Call after every queue change. */
+function armHead() {
+  const head = queue[0]
+  if (!head || head.timer !== undefined) return
+  const { id } = head.request
+  head.timer = setTimeout(() => resolvePermission(id, 'deny'), head.timeoutMs)
+}
 
 function emit() {
   for (const listener of listeners) listener()
@@ -62,12 +73,14 @@ export function resolvePermission(id: string, choice: PermissionChoice): void {
     effective === 'always' ? queue.filter((e) => e === entry || sameGrantTarget(e.request, entry.request)) : [entry]
   queue = queue.filter((e) => !settled.includes(e))
   for (const e of settled) e.settle(effective)
+  armHead()
   emit()
 }
 
 /**
- * Queue a permission request; resolves with the user's choice. The timeout (default 120 s) and an aborted
- * signal both resolve `'deny'` and remove the request, so the next one shows.
+ * Queue a permission request; resolves with the user's choice. The timeout (default 120 s, counted from when
+ * the request shows) and an aborted signal both resolve `'deny'` and remove the request, so the next one shows.
+ * `allowAlways` is stored as `allowAlways && canAlways(toolName, riskTier)`.
  */
 export function requestToolPermission(
   req: Omit<PermissionRequest, 'id'>,
@@ -77,23 +90,24 @@ export function requestToolPermission(
   if (signal?.aborted) return Promise.resolve('deny')
 
   nextId += 1
-  const request: PermissionRequest = { ...req, id: `permission-${nextId}` }
+  // Never trust the caller: tools that always ask, and critical ones, never offer Always.
+  const allowAlways = req.allowAlways && canAlways(req.toolName, req.riskTier)
+  const request: PermissionRequest = { ...req, allowAlways, id: `permission-${nextId}` }
 
   return new Promise<PermissionChoice>((resolve) => {
     const onAbort = () => resolvePermission(request.id, 'deny')
-    const timer = setTimeout(onAbort, timeoutMs)
     signal?.addEventListener('abort', onAbort, { once: true })
-    queue = [
-      ...queue,
-      {
-        request,
-        settle: (choice) => {
-          clearTimeout(timer)
-          signal?.removeEventListener('abort', onAbort)
-          resolve(choice)
-        },
+    const entry: Entry = {
+      request,
+      timeoutMs,
+      settle: (choice) => {
+        clearTimeout(entry.timer)
+        signal?.removeEventListener('abort', onAbort)
+        resolve(choice)
       },
-    ]
+    }
+    queue = [...queue, entry]
+    armHead()
     emit()
   })
 }

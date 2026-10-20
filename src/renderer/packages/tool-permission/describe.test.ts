@@ -84,6 +84,19 @@ describe('describeToolAction', () => {
     expect(JSON.stringify(summary)).not.toContain('SECRET')
   })
 
+  it('clips a long why from args to one line of at most 140 chars', () => {
+    const reason = `First line\n\n${'word '.repeat(100)}`
+    const why = describeToolAction('web_search', { reason }).why ?? ''
+    expect(why.length).toBeLessThanOrEqual(140)
+    expect(why).not.toContain('\n')
+    expect(why.startsWith('First line word')).toBe(true)
+  })
+
+  it('camelCase and post_message tools read as sending', () => {
+    expect(describeToolAction('sendEmail', { to: 'a@b.c' }).what).toBe('Send a message')
+    expect(describeToolAction('slack_post_message', {}).what).toBe('Send a message')
+  })
+
   it('tolerates args that are not objects', () => {
     expect(describeToolAction('web_search', null)).toEqual({ what: 'Use Web search', touches: [] })
   })
@@ -97,6 +110,36 @@ describe('alwaysAsks / canAlways / toolLabel', () => {
     expect(alwaysAsks('edit_file')).toBe(true)
     expect(alwaysAsks('browser_click')).toBe(false)
     expect(alwaysAsks('web_search')).toBe(false)
+  })
+
+  it('also catches payment, camelCase and post-message names', () => {
+    for (const name of [
+      'create_payment',
+      'payment_intent',
+      'stripe_create_payment_intent',
+      'sendEmail',
+      'deleteEvent',
+      'trashFile',
+      'SendMessage',
+      'post_message',
+      'slack_post_message',
+      'mcp__gmail__reply',
+    ]) {
+      expect(alwaysAsks(name), name).toBe(true)
+    }
+  })
+
+  it('leaves harmless look-alikes alone', () => {
+    for (const name of [
+      'display',
+      'replay',
+      'repayment_schedule_view',
+      'displayEvent',
+      'sender_info_lookup',
+      'get_post',
+    ]) {
+      expect(alwaysAsks(name), name).toBe(false)
+    }
   })
 
   it('offers Always unless the tool always asks or is critical', () => {

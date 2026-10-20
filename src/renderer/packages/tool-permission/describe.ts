@@ -7,17 +7,49 @@ export type PermissionChoice = 'once' | 'always' | 'deny'
 /** What a tool call will do, in words for the permission sheet. Built from raw args, shown once, never persisted. */
 export type ToolActionSummary = { what: string; why?: string; touches: string[] }
 
-const ALWAYS_ASKS_PATTERN = /(^|[_-])(send|reply|delete|remove|trash|pay|purchase|checkout|transfer)([_-]|$)/i
-const SEND_LIKE_PATTERN = /(^|[_-])(send|reply)([_-]|$)/i
+const ALWAYS_ASKS_WORDS = new Set([
+  'send',
+  'reply',
+  'delete',
+  'remove',
+  'trash',
+  'pay',
+  'payment',
+  'payments',
+  'purchase',
+  'checkout',
+  'transfer',
+])
+const SEND_WORDS = new Set(['send', 'reply'])
+const POSTED_WORDS = new Set(['message', 'messages', 'msg', 'comment', 'reply', 'status', 'tweet'])
 const COMMAND_LIKE_PATTERN = /exec|command|shell|terminal/i
 const EDIT_TOOLS = new Set(['edit_file', 'create_file', 'apply_workspace_changes'])
 const RUN_TOOLS = new Set(['run_local_code', 'prepare_local_execution'])
 const WHY_MAX = 140
 const COMMAND_MAX = 80
 
+/** Lowercase words of a tool name: splits on `_`, `-`, other separators and camelCase (`sendEmail` → send, email). */
+function nameWords(toolName: string): string[] {
+  return toolName
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((word) => word.toLowerCase())
+}
+
+/** `send_email`, `sendEmail`, `gmail_reply`, `slack_post_message`. */
+function isSendLike(toolName: string): boolean {
+  const words = nameWords(toolName)
+  return words.some(
+    (word, i) => SEND_WORDS.has(word) || (word === 'post' && i + 1 < words.length && POSTED_WORDS.has(words[i + 1]))
+  )
+}
+
 /** Tools that send, delete, pay, or change workspace files ask every time, whatever Trust says. */
 export function alwaysAsks(toolName: string): boolean {
-  return isSensitiveToolName(toolName) || ALWAYS_ASKS_PATTERN.test(toolName)
+  if (isSensitiveToolName(toolName) || isSendLike(toolName)) return true
+  return nameWords(toolName).some((word) => ALWAYS_ASKS_WORDS.has(word))
 }
 
 export function canAlways(toolName: string, riskTier: ToolRiskTier): boolean {
@@ -44,6 +76,12 @@ function stringList(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(nonEmptyString).filter((v): v is string => Boolean(v))
   const single = nonEmptyString(value)
   return single ? [single] : []
+}
+
+/** One line: whitespace and newlines collapse to single spaces, cut to the sheet's why length. */
+function clipWhy(text: string | undefined): string | undefined {
+  if (!text) return undefined
+  return cut(text.replace(/\s+/g, ' ').trim(), WHY_MAX) || undefined
 }
 
 function cut(text: string, max: number): string {
@@ -74,7 +112,7 @@ function firstSentence(description: string | undefined): string | undefined {
   const text = nonEmptyString(description)
   if (!text) return undefined
   const match = text.match(/^.*?[.!?](?=\s|$)/s)
-  return cut((match ? match[0] : text).trim(), WHY_MAX)
+  return clipWhy(match ? match[0] : text)
 }
 
 function describeWhat(toolName: string, args: Record<string, unknown>): string {
@@ -96,7 +134,7 @@ function describeWhat(toolName: string, args: Record<string, unknown>): string {
     const action = toolName.slice('computer_'.length).replace(/_+/g, ' ').trim()
     return action ? t('Use your computer: {{action}}', { action }) : t('Use your computer')
   }
-  if (SEND_LIKE_PATTERN.test(toolName)) return t('Send a message')
+  if (isSendLike(toolName)) return t('Send a message')
   return t('Use {{toolLabel}}', { toolLabel: toolLabel(toolName) })
 }
 
@@ -107,9 +145,7 @@ function describeWhat(toolName: string, args: Record<string, unknown>): string {
 export function describeToolAction(toolName: string, args: unknown, description?: string): ToolActionSummary {
   const rec = asRecord(args)
   const why =
-    nonEmptyString(rec.reason) ??
-    nonEmptyString(rec.explanation) ??
-    nonEmptyString(rec.purpose) ??
+    clipWhy(nonEmptyString(rec.reason) ?? nonEmptyString(rec.explanation) ?? nonEmptyString(rec.purpose)) ??
     firstSentence(description)
 
   const touches: string[] = [...pathsOf(rec)]
@@ -117,7 +153,7 @@ export function describeToolAction(toolName: string, args: unknown, description?
   if (host) touches.push(host)
   const command = nonEmptyString(rec.command)
   if (command) touches.push(cut(command, COMMAND_MAX))
-  if (SEND_LIKE_PATTERN.test(toolName)) touches.push(...stringList(rec.to), ...stringList(rec.recipient))
+  if (isSendLike(toolName)) touches.push(...stringList(rec.to), ...stringList(rec.recipient))
 
   const summary: ToolActionSummary = { what: describeWhat(toolName, rec), touches: [...new Set(touches)] }
   if (why) summary.why = why
