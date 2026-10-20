@@ -139,16 +139,24 @@ export function registerSourceFixHandlers(): void {
   })
   registerFixHandler('try-again', async () => true)
   // R11: re-run only once a usable model is set up; otherwise open provider settings and keep the entry open.
-  registerFixHandler('choose-model', async () => {
-    const [{ settingsStore }, { lastUsedModelStore }, { hasUsableModel }] = await Promise.all([
-      import('@/stores/settingsStore'),
-      import('@/stores/lastUsedModelStore'),
-      import('./model-check'),
-    ])
-    if (hasUsableModel(settingsStore.getState().getSettings(), lastUsedModelStore.getState().chat)) return true
-    // Loaded on demand: the router pulls in every route.
-    const { router } = await import('@/router')
-    await router.navigate({ to: '/settings/provider' })
+  // TASK-20: a local-only source (ADR 0003) accepts only a model that runs on this device; with a usable cloud model
+  // it opens default models so the user picks a local one. Dango never switches models by itself.
+  registerFixHandler('choose-model', async (job) => {
+    const [{ settingsStore }, { lastUsedModelStore }, { backgroundModelChoice, hasUsableModel, isLocalModelProvider }] =
+      await Promise.all([
+        import('@/stores/settingsStore'),
+        import('@/stores/lastUsedModelStore'),
+        import('./model-check'),
+      ])
+    const settings = settingsStore.getState().getSettings()
+    const lastUsed = lastUsedModelStore.getState().chat
+    const usable = hasUsableModel(settings, lastUsed)
+    const source = await sourceOfJob(job.sourceId)
+    const allowed = !source?.localOnly || isLocalModelProvider(backgroundModelChoice(settings, lastUsed)?.provider)
+    if (usable && allowed) return true
+    // Loaded on demand: it reaches the router, which pulls in every route.
+    const { openConfiguration } = await import('@/components/sources/openConfiguration')
+    await openConfiguration(usable ? '/settings/default-models' : '/settings/provider')
     return false
   })
 }

@@ -22,7 +22,7 @@ import {
   registerSourceAdapter,
   updateSource,
 } from './index'
-import { dueReviews, dueSyncs } from './jobs'
+import { dueCheckIntervalMs, dueReviews, dueSyncs, MIN_DUE_CHECK_MS } from './jobs'
 import { _resetReviewForTests, buildReviewPrompt, parseProposalDraft, reviewJobHandler, syncJobHandler } from './review'
 
 const h = vi.hoisted(() => ({
@@ -441,6 +441,14 @@ describe('syncJobHandler', () => {
     expect(outcome).toEqual({ summary: 'Found 3 threads', addDoneEntry: true })
     expect(getSource('s1')?.lastSyncAt).toBeTypeOf('number')
   })
+
+  it('a quiet sync adds no Done entry but still records lastSyncAt', async () => {
+    storeSources(sourceOf())
+    registerSourceAdapter('codex-threads', { sync: async () => ({ summary: 'Nothing new', quiet: true }) })
+    const outcome = await syncJobHandler(ctxOf(jobOf({ kind: 'sync' })))
+    expect(outcome).toEqual({ summary: 'Nothing new', addDoneEntry: false })
+    expect(getSource('s1')?.lastSyncAt).toBeTypeOf('number')
+  })
 })
 
 describe('due jobs', () => {
@@ -488,6 +496,26 @@ describe('due jobs', () => {
     expect(dueSyncs([never], [stopped], now + REVIEW_INTERVAL_MS)).toEqual(['s1'])
     // A kind that cannot sync never gets one.
     expect(dueSyncs([sourceOf({ kind: 'gmail' })], [], now)).toEqual([])
+  })
+})
+
+describe('dueCheckIntervalMs', () => {
+  it('is the default when no kind polls', () => {
+    expect(dueCheckIntervalMs(15 * 60_000)).toBe(15 * 60_000)
+  })
+
+  it('checks at half the shortest poll interval, never more often than the floor', () => {
+    registerSourceAdapter('gmail', { pollMs: 60_000, sync: async () => ({ summary: '' }) })
+    registerSourceAdapter('asana', { pollMs: 120_000, sync: async () => ({ summary: '' }) })
+    expect(dueCheckIntervalMs(15 * 60_000)).toBe(MIN_DUE_CHECK_MS)
+    _resetSourceKindsForTests()
+    registerBuiltinSourceKinds()
+    registerSourceAdapter('asana', { pollMs: 120_000, sync: async () => ({ summary: '' }) })
+    expect(dueCheckIntervalMs(15 * 60_000)).toBe(60_000)
+    registerSourceAdapter('asana', { pollMs: 1_000 })
+    expect(dueCheckIntervalMs(15 * 60_000)).toBe(MIN_DUE_CHECK_MS)
+    registerSourceAdapter('asana', { pollMs: 24 * 60 * 60_000 })
+    expect(dueCheckIntervalMs(15 * 60_000)).toBe(15 * 60_000)
   })
 })
 
@@ -566,6 +594,17 @@ describe('initBackgroundJobs', () => {
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000)
     expect(resumeJobs).toHaveBeenCalledTimes(3)
     expect(startJob).toHaveBeenCalledWith(expect.objectContaining({ kind: 'review', sourceId: 's1' }))
+  })
+
+  it('a kind that polls every minute is synced again within its interval, not after 15 minutes', async () => {
+    vi.useFakeTimers()
+    registerSourceAdapter('gmail', { pollMs: 60_000, sync: async () => ({ summary: '' }) })
+    storeSources(sourceOf({ kind: 'gmail', backgroundReview: false, lastSyncAt: Date.now() - 5_000 }))
+    await initBackgroundJobs()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(startJob).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(90_000)
+    expect(startJob).toHaveBeenCalledWith(expect.objectContaining({ kind: 'sync', sourceId: 's1' }))
   })
 
   it('an adopted folder with background review on syncs first, then is reviewed', async () => {

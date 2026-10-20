@@ -242,16 +242,16 @@ export const reviewJobHandler: JobHandler = async ({ job, signal, progress }) =>
   return { summary: reviewSummary(items.length, proposals, source.label), addDoneEntry: proposals > 0 }
 }
 
-/** Runs the kind's sync and records `lastSyncAt`; every finished sync adds a Done entry. */
+/** Runs the kind's sync and records `lastSyncAt`; every finished sync adds a Done entry unless the kind says quiet. */
 export const syncJobHandler: JobHandler = async ({ job, signal, progress }) => {
   const source = await sourceFor(job.sourceId)
   if (!source) return removedOutcome()
   const def = getSourceKind(source.kind)
   if (!def?.sync) throw new Error(i18n.t('This source cannot be synced.'))
-  const { summary } = await def.sync(source, { signal, progress })
+  const { summary, quiet } = await def.sync(source, { signal, progress })
   throwIfAborted(signal)
   await updateSource(source.id, { lastSyncAt: Date.now() })
-  return { summary, addDoneEntry: true }
+  return { summary, addDoneEntry: quiet !== true }
 }
 
 export function _resetReviewForTests(): void {

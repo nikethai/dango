@@ -9,6 +9,7 @@ import {
 // Registers the built-in source kinds; must load before the job opener is registered.
 import {
   adoptExistingFolderBindings,
+  dueCheckIntervalMs,
   loadSources,
   registerSourceFixHandlers,
   registerSourcesResolver,
@@ -34,7 +35,7 @@ async function isJobWindow(): Promise<boolean> {
  * Starts background work in the main window: registers the sync and review handlers, the sources' fix handlers and
  * the Review opener, removes folder bindings left over from an unfinished Add a source, resumes stored jobs, turns
  * folder bindings made before sources existed into sources, then starts due syncs and reviews at launch, every
- * 15 minutes and whenever a sync finishes. Nothing is started before the stored jobs are resumed; when resuming
+ * 15 minutes (sooner when a kind polls more often) and whenever a sync finishes. Nothing is started before the stored jobs are resumed; when resuming
  * fails, the next check tries it again first. Returns at once in any other window.
  */
 export async function initBackgroundJobs(): Promise<void> {
@@ -93,7 +94,8 @@ export async function initBackgroundJobs(): Promise<void> {
     return checking
   }
 
-  const interval = setInterval(() => void check(), CHECK_EVERY_MS)
+  // Every 15 minutes, or sooner when a registered kind polls more often (Gmail, Asana).
+  const interval = setInterval(() => void check(), dueCheckIntervalMs(CHECK_EVERY_MS))
   // A sync that finishes may make its source due a review.
   const syncStatus = new Map<string, BackgroundJob['status']>()
   const unsubscribe = subscribeBackgroundJobs((jobs) => {

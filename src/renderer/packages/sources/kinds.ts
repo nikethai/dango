@@ -6,13 +6,18 @@ import {
   type SourceKind,
 } from '@shared/types/sources'
 
-/** Reading side of a kind. Slice 10 adds these for Gmail and Asana with `registerSourceAdapter`. */
+/**
+ * Reading side of a kind. Slice 10 adds these for Gmail and Asana with `registerSourceAdapter`.
+ * - `pollMs`: sync again this long after the last sync; the due check runs often enough to honour it (see
+ *   `dueCheckIntervalMs`).
+ * - `sync` may return `quiet: true` when the run found nothing worth a Done entry (a poll with nothing new).
+ */
 export type SourceAdapter = {
   pollMs?: number
   sync?(
     source: ConnectedSource,
     ctx: { signal: AbortSignal; progress(text: string): void }
-  ): Promise<{ summary: string }>
+  ): Promise<{ summary: string; quiet?: boolean }>
   read?(
     source: ConnectedSource,
     ctx: { signal: AbortSignal; cursor: string | null }
