@@ -13,6 +13,7 @@ import {
   resolveStanceLabel,
   resolveSynthesisLead,
   roundForQueueIndex,
+  shouldRunMultiAgentRoom,
   shouldRunSynthesis,
   toSessionAgentFields,
   type RoomMode,
@@ -26,14 +27,11 @@ import { type AgentMeta, resolveAgentMeta } from '@/packages/agents'
 import * as chatStore from '../chatStore'
 import * as scrollActions from '../scrollActions'
 import { generate } from './generation'
+import { consumeGenerationStoppedByUser } from './generation-cancel'
 import { messageQueueStore } from './messageQueue'
 import { insertMessage, modifyMessage, submitNewUserMessage } from './messages'
 import { runAgentRoomSwarm as runSwarmLoop } from './multi-agent-room-swarm'
-import {
-  clearTeamRoomState,
-  setTeamRoomActions,
-  setTeamRoomLive,
-} from './team-room-state'
+import { clearTeamRoomState, isSwarmStopRequested, setTeamRoomActions, setTeamRoomLive } from './team-room-state'
 
 export type RoomAgentMeta = AgentMeta
 
@@ -90,7 +88,8 @@ export async function applyRoomMembership(sessionId: string, mentionedAgentIds?:
   return merged
 }
 
-export async function setSessionRoomMode(sessionId: string, roomMode: RoomMode): Promise<void> {
+/** Swarm on writes `'swarm'`; Swarm off writes `undefined`. */
+export async function setSessionRoomMode(sessionId: string, roomMode: RoomMode | undefined): Promise<void> {
   await chatStore.updateSession(sessionId, { roomMode })
 }
 
@@ -125,6 +124,11 @@ async function generateSpeakerTurn(
     taskIndex?: number
     taskTotal?: number
     participantDirectory?: string
+    /** Swarm run this turn belongs to; written on the message as `swarm.runId`. */
+    runId?: string
+    agentCount?: number
+    /** Swarm deliver after Stop */
+    stoppedEarly?: boolean
   }
 ): Promise<{ msg: Message; interrupted: boolean }> {
   const assistantMsg: Message = {
@@ -134,6 +138,15 @@ async function generateSpeakerTurn(
     name: params.meta.name,
     roomRole: params.roomRole,
     roomRound: params.roomRound,
+    ...(params.runId
+      ? {
+          swarm: {
+            runId: params.runId,
+            ...(params.taskTitle ? { taskTitle: params.taskTitle } : {}),
+            ...(params.stoppedEarly ? { stoppedEarly: true } : {}),
+          },
+        }
+      : {}),
   }
   await insertMessage(sessionId, assistantMsg)
 
@@ -147,6 +160,8 @@ async function generateSpeakerTurn(
     taskIndex: params.taskIndex,
     taskTotal: params.taskTotal,
     taskTitle: params.taskTitle,
+    agentCount: params.agentCount,
+    runId: params.runId,
   })
 
   // Always pin viewport to the newest room turn (discuss turns used to leave user mid-list).
@@ -167,16 +182,29 @@ async function generateSpeakerTurn(
       taskId: params.taskId,
       taskTitle: params.taskTitle,
       participantDirectory: params.participantDirectory,
+      swarmStoppedEarly: params.stoppedEarly,
       skipQueuedMessages: true,
     })
   }
 
   await runOnce()
 
+  // A stopped turn is not an empty answer: never re-run it or write a placeholder. A Swarm Stop counts for every turn
+  // but the captain's answer (which still runs after Stop); a Stop on the turn itself counts for any turn.
+  const userStopped = consumeGenerationStoppedByUser(sessionId, assistantMsg.id)
+  const swarmStopped = Boolean(params.runId) && params.roomRole !== 'deliver' && isSwarmStopRequested(sessionId)
+  const stopped = userStopped || swarmStopped
+
   let after = await chatStore.getSession(sessionId)
   let justGenerated = after?.messages.find((m) => m.id === assistantMsg.id)
 
-  if (justGenerated && !justGenerated.cancel && !messageHasUsableText(justGenerated) && !justGenerated.error) {
+  if (
+    !stopped &&
+    justGenerated &&
+    !justGenerated.cancel &&
+    !messageHasUsableText(justGenerated) &&
+    !justGenerated.error
+  ) {
     await modifyMessage(sessionId, {
       ...justGenerated,
       generating: true,
@@ -189,7 +217,13 @@ async function generateSpeakerTurn(
     justGenerated = after?.messages.find((m) => m.id === assistantMsg.id)
   }
 
-  if (justGenerated && !messageHasUsableText(justGenerated) && !justGenerated.error && !justGenerated.cancel) {
+  if (
+    !stopped &&
+    justGenerated &&
+    !messageHasUsableText(justGenerated) &&
+    !justGenerated.error &&
+    !justGenerated.cancel
+  ) {
     const placeholder =
       params.roomRole === 'synthesis'
         ? '_Team answer returned no content. Try again or re-@ the agents._'
@@ -206,7 +240,7 @@ async function generateSpeakerTurn(
   after = await chatStore.getSession(sessionId)
   justGenerated = after?.messages.find((m) => m.id === assistantMsg.id) ?? assistantMsg
   const latest = after?.messages[after.messages.length - 1]
-  const interrupted = Boolean(justGenerated.cancel || latest?.role === 'user')
+  const interrupted = Boolean(stopped || justGenerated.cancel || latest?.role === 'user')
 
   // Re-pin after stream/placeholder so long turns stay in view
   if (!interrupted) {
@@ -629,10 +663,5 @@ export async function keepDiscussing(
   })
 }
 
-/**
- * Whether the submit path should use room multi-agent orchestration.
- */
-export function shouldRunMultiAgentRoom(mentionedAgentIds: string[] | undefined, roomAgentIds: string[]): boolean {
-  const speakers = resolveSpeakers(roomAgentIds, mentionedAgentIds)
-  return speakers.length >= 2
-}
+/** Whether the submit path runs the room (Swarm on, two or more speakers). Pure; lives in `@shared/agent-room`. */
+export { shouldRunMultiAgentRoom }

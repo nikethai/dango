@@ -452,6 +452,16 @@ export const MessageSchema = z.object({
   roomRound: z.number().int().positive().optional().catch(undefined),
   /** Approved knowledge item ids this answer was given with (the built-in item excluded). */
   knowledgeIds: z.array(z.string()).optional().catch(undefined),
+  /** Swarm run this turn belongs to (plan, do, deliver and run notes share one runId). `note`: the could-not-plan note. */
+  swarm: z
+    .object({
+      runId: z.string(),
+      taskTitle: z.string().optional(),
+      stoppedEarly: z.boolean().optional(),
+      note: z.boolean().optional(),
+    })
+    .optional()
+    .catch(undefined),
 })
 
 // Compaction point schema (for context management)

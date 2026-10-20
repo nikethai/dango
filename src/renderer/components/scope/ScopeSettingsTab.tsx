@@ -3,6 +3,7 @@ import { readsEverywhereFor, type Scope, type ScopeKind } from '@shared/types'
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import SegmentedControl from '@/components/common/SegmentedControl'
+import { ScopePermissions } from '@/components/permission/ScopePermissions'
 import { validateScopeName } from '@/projects/scope-store'
 import { DeleteScopeSheet } from './DeleteScopeSheet'
 
@@ -135,6 +136,7 @@ export function ScopeSettingsTab({ scope, agentOptions, onChange, onDelete }: Sc
           {t('When this scope and Everywhere disagree, this scope wins here.')}
         </span>
       </section>
+      <ScopePermissions scopeId={scope.id} />
       <div>
         <button type="button" className="dg-btn dg-btn--danger" onClick={() => setConfirming(true)}>
           {t('Delete scope')}

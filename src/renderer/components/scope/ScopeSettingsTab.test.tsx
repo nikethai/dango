@@ -148,6 +148,16 @@ describe('ScopeSettingsTab', () => {
     expect(onChange).toHaveBeenCalledWith({ name: 'Acme Ltd' })
   })
 
+  it('lists what runs without asking after the Everywhere section, before Delete scope', () => {
+    setup(client)
+    const heading = screen.getByRole('heading', { name: 'Allowed without asking' })
+    const everywhere = screen.getByText('When this scope and Everywhere disagree, this scope wins here.')
+    const deleteButton = screen.getByRole('button', { name: 'Delete scope' })
+    expect(everywhere.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(heading.compareDocumentPosition(deleteButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('Nothing yet. When you choose Always in this scope, it shows here.')).toBeTruthy()
+  })
+
   it('delete asks first', () => {
     const onDelete = vi.fn()
     setup(client, { onDelete })

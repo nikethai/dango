@@ -61,7 +61,6 @@ export const uiStore = createStore(
         sidebarLayout: 'expanded' as 'expanded' | 'rail',
         sidebarMode: 'chat' as 'chat' | 'task',
         openSearchDialog: false,
-        searchDialogGlobalOnly: false, // （）
         openAboutDialog: false, // (legacy)
         inputBoxWebBrowsingMode: false,
         sessionWebBrowsingMap: {} as Record<string, boolean | undefined>,
@@ -138,12 +137,8 @@ export const uiStore = createStore(
           )
         },
 
-        setOpenSearchDialog: (openSearchDialog: boolean, globalOnly = false) => {
-          set((state) =>
-            state.openSearchDialog === openSearchDialog && state.searchDialogGlobalOnly === globalOnly
-              ? state
-              : { openSearchDialog, searchDialogGlobalOnly: globalOnly }
-          )
+        setOpenSearchDialog: (openSearchDialog: boolean) => {
+          set((state) => (state.openSearchDialog === openSearchDialog ? state : { openSearchDialog }))
         },
 
         setOpenAboutDialog: (openAboutDialog: boolean) => {

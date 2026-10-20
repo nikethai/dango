@@ -72,8 +72,9 @@ const CRITICAL_PATH_PATTERNS = [
   /\/etc\/(passwd|shadow|sudoers|ssh)/,
   // SSH keys
   /\.ssh\/(id_|authorized_keys|known_hosts)/,
-  // Root-level system dirs (exact)
-  /^\/(boot|dev|proc|sys)\//,
+  // Root-level system dirs anywhere in a value (`cat /proc/kcore`, `of=/dev/sda`), except harmless devices
+  /(?:^|[\s"'=:<>(`])\/(?:boot|proc|sys)\//,
+  /(?:^|[\s"'=:<>(`])\/dev\/(?!(?:null|stdout|stderr|stdin|tty)\b|fd\/)/,
 ]
 
 const HIGH_PATH_PATTERNS = [
@@ -96,6 +97,28 @@ const MEDIUM_PATH_PATTERNS = [
 // 3. Argument patterns (inspected when args are provided)
 // ---------------------------------------------------------------------------
 
+// Shell fragments for the recursive-command patterns below (text is lowercased first).
+/** Somewhere in this command (not past ; & |), a recursive flag: -r, -R, -rfv, --recursive. */
+const HAS_RECURSIVE_FLAG = String.raw`(?=(?:[^;&|]*\s)?-(?:[a-z]*r[a-z]*|-recursive)\b)`
+/** Somewhere in this command, a force flag: -f, -rf, --force. */
+const HAS_FORCE_FLAG = String.raw`(?=(?:[^;&|]*\s)?-(?:[a-z]*f[a-z]*|-force)\b)`
+/** Where a whole argument ends: space, a shell separator, `)` or a backtick (`$(rm -r ~)`), or the end. */
+const ARG_END = String.raw`(?=[\s;&|)\x60]|$)`
+/** One path segment. */
+const SEGMENT = String.raw`[^/\s;&|"'()\x60]+`
+/** First-level home folders that are only caches or scratch space: deleting them is not CRITICAL. */
+const DISPOSABLE_HOME_FOLDER = String.raw`(?:\.cache|\.npm|\.pnpm-store|\.yarn|\.bun|\.gradle|\.m2|tmp|temp|\.tmp)(?=[/"']|${ARG_END})`
+/** Home, or a first-level folder in it: ~ ~/ ~// ~bob "${HOME}"/ ${HOME:?}/ ~/.* $HOME/.. ~/Documents ~/.ssh */
+const HOME_TARGET = String.raw`["']?(?:~[\w.-]*|\$home|\$\{home(?::[^}]*)?\})["']?(?:\/+(?:(?!${DISPOSABLE_HOME_FOLDER})${SEGMENT})?\/?\*?)?["']?${ARG_END}`
+/** A whole argument that means home, root, the parent or everything here: home targets, / /* .. ../* * .* ./* */
+const BROAD_TARGET = String.raw`(?:${HOME_TARGET}|["']?(?:\.\.\/?\*?|\/\*?|\*|\.\*|\.\/\*)["']?${ARG_END})`
+/** Root, a top-level system directory or one folder in it: / /etc /usr/ /var/lib /Users/me /home/* */
+const SYSTEM_ROOT_TARGET = String.raw`["']?\/(?:(?:etc|usr|bin|sbin|lib|lib64|var|boot|sys|proc|dev|root|home|opt|system|library|applications|users)(?:\/${SEGMENT})?\/?)?\*?["']?${ARG_END}`
+
+/** Spawn-style args: the command field and the args-array field that go together. */
+const SPAWN_COMMAND_KEYS = ['command', 'cmd', 'program', 'executable', 'bin']
+const SPAWN_ARGS_KEYS = ['args', 'argv', 'arguments']
+
 const CRITICAL_ARG_PATTERNS = [
   // Force / recursive destructive flags
   // NOTE: we avoid \b before - because JSON.stringify produces strings like
@@ -103,6 +126,28 @@ const CRITICAL_ARG_PATTERNS = [
   /-rf/,
   /--force/,
   /--no-preserve-root/,
+  // rm with a recursive and a force flag, in any order or form (-fr, -r -f, -rfv, --recursive --force)
+  new RegExp(`\\brm\\s+${HAS_RECURSIVE_FLAG}${HAS_FORCE_FLAG}`),
+  // Recursive rm, chmod or chown of home (or a first-level folder in it), root, a system directory, the parent or
+  // everything here, even without -f (rm -r ~/, rm -r ~/Documents, rm -r /var/lib, rm -r .., chmod -R 777 /)
+  new RegExp(`\\b(?:rm|chmod|chown)\\s+${HAS_RECURSIVE_FLAG}[^;&|]*\\s(?:${BROAD_TARGET}|${SYSTEM_ROOT_TARGET})`),
+  // chmod / chown of root or a system directory (chmod 777 /, chown root /usr/)
+  new RegExp(`\\b(?:chmod|chown)\\s+[^;&|]*\\s${SYSTEM_ROOT_TARGET}`),
+  // find that deletes or shreds what it finds (-delete, -exec rm, -exec /bin/rm, -exec shred)
+  /\bfind\s[^;&|]*\s-(?:delete|exec(?:dir)?\s+(?:\S*\/)?(?:rm|shred))\b/,
+  /\bshred\b/,
+  // rsync that deletes extra files in home or a first-level home folder
+  new RegExp(`\\brsync\\s(?=[^;&|]*\\s--delete)[^;&|]*\\s${HOME_TARGET}`),
+  // Recursive delete from code: shutil.rmtree / fs.rmSync / rimraf of / or ~
+  /\b(?:shutil\.rmtree|rmsync|rimraf)\b\s*\(?\s*(?:[\w.]+\(\s*)?["']?(?:\/|~|\$home)\/?["']?(?=[\s,);&|`]|$)/,
+  // Force push (-f, like --force above)
+  /\bgit\s+push\b[^;&|]*\s-[a-z]*f[a-z]*\b/,
+  // Disk formatting / raw writes to a device
+  /\bmkfs\b/,
+  /\bdiskutil\s+(?:erase\w*|zerodisk|secureerase|partitiondisk|reformat)\b/,
+  /\bdd\s[^;&|]*\bof=\/dev\//,
+  // Runs as root
+  /\bsudo\b/,
   // Pipe to shell (json: {"command":"curl ... | bash"})
   /\|\s*(sh|bash|zsh|eval)/,
   // Inline eval
@@ -110,14 +155,12 @@ const CRITICAL_ARG_PATTERNS = [
 ]
 
 const HIGH_ARG_PATTERNS = [
-  // Recursive flag on its own
-  /\b-[rR]\b/,
+  // Recursive flag on its own (-r, -R, -rt, --recursive); text is lowercased
+  /(?:^|[\s"'])-(?:[a-z]*r[a-z]*|-recursive)(?=[\s"']|$)/,
   // Wildcard glob that could be dangerous
   /[*?]\s/,
   // Redirect / append to file
   />{1,2}\s*\//,
-  // Sudo-prefixed arg strings
-  /\bsudo\b/,
 ]
 
 // ---------------------------------------------------------------------------
@@ -136,6 +179,243 @@ function flattenArgs(args: unknown): string {
   } catch {
     return String(args)
   }
+}
+
+const MAX_ARG_DEPTH = 8
+
+function stringItems(list: unknown[]): string[] {
+  return list.filter((v): v is string => typeof v === 'string')
+}
+
+/**
+ * The texts the path and argument patterns run on, lowercased: the flattened args (as before), every string value
+ * (so JSON quoting does not hide `"/"` or the end of a command), each string array joined by spaces
+ * (`["rm", "-r", "/"]`) and each spawn-style command with its args (`{ command: "rm", args: ["-r", "~"] }`).
+ */
+function argTexts(args: unknown): string[] {
+  const texts = new Set<string>()
+  const flat = flattenArgs(args)
+  if (flat) texts.add(flat.toLowerCase())
+  const walk = (value: unknown, depth: number) => {
+    if (depth > MAX_ARG_DEPTH || value == null) return
+    if (typeof value === 'string') {
+      if (value) texts.add(value.toLowerCase())
+      return
+    }
+    if (typeof value !== 'object') return
+    if (Array.isArray(value)) {
+      const joined = stringItems(value).join(' ')
+      if (joined) texts.add(joined.toLowerCase())
+      for (const item of value) walk(item, depth + 1)
+      return
+    }
+    const record = value as Record<string, unknown>
+    // Spawn-style call: { command: 'rm', args: ['-r', '~'] } reads as `rm -r ~`. Only these key pairs are joined, so
+    // unrelated fields ({ cmd: 'rm -r build', cwd: '/' }) never combine.
+    for (const commandKey of SPAWN_COMMAND_KEYS) {
+      const command = record[commandKey]
+      if (typeof command !== 'string' || !command) continue
+      for (const argsKey of SPAWN_ARGS_KEYS) {
+        const list = record[argsKey]
+        if (Array.isArray(list)) texts.add(`${command} ${stringItems(list).join(' ')}`.toLowerCase())
+      }
+    }
+    for (const item of Object.values(record)) walk(item, depth + 1)
+  }
+  walk(args, 0)
+  return [...texts]
+}
+
+// ---------------------------------------------------------------------------
+// Read-only commands
+// ---------------------------------------------------------------------------
+
+/** Fields that carry code in another language. */
+const CODE_KEYS = ['script', 'code']
+/** The only argument keys a read-only shell call may have; any other key (a decoy `cmdline`, a SQL `query`) asks. */
+const READ_ONLY_ARG_KEYS = new Set([
+  'command',
+  'cmd',
+  'args',
+  'argv',
+  'arguments',
+  'cwd',
+  'timeout',
+  'timeoutMs',
+  'timeout_ms',
+  'reason',
+  'explanation',
+  'purpose',
+  'description',
+])
+const READ_ONLY_COMMAND_KEYS = ['command', 'cmd']
+/** Keys whose values are prose for the user, not part of the command. */
+const PROSE_KEYS = new Set(['reason', 'explanation', 'purpose', 'description'])
+/**
+ * The only characters a read-only command may use. Everything else — quotes, backslashes, brackets, `$`, `~`, `*`,
+ * `?`, `!`, `@`, `%`, `^` (cmd.exe), redirects, separators, line breaks and any non-ASCII — means the shell could read it differently
+ * than we do, so the call asks.
+ */
+const SAFE_COMMAND_TEXT = /^[A-Za-z0-9 _\-.,/:=+]*$/
+/** git's `--format=` / `--pretty=` values may use `%` placeholders (`--format=%h`); nothing else may (cmd.exe `%VAR%`). */
+const GIT_FORMAT_FLAG = /^--(?:format|pretty)=/
+/** Paths that hold credentials or keys; reading one always asks. */
+const SECRET_PATH =
+  /(?:^|[/:=])\.env|\.aws(?:\/|$)|\.ssh(?:\/|$)|\.gnupg(?:\/|$)|\.kube(?:\/|$)|\.docker\/config\.json|\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.config\/gh(?:\/|$)|\.config\/hub|\.config\/rclone|\.bash_history|\.zsh_history|(?:^|[/:=])\.history|\.pgpass|\.s3cfg|\.boto|credentials|\.pem$|\.key$|(?:^|[/:])id_|secret|token/i
+/** Programs that only read what they are given (paths are checked separately). */
+const READ_ONLY_PROGRAMS = new Set([
+  'ls',
+  'pwd',
+  'whoami',
+  'id',
+  'uname',
+  'uptime',
+  'df',
+  'du',
+  'free',
+  'which',
+  'type',
+])
+const FILE_READERS = new Set(['cat', 'head', 'wc', 'stat'])
+const RECURSIVE_FLAG = /^-(?:[a-zA-Z]*[rR][a-zA-Z]*|-recursive)$|^--directories=recurse$|^-d$/
+const FIND_UNSAFE = /^-(?:delete|exec\w*|ok\w*|fprint\w*|fls)$/
+const TAIL_FOLLOW = /^-(?:[a-zA-Z]*[fF][a-zA-Z]*|-follow\b.*|-retry|-pid\b.*)$/
+const GIT_SUBCOMMANDS = new Set(['status', 'log', 'diff', 'show', 'rev-parse'])
+const GIT_UNSAFE =
+  /^(?:-o|-c|-C|--output\b.*|--ext-diff|--textconv|--exec-path\b.*|--upload-pack\b.*|--git-dir\b.*|--work-tree\b.*|--no-index)$/
+const GIT_BRANCH_FLAGS = new Set([
+  '-a',
+  '-r',
+  '-v',
+  '-vv',
+  '-l',
+  '--list',
+  '--all',
+  '--remotes',
+  '--verbose',
+  '--show-current',
+])
+
+/** A path-like operand that stays inside the working folder and is not a secret. */
+function isSafeOperand(token: string): boolean {
+  // Each `=`-separated part too, so `--file=C:/x` is checked like `C:/x`.
+  for (const part of token.split('=')) {
+    // Absolute (`/etc`), UNC (`//server`), drive-letter (`C:`, `c:/`) and parent (`..`) paths leave the folder.
+    if (part.startsWith('/') || /^[A-Za-z]:/.test(part) || part.startsWith('..') || part.includes('/..')) return false
+  }
+  return !SECRET_PATH.test(token)
+}
+
+function isReadOnlyGit(rest: string[]): boolean {
+  const [sub, ...args] = rest
+  if (!sub || !args.every((arg) => !GIT_UNSAFE.test(arg) && isSafeOperand(arg))) return false
+  if (GIT_SUBCOMMANDS.has(sub)) return true
+  if (sub === 'branch') return args.every((arg) => GIT_BRANCH_FLAGS.has(arg))
+  if (sub === 'remote') return args.length === 0 || (args.length === 1 && args[0] === '-v')
+  return false
+}
+
+/** One simple command, from safe characters only, whose program is on the read-only list. */
+function isReadOnlyCommandText(text: string): boolean {
+  const [program, ...rest] = text.trim().split(' ').filter(Boolean)
+  const checked =
+    program === 'git'
+      ? text.replace(/\S+/g, (token) => (GIT_FORMAT_FLAG.test(token) ? token.replace(/%/g, '') : token))
+      : text
+  if (!SAFE_COMMAND_TEXT.test(checked)) return false
+  if (!program) return false
+  if (!rest.every(isSafeOperand)) return false
+  if (READ_ONLY_PROGRAMS.has(program)) return program !== 'ls' || !rest.some((arg) => RECURSIVE_FLAG.test(arg))
+  if (FILE_READERS.has(program)) return true
+  if (program === 'tail') return !rest.some((arg) => TAIL_FOLLOW.test(arg))
+  if (program === 'grep') return !rest.some((arg) => RECURSIVE_FLAG.test(arg))
+  if (program === 'find') return !rest.some((arg) => FIND_UNSAFE.test(arg))
+  // `ps e`/`ps eww` print other processes' environment: dash flags only, and none that add the environment.
+  if (program === 'ps') return rest.every((arg) => arg.startsWith('-') && !/e{2}|w.*e|^-[a-zA-Z]*E/.test(arg))
+  if (program === 'hostname') return rest.length === 0
+  if (program === 'git') return isReadOnlyGit(rest)
+  return false
+}
+
+/**
+ * True only for a plain shell call that just reads inside the working folder: `ls -la`, `df -h`, `git status`,
+ * `cat README.md`, `{ command: 'ls', args: ['-la'], cwd: '.' }`. Every argument key must be a known command key
+ * (`command`, `cmd`, spawn-style `args`, `cwd`, a timeout or a reason); each command must be one simple command of
+ * safe characters on the read-only list, reading no secret and nothing outside the folder; and the arguments alone
+ * must classify at most MEDIUM. Fails safe: anything unusual asks.
+ */
+export function isReadOnlyCommand(args: unknown): boolean {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return false
+  const record = args as Record<string, unknown>
+  if (!Object.keys(record).every((key) => READ_ONLY_ARG_KEYS.has(key))) return false
+  const cwd = record.cwd
+  if (cwd !== undefined && (typeof cwd !== 'string' || !SAFE_COMMAND_TEXT.test(cwd) || !isSafeOperand(cwd))) {
+    return false
+  }
+  const commands: string[] = []
+  for (const commandKey of READ_ONLY_COMMAND_KEYS) {
+    const command = record[commandKey]
+    if (command === undefined) continue
+    if (typeof command !== 'string') return false
+    const lists = SPAWN_ARGS_KEYS.map((key) => record[key]).filter((value) => value !== undefined)
+    if (lists.length === 0) commands.push(command)
+    for (const list of lists) {
+      if (!Array.isArray(list) || list.some((item) => typeof item !== 'string')) return false
+      commands.push(`${command} ${list.join(' ')}`)
+    }
+  }
+  if (commands.length === 0 || !commands.every(isReadOnlyCommandText)) return false
+  const commandArgs = Object.fromEntries(Object.entries(record).filter(([key]) => !PROSE_KEYS.has(key)))
+  return tierRank(getArgsRiskTier(commandArgs)) <= tierRank(ToolRiskTier.MEDIUM)
+}
+
+/** The risk tier of a call's arguments alone, without the tool's name or description. */
+export function getArgsRiskTier(args: unknown): ToolRiskTier {
+  const signals: RiskSignal[] = []
+  const texts = argTexts(args)
+  classifyPaths(texts, signals)
+  classifyArgs(texts, signals)
+  return signals.reduce<ToolRiskTier>((max, s) => (tierRank(s.tier) > tierRank(max) ? s.tier : max), ToolRiskTier.LOW)
+}
+
+/**
+ * The command texts a call carries, in their original case: a bare string, each `command`/`cmd`/`program`/
+ * `executable`/`bin` field (joined with its spawn-style `args`/`argv`/`arguments`, as the risk engine reads them),
+ * `script` and `code` fields, and string arrays (`["rm", "-r", "~"]`), at any depth.
+ */
+export function commandTexts(args: unknown): string[] {
+  const texts = new Set<string>()
+  const walk = (value: unknown, depth: number) => {
+    if (depth > MAX_ARG_DEPTH || value == null) return
+    if (typeof value === 'string') {
+      if (depth === 0 && value.trim()) texts.add(value)
+      return
+    }
+    if (typeof value !== 'object') return
+    if (Array.isArray(value)) {
+      const joined = stringItems(value).join(' ')
+      if (joined.trim()) texts.add(joined)
+      for (const item of value) if (typeof item === 'object') walk(item, depth + 1)
+      return
+    }
+    const record = value as Record<string, unknown>
+    for (const commandKey of SPAWN_COMMAND_KEYS) {
+      const command = record[commandKey]
+      if (typeof command !== 'string' || !command.trim()) continue
+      const lists = SPAWN_ARGS_KEYS.map((key) => record[key]).filter(Array.isArray)
+      if (lists.length === 0) texts.add(command)
+      for (const list of lists) texts.add(`${command} ${stringItems(list).join(' ')}`)
+    }
+    for (const key of CODE_KEYS) {
+      const code = record[key]
+      if (typeof code === 'string' && code.trim()) texts.add(code)
+    }
+    for (const [key, item] of Object.entries(record)) {
+      if (typeof item === 'object' && !SPAWN_ARGS_KEYS.includes(key)) walk(item, depth + 1)
+    }
+  }
+  walk(args, 0)
+  return [...texts]
 }
 
 // ---------------------------------------------------------------------------
@@ -195,14 +475,14 @@ export function classifyToolRisk(toolName: string, description?: string, args?: 
   const intentText = `${toolName} ${description ?? ''}`.toLowerCase()
   classifyIntent(intentText, signals)
 
-  const argsText = flattenArgs(args).toLowerCase()
-  if (argsText) {
-    classifyPaths(argsText, signals)
-    classifyArgs(argsText, signals)
+  const texts = argTexts(args)
+  if (texts.length > 0) {
+    classifyPaths(texts, signals)
+    classifyArgs(texts, signals)
   }
 
   // Also check paths that might appear in the description
-  classifyPaths(intentText, signals)
+  classifyPaths([intentText], signals)
 
   const tier =
     signals.length > 0
@@ -243,25 +523,27 @@ function classifyIntent(text: string, signals: RiskSignal[]): void {
   }
 }
 
-function classifyPaths(text: string, signals: RiskSignal[]): void {
-  if (testPatterns(text, CRITICAL_PATH_PATTERNS)) {
-    signals.push({ source: 'path', tier: ToolRiskTier.CRITICAL, matched: extractMatch(text, CRITICAL_PATH_PATTERNS) })
-  }
-  if (testPatterns(text, HIGH_PATH_PATTERNS)) {
-    signals.push({ source: 'path', tier: ToolRiskTier.HIGH, matched: extractMatch(text, HIGH_PATH_PATTERNS) })
-  }
-  if (testPatterns(text, MEDIUM_PATH_PATTERNS)) {
-    signals.push({ source: 'path', tier: ToolRiskTier.MEDIUM, matched: extractMatch(text, MEDIUM_PATH_PATTERNS) })
-  }
+function classifyPaths(texts: string[], signals: RiskSignal[]): void {
+  pushFirstMatch(texts, CRITICAL_PATH_PATTERNS, 'path', ToolRiskTier.CRITICAL, signals)
+  pushFirstMatch(texts, HIGH_PATH_PATTERNS, 'path', ToolRiskTier.HIGH, signals)
+  pushFirstMatch(texts, MEDIUM_PATH_PATTERNS, 'path', ToolRiskTier.MEDIUM, signals)
 }
 
-function classifyArgs(text: string, signals: RiskSignal[]): void {
-  if (testPatterns(text, CRITICAL_ARG_PATTERNS)) {
-    signals.push({ source: 'args', tier: ToolRiskTier.CRITICAL, matched: extractMatch(text, CRITICAL_ARG_PATTERNS) })
-  }
-  if (testPatterns(text, HIGH_ARG_PATTERNS)) {
-    signals.push({ source: 'args', tier: ToolRiskTier.HIGH, matched: extractMatch(text, HIGH_ARG_PATTERNS) })
-  }
+function classifyArgs(texts: string[], signals: RiskSignal[]): void {
+  pushFirstMatch(texts, CRITICAL_ARG_PATTERNS, 'args', ToolRiskTier.CRITICAL, signals)
+  pushFirstMatch(texts, HIGH_ARG_PATTERNS, 'args', ToolRiskTier.HIGH, signals)
+}
+
+/** One signal per tier: the first text any of the patterns matches. */
+function pushFirstMatch(
+  texts: string[],
+  patterns: RegExp[],
+  source: RiskSignal['source'],
+  tier: ToolRiskTier,
+  signals: RiskSignal[]
+): void {
+  const text = texts.find((t) => testPatterns(t, patterns))
+  if (text !== undefined) signals.push({ source, tier, matched: extractMatch(text, patterns) })
 }
 
 function extractMatch(text: string, patterns: RegExp[]): string {

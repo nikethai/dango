@@ -12,7 +12,7 @@ vi.mock('./messages', () => ({ modifyMessage }))
 const cancelRateLimitRetry = vi.hoisted(() => vi.fn())
 vi.mock('./rate-limit-retry', () => ({ cancelRateLimitRetry }))
 
-import { clearGenerationCancel, registerGenerationCancel } from './generation-cancel'
+import { clearGenerationCancel, consumeGenerationStoppedByUser, registerGenerationCancel } from './generation-cancel'
 import { stopChatIfRunning } from './stop-generation'
 
 const answer = (extra: Partial<Message> = {}): Message =>
@@ -60,5 +60,13 @@ describe('stopChatIfRunning', () => {
     const given = { ...(store.session as Session), messages: [answer({ generating: true })] }
     expect(await stopChatIfRunning('s1', given)).toBe(true)
     expect(chat.getSession).not.toHaveBeenCalled()
+  })
+
+  it('marks the stopped message once, so a room turn does not retry it as an empty answer', async () => {
+    store.session = { ...(store.session as Session), messages: [answer({ generating: true })] }
+    await stopChatIfRunning('s1')
+    expect(consumeGenerationStoppedByUser('s1', 'other')).toBe(false)
+    expect(consumeGenerationStoppedByUser('s1', 'a1')).toBe(true)
+    expect(consumeGenerationStoppedByUser('s1', 'a1')).toBe(false)
   })
 })

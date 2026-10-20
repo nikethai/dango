@@ -5,7 +5,7 @@
 
 import type { Message, MessageContentParts, Session } from '@shared/types'
 import * as chatStore from '../chatStore'
-import { cancelSessionGeneration, getActiveGenerationMessageId } from './generation-cancel'
+import { cancelSessionGeneration, getActiveGenerationMessageId, markGenerationStoppedByUser } from './generation-cancel'
 import { modifyMessage } from './messages'
 import { cancelRateLimitRetry } from './rate-limit-retry'
 import { clearSessionGenerationLive } from './session-live-generation'
@@ -42,6 +42,9 @@ export async function stopSessionGeneration(
   if (!hasLive) {
     return false
   }
+
+  const stoppedId = lastGeneratingMessage?.id ?? registryMsgId
+  if (stoppedId) markGenerationStoppedByUser(sessionId, stoppedId)
 
   // 1) Abort stream (registry first — survives cancel fn strip)
   const aborted = cancelSessionGeneration(sessionId)

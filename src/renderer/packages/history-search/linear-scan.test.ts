@@ -1,10 +1,11 @@
 import type { Message, Session } from '@shared/types'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   createHistorySearchRegexp,
   escapeHistorySearchInput,
   LINEAR_HISTORY_SEARCH_RESULT_CAP,
   matchSessionMessages,
+  scanHistorySessions,
 } from './linear-scan'
 
 function makeMessage(overrides: Partial<Message> & Pick<Message, 'id' | 'role'>): Message {
@@ -141,5 +142,68 @@ describe('linear search baseline envelope', () => {
 
   it('documents the existing global result cap', () => {
     expect(LINEAR_HISTORY_SEARCH_RESULT_CAP).toBe(50)
+  })
+})
+
+describe('scanHistorySessions', () => {
+  const hit = (id: string, projectId: string) =>
+    makeSession({
+      id,
+      projectId,
+      messages: [makeMessage({ id: `${id}-m`, role: 'user', contentParts: [{ type: 'text', text: 'launch' }] })],
+    })
+
+  function setup(sessions: Session[]) {
+    const byId = new Map(sessions.map((s) => [s.id, s]))
+    const read = vi.fn(async (id: string) => byId.get(id) ?? null)
+    const metas = sessions.map(({ id, name, projectId }) => ({ id, name, projectId }))
+    return { read, metas }
+  }
+
+  it('without options keeps the old cap on matching messages', async () => {
+    const sessions = Array.from({ length: LINEAR_HISTORY_SEARCH_RESULT_CAP + 5 }, (_, i) => hit(`c${i}`, 'p'))
+    const { read, metas } = setup(sessions)
+    const found: Session[] = []
+    await scanHistorySessions(metas, read, createHistorySearchRegexp('launch'), (b) => found.push(...b))
+    expect(found).toHaveLength(LINEAR_HISTORY_SEARCH_RESULT_CAP)
+  })
+
+  it('a scoped scan finds an in-scope chat behind more than 50 off-scope matches and never reads them', async () => {
+    const offScope = Array.from({ length: 60 }, (_, i) => hit(`off${i}`, 'other'))
+    const { read, metas } = setup([...offScope, hit('mine', 's1')])
+    const found: Session[] = []
+    await scanHistorySessions(metas, read, createHistorySearchRegexp('launch'), (b) => found.push(...b), {
+      include: (meta) => meta.projectId === 's1',
+    })
+    expect(found.map((s) => s.id)).toEqual(['mine'])
+    expect(read.mock.calls.map((c) => c[0])).toEqual(['mine'])
+  })
+
+  it('stops after maxSessions matching sessions', async () => {
+    const { read, metas } = setup(Array.from({ length: 20 }, (_, i) => hit(`c${i}`, 'p')))
+    const found: Session[] = []
+    await scanHistorySessions(metas, read, createHistorySearchRegexp('launch'), (b) => found.push(...b), {
+      maxSessions: 3,
+    })
+    expect(found.map((s) => s.id)).toEqual(['c0', 'c1', 'c2'])
+    expect(read).toHaveBeenCalledTimes(3)
+  })
+
+  it('reads nothing more once the signal aborts', async () => {
+    const controller = new AbortController()
+    const { read, metas } = setup(Array.from({ length: 10 }, (_, i) => hit(`c${i}`, 'p')))
+    const found: Session[] = []
+    await scanHistorySessions(
+      metas,
+      read,
+      createHistorySearchRegexp('launch'),
+      (b) => {
+        found.push(...b)
+        if (found.length === 2) controller.abort()
+      },
+      { signal: controller.signal }
+    )
+    expect(read).toHaveBeenCalledTimes(2)
+    expect(found).toHaveLength(2)
   })
 })

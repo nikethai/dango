@@ -448,6 +448,19 @@ describe('useQuickChat', () => {
     lastModel.mockRestore()
   })
 
+  it('a show re-reads tool permissions, so a grant revoked in main stops applying here', async () => {
+    const { toolApprovalStore } = await import('@/stores/toolApprovalStore')
+    const rehydrate = vi.spyOn(toolApprovalStore.persist, 'rehydrate')
+    await renderQuick()
+    rehydrate.mockClear()
+    await act(async () => {
+      h.shown?.()
+      await flush()
+    })
+    expect(rehydrate).toHaveBeenCalledTimes(1)
+    rehydrate.mockRestore()
+  })
+
   it('a failing re-read still shows the panel', async () => {
     h.rehydrateSettings = vi.fn(() => Promise.reject(new Error('disk')))
     const { result } = await renderQuick()

@@ -1,0 +1,125 @@
+/* ⌘K search overlay (SE1, slice 06c). Its own layer; only --dango-* tokens. */
+
+.dg-search-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh var(--dango-space-4) var(--dango-space-4);
+}
+
+.dg-search-layer__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--dango-scrim);
+}
+
+.dg-search {
+  position: relative;
+  max-height: calc(88vh - var(--dango-space-4));
+}
+
+.dg-search__icon {
+  flex-shrink: 0;
+  color: var(--dango-muted);
+}
+
+.dg-search__chips {
+  display: flex;
+  gap: var(--dango-space-2);
+  padding: var(--dango-space-2) var(--dango-space-4);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--dango-hairline);
+}
+
+.dg-search__chip {
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.dg-search__chip[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--dango-green-wash);
+  color: var(--dango-green-text);
+}
+
+.dg-search__chip:focus-visible,
+.dg-search__import:focus-visible {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: 2px;
+}
+
+.dg-search__results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--dango-space-1) var(--dango-space-2);
+}
+
+.dg-search__results:empty {
+  display: none;
+}
+
+.dg-search__group + .dg-search__group {
+  margin-top: var(--dango-space-2);
+}
+
+.dg-search__heading {
+  padding: var(--dango-space-2) var(--dango-space-2) var(--dango-space-1);
+  color: var(--dango-muted);
+  font-weight: 600;
+}
+
+.dg-search__hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--dango-space-2);
+  border-radius: var(--dango-radius-md);
+  cursor: pointer;
+}
+
+.dg-search__hit[aria-selected="true"] {
+  background: var(--dango-surface);
+}
+
+.dg-search__title,
+.dg-search__excerpt,
+.dg-search__source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dg-search__title {
+  color: var(--dango-ink);
+}
+
+.dg-search__excerpt {
+  color: var(--dango-ink-2);
+}
+
+.dg-search__source {
+  color: var(--dango-muted);
+}
+
+.dg-search__empty {
+  margin: 0;
+  padding: var(--dango-space-4) var(--dango-space-2);
+  color: var(--dango-muted);
+  overflow-wrap: anywhere;
+}
+
+.dg-search__import {
+  margin-left: auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}

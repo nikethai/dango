@@ -590,6 +590,42 @@ describe('redo with another model', () => {
     expect(runGenerateMore).toHaveBeenCalledWith(session.id, 'u1', { modelOverride })
   })
 
+  test('regenerateInNewFork keeps a Swarm answer in its run', async () => {
+    uuidQueue.push(...Array.from({ length: 8 }, (_, i) => `fork-${i}`))
+    const session = chatSession()
+    const swarm = { runId: 'swarm-1', stoppedEarly: true }
+    session.messages[1] = { ...session.messages[1], swarm }
+    getSessionMock.mockResolvedValue(session)
+    updateSessionWithMessages.mockImplementation(async (_, updater) => updater(session))
+    const runGenerateMore = vi.fn().mockResolvedValue(undefined)
+
+    await sessionActions.regenerateInNewFork(session.id, session.messages[1], { runGenerateMore })
+    expect(runGenerateMore).toHaveBeenCalledWith(session.id, 'u1', { swarm })
+
+    await sessionActions.regenerateInNewFork(session.id, session.messages[1], { modelOverride, runGenerateMore })
+    expect(runGenerateMore).toHaveBeenLastCalledWith(session.id, 'u1', { modelOverride, swarm })
+  })
+
+  test('generateMore writes the kept Swarm run on the new answer', async () => {
+    const { streamText } = await import('@/packages/model-calls')
+    vi.mocked(streamText).mockImplementation((async () => ({
+      result: { contentParts: [{ type: 'text', text: 'Redone' }], text: 'Redone', finishReason: 'stop' },
+      knowledgeIds: [],
+    })) as never)
+    uuidQueue.push(...Array.from({ length: 50 }, (_, i) => `more-${i}`))
+    const current = chatSession()
+    getSessionMock.mockImplementation(async () => current)
+    getSessionSettingsMock.mockResolvedValue(storedSettings())
+    const swarm = { runId: 'swarm-1' }
+    try {
+      await sessionActions.generateMore(current.id, 'u1', { swarm })
+    } finally {
+      vi.mocked(streamText).mockReset()
+    }
+    const inserted = insertMessageMock.mock.calls.at(-1)?.[1] as Message
+    expect(inserted.swarm).toEqual(swarm)
+  })
+
   test('the redo answers with the picked model and never switches the chat model', async () => {
     const { settings, saved } = await redo(async () => {
       return {

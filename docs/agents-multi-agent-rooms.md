@@ -4,13 +4,11 @@
 
 **Agents** (formerly Copilots) are persona packages: prompt, avatar, model overrides, tools, and hooks.
 
-Chat sessions can host a **room** of up to **3** agent members. Users `@`-mention agents in the chat dock (same interaction class as `$skills`). With **2+** speakers, Dango runs a **Team room**:
+Chat sessions can host a **room** of up to **3** agent members. Users `@`-mention agents in the chat dock (same interaction class as `$skills`).
 
-| Mode | Default | Behavior |
-|------|---------|----------|
-| **Discuss** | Yes | 2 short sequential rounds (A↔B…), stances (Proposer/Critic/Integrator). **No auto Final.** User may request **Team answer** or **Keep discussing**. |
-| **Work** | Opt-in | Plan (all) → **Do** (lead, tools on) → Review (peers) → Deliver (lead). Fixed pipeline; one lead does the work. |
-| **Swarm** | Opt-in | Lead **orchestrator** creates a **task board**, **auto-assigns** owners, executes **sequentially**, then delivers. Multi-owner checklist. Uses more tokens. |
+**Swarm** is the chat's one multi-agent switch (Tools ▾ › Mode › Swarm, off by default). With Swarm **on** and **2+** speakers, the lead **orchestrator** creates a **task board**, **auto-assigns** owners, executes **sequentially**, then delivers. Uses more tokens. With Swarm **off**, a chat with several agents answers as one agent: the first speaker.
+
+The older **Discuss** and **Work** room modes are no longer reachable from the UI (slice 06c). Sessions stored with `roomMode: 'discuss' | 'work'` read as Swarm off; their orchestrators below are kept until a cleanup removes them.
 
 The user can interrupt anytime (new send aborts remaining queue).
 
@@ -31,7 +29,7 @@ The user can interrupt anytime (new send aborts remaining queue).
 ## Data model
 
 - `Session.agentIds?: string[]` — room members (migrated from `copilotId`)
-- `Session.roomMode?: 'discuss' | 'work' | 'swarm'`
+- `Session.roomMode?: 'discuss' | 'work' | 'swarm'` — only `'swarm'` is written (Swarm on); Swarm off writes `undefined`. `isSwarmOn(roomMode)` in `src/shared/agent-room.ts`
 - `Session.roomLeadId?: string` — optional lead override
 - `Session.copilotId` — dual-written as `agentIds[0]` for one release
 - `Message.agentId` / `Message.name` — speaker attribution
@@ -56,31 +54,32 @@ The user can interrupt anytime (new send aborts remaining queue).
 ## UX
 
 - Settings → **Agents** (`/settings/agents`; `/settings/copilots` redirects)
-- Composer: `@` chips for room members; **Team mode** compact dropdown next to model select when 2+ agents (Discuss | Work | **Swarm**)
-- **New chat (blank):** multi-select up to 3 agents via **search combobox** + selected chips (prompt preview only for 1 agent); Team mode available before first send via draft props
-- Post-discuss bar: **Team answer** · **Keep discussing** · **Switch to Work**
+- Composer: `@` chips for room members; **Swarm** is the last row of the Mode section in the Tools ▾ menu (both the desktop menu and the phone drawer; hidden for OpenClaw). Caption: “Several agents work on one answer”, or “Add 2 or 3 agents with @” when Swarm is on with fewer than 2 agents
+- The room strip (“In this chat”) shows for a single agent, or for 2+ agents only when Swarm is on
+- Plan mode is hidden only when Swarm is on in a room of 2+ agents
+- **New chat (blank):** multi-select up to 3 agents via **search combobox** + selected chips (prompt preview only for 1 agent); Swarm can be turned on before the first send via draft props
 - Assistant bubbles with `agentId` show **avatar + name** via `AgentSpeakerHeader`
 - Discuss/plan/review turns grouped visually as **Team discussion**
 - Team answer / Working / Deliverable badges on primary turns
-- Room strip live status: “Round 2/2 · Name speaking…” or “Swarm · Task 2/5 · Name working…”
+- Room strip live status for legacy rooms: “Round 2/2 · Name speaking…”. A Swarm run shows its progress in the thread, not in the strip
 - Task progress dock shows assignee when set
 - Empty provider responses: one automatic retry, then soft placeholder
 
 ## Flow
 
-### Discuss
+### Discuss (legacy, unreachable from the UI)
 
 ```text
 speakers = mentioned || room members
 if 0: normal chat
-if 1: one assistant message, full reply
+if 1, or Swarm off: one assistant message, full reply (first speaker)
 if 2+:
   for round 1..2:
     for each speaker: insert assistant { roomRole: turn, roomRound } → short discussion
   → show Team answer / Keep discussing (no auto synthesis)
 ```
 
-### Work
+### Work (legacy, unreachable from the UI)
 
 ```text
 plan: each speaker once (tools off)
@@ -92,6 +91,7 @@ deliver: lead (tools optional)
 ### Swarm
 
 ```text
+runs when isSwarmOn(roomMode) and 2+ speakers (shouldRunMultiAgentRoom)
 lead plan (task tools only) → create_task × N
   soft retry once if board empty; optional JSON fallback from plan prose
 assignTasks (rule-based: explicit → name/tag match → least-loaded → lead)
@@ -116,8 +116,8 @@ interrupt: new user message aborts remaining queue
 | Generation | `src/renderer/stores/session/generation.ts` |
 | Submit wiring | `src/renderer/stores/session/messages.ts` |
 | Speaker UI | `AgentSpeakerHeader`, `Message.tsx`, `MessageList.tsx` |
-| Actions bar | `TeamRoomActions.tsx` |
-| Dock UI | `InputBox`, `TeamModeSelect`, `AgentPicker`, `AgentRoomStrip` |
+| Actions bar (legacy discuss, not rendered) | `TeamRoomActions.tsx` |
+| Dock UI | `InputBox`, `ComposerToolsMenu` (Swarm row), `AgentPicker`, `AgentRoomStrip` |
 
 ## Related agent tools
 

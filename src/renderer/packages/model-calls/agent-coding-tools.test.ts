@@ -38,10 +38,9 @@ const convertToModelMessagesMock = vi.hoisted(() =>
   )
 )
 
-vi.mock('@ebay/nice-modal-react', () => ({
-  default: {
-    show: vi.fn(),
-  },
+vi.mock('@/packages/tool-permission', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/packages/tool-permission')>()),
+  requestToolPermission: vi.fn(async () => 'once'),
 }))
 
 vi.mock('@/router', () => ({
@@ -65,10 +64,12 @@ vi.mock('@/stores/settingsStore', () => ({
 
 vi.mock('@/stores/toolApprovalStore', () => ({
   getToolApproval: vi.fn(() => undefined),
+  getScopeGrant: vi.fn(() => undefined),
   toolApprovalStore: {
     getState: () => ({
       addAuditEntry: vi.fn(),
       addApproval: vi.fn(),
+      addScopeGrant: vi.fn(),
       removeApproval: vi.fn(),
     }),
   },

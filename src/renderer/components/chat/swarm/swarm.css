@@ -1,0 +1,105 @@
+/* Swarm in the thread (slice 06c): the live card (CH3) and "Worked with" under the answer (CH4). Only --dango-* tokens. */
+
+.dg-swarm-live {
+  display: flex;
+  align-items: center;
+  gap: var(--dango-space-2);
+  margin: var(--dango-space-2) var(--dango-space-4);
+  padding: var(--dango-space-2) var(--dango-space-3);
+  border: 1px solid var(--dango-hairline);
+  border-radius: var(--dango-radius-lg);
+  background: var(--dango-raised);
+  color: var(--dango-ink);
+}
+
+.dg-swarm-live__label {
+  flex: 1;
+  min-width: 0;
+  color: var(--dango-ink-2);
+  overflow-wrap: anywhere;
+}
+
+.dg-swarm-live .dg-btn {
+  flex-shrink: 0;
+}
+
+.dg-swarm-worked {
+  margin: 0 var(--dango-space-4) var(--dango-space-2);
+  color: var(--dango-ink-2);
+}
+
+.dg-swarm-worked__stopped {
+  color: var(--dango-muted);
+  margin-bottom: var(--dango-space-1);
+}
+
+.dg-swarm-worked__summary {
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  cursor: pointer;
+  list-style: none;
+  color: var(--dango-muted);
+  border-radius: var(--dango-radius-sm);
+}
+
+.dg-swarm-worked__summary::-webkit-details-marker {
+  display: none;
+}
+
+.dg-swarm-worked__summary:hover {
+  color: var(--dango-ink-2);
+}
+
+.dg-swarm-worked__summary:focus-visible {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: 2px;
+}
+
+.dg-swarm-worked__chevron {
+  flex-shrink: 0;
+  transition: transform 120ms ease;
+}
+
+.dg-swarm-worked details[open] .dg-swarm-worked__chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dg-swarm-worked__chevron {
+    transition: none;
+  }
+}
+
+.dg-swarm-worked__rows {
+  list-style: none;
+  margin: var(--dango-space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-2);
+}
+
+.dg-swarm-worked__row {
+  padding: var(--dango-space-2) var(--dango-space-3);
+  border: 1px solid var(--dango-hairline);
+  border-radius: var(--dango-radius-lg);
+  background: var(--dango-raised);
+  min-width: 0;
+}
+
+.dg-swarm-worked__name {
+  color: var(--dango-ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.dg-swarm-worked__model {
+  font-family: var(--dango-font-mono);
+  color: var(--dango-muted);
+  overflow-wrap: anywhere;
+}
+
+.dg-swarm-worked__muted {
+  color: var(--dango-muted);
+}

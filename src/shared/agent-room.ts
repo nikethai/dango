@@ -72,6 +72,43 @@ export function resolveSpeakers(roomAgentIds: string[], mentionedAgentIds?: stri
   return uniqueIds(roomAgentIds)
 }
 
+/** Swarm is the chat's one multi-agent switch; legacy `discuss` / `work` read as off. */
+export function isSwarmOn(roomMode: string | undefined): boolean {
+  return roomMode === 'swarm'
+}
+
+/**
+ * Whether a send runs the multi-agent room: Swarm on and two or more speakers.
+ * With Swarm off, a chat with several agents answers as its first speaker.
+ */
+export function shouldRunMultiAgentRoom(
+  mentionedAgentIds: string[] | undefined,
+  roomAgentIds: string[],
+  roomMode: string | undefined
+): boolean {
+  return isSwarmOn(roomMode) && resolveSpeakers(roomAgentIds, mentionedAgentIds).length >= 2
+}
+
+/** Agents who would speak this turn (what `shouldRunMultiAgentRoom` counts). */
+export function swarmSpeakerCount(roomAgentIds: string[], mentionedAgentIds?: string[]): number {
+  return resolveSpeakers(roomAgentIds, mentionedAgentIds).length
+}
+
+/**
+ * Whether an armed Browser / Computer use stays on for this turn. Only a room run (`roomMulti`) can turn them off:
+ * a legacy discuss run, a role without tools, or a room that blocks external tools. A solo turn in a chat with
+ * several agents (Swarm off) keeps them.
+ */
+export function roomAllowsArmedTools(params: {
+  roomMulti: boolean
+  roomMode: string | undefined
+  roomToolsAllowed: boolean
+  roomBlocksExternalTools: boolean
+}): boolean {
+  if (!params.roomMulti) return true
+  return params.roomMode !== 'discuss' && params.roomToolsAllowed && !params.roomBlocksExternalTools
+}
+
 /**
  * Dual-write fields for session persistence during rename migration.
  */
@@ -158,7 +195,7 @@ export function buildRoomProtocol(
 export function buildRoomContinuePrompt(
   speakerName: string,
   roomRole: RoomRole = 'turn',
-  options?: { roomMode?: RoomMode; taskTitle?: string }
+  options?: { roomMode?: RoomMode; taskTitle?: string; stoppedEarly?: boolean }
 ): string {
   const isSwarm = options?.roomMode === 'swarm'
   switch (roomRole) {
@@ -177,6 +214,9 @@ export function buildRoomContinuePrompt(
     case 'review':
       return `(Your turn as "${speakerName}". Review the lead's work briefly: what works, what to fix. Markdown OK; no tools. Never return blank.)`
     case 'deliver':
+      if (isSwarm && options?.stoppedEarly) {
+        return `(Your turn as "${speakerName}". The user stopped the run early. Write the best answer from the work so far and say in one line what was not done. ${MERMAID_DIAGRAM_REMINDER} Do not call tools. Never return blank.)`
+      }
       if (isSwarm) {
         return `(Your turn as "${speakerName}". Merge completed Swarm tasks into the final deliverable for the user. ${MERMAID_DIAGRAM_REMINDER} Use tools only if a fix requires them. Never return blank.)`
       }
@@ -326,7 +366,17 @@ export function buildSwarmExecuteProtocol(
   ].join('\n')
 }
 
-export function buildSwarmDeliverProtocol(leadName: string, participantNames: string[]): string {
+export const SWARM_STOPPED_EARLY_RULE =
+  '- The user stopped the run early. Write the best answer from the work so far and say in one line what was not done.'
+
+/** After Stop no tool may run: the deliver turn gets none (generation.ts) and is told so. */
+export const SWARM_STOPPED_EARLY_NO_TOOLS_RULE = '- Do not call tools.'
+
+export function buildSwarmDeliverProtocol(
+  leadName: string,
+  participantNames: string[],
+  options?: { stoppedEarly?: boolean }
+): string {
   const others = participantNames.filter((n) => n !== leadName)
   const othersList = others.length > 0 ? others.join(', ') : 'none'
   return [
@@ -334,11 +384,14 @@ export function buildSwarmDeliverProtocol(leadName: string, participantNames: st
     `You are "${leadName}", the orchestrator. Teammates completed assigned tasks: ${othersList}.`,
     'Rules:',
     '- Merge the work above into one clear final deliverable for the user.',
-    '- Use tools only if a fix requires them.',
+    options?.stoppedEarly ? SWARM_STOPPED_EARLY_RULE : '',
+    options?.stoppedEarly ? SWARM_STOPPED_EARLY_NO_TOOLS_RULE : '- Use tools only if a fix requires them.',
     '- Note any failed or skipped tasks briefly. Do not re-run the whole board.',
     '- Do not prefix with your name. Never return blank.',
     MERMAID_DIAGRAM_GUIDANCE,
-  ].join('\n')
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 /** Agent input for pure assignTasks. */
@@ -444,6 +497,8 @@ export function buildProtocolForRoomRole(
     taskId?: string
     taskTitle?: string
     participantDirectory?: string
+    /** Swarm deliver: the user stopped the run before every task finished. */
+    stoppedEarly?: boolean
   }
 ): string {
   const leadName = options?.leadName ?? participantNames[0] ?? speakerName
@@ -470,7 +525,7 @@ export function buildProtocolForRoomRole(
       return buildWorkReviewProtocol(speakerName, leadName)
     case 'deliver':
       return isSwarm
-        ? buildSwarmDeliverProtocol(speakerName, participantNames)
+        ? buildSwarmDeliverProtocol(speakerName, participantNames, { stoppedEarly: options?.stoppedEarly })
         : buildWorkDeliverProtocol(speakerName)
     default:
       return buildRoomProtocol(speakerName, participantNames, {
