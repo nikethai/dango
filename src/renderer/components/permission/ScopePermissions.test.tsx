@@ -64,6 +64,21 @@ describe('ScopePermissions', () => {
     expect(screen.queryByText(EMPTY)).toBeNull()
   })
 
+  it('does not list grants for tools that always ask, such as command tools', () => {
+    grant('scope-1', older)
+    grant('scope-1', { toolName: 'run_command', riskTier: ToolRiskTier.HIGH, grantedAt: 1 })
+    render(<ScopePermissions scopeId="scope-1" />)
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].textContent).toContain('Browser click')
+  })
+
+  it('shows the empty copy when only command-tool grants remain', () => {
+    grant('scope-1', { toolName: 'terminal_exec', riskTier: ToolRiskTier.MEDIUM, grantedAt: 1 })
+    render(<ScopePermissions scopeId="scope-1" />)
+    expect(screen.getByText(EMPTY)).toBeTruthy()
+  })
+
   it('shows the empty copy when the scope has no grants', () => {
     grant('other-scope', older)
     render(<ScopePermissions scopeId="scope-1" />)

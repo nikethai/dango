@@ -47,14 +47,70 @@ function isSendLike(toolName: string): boolean {
   )
 }
 
-/** Tools that send, delete, pay, or change workspace files ask every time, whatever Trust says. */
-export function alwaysAsks(toolName: string): boolean {
+/** Name words that mean the tool runs shell commands or code. */
+const COMMAND_WORDS = new Set([
+  'command',
+  'commands',
+  'shell',
+  'bash',
+  'zsh',
+  'sh',
+  'powershell',
+  'pwsh',
+  'cmd',
+  'exec',
+  'execute',
+  'terminal',
+  'eval',
+  'spawn',
+  'subprocess',
+])
+const RUN_WORDS = new Set(['run', 'execute', 'exec'])
+/** Verbs of a tool that only looks commands up (`list_commands`, `get_command_history`). */
+const READ_VERBS = new Set(['list', 'get', 'search', 'find', 'read', 'show', 'view', 'describe', 'lookup'])
+const COMMAND_ONLY_NOUNS = new Set(['command', 'commands'])
+const COMMAND_DESCRIPTION_PATTERNS = [
+  /\b(shell|terminal|command line|command-line)\b/i,
+  /\b(run|execute)s?\s+(a\s+|an\s+|arbitrary\s+)?(shell\s+)?(command|commands|script|code)\b/i,
+]
+
+/**
+ * Tools that run shell commands or arbitrary code: by name words (`run_command`, `terminal_exec`, `runShellCommand`,
+ * `run_local_code`), or by a description that says so ("Run a shell command"). A name that is only a read verb plus
+ * "command(s)" (`list_commands`) is not one unless its description says it runs something.
+ */
+export function isCommandTool(toolName: string, description?: string): boolean {
+  if (description && COMMAND_DESCRIPTION_PATTERNS.some((pattern) => pattern.test(description))) return true
+  const words = nameWords(toolName)
+  const runs = words.some((word) => RUN_WORDS.has(word))
+  const matched = words.filter(
+    (word) =>
+      COMMAND_WORDS.has(word) ||
+      (word === 'script' && runs) ||
+      (word === 'code' && (runs || words.includes('local') || words.includes('eval')))
+  )
+  if (matched.length === 0) return false
+  const readOnlyLookup =
+    words.some((word) => READ_VERBS.has(word)) && matched.every((word) => COMMAND_ONLY_NOUNS.has(word))
+  return !readOnlyLookup
+}
+
+/** Tools that send, delete, pay, or change workspace files: they ask every time, even for a harmless call. */
+export function alwaysAsksByEffect(toolName: string): boolean {
   if (isSensitiveToolName(toolName) || isSendLike(toolName)) return true
   return nameWords(toolName).some((word) => ALWAYS_ASKS_WORDS.has(word))
 }
 
-export function canAlways(toolName: string, riskTier: ToolRiskTier): boolean {
-  return !alwaysAsks(toolName) && riskTier !== ToolRiskTier.CRITICAL
+/**
+ * Tools that never offer Always and never use a grant, whatever Trust says: send, delete, pay and workspace-file
+ * tools, and tools that run commands or code (no list of destructive commands is complete).
+ */
+export function alwaysAsks(toolName: string, description?: string): boolean {
+  return alwaysAsksByEffect(toolName) || isCommandTool(toolName, description)
+}
+
+export function canAlways(toolName: string, riskTier: ToolRiskTier, description?: string): boolean {
+  return !alwaysAsks(toolName, description) && riskTier !== ToolRiskTier.CRITICAL
 }
 
 /** `browser_click` → `Browser click`. */

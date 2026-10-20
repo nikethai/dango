@@ -1,7 +1,9 @@
 export {
   alwaysAsks,
+  alwaysAsksByEffect,
   canAlways,
   describeToolAction,
+  isCommandTool,
   type PermissionChoice,
   type ToolActionSummary,
   toolLabel,

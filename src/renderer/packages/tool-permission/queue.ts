@@ -7,6 +7,8 @@ export type PermissionRequest = {
   sessionId: string
   scopeId?: string
   toolName: string
+  /** The tool's own description, so the queue and sheet can tell a command tool by what it says it does. */
+  toolDescription?: string
   riskTier: ToolRiskTier
   summary: ToolActionSummary
   allowAlways: boolean
@@ -80,7 +82,7 @@ export function resolvePermission(id: string, choice: PermissionChoice): void {
 /**
  * Queue a permission request; resolves with the user's choice. The timeout (default 120 s, counted from when
  * the request shows) and an aborted signal both resolve `'deny'` and remove the request, so the next one shows.
- * `allowAlways` is stored as `allowAlways && canAlways(toolName, riskTier)`.
+ * `allowAlways` is stored as `allowAlways && canAlways(toolName, riskTier, toolDescription)`.
  */
 export function requestToolPermission(
   req: Omit<PermissionRequest, 'id'>,
@@ -90,8 +92,8 @@ export function requestToolPermission(
   if (signal?.aborted) return Promise.resolve('deny')
 
   nextId += 1
-  // Never trust the caller: tools that always ask, and critical ones, never offer Always.
-  const allowAlways = req.allowAlways && canAlways(req.toolName, req.riskTier)
+  // Never trust the caller: tools that always ask (incl. command tools), and critical ones, never offer Always.
+  const allowAlways = req.allowAlways && canAlways(req.toolName, req.riskTier, req.toolDescription)
   const request: PermissionRequest = { ...req, allowAlways, id: `permission-${nextId}` }
 
   return new Promise<PermissionChoice>((resolve) => {

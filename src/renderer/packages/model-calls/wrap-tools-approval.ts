@@ -5,14 +5,21 @@ import {
 } from '@shared/privacy/sensitive-tools'
 import { ToolRiskTier } from '@shared/types/mcp'
 import type { ToolSet } from 'ai'
-import { alwaysAsks, canAlways, describeToolAction, requestToolPermission } from '@/packages/tool-permission'
+import {
+  alwaysAsks,
+  alwaysAsksByEffect,
+  canAlways,
+  describeToolAction,
+  isCommandTool,
+  requestToolPermission,
+} from '@/packages/tool-permission'
 import {
   getScopeGrant,
   getToolApproval,
   type ToolApprovalAuditEntry,
   toolApprovalStore,
 } from '@/stores/toolApprovalStore'
-import { getToolRiskTier } from '../tools/risk-engine'
+import { getToolRiskTier, isReadOnlyCommand } from '../tools/risk-engine'
 
 const TOOL_EXECUTE_TIMEOUT_MS = 90_000
 
@@ -80,10 +87,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 /**
- * Shared approval gate. Per call: LOW tools that do not always ask run at once. Otherwise a grant with exactly the
- * same risk tier (the scope's grant when `scopeId` is set, else this chat's session approval) runs the call, unless the
- * tool always asks or the call is CRITICAL. Everything else asks through the permission sheet; the wait for an answer
- * is outside the execute timeout, and Stop (`abortSignal`) settles it as "Not now".
+ * Shared approval gate. Per call: LOW tools that do not always ask run at once, and so does a command tool's
+ * read-only command (`ls -la`, `git status`; see `isReadOnlyCommand`) unless the call is CRITICAL. Otherwise a grant
+ * with exactly the same risk tier (the scope's grant when `scopeId` is set, else this chat's session approval) runs the
+ * call, unless the tool always asks (send, delete, pay, workspace files, commands or code) or the call is CRITICAL.
+ * Everything else asks through the permission sheet; the wait for an answer is outside the execute timeout, and Stop
+ * (`abortSignal`) settles it as "Not now".
  */
 export function wrapToolsWithApproval(
   sessionId: string | undefined,
@@ -98,7 +107,10 @@ export function wrapToolsWithApproval(
   return Object.fromEntries(
     Object.entries(tools).map(([toolName, definition]) => {
       const wrapTier = getToolRiskTier(toolName, definition?.description)
-      const asksEveryTime = alwaysAsks(toolName)
+      const description = definition?.description
+      const asksEveryTime = alwaysAsks(toolName, description)
+      // Only a plain command tool may skip the sheet for a read-only command; send/delete/workspace tools never do.
+      const readOnlyCommandsRun = isCommandTool(toolName, description) && !alwaysAsksByEffect(toolName)
 
       return [
         toolName,
@@ -106,9 +118,10 @@ export function wrapToolsWithApproval(
           ...definition,
           execute: async (args: unknown, context) => {
             // Args can raise the tier (`rm -rf ~/`, `~/.ssh/id_rsa`): classify this call, never below the wrap tier.
-            const riskTier = maxTier(wrapTier, getToolRiskTier(toolName, definition?.description, args))
+            const riskTier = maxTier(wrapTier, getToolRiskTier(toolName, description, args))
             // R9: never Always, and never a grant, for tools that always ask or CRITICAL calls.
-            const grantable = canAlways(toolName, riskTier) && riskTier !== ToolRiskTier.CRITICAL && !asksEveryTime
+            const grantable =
+              canAlways(toolName, riskTier, description) && riskTier !== ToolRiskTier.CRITICAL && !asksEveryTime
             const fingerprint = workspaceApprovalFingerprint(toolName, args) ?? undefined
             const audit = (scope: ToolApprovalAuditEntry['scope'], decision: ToolApprovalAuditEntry['decision']) =>
               toolApprovalStore.getState().addAuditEntry({
@@ -126,6 +139,8 @@ export function wrapToolsWithApproval(
 
             if (riskTier === ToolRiskTier.LOW && !asksEveryTime) {
               audit('none', 'auto-approve')
+            } else if (readOnlyCommandsRun && riskTier !== ToolRiskTier.CRITICAL && isReadOnlyCommand(args)) {
+              audit('none', 'auto-approve')
             } else if (grantable && grantedTier === riskTier) {
               audit(scopeId ? 'scope' : 'session', 'auto-approve')
             } else {
@@ -134,8 +149,9 @@ export function wrapToolsWithApproval(
                   sessionId,
                   scopeId,
                   toolName,
+                  toolDescription: description,
                   riskTier,
-                  summary: describeToolAction(toolName, args, definition?.description),
+                  summary: describeToolAction(toolName, args, description),
                   allowAlways: grantable,
                 },
                 { signal: context?.abortSignal }

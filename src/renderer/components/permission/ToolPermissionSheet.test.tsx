@@ -26,6 +26,7 @@ vi.mock('i18next', () => ({
 }))
 
 const HINT = 'Dango always asks before it sends, deletes or changes your files.'
+const COMMAND_HINT = 'Dango always asks before it runs commands.'
 
 function makeRequest(over: Partial<PermissionRequest> = {}): PermissionRequest {
   return {
@@ -150,6 +151,32 @@ describe('ToolPermissionSheet', () => {
     )
     expect(screen.queryByRole('button', { name: /^Always/ })).toBeNull()
     expect(screen.getByText(HINT)).toBeTruthy()
+    expect(screen.queryByText(COMMAND_HINT)).toBeNull()
+  })
+
+  it('run_command shows no Always and the commands hint, even when the caller offered Always', () => {
+    void requestToolPermission({
+      sessionId: 's1',
+      scopeId: 'scope-1',
+      toolName: 'run_command',
+      riskTier: ToolRiskTier.HIGH,
+      summary: { what: 'Run a command', touches: ['ls'] },
+      allowAlways: true,
+    })
+    render(<ToolPermissionSheet request={getPermissionHead()} onChoose={() => {}} />)
+    expect(screen.queryByRole('button', { name: /^Always/ })).toBeNull()
+    expect(screen.getByText(COMMAND_HINT)).toBeTruthy()
+    expect(screen.queryByText(HINT)).toBeNull()
+  })
+
+  it('a tool described as running shell commands shows the commands hint', () => {
+    render(
+      <ToolPermissionSheet
+        request={makeRequest({ toolName: 'mcp_tool', toolDescription: 'Run a shell command', allowAlways: false })}
+        onChoose={() => {}}
+      />
+    )
+    expect(screen.getByText(COMMAND_HINT)).toBeTruthy()
   })
 
   it('no hint when Always is offered', () => {

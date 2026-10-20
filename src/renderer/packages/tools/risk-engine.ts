@@ -227,6 +227,121 @@ function argTexts(args: unknown): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// Read-only commands
+// ---------------------------------------------------------------------------
+
+/** Fields that carry code in another language: a call with one is never treated as a read-only shell command. */
+const CODE_KEYS = ['script', 'code']
+/** Anything that chains, substitutes, redirects or continues a command: ; & | < > ` $( ${ and line breaks. */
+const SHELL_META = /[;&|<>`\r\n]|\$\(|\$\{/
+/** Programs that only read, whatever their (non-meta) arguments. */
+const READ_ONLY_PROGRAMS = new Set([
+  'ls',
+  'll',
+  'pwd',
+  'whoami',
+  'id',
+  'uname',
+  'uptime',
+  'df',
+  'du',
+  'free',
+  'ps',
+  'which',
+  'type',
+  'echo',
+  'cat',
+  'head',
+  'tail',
+  'wc',
+  'less',
+  'stat',
+  'grep',
+  'ag',
+])
+/** Arguments that make an otherwise read-only program write, run something else, or change state. */
+const UNSAFE_ARGS: Record<string, (arg: string) => boolean> = {
+  find: (arg) => /^-(?:delete|exec|execdir|ok|okdir|fprint\w*|fls)$/.test(arg),
+  rg: (arg) => arg === '--pre' || arg.startsWith('--pre='),
+  tree: (arg) => arg === '-o' || arg.startsWith('-o'),
+  file: (arg) => arg === '-C' || arg === '--compile',
+  date: (arg) => arg === '-s' || arg.startsWith('--set') || /^-[a-z]*s/i.test(arg),
+}
+const HOSTNAME_FLAGS = new Set(['-f', '-s', '-i', '-I', '-d', '--fqdn', '--short'])
+const GIT_ANY_ARGS = new Set(['status', 'log', 'diff', 'show', 'rev-parse'])
+const GIT_BRANCH_FLAGS = new Set([
+  '-a',
+  '-r',
+  '-v',
+  '-vv',
+  '-l',
+  '--list',
+  '--all',
+  '--remotes',
+  '--verbose',
+  '--show-current',
+])
+const VERSION_FLAGS: Record<string, Set<string>> = {
+  node: new Set(['-v', '--version']),
+  npm: new Set(['-v', '--version']),
+  python: new Set(['-V', '--version']),
+  python3: new Set(['-V', '--version']),
+}
+
+function isReadOnlyGit(rest: string[]): boolean {
+  const [sub, ...args] = rest
+  if (!sub) return false
+  if (GIT_ANY_ARGS.has(sub)) return !args.some((arg) => arg.startsWith('--output') || arg === '--ext-diff')
+  if (sub === 'branch') return args.every((arg) => GIT_BRANCH_FLAGS.has(arg))
+  if (sub === 'remote') return args.length === 0 || (args.length === 1 && args[0] === '-v')
+  return false
+}
+
+/** One simple command (no chaining, substitution or redirects) whose program is on the read-only list. */
+function isReadOnlyCommandText(text: string): boolean {
+  if (SHELL_META.test(text)) return false
+  const tokens = text.trim().split(/\s+/).filter(Boolean)
+  const [program, ...rest] = tokens
+  if (!program || tokens.includes('sudo')) return false
+  if (READ_ONLY_PROGRAMS.has(program)) return true
+  const unsafe = UNSAFE_ARGS[program]
+  if (unsafe) return !rest.some(unsafe)
+  if (program === 'hostname') return rest.every((arg) => HOSTNAME_FLAGS.has(arg))
+  if (program === 'top') return rest.length === 3 && rest.join(' ') === '-b -n 1'
+  if (program === 'env' || program === 'printenv') return rest.length === 0
+  if (program === 'git') return isReadOnlyGit(rest)
+  const versions = VERSION_FLAGS[program]
+  if (versions) return rest.length === 1 && versions.has(rest[0])
+  return false
+}
+
+/**
+ * True only when the call runs a single simple command that just reads: `ls -la`, `df -h`, `git status`,
+ * `cat README.md`, `{ command: 'ls', args: ['-la'] }`. Every command field (with its spawn-style args) must pass;
+ * a call with no command, or with a `script`/`code` field, is not read-only. Pair with the risk tier: a read-only
+ * program can still read something sensitive (`cat ~/.ssh/id_rsa` is CRITICAL).
+ */
+export function isReadOnlyCommand(args: unknown): boolean {
+  if (typeof args === 'string') return isReadOnlyCommandText(args)
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return false
+  const record = args as Record<string, unknown>
+  if (CODE_KEYS.some((key) => record[key] !== undefined)) return false
+  const commands: string[] = []
+  for (const commandKey of SPAWN_COMMAND_KEYS) {
+    const command = record[commandKey]
+    if (command === undefined) continue
+    if (typeof command !== 'string') return false
+    const lists = SPAWN_ARGS_KEYS.map((key) => record[key]).filter(Array.isArray)
+    if (lists.length === 0) commands.push(command)
+    for (const list of lists) {
+      if (list.some((item) => typeof item !== 'string')) return false
+      commands.push(`${command} ${list.join(' ')}`)
+    }
+  }
+  return commands.length > 0 && commands.every(isReadOnlyCommandText)
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 

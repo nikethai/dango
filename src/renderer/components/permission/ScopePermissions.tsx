@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toolLabel } from '@/packages/tool-permission'
+import { alwaysAsks, toolLabel } from '@/packages/tool-permission'
 import { pushUndo } from '@/packages/undo'
 import { getScopeGrant, type ScopeToolGrant, toolApprovalStore, useScopeGrants } from '@/stores/toolApprovalStore'
 
@@ -8,7 +8,8 @@ import { getScopeGrant, type ScopeToolGrant, toolApprovalStore, useScopeGrants }
 export function ScopePermissions({ scopeId }: { scopeId: string }) {
   const { t } = useTranslation()
   const headingId = useId()
-  const grants = useScopeGrants(scopeId)
+  // Grants for tools that always ask (older grants for command tools) are ignored by the gate, so not listed.
+  const grants = useScopeGrants(scopeId).filter((grant) => !alwaysAsks(grant.toolName))
 
   const stopAllowing = (grant: ScopeToolGrant) => {
     const label = toolLabel(grant.toolName)

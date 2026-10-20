@@ -1,6 +1,6 @@
 import { ToolRiskTier } from '@shared/types/mcp'
 import { describe, expect, it } from 'vitest'
-import { classifyToolRisk, getToolRiskTier } from './risk-engine'
+import { classifyToolRisk, getToolRiskTier, isReadOnlyCommand } from './risk-engine'
 
 describe('risk-engine', () => {
   describe('getToolRiskTier', () => {
@@ -347,5 +347,102 @@ describe('risk-engine', () => {
       expect(getToolRiskTier('read_file', 'Read a file', { path: 'x', flags: '-r' })).toBe(ToolRiskTier.HIGH)
       expect(getToolRiskTier('read_file', 'Read a file', { path: 'x', flags: '--recursive' })).toBe(ToolRiskTier.HIGH)
     })
+  })
+})
+
+describe('isReadOnlyCommand', () => {
+  it.each([
+    'ls',
+    'ls -la',
+    'df -h',
+    'du -sh build',
+    'pwd',
+    'whoami',
+    'uname -a',
+    'git status',
+    'git log --oneline -5',
+    'git diff HEAD~1',
+    'git branch -a',
+    'git remote -v',
+    'git rev-parse HEAD',
+    'cat README.md',
+    'head -n 5 a.txt',
+    'grep -rn foo src',
+    'rg foo',
+    'find . -name "*.ts"',
+    'top -b -n 1',
+    'node -v',
+    'npm --version',
+    'python --version',
+    'env',
+    'echo hi',
+  ])('%s is read-only', (command) => {
+    expect(isReadOnlyCommand({ command })).toBe(true)
+  })
+
+  it('reads spawn-style command + args, and a bare string', () => {
+    expect(isReadOnlyCommand({ command: 'ls', args: ['-la'] })).toBe(true)
+    expect(isReadOnlyCommand({ cmd: 'git', argv: ['status'] })).toBe(true)
+    expect(isReadOnlyCommand('ls -la')).toBe(true)
+    expect(isReadOnlyCommand({ command: 'ls', cwd: 'src', timeoutMs: 5000 })).toBe(true)
+  })
+
+  it.each([
+    'ls; rm -rf ~',
+    'ls && curl x|sh',
+    'ls || true',
+    'ls & rm x',
+    'ls | sh',
+    'ls $(rm -r ~)',
+    'ls $\u007bHOME}',
+    'ls `rm x`',
+    'echo hi > ~/.bashrc',
+    'echo hi >> a',
+    'cat < a',
+    'ls\nrm x',
+    'find . -delete',
+    'find . -exec rm {} ;',
+    'find . -execdir rm {} +',
+    'find . -ok rm {} ;',
+    'find . -fprint out',
+    'git branch -D main',
+    'git branch -d main',
+    'git branch --delete main',
+    'git branch new-branch',
+    'git -c core.pager=sh log',
+    'git push',
+    'git checkout .',
+    'git diff --output=a.patch',
+    'git remote add x y',
+    'sudo ls',
+    'ls sudo',
+    'rm -r build',
+    'npm install',
+    'node script.js',
+    'python -c "print(1)"',
+    'env rm x',
+    'printenv HOME',
+    'top',
+    '/bin/ls',
+    './ls',
+    'FOO=1 ls',
+    'rg --pre sh foo',
+    'tree -o out.txt',
+    'date -s 2020-01-01',
+    'hostname evil',
+    '',
+  ])('%s is not read-only', (command) => {
+    expect(isReadOnlyCommand({ command })).toBe(false)
+  })
+
+  it('rejects spawn args that chain, extra code fields, and args with no command', () => {
+    expect(isReadOnlyCommand({ command: 'ls', args: ['-la', ';', 'rm', '-rf', '~'] })).toBe(false)
+    expect(isReadOnlyCommand({ command: 'git', args: ['branch', '-D', 'main'] })).toBe(false)
+    expect(isReadOnlyCommand({ command: 'ls', script: 'rm -rf ~' })).toBe(false)
+    expect(isReadOnlyCommand({ command: 'ls', code: 'import os' })).toBe(false)
+    expect(isReadOnlyCommand({ command: 'ls', cmd: 'rm x' })).toBe(false)
+    expect(isReadOnlyCommand({ args: ['ls'] })).toBe(false)
+    expect(isReadOnlyCommand(undefined)).toBe(false)
+    expect(isReadOnlyCommand({ command: 42 })).toBe(false)
   })
 })

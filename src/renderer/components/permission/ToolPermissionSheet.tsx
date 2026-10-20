@@ -1,7 +1,12 @@
 import { type CSSProperties, useLayoutEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Sheet } from '@/components/ui/Sheet'
-import { alwaysAsks, type PermissionChoice, type PermissionRequest } from '@/packages/tool-permission'
+import {
+  alwaysAsksByEffect,
+  isCommandTool,
+  type PermissionChoice,
+  type PermissionRequest,
+} from '@/packages/tool-permission'
 
 export type ToolPermissionSheetProps = {
   request: PermissionRequest | null
@@ -64,9 +69,11 @@ export function ToolPermissionSheet({ request, onChoose }: ToolPermissionSheetPr
       onClose={() => choose('deny')}
       title={what}
       hint={
-        alwaysAsks(request.toolName)
+        alwaysAsksByEffect(request.toolName)
           ? t('Dango always asks before it sends, deletes or changes your files.')
-          : undefined
+          : isCommandTool(request.toolName, request.toolDescription)
+            ? t('Dango always asks before it runs commands.')
+            : undefined
       }
       actions={
         <>

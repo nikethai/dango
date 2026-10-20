@@ -1,6 +1,6 @@
 import { ToolRiskTier } from '@shared/types/mcp'
 import { describe, expect, it, vi } from 'vitest'
-import { alwaysAsks, canAlways, describeToolAction, toolLabel } from './describe'
+import { alwaysAsks, canAlways, describeToolAction, isCommandTool, toolLabel } from './describe'
 
 vi.mock('i18next', () => ({
   t: (key: string, opts?: Record<string, unknown>) =>
@@ -182,6 +182,48 @@ describe('alwaysAsks / canAlways / toolLabel', () => {
     expect(canAlways('browser_click', ToolRiskTier.HIGH)).toBe(true)
     expect(canAlways('browser_click', ToolRiskTier.CRITICAL)).toBe(false)
     expect(canAlways('delete_file', ToolRiskTier.LOW)).toBe(false)
+  })
+
+  it('always asks for tools that run commands or code, by name or description', () => {
+    for (const name of [
+      'run_command',
+      'execute_command',
+      'terminal_exec',
+      'run_local_code',
+      'local_code',
+      'run_code',
+      'mcp__box__bash',
+      'runShellCommand',
+      'powershell_invoke',
+      'python_eval',
+      'spawn_process',
+      'subprocess_call',
+      'run_script',
+    ]) {
+      expect(isCommandTool(name), name).toBe(true)
+      expect(alwaysAsks(name), name).toBe(true)
+      expect(canAlways(name, ToolRiskTier.LOW), name).toBe(false)
+    }
+    expect(isCommandTool('do_it', 'Run a shell command')).toBe(true)
+    expect(alwaysAsks('do_it', 'Executes arbitrary code in a sandbox.')).toBe(true)
+    expect(canAlways('do_it', ToolRiskTier.MEDIUM, 'Opens a terminal session.')).toBe(false)
+    expect(canAlways('do_it', ToolRiskTier.MEDIUM, 'Runs a script you pass in.')).toBe(false)
+  })
+
+  it('keeps Always for read-only look-alikes', () => {
+    expect(isCommandTool('list_commands', 'Lists the slash commands this server offers.')).toBe(false)
+    expect(isCommandTool('get_command_history')).toBe(false)
+    expect(isCommandTool('search_commands')).toBe(false)
+    expect(isCommandTool('script_editor_open')).toBe(false)
+    expect(isCommandTool('browser_click', 'Click an element on the page.')).toBe(false)
+    expect(isCommandTool('read_file', 'Read a file in the project.')).toBe(false)
+    expect(canAlways('list_commands', ToolRiskTier.MEDIUM, 'Lists the slash commands this server offers.')).toBe(true)
+    expect(canAlways('browser_click', ToolRiskTier.HIGH, 'Click an element on the page.')).toBe(true)
+    expect(canAlways('read_file', ToolRiskTier.MEDIUM, 'Read a file in the project.')).toBe(true)
+  })
+
+  it('a read-verb name still counts when its description says it runs commands', () => {
+    expect(isCommandTool('list_commands', 'Runs a command and lists its output.')).toBe(true)
   })
 
   it('labels tool names in sentence case', () => {

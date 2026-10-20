@@ -27,7 +27,8 @@ vi.mock('@/packages/tool-permission', async (importOriginal) => ({
   requestToolPermission: requestToolPermissionMock,
 }))
 
-vi.mock('../tools/risk-engine', () => ({
+vi.mock('../tools/risk-engine', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../tools/risk-engine')>()),
   getToolRiskTier: (name: string, _description?: string, args?: unknown) => {
     const text = JSON.stringify(args ?? '')
     if (text.includes('-rf') || text.includes('.ssh')) return ToolRiskTier.CRITICAL
@@ -261,31 +262,77 @@ describe('wrapToolsWithApproval shipped wrapper', () => {
   })
 
   it('grant does not cover a call whose args raise the tier', async () => {
-    getScopeGrantMock.mockReturnValue({ toolName: 'run_command', riskTier: ToolRiskTier.HIGH, grantedAt: 1 })
+    getScopeGrantMock.mockReturnValue({ toolName: 'browser_click', riskTier: ToolRiskTier.HIGH, grantedAt: 1 })
     requestToolPermissionMock.mockResolvedValue('always')
     const execute = vi.fn(async () => ({ ok: true }))
-    const wrapped = wrapToolsWithApproval('sess-1', { run_command: { description: 'run', execute } } as never, {
+    const wrapped = wrapToolsWithApproval('sess-1', { browser_click: { description: 'click', execute } } as never, {
       scopeId: 's1',
     })
 
-    await (wrapped.run_command as Exec).execute({ command: 'ls' }, {})
+    await (wrapped.browser_click as Exec).execute({ selector: '#ok' }, {})
     expect(requestToolPermissionMock).not.toHaveBeenCalled()
     expect(execute).toHaveBeenCalledTimes(1)
 
     requestToolPermissionMock.mockResolvedValue('deny')
-    const denied = await (wrapped.run_command as Exec).execute({ command: 'rm -rf ~/' }, {})
+    const denied = await (wrapped.browser_click as Exec).execute({ selector: '-rf' }, {})
     expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
     expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({ toolName: 'run_command', riskTier: ToolRiskTier.CRITICAL, allowAlways: false })
+      expect.objectContaining({ toolName: 'browser_click', riskTier: ToolRiskTier.CRITICAL, allowAlways: false })
     )
     expect(denied).toEqual(expect.objectContaining({ denied: true, riskTier: ToolRiskTier.CRITICAL }))
     expect(execute).toHaveBeenCalledTimes(1)
 
     requestToolPermissionMock.mockResolvedValue('always')
-    await (wrapped.run_command as Exec).execute({ command: 'rm -rf ~/' }, {})
+    await (wrapped.browser_click as Exec).execute({ selector: '-rf' }, {})
     expect(execute).toHaveBeenCalledTimes(2)
     // 'always' on a CRITICAL call is only once: nothing is stored.
     expect(addScopeGrantMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['run_command', 'run'],
+    ['terminal_exec', 'Terminal tools'],
+    ['mcp_tool', 'Run a shell command'],
+    ['run_local_code', 'Runs local code'],
+  ])('%s always asks: no Always, existing grants ignored, Always answers store nothing', async (name, description) => {
+    getScopeGrantMock.mockImplementation((_scopeId: string, toolName: string) => ({
+      toolName,
+      riskTier: name === 'run_command' ? ToolRiskTier.HIGH : ToolRiskTier.MEDIUM,
+      grantedAt: 1,
+    }))
+    getToolApprovalMock.mockImplementation((_sessionId: string, toolName: string) => ({
+      toolName,
+      riskTier: name === 'run_command' ? ToolRiskTier.HIGH : ToolRiskTier.MEDIUM,
+      scope: 'session',
+      timestamp: 1,
+    }))
+    requestToolPermissionMock.mockResolvedValue('always')
+    const execute = vi.fn(async () => ({ ok: true }))
+    for (const opts of [{ scopeId: 's1' }, {}]) {
+      requestToolPermissionMock.mockClear()
+      const wrapped = wrapToolsWithApproval('sess-1', { [name]: { description, execute } } as never, opts)
+      await (wrapped[name] as Exec).execute({ command: 'npm install' }, {})
+      expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+      expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({ toolName: name, allowAlways: false, toolDescription: description })
+      )
+    }
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(addScopeGrantMock).not.toHaveBeenCalled()
+    expect(addApprovalMock).not.toHaveBeenCalled()
+  })
+
+  it('a read-only look-alike (list_commands) keeps Always', async () => {
+    requestToolPermissionMock.mockResolvedValue('always')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const wrapped = wrapToolsWithApproval(
+      'sess-1',
+      { list_commands: { description: 'Lists the slash commands this server offers.', execute } } as never,
+      { scopeId: 's1' }
+    )
+    await (wrapped.list_commands as Exec).execute({}, {})
+    expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ allowAlways: true }))
+    expect(addScopeGrantMock).toHaveBeenCalledTimes(1)
   })
 
   it('a LOW-by-name tool with a dangerous path arg is not auto-approved', async () => {

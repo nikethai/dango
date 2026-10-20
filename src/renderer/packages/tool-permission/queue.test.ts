@@ -96,7 +96,7 @@ describe('permission queue', () => {
     expect(getPermissionHead()?.toolName).toBe('delete_file')
   })
 
-  it('always on a HIGH call leaves a CRITICAL call to the same tool queued (real risk engine)', async () => {
+  it('always never sweeps a command tool: each queued run asks on its own (real risk engine)', async () => {
     const shell = (command: string) =>
       req({
         toolName: 'run_command',
@@ -104,16 +104,25 @@ describe('permission queue', () => {
         summary: { what: 'Run a command', touches: [command] },
         allowAlways: true,
       })
-    const benign = requestToolPermission(shell('ls'))
-    const destructive = requestToolPermission(shell('rm -r ~/'))
-    expect(getPermissionHead()?.riskTier).toBe(ToolRiskTier.HIGH)
+    const first = requestToolPermission(shell('ls'))
+    const second = requestToolPermission(shell('ls'))
+    expect(getPermissionHead()?.allowAlways).toBe(false)
     resolvePermission(headId(), 'always')
-    await expect(benign).resolves.toBe('always')
+    await expect(first).resolves.toBe('once')
     const head = getPermissionHead()
-    expect(head?.riskTier).toBe(ToolRiskTier.CRITICAL)
+    expect(head?.toolName).toBe('run_command')
     expect(head?.allowAlways).toBe(false)
     resolvePermission(headId(), 'deny')
-    await expect(destructive).resolves.toBe('deny')
+    await expect(second).resolves.toBe('deny')
+  })
+
+  it('a tool whose description says it runs shell commands never offers Always', async () => {
+    const first = requestToolPermission(req({ toolName: 'mcp_tool', toolDescription: 'Run a shell command' }))
+    void requestToolPermission(req({ toolName: 'mcp_tool', toolDescription: 'Run a shell command' }))
+    expect(getPermissionHead()?.allowAlways).toBe(false)
+    resolvePermission(headId(), 'always')
+    await expect(first).resolves.toBe('once')
+    expect(getPermissionHead()?.toolName).toBe('mcp_tool')
   })
 
   it('timeout denies', async () => {
