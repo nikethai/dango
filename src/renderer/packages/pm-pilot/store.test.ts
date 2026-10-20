@@ -261,6 +261,9 @@ describe('pmStore cursors, processed ids, drafts and questions', () => {
     expect((await pmStore.getDraft('d1'))?.state).toBe('written')
     expect((await pmStore.findDraftByThread('t1'))?.id).toBe('d2')
     expect(await pmStore.findDraftByThread('nope')).toBeUndefined()
+    await pmStore.saveDraft(draft({ id: 'd0', threadId: 't1', createdAt: 500 }))
+    expect((await pmStore.listDraftsByThread('t1')).map((d) => d.id)).toEqual(['d0', 'd1', 'd2'])
+    expect(await pmStore.listDraftsByThread('nope')).toEqual([])
 
     await pmStore.saveQuestion(question({ id: 'q1', domain: 'newco.com', threadId: 't9' }))
     expect((await pmStore.findOpenQuestion({ domain: 'newco.com' }))?.id).toBe('q1')

@@ -24,7 +24,13 @@ vi.mock('./bridge', () => ({
       (s) => (!filter?.scopeId || s.scopeId === filter.scopeId) && (!filter?.kind || s.kind === filter.kind)
     ),
   gmailConfig: (s: { config: Record<string, unknown> }) => ({ accountId: s.config.accountId, matchers: [] }),
-  getScope: vi.fn(async (id: string) => (id === 'acme' ? { id, name: 'Acme Co', kind: 'client' } : undefined)),
+  getScope: vi.fn(async (id: string) =>
+    id === 'acme'
+      ? { id, name: 'Acme Co', kind: 'client' }
+      : id === 'odd'
+        ? { id, name: 'A {{what}}', kind: 'client' }
+        : undefined
+  ),
   proposeKnowledge: vi.fn(),
   approveProposal: vi.fn(),
   addKnowledge: vi.fn(),
@@ -285,6 +291,58 @@ describe('readBackSent', () => {
     await readBackSent([{ ...record, scopeId: 'acme', sourceId: 'src-gmail' }])
     expect(generateText).not.toHaveBeenCalled()
     expect((await pmStore.getDraft('d1'))?.state).toBe('sent')
+  })
+
+  it('reads back an older written draft when a newer draft in the thread came after the reply', async () => {
+    await pmStore.saveDraft(draft())
+    await pmStore.saveDraft(draft({ id: 'd2', inboundMessageId: 'in2', createdAt: 3000 }))
+    reply([])
+    await readBackSent([sent()])
+    expect((await pmStore.getDraft('d1'))?.state).toBe('sent')
+    expect((await pmStore.getDraft('d2'))?.state).toBe('written')
+  })
+
+  it('reads back every written or proposed draft in the thread created before the reply', async () => {
+    await pmStore.saveDraft(draft({ id: 'd0', state: 'proposed', createdAt: 500 }))
+    await pmStore.saveDraft(draft())
+    reply([])
+    reply([])
+    await readBackSent([sent()])
+    expect((await pmStore.getDraft('d0'))?.state).toBe('dismissed')
+    expect((await pmStore.getDraft('d1'))?.state).toBe('sent')
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'draft', id: 'd0' } }, 'dismissed')
+  })
+
+  it('one failing proposal does not drop the other changes', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const twoDrafts = 'The launch is on 4 Nov and the fee is 8,400.'
+    const twoSent = 'The launch is on 6 Nov and the fee is 9,100.'
+    vi.mocked(proposeKnowledge).mockRejectedValueOnce(new Error('storage broke'))
+    reply([CHANGE, { what: 'fee', fact: 'The fee is 9,100.', draftSaid: '8,400', sentSaid: '9,100' }])
+    const filed = await proposeFactChanges({
+      draft: draft({ text: twoDrafts }),
+      sentText: twoSent,
+      sentRecord: sent({ text: twoSent }),
+      scopeName: 'Acme Co',
+    })
+    expect(filed).toBe(1)
+    expect(proposeKnowledge).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(proposeKnowledge).mock.calls[1][0]).toMatchObject({ text: 'The fee is 9,100.' })
+  })
+
+  it('a scope name with {{ }} is shown as written, not expanded by i18next', async () => {
+    await pmStore.saveDraft(draft({ scopeId: 'odd' }))
+    vi.mocked(proposeKnowledge).mockResolvedValueOnce(proposal({ scopeId: 'odd' }) as never)
+    state.sources = [
+      { id: 'src-gmail', kind: 'gmail', scopeId: 'odd', localOnly: false, config: { accountId: 'acc1' } },
+    ]
+    reply([CHANGE])
+    await readBackSent([sent()])
+    const sub = (vi.mocked(updateReviewEntry).mock.calls[0][1] as { sub: string }).sub
+    expect(sub.replace(/\u200b/g, '')).toBe(
+      'You told A {{what}} 6 Nov; the draft said 4 Nov. Save 6 Nov as the launch date?'
+    )
+    expect(sub).not.toContain('{{what}}')
   })
 
   it('never approves knowledge from Gmail', async () => {

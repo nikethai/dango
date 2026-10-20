@@ -314,6 +314,11 @@ async function findDraftByThread(threadId: string): Promise<ClientDraft | undefi
     )
 }
 
+/** Every draft for a Gmail thread, in any state, oldest first. */
+async function listDraftsByThread(threadId: string): Promise<ClientDraft[]> {
+  return (await readDrafts()).filter((d) => d.threadId === threadId).sort((a, b) => a.createdAt - b.createdAt)
+}
+
 async function saveQuestion(question: ClientQuestion): Promise<void> {
   const parsed = ClientQuestionSchema.parse(question)
   const { next } = await mutateDoc('PmQuestions', parseQuestions, (questions) => ({
@@ -389,6 +394,7 @@ export const pmStore = {
   saveDraft,
   getDraft,
   findDraftByThread,
+  listDraftsByThread,
   saveQuestion,
   getQuestion,
   findOpenQuestion,

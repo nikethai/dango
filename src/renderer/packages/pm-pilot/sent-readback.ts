@@ -71,7 +71,7 @@ export async function phraseFactChanges(input: {
       warn('Sent reply not compared: the model reply could not be read')
       return []
     }
-    return validateFactChanges(parsed, { draft: input.draft, sent: input.sent })
+    return validateFactChanges(parsed, { draft: input.draft, sent: input.sent, scopeName: input.scopeName })
   } catch (e) {
     warn('Sent reply not compared: the model call failed', e)
     return []
@@ -111,58 +111,78 @@ export async function proposeFactChanges(input: {
   })
   let filed = 0
   for (const change of changes) {
-    const source = {
-      kind: 'email' as const,
-      label: i18n.t('your sent reply'),
-      ...(sentRecord ? { ref: sentRecord.link.url } : {}),
-      ...(sentRecord?.sourceId ? { sourceId: sentRecord.sourceId } : {}),
+    try {
+      if (await proposeChange(change, { draft, sentRecord, scopeName })) filed++
+    } catch (e) {
+      // One failed proposal does not stop the others.
+      warn('A sent reply fact could not be proposed', e)
     }
-    const proposal = await proposeKnowledge({
-      scopeId: draft.scopeId,
-      kind: 'fact',
-      text: change.fact,
-      sources: [source],
-      origin: 'background-review',
-    })
-    if (!proposal) continue
-    filed++
-    if (proposal.conflictsWith?.length) continue
-    const entry = listReviewEntries({ states: ['open'] }).find(
-      (e) => e.ref.type === 'proposal' && e.ref.id === proposal.id
-    )
-    if (!entry) continue
-    await updateReviewEntry(entry.id, {
-      sub: sentDiffText(scopeName, change.sentSaid, change.draftSaid, change.what, (key, values) =>
-        i18n.t(key, values)
-      ),
-    })
   }
   return filed
 }
 
+/** Files one change; true when slice 4 took it (then a plain proposal gets the sent-reply note). */
+async function proposeChange(
+  change: FactChange,
+  ctx: { draft: ClientDraft; sentRecord?: SourceRecord; scopeName: string }
+): Promise<boolean> {
+  const { draft, sentRecord, scopeName } = ctx
+  const source = {
+    kind: 'email' as const,
+    label: i18n.t('your sent reply'),
+    ...(sentRecord ? { ref: sentRecord.link.url } : {}),
+    ...(sentRecord?.sourceId ? { sourceId: sentRecord.sourceId } : {}),
+  }
+  const proposal = await proposeKnowledge({
+    scopeId: draft.scopeId,
+    kind: 'fact',
+    text: change.fact,
+    sources: [source],
+    origin: 'background-review',
+  })
+  if (!proposal) return false
+  if (proposal.conflictsWith?.length) return true
+  const entry = listReviewEntries({ states: ['open'] }).find(
+    (e) => e.ref.type === 'proposal' && e.ref.id === proposal.id
+  )
+  if (!entry) return true
+  await updateReviewEntry(entry.id, {
+    sub: sentDiffText(scopeName, change.sentSaid, change.draftSaid, change.what, (key, values) => i18n.t(key, values)),
+  })
+  return true
+}
+
 /**
  * Reads back the PM's sent replies. Only records Gmail labelled `SENT` count (`sentByMe`): inbound mail never does,
- * whatever its From says. For each, oldest first, when its thread's newest draft is `written` or `proposed`, belongs
- * to the same account and is older than the reply: propose the changed facts, then mark the draft `sent` (written) or
- * `dismissed` (only proposed, its Review entry closed). A draft is read back once, so a second run proposes nothing.
+ * whatever its From says. For each reply, oldest first, every draft in its thread that is `written` or `proposed`,
+ * belongs to the same account and is older than the reply is read back (a newer draft made after the reply does not
+ * hide an older one): propose the changed facts, then mark the draft `sent` (written) or `dismissed` (only proposed,
+ * its Review entry closed). A draft is read back once, so a second run proposes nothing.
  */
 export async function readBackSent(records: SourceRecord[]): Promise<void> {
   const sent = records.filter((r) => r.sentByMe && r.sourceKind === 'gmail').sort((a, b) => a.occurredAt - b.occurredAt)
   for (const record of sent) {
-    const draft = await pmStore.findDraftByThread(record.threadOrTaskId)
-    if (!draft || (draft.state !== 'written' && draft.state !== 'proposed')) continue
-    if (draft.accountId !== record.accountId || draft.createdAt >= record.occurredAt) continue
-    try {
-      const scope = await getScope(draft.scopeId)
-      if (scope) await proposeFactChanges({ draft, sentText: record.text, sentRecord: record, scopeName: scope.name })
-    } catch (e) {
-      warn('Sent reply facts could not be proposed', e)
-    }
-    if (draft.state === 'written') {
-      await pmStore.saveDraft({ ...draft, state: 'sent' })
-    } else {
-      await pmStore.saveDraft({ ...draft, state: 'dismissed' })
-      await setReviewEntryState({ ref: { type: 'draft', id: draft.id } }, 'dismissed')
-    }
+    const drafts = (await pmStore.listDraftsByThread(record.threadOrTaskId)).filter(
+      (d) =>
+        (d.state === 'written' || d.state === 'proposed') &&
+        d.accountId === record.accountId &&
+        d.createdAt < record.occurredAt
+    )
+    for (const draft of drafts) await readBackDraft(draft, record)
+  }
+}
+
+async function readBackDraft(draft: ClientDraft, record: SourceRecord): Promise<void> {
+  try {
+    const scope = await getScope(draft.scopeId)
+    if (scope) await proposeFactChanges({ draft, sentText: record.text, sentRecord: record, scopeName: scope.name })
+  } catch (e) {
+    warn('Sent reply facts could not be proposed', e)
+  }
+  if (draft.state === 'written') {
+    await pmStore.saveDraft({ ...draft, state: 'sent' })
+  } else {
+    await pmStore.saveDraft({ ...draft, state: 'dismissed' })
+    await setReviewEntryState({ ref: { type: 'draft', id: draft.id } }, 'dismissed')
   }
 }

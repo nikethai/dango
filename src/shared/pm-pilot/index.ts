@@ -1,5 +1,6 @@
 export * from './fact-diff'
 export * from './gmail-normalize'
+export * from './i18n-values'
 export * from './judge'
 export * from './local-only'
 export * from './mime'

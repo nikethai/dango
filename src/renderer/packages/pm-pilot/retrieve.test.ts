@@ -16,7 +16,7 @@ vi.mock('./bridge', () => ({
 }))
 vi.mock('./store', () => ({ pmStore: { getRecords: (scopeId: string) => getRecords(scopeId) } }))
 
-import { LocalOnlyModelError, retrieveEvidence } from './retrieve'
+import { LocalOnlyModelError, recordLabel, retrieveEvidence } from './retrieve'
 
 const DAY = 24 * 60 * 60 * 1000
 const SEP_12 = Date.UTC(2026, 8, 12, 12)
@@ -237,5 +237,14 @@ describe('retrieveEvidence', () => {
       cloudModel: false,
     })
     expect(onLocal.map((e) => e.id).sort()).toEqual(['r:gmail:ok', 'r:gmail:orphan'])
+  })
+})
+
+describe('recordLabel', () => {
+  it('shows {{ }} in a sender name or task title as written, not expanded by i18next', () => {
+    const name = recordLabel(rec({ externalId: 'x', authorName: '{{date}} Bloggs' }))
+    expect(name.replace(/\u200b/g, '')).toBe("{{date}}'s 12 Sep email")
+    const task = recordLabel(rec({ externalId: 'y', sourceKind: 'asana', title: 'Plan {{name}}' }))
+    expect(task.replace(/\u200b/g, '')).toBe('Asana "Plan {{name}}"')
   })
 })

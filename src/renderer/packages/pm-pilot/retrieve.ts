@@ -1,6 +1,7 @@
 import {
   type Evidence,
   inboundMayReachCloud,
+  inertValues,
   mayReachCloud,
   RETRIEVE_MAX_RECORDS,
   type SourceRecord,
@@ -63,15 +64,15 @@ function firstName(record: SourceRecord): string {
 
 /** `your 12 Sep email`, `Jo's 12 Sep email` or `Asana "Homepage launch"` (external text passed as values). */
 export function recordLabel(record: SourceRecord): string {
-  if (record.sourceKind === 'asana') return i18n.t('Asana "{{title}}"', { title: record.title })
+  if (record.sourceKind === 'asana') return i18n.t('Asana "{{title}}"', inertValues({ title: record.title }))
   const date = dayMonth(record.occurredAt)
   if (record.sentByMe) return i18n.t('your {{date}} email', { date })
-  return i18n.t("{{name}}'s {{date}} email", { name: firstName(record), date })
+  return i18n.t("{{name}}'s {{date}} email", inertValues({ name: firstName(record), date }))
 }
 
 /** `approved: {first 40 characters}`. */
 export function knowledgeLabel(item: Pick<KnowledgeItem, 'text'>): string {
-  return i18n.t('approved: {{text}}', { text: item.text.trim().slice(0, KNOWLEDGE_LABEL_CHARS) })
+  return i18n.t('approved: {{text}}', inertValues({ text: item.text.trim().slice(0, KNOWLEDGE_LABEL_CHARS) }))
 }
 
 function recordEvidence(record: SourceRecord): Evidence {
