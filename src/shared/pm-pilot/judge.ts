@@ -25,7 +25,8 @@ export const JUDGE_MAX_EVIDENCE_IDS = 32
 
 const INTENTS: ReadonlySet<string> = new Set(['question', 'fyi', 'noise'])
 
-function jsonOf(raw: string): unknown {
+/** A model reply as JSON: a leading `<think>` block and an outer fence removed, then the outermost braces tried. */
+export function jsonOf(raw: string): unknown {
   // Only a leading reasoning block and an outer fence are removed: fences inside string values must survive.
   let cleaned = raw.trim()
   if (/^<think>/i.test(cleaned)) {

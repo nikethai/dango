@@ -7,7 +7,7 @@ import {
   type SourceRecord,
   validateJudgement,
 } from '@shared/pm-pilot'
-import { backgroundModelChoice, hasUsableModel, isLocalModelProvider, listSources, loadSources } from './bridge'
+import { errorClassName, localOnlySourceIds, resolveBackgroundModel } from './background-model'
 import { buildJudgePrompt } from './prompts'
 
 /*
@@ -25,18 +25,8 @@ export type JudgeResult = { judgement: Judgement | null; error?: string }
 
 /** `JUDGE_FAILED`, with the error's class name when it is a plain identifier (never its message). */
 function failure(e: unknown): string {
-  const name = e instanceof Error ? e.name : ''
-  return /^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(name) && name !== 'Error' ? `${JUDGE_FAILED} (${name})` : JUDGE_FAILED
-}
-
-async function localOnlyIds(given?: Set<string>): Promise<Set<string>> {
-  if (given) return given
-  await loadSources()
-  return new Set(
-    listSources()
-      .filter((s) => s.localOnly)
-      .map((s) => s.id)
-  )
+  const name = errorClassName(e)
+  return name ? `${JUDGE_FAILED} (${name})` : JUDGE_FAILED
 }
 
 /**
@@ -51,36 +41,16 @@ export async function judgeThread(input: {
   localOnlySourceIds?: Set<string>
 }): Promise<JudgeResult> {
   try {
-    const [{ settingsStore }, { lastUsedModelStore }] = await Promise.all([
-      import('@/stores/settingsStore'),
-      import('@/stores/lastUsedModelStore'),
-    ])
-    const global = settingsStore.getState().getSettings()
-    const lastUsed = lastUsedModelStore.getState().chat
-    const choice = backgroundModelChoice(global, lastUsed)
-    if (!choice || !hasUsableModel(global, lastUsed)) return { judgement: null, error: JUDGE_NO_MODEL }
+    const model = await resolveBackgroundModel()
+    if (!model) return { judgement: null, error: JUDGE_NO_MODEL }
 
-    const cloud = !isLocalModelProvider(choice.provider)
-    const localOnly = await localOnlyIds(input.localOnlySourceIds)
+    const cloud = model.cloud
+    const localOnly = await localOnlySourceIds(input.localOnlySourceIds)
     if (cloud && !inboundMayReachCloud(input.inbound, localOnly)) return { judgement: null, error: JUDGE_LOCAL_ONLY }
     const evidence = cloud ? input.evidence.filter((e) => mayReachCloud(e, localOnly)) : input.evidence
 
     const { system, user, evidenceIds } = buildJudgePrompt(input.scopeName, input.inbound, evidence)
-    const [{ getModel }, { createModelDependencies }, { generateText }, { default: platform }, { createMessage }] =
-      await Promise.all([
-        import('@shared/models'),
-        import('@/adapters'),
-        import('@/packages/model-calls'),
-        import('@/platform'),
-        import('@shared/types'),
-      ])
-    const settings = { ...global, provider: choice.provider, modelId: choice.modelId }
-    const model = getModel(settings, global, await platform.getConfig(), await createModelDependencies())
-    const result = await generateText(model, [createMessage('system', system), createMessage('user', user)])
-    const raw = (result.contentParts ?? [])
-      .filter((c) => c.type === 'text')
-      .map((c) => (c as { text: string }).text)
-      .join('')
+    const raw = await model.generate(system, user)
     const parsed = parseJudgement(raw)
     if (!parsed) return { judgement: null, error: JUDGE_UNREADABLE }
     return { judgement: validateJudgement(parsed, new Set(evidenceIds)) }

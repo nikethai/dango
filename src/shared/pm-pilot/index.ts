@@ -1,3 +1,4 @@
+export * from './fact-diff'
 export * from './gmail-normalize'
 export * from './judge'
 export * from './local-only'

@@ -1859,5 +1859,7 @@
   "your {{date}} email": "your {{date}} email",
   "{{name}}'s {{date}} email": "{{name}}'s {{date}} email",
   "Asana \"{{title}}\"": "Asana \"{{title}}\"",
-  "approved: {{text}}": "approved: {{text}}"
+  "approved: {{text}}": "approved: {{text}}",
+  "your sent reply": "your sent reply",
+  "You told {{scope}} {{sent}}; the draft said {{draft}}. Save {{sent}} as the {{what}}?": "You told {{scope}} {{sent}}; the draft said {{draft}}. Save {{sent}} as the {{what}}?"
 }
