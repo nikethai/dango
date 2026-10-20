@@ -52,8 +52,8 @@ function isSendLike(toolName: string): boolean {
   )
 }
 
-/** Name words that mean the tool runs shell commands or code. */
-const COMMAND_WORDS = new Set([
+/** Name words that mean the tool runs shell commands. */
+const SHELL_WORDS = new Set([
   'command',
   'commands',
   'shell',
@@ -63,41 +63,103 @@ const COMMAND_WORDS = new Set([
   'powershell',
   'pwsh',
   'cmd',
+  'terminal',
+])
+/** Name words that mean the tool runs code or commands of some kind, on their own. */
+const RUNNER_WORDS = new Set([
   'exec',
   'execute',
-  'terminal',
   'eval',
+  'evaluate',
   'spawn',
   'subprocess',
+  'repl',
+  'interpreter',
+  'ssh',
 ])
-const RUN_WORDS = new Set(['run', 'execute', 'exec'])
-/** Verbs of a tool that only looks commands up (`list_commands`, `get_command_history`). */
+const RUN_WORDS = new Set(['run', 'execute', 'exec', 'eval', 'evaluate', 'interact', 'start'])
+const LANGUAGE_WORDS = new Set(['python', 'python3', 'node', 'ruby', 'perl', 'php', 'javascript', 'js', 'deno', 'lua'])
+/** Verbs of a tool that only looks things up (`list_commands`, `get_command_history`, `get_terminal_size`). */
 const READ_VERBS = new Set(['list', 'get', 'search', 'find', 'read', 'show', 'view', 'describe', 'lookup'])
-const COMMAND_ONLY_NOUNS = new Set(['command', 'commands'])
-const COMMAND_DESCRIPTION_PATTERNS = [
+/** Words that, after a read verb, name a thing to look up rather than something that runs. */
+const LOOKUP_NOUNS = new Set(['command', 'commands', 'terminal', 'shell'])
+/** UI words: `command_palette_open` opens a palette, it runs nothing. */
+const UI_WORDS = new Set(['palette', 'menu', 'toolbar'])
+/** Name words of runners that are not a shell: SQL, trades, code in a language, remote hosts. */
+const NOT_SHELL_WORDS = new Set([
+  'sql',
+  'query',
+  'queries',
+  'db',
+  'database',
+  'trade',
+  'trades',
+  'order',
+  'code',
+  'script',
+  'eval',
+  'evaluate',
+  'repl',
+  'interpreter',
+  'ssh',
+  'remote',
+  ...LANGUAGE_WORDS,
+])
+const SHELL_DESCRIPTION_PATTERNS = [
   /\b(shell|terminal|command line|command-line)\b/i,
-  /\b(run|execute)s?\s+(a\s+|an\s+|arbitrary\s+)?(shell\s+)?(command|commands|script|code)\b/i,
+  /\b(run|execute)s?\s+(a\s+|an\s+|the\s+|the\s+given\s+)?(shell\s+)?(command|commands)\b/i,
 ]
+const COMMAND_DESCRIPTION_PATTERNS = [
+  ...SHELL_DESCRIPTION_PATTERNS,
+  /\b(run|execute)s?\s+(a\s+|an\s+|arbitrary\s+)?(shell\s+)?(command|commands|script|code)\b/i,
+  /\b(run|execute|evaluate)s?\b.{0,30}\b(command|script|code|javascript|python|shell)\b/i,
+]
+const NOT_SHELL_DESCRIPTION = /\b(sql|query|database|trade|python|javascript|remote host|ssh)\b/i
+
+function nameRunsCommands(words: string[]): string[] {
+  if (words.some((word) => UI_WORDS.has(word))) return []
+  const runs = words.some((word) => RUN_WORDS.has(word))
+  return words.filter(
+    (word) =>
+      SHELL_WORDS.has(word) ||
+      RUNNER_WORDS.has(word) ||
+      (word === 'script' && runs) ||
+      (word === 'code' && (runs || words.includes('local'))) ||
+      (LANGUAGE_WORDS.has(word) && runs) ||
+      (word === 'system' && words.includes('os')) ||
+      (word === 'process' && runs)
+  )
+}
+
+function isLookupOnly(words: string[], matched: string[]): boolean {
+  return words.some((word) => READ_VERBS.has(word)) && matched.every((word) => LOOKUP_NOUNS.has(word))
+}
 
 /**
- * Tools that run shell commands or arbitrary code: by name words (`run_command`, `terminal_exec`, `runShellCommand`,
- * `run_local_code`), or by a description that says so ("Run a shell command"). A name that is only a read verb plus
- * "command(s)" (`list_commands`) is not one unless its description says it runs something.
+ * Tools that run shell commands or code: by name words (`run_command`, `terminal_exec`, `run_python`, `os_system`,
+ * `browser_evaluate`, `execute_sql`, `ssh`), or by a description that says so ("Run a shell command", "Run Python
+ * code"). A name that is only a read verb plus "command(s)"/"terminal" (`list_commands`, `get_terminal_size`) or a UI
+ * word (`command_palette_open`) is not one unless its description says it runs something.
  */
 export function isCommandTool(toolName: string, description?: string): boolean {
   if (description && COMMAND_DESCRIPTION_PATTERNS.some((pattern) => pattern.test(description))) return true
   const words = nameWords(toolName)
-  const runs = words.some((word) => RUN_WORDS.has(word))
-  const matched = words.filter(
-    (word) =>
-      COMMAND_WORDS.has(word) ||
-      (word === 'script' && runs) ||
-      (word === 'code' && (runs || words.includes('local') || words.includes('eval')))
-  )
-  if (matched.length === 0) return false
-  const readOnlyLookup =
-    words.some((word) => READ_VERBS.has(word)) && matched.every((word) => COMMAND_ONLY_NOUNS.has(word))
-  return !readOnlyLookup
+  const matched = nameRunsCommands(words)
+  return matched.length > 0 && !isLookupOnly(words, matched)
+}
+
+/**
+ * Tools that run commands in a local shell or terminal (`run_command`, `terminal`, "Run a shell command") — the only
+ * ones whose read-only commands (`ls`, `git status`) may skip the sheet. Never code, SQL, trade, remote or other
+ * "exec" tools.
+ */
+export function isShellCommandTool(toolName: string, description?: string): boolean {
+  const words = nameWords(toolName)
+  if (words.some((word) => NOT_SHELL_WORDS.has(word))) return false
+  if (description && NOT_SHELL_DESCRIPTION.test(description)) return false
+  const byName = words.some((word) => SHELL_WORDS.has(word)) && !isLookupOnly(words, nameRunsCommands(words))
+  const byDescription = Boolean(description && SHELL_DESCRIPTION_PATTERNS.some((pattern) => pattern.test(description)))
+  return (byName || byDescription) && !words.some((word) => UI_WORDS.has(word))
 }
 
 /** Tools that send, delete, pay, or change workspace files: they ask every time, even for a harmless call. */

@@ -1,6 +1,6 @@
 import { ToolRiskTier } from '@shared/types/mcp'
 import { describe, expect, it, vi } from 'vitest'
-import { alwaysAsks, canAlways, describeToolAction, isCommandTool, toolLabel } from './describe'
+import { alwaysAsks, canAlways, describeToolAction, isCommandTool, isShellCommandTool, toolLabel } from './describe'
 
 vi.mock('i18next', () => ({
   t: (key: string, opts?: Record<string, unknown>) =>
@@ -228,6 +228,56 @@ describe('alwaysAsks / canAlways / toolLabel', () => {
     expect(canAlways('list_commands', ToolRiskTier.MEDIUM, 'Lists the slash commands this server offers.')).toBe(true)
     expect(canAlways('browser_click', ToolRiskTier.HIGH, 'Click an element on the page.')).toBe(true)
     expect(canAlways('read_file', ToolRiskTier.MEDIUM, 'Read a file in the project.')).toBe(true)
+  })
+
+  it('catches code runners, evaluators, REPLs and remote shells', () => {
+    for (const name of [
+      'os_system',
+      'run_python',
+      'python_exec',
+      'node_eval',
+      'ruby_run',
+      'browser_evaluate',
+      'evaluate',
+      'interact_with_process',
+      'repl',
+      'ssh',
+      'interpreter',
+      'execute_sql',
+    ]) {
+      expect(isCommandTool(name), name).toBe(true)
+    }
+    expect(isCommandTool('do_it', 'Run Python code.')).toBe(true)
+    expect(isCommandTool('do_it', 'Execute the given command.')).toBe(true)
+    expect(isCommandTool('do_it', 'Evaluates a JavaScript expression in the page.')).toBe(true)
+    expect(isCommandTool('do_it', 'Runs the provided python snippet.')).toBe(true)
+  })
+
+  it('isShellCommandTool: only shell/terminal/command tools, never code, SQL or other exec tools', () => {
+    expect(isShellCommandTool('run_command')).toBe(true)
+    expect(isShellCommandTool('terminal_exec')).toBe(true)
+    expect(isShellCommandTool('terminal')).toBe(true)
+    expect(isShellCommandTool('execute_command')).toBe(true)
+    expect(isShellCommandTool('do_it', 'Run a shell command')).toBe(true)
+    for (const [name, description] of [
+      ['execute_sql', 'Execute a SQL query'],
+      ['execute_trade', 'Execute a trade'],
+      ['db_execute', 'Execute the given command against the database'],
+      ['run_python', 'Run Python code'],
+      ['browser_evaluate', 'Evaluate JavaScript'],
+      ['run_local_code', 'Run code'],
+      ['ssh_exec', 'Run a command on a remote host'],
+      ['run_sql_command', 'Run a shell command'],
+      ['do_it', undefined],
+    ] as const) {
+      expect(isShellCommandTool(name, description), name).toBe(false)
+    }
+  })
+
+  it('does not count read-only or UI look-alikes', () => {
+    expect(isCommandTool('get_terminal_size')).toBe(false)
+    expect(isCommandTool('command_palette_open')).toBe(false)
+    expect(isCommandTool('python_docs_lookup')).toBe(false)
   })
 
   it('a read-verb name still counts when its description says it runs commands', () => {

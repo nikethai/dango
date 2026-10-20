@@ -230,14 +230,39 @@ function argTexts(args: unknown): string[] {
 // Read-only commands
 // ---------------------------------------------------------------------------
 
-/** Fields that carry code in another language: a call with one is never treated as a read-only shell command. */
+/** Fields that carry code in another language. */
 const CODE_KEYS = ['script', 'code']
-/** Anything that chains, substitutes, redirects or continues a command: ; & | < > ` $( ${ and line breaks. */
-const SHELL_META = /[;&|<>`\r\n]|\$\(|\$\{/
-/** Programs that only read, whatever their (non-meta) arguments. */
+/** The only argument keys a read-only shell call may have; any other key (a decoy `cmdline`, a SQL `query`) asks. */
+const READ_ONLY_ARG_KEYS = new Set([
+  'command',
+  'cmd',
+  'args',
+  'argv',
+  'arguments',
+  'cwd',
+  'timeout',
+  'timeoutMs',
+  'timeout_ms',
+  'reason',
+  'explanation',
+  'purpose',
+  'description',
+])
+const READ_ONLY_COMMAND_KEYS = ['command', 'cmd']
+/** Keys whose values are prose for the user, not part of the command. */
+const PROSE_KEYS = new Set(['reason', 'explanation', 'purpose', 'description'])
+/**
+ * The only characters a read-only command may use. Everything else — quotes, backslashes, brackets, `$`, `~`, `*`,
+ * `?`, `!`, `@`, redirects, separators, line breaks and any non-ASCII — means the shell could read it differently
+ * than we do, so the call asks.
+ */
+const SAFE_COMMAND_TEXT = /^[A-Za-z0-9 _\-.,/:=+%^]*$/
+/** Paths that hold credentials or keys; reading one always asks. */
+const SECRET_PATH =
+  /(?:^|[/:=])\.env|\.aws(?:\/|$)|\.ssh(?:\/|$)|\.gnupg(?:\/|$)|\.kube(?:\/|$)|\.docker\/config\.json|\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.config\/gh(?:\/|$)|credentials|\.pem$|\.key$|(?:^|[/:])id_|secret|token/i
+/** Programs that only read what they are given (paths are checked separately). */
 const READ_ONLY_PROGRAMS = new Set([
   'ls',
-  'll',
   'pwd',
   'whoami',
   'id',
@@ -246,29 +271,16 @@ const READ_ONLY_PROGRAMS = new Set([
   'df',
   'du',
   'free',
-  'ps',
   'which',
   'type',
-  'echo',
-  'cat',
-  'head',
-  'tail',
-  'wc',
-  'less',
-  'stat',
-  'grep',
-  'ag',
 ])
-/** Arguments that make an otherwise read-only program write, run something else, or change state. */
-const UNSAFE_ARGS: Record<string, (arg: string) => boolean> = {
-  find: (arg) => /^-(?:delete|exec|execdir|ok|okdir|fprint\w*|fls)$/.test(arg),
-  rg: (arg) => arg === '--pre' || arg.startsWith('--pre='),
-  tree: (arg) => arg === '-o' || arg.startsWith('-o'),
-  file: (arg) => arg === '-C' || arg === '--compile',
-  date: (arg) => arg === '-s' || arg.startsWith('--set') || /^-[a-z]*s/i.test(arg),
-}
-const HOSTNAME_FLAGS = new Set(['-f', '-s', '-i', '-I', '-d', '--fqdn', '--short'])
-const GIT_ANY_ARGS = new Set(['status', 'log', 'diff', 'show', 'rev-parse'])
+const FILE_READERS = new Set(['cat', 'head', 'wc', 'stat'])
+const RECURSIVE_FLAG = /^-(?:[a-zA-Z]*[rR][a-zA-Z]*|-recursive)$|^--directories=recurse$|^-d$/
+const FIND_UNSAFE = /^-(?:delete|exec\w*|ok\w*|fprint\w*|fls)$/
+const TAIL_FOLLOW = /^-(?:[a-zA-Z]*[fF][a-zA-Z]*|-follow\b.*|-retry|-pid\b.*)$/
+const GIT_SUBCOMMANDS = new Set(['status', 'log', 'diff', 'show', 'rev-parse'])
+const GIT_UNSAFE =
+  /^(?:-o|-c|-C|--output\b.*|--ext-diff|--textconv|--exec-path\b.*|--upload-pack\b.*|--git-dir\b.*|--work-tree\b.*|--no-index)$/
 const GIT_BRANCH_FLAGS = new Set([
   '-a',
   '-r',
@@ -281,64 +293,79 @@ const GIT_BRANCH_FLAGS = new Set([
   '--verbose',
   '--show-current',
 ])
-const VERSION_FLAGS: Record<string, Set<string>> = {
-  node: new Set(['-v', '--version']),
-  npm: new Set(['-v', '--version']),
-  python: new Set(['-V', '--version']),
-  python3: new Set(['-V', '--version']),
+
+/** A path-like operand that stays inside the working folder and is not a secret. */
+function isSafeOperand(token: string): boolean {
+  if (token.startsWith('/') || token.startsWith('..') || token.includes('/..')) return false
+  return !SECRET_PATH.test(token)
 }
 
 function isReadOnlyGit(rest: string[]): boolean {
   const [sub, ...args] = rest
-  if (!sub) return false
-  if (GIT_ANY_ARGS.has(sub)) return !args.some((arg) => arg.startsWith('--output') || arg === '--ext-diff')
+  if (!sub || !args.every((arg) => !GIT_UNSAFE.test(arg) && isSafeOperand(arg))) return false
+  if (GIT_SUBCOMMANDS.has(sub)) return true
   if (sub === 'branch') return args.every((arg) => GIT_BRANCH_FLAGS.has(arg))
   if (sub === 'remote') return args.length === 0 || (args.length === 1 && args[0] === '-v')
   return false
 }
 
-/** One simple command (no chaining, substitution or redirects) whose program is on the read-only list. */
+/** One simple command, from safe characters only, whose program is on the read-only list. */
 function isReadOnlyCommandText(text: string): boolean {
-  if (SHELL_META.test(text)) return false
-  const tokens = text.trim().split(/\s+/).filter(Boolean)
-  const [program, ...rest] = tokens
-  if (!program || tokens.includes('sudo')) return false
-  if (READ_ONLY_PROGRAMS.has(program)) return true
-  const unsafe = UNSAFE_ARGS[program]
-  if (unsafe) return !rest.some(unsafe)
-  if (program === 'hostname') return rest.every((arg) => HOSTNAME_FLAGS.has(arg))
-  if (program === 'top') return rest.length === 3 && rest.join(' ') === '-b -n 1'
-  if (program === 'env' || program === 'printenv') return rest.length === 0
+  if (!SAFE_COMMAND_TEXT.test(text)) return false
+  const [program, ...rest] = text.trim().split(' ').filter(Boolean)
+  if (!program) return false
+  if (!rest.every(isSafeOperand)) return false
+  if (READ_ONLY_PROGRAMS.has(program)) return program !== 'ls' || !rest.some((arg) => RECURSIVE_FLAG.test(arg))
+  if (FILE_READERS.has(program)) return true
+  if (program === 'tail') return !rest.some((arg) => TAIL_FOLLOW.test(arg))
+  if (program === 'grep') return !rest.some((arg) => RECURSIVE_FLAG.test(arg))
+  if (program === 'find') return !rest.some((arg) => FIND_UNSAFE.test(arg))
+  // `ps e`/`ps eww` print other processes' environment: dash flags only, and none that add the environment.
+  if (program === 'ps') return rest.every((arg) => arg.startsWith('-') && !/e{2}|w.*e|^-[a-zA-Z]*E/.test(arg))
+  if (program === 'hostname') return rest.length === 0
   if (program === 'git') return isReadOnlyGit(rest)
-  const versions = VERSION_FLAGS[program]
-  if (versions) return rest.length === 1 && versions.has(rest[0])
   return false
 }
 
 /**
- * True only when the call runs a single simple command that just reads: `ls -la`, `df -h`, `git status`,
- * `cat README.md`, `{ command: 'ls', args: ['-la'] }`. Every command field (with its spawn-style args) must pass;
- * a call with no command, or with a `script`/`code` field, is not read-only. Pair with the risk tier: a read-only
- * program can still read something sensitive (`cat ~/.ssh/id_rsa` is CRITICAL).
+ * True only for a plain shell call that just reads inside the working folder: `ls -la`, `df -h`, `git status`,
+ * `cat README.md`, `{ command: 'ls', args: ['-la'], cwd: '.' }`. Every argument key must be a known command key
+ * (`command`, `cmd`, spawn-style `args`, `cwd`, a timeout or a reason); each command must be one simple command of
+ * safe characters on the read-only list, reading no secret and nothing outside the folder; and the arguments alone
+ * must classify at most MEDIUM. Fails safe: anything unusual asks.
  */
 export function isReadOnlyCommand(args: unknown): boolean {
-  if (typeof args === 'string') return isReadOnlyCommandText(args)
   if (!args || typeof args !== 'object' || Array.isArray(args)) return false
   const record = args as Record<string, unknown>
-  if (CODE_KEYS.some((key) => record[key] !== undefined)) return false
+  if (!Object.keys(record).every((key) => READ_ONLY_ARG_KEYS.has(key))) return false
+  const cwd = record.cwd
+  if (cwd !== undefined && (typeof cwd !== 'string' || !SAFE_COMMAND_TEXT.test(cwd) || !isSafeOperand(cwd))) {
+    return false
+  }
   const commands: string[] = []
-  for (const commandKey of SPAWN_COMMAND_KEYS) {
+  for (const commandKey of READ_ONLY_COMMAND_KEYS) {
     const command = record[commandKey]
     if (command === undefined) continue
     if (typeof command !== 'string') return false
-    const lists = SPAWN_ARGS_KEYS.map((key) => record[key]).filter(Array.isArray)
+    const lists = SPAWN_ARGS_KEYS.map((key) => record[key]).filter((value) => value !== undefined)
     if (lists.length === 0) commands.push(command)
     for (const list of lists) {
-      if (list.some((item) => typeof item !== 'string')) return false
+      if (!Array.isArray(list) || list.some((item) => typeof item !== 'string')) return false
       commands.push(`${command} ${list.join(' ')}`)
     }
   }
-  return commands.length > 0 && commands.every(isReadOnlyCommandText)
+  if (commands.length === 0 || !commands.every(isReadOnlyCommandText)) return false
+  const commandArgs = Object.fromEntries(Object.entries(record).filter(([key]) => !PROSE_KEYS.has(key)))
+  return tierRank(getArgsRiskTier(commandArgs)) <= tierRank(ToolRiskTier.MEDIUM)
+}
+
+/** The risk tier of a call's arguments alone, without the tool's name or description. */
+export function getArgsRiskTier(args: unknown): ToolRiskTier {
+  const signals: RiskSignal[] = []
+  const texts = argTexts(args)
+  classifyPaths(texts, signals)
+  classifyArgs(texts, signals)
+  return signals.reduce<ToolRiskTier>((max, s) => (tierRank(s.tier) > tierRank(max) ? s.tier : max), ToolRiskTier.LOW)
 }
 
 /**

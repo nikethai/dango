@@ -8,8 +8,9 @@ import { getScopeGrant, type ScopeToolGrant, toolApprovalStore, useScopeGrants }
 export function ScopePermissions({ scopeId }: { scopeId: string }) {
   const { t } = useTranslation()
   const headingId = useId()
-  // Grants for tools that always ask (older grants for command tools) are ignored by the gate, so not listed.
-  const grants = useScopeGrants(scopeId).filter((grant) => !alwaysAsks(grant.toolName))
+  // Grants for tools that always ask (older grants for command tools) are ignored by the gate, so not listed. Older
+  // grants have no stored description; their name alone decides.
+  const grants = useScopeGrants(scopeId).filter((grant) => !alwaysAsks(grant.toolName, grant.toolDescription))
 
   const stopAllowing = (grant: ScopeToolGrant) => {
     const label = toolLabel(grant.toolName)

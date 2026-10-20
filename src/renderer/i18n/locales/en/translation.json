@@ -1805,6 +1805,7 @@
   "What this does": "What this does",
   "Runs with administrator rights.": "Runs with administrator rights.",
   "Deletes {{target}} and everything inside it.": "Deletes {{target}} and everything inside it.",
+  "Deletes every file it is given and everything inside them.": "Deletes every file it is given and everything inside them.",
   "Skips the confirmation prompts.": "Skips the confirmation prompts.",
   "Deletes every file that matches the search.": "Deletes every file that matches the search.",
   "Overwrites a whole disk. Everything on it is lost.": "Overwrites a whole disk. Everything on it is lost.",

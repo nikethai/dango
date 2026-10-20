@@ -333,6 +333,13 @@ describe('wrapToolsWithApproval shipped wrapper', () => {
     await (wrapped.list_commands as Exec).execute({}, {})
     expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ allowAlways: true }))
     expect(addScopeGrantMock).toHaveBeenCalledTimes(1)
+    expect(addScopeGrantMock).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        toolName: 'list_commands',
+        toolDescription: 'Lists the slash commands this server offers.',
+      })
+    )
   })
 
   it('a LOW-by-name tool with a dangerous path arg is not auto-approved', async () => {

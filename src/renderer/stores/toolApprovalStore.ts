@@ -16,8 +16,11 @@ export type ToolApprovalRecord = {
   argsFingerprint?: string
 }
 
-/** "Always" for one tool in one scope. Applies only to calls with exactly this risk tier. */
-export type ScopeToolGrant = { toolName: string; riskTier: ToolRiskTier; grantedAt: number }
+/**
+ * "Always" for one tool in one scope. Applies only to calls with exactly this risk tier. `toolDescription` (optional,
+ * absent on older grants) lets the scope list hide grants the gate ignores for tools that always ask.
+ */
+export type ScopeToolGrant = { toolName: string; riskTier: ToolRiskTier; grantedAt: number; toolDescription?: string }
 
 /** scopeId → toolName → grant. */
 export type ScopeGrants = Record<string, Record<string, ScopeToolGrant>>
@@ -81,6 +84,7 @@ function sanitizeScopeGrants(raw: unknown): ScopeGrants {
         toolName: grant.toolName,
         riskTier: grant.riskTier as ToolRiskTier,
         grantedAt: typeof grant.grantedAt === 'number' ? grant.grantedAt : 0,
+        ...(typeof grant.toolDescription === 'string' ? { toolDescription: grant.toolDescription } : {}),
       }
     }
     if (Object.keys(kept).length > 0) result[scopeId] = kept

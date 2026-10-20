@@ -10,7 +10,7 @@ import {
   alwaysAsksByEffect,
   canAlways,
   describeToolAction,
-  isCommandTool,
+  isShellCommandTool,
   requestToolPermission,
 } from '@/packages/tool-permission'
 import {
@@ -88,7 +88,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 /**
  * Shared approval gate. Per call: LOW tools that do not always ask run at once, and so does a command tool's
- * read-only command (`ls -la`, `git status`; see `isReadOnlyCommand`) unless the call is CRITICAL. Otherwise a grant
+ * read-only command (`ls -la`, `git status`; see `isShellCommandTool` and `isReadOnlyCommand`) unless the call is CRITICAL. Otherwise a grant
  * with exactly the same risk tier (the scope's grant when `scopeId` is set, else this chat's session approval) runs the
  * call, unless the tool always asks (send, delete, pay, workspace files, commands or code) or the call is CRITICAL.
  * Everything else asks through the permission sheet; the wait for an answer is outside the execute timeout, and Stop
@@ -109,8 +109,9 @@ export function wrapToolsWithApproval(
       const wrapTier = getToolRiskTier(toolName, definition?.description)
       const description = definition?.description
       const asksEveryTime = alwaysAsks(toolName, description)
-      // Only a plain command tool may skip the sheet for a read-only command; send/delete/workspace tools never do.
-      const readOnlyCommandsRun = isCommandTool(toolName, description) && !alwaysAsksByEffect(toolName)
+      // Only a local shell tool may skip the sheet for a read-only command; code, SQL, remote, send, delete and
+      // workspace tools never do.
+      const readOnlyCommandsRun = isShellCommandTool(toolName, description) && !alwaysAsksByEffect(toolName)
 
       return [
         toolName,
@@ -169,7 +170,12 @@ export function wrapToolsWithApproval(
               if (choice === 'always' && grantable) {
                 const now = Date.now()
                 if (scopeId) {
-                  toolApprovalStore.getState().addScopeGrant(scopeId, { toolName, riskTier, grantedAt: now })
+                  toolApprovalStore.getState().addScopeGrant(scopeId, {
+                    toolName,
+                    riskTier,
+                    grantedAt: now,
+                    ...(description ? { toolDescription: description } : {}),
+                  })
                   audit('scope', 'allow')
                 } else {
                   toolApprovalStore.getState().addApproval(sessionId, {

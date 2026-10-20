@@ -5,6 +5,7 @@ export {
   commandToolInstructions,
   describeToolAction,
   isCommandTool,
+  isShellCommandTool,
   type PermissionChoice,
   type ToolActionSummary,
   toolLabel,

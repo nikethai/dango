@@ -73,6 +73,18 @@ describe('ScopePermissions', () => {
     expect(rows[0].textContent).toContain('Browser click')
   })
 
+  it('hides a grant whose stored description says the tool runs commands', () => {
+    grant('scope-1', older)
+    grant('scope-1', {
+      toolName: 'mcp_tool',
+      riskTier: ToolRiskTier.MEDIUM,
+      grantedAt: 2,
+      toolDescription: 'Run a shell command',
+    })
+    render(<ScopePermissions scopeId="scope-1" />)
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+  })
+
   it('shows the empty copy when only command-tool grants remain', () => {
     grant('scope-1', { toolName: 'terminal_exec', riskTier: ToolRiskTier.MEDIUM, grantedAt: 1 })
     render(<ScopePermissions scopeId="scope-1" />)

