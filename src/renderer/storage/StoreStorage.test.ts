@@ -33,6 +33,25 @@ describe('StoreStorage write policy', () => {
     }
   )
 
+  it.each([
+    StorageKey.PmDrafts,
+    StorageKey.PmQuestions,
+    StorageKey.PmCursors,
+    StorageKey.PmProcessed,
+    StorageKey.PmDraftCount,
+  ])('writes %s immediately, not debounced', async (key) => {
+    const storage = new StoreStorage()
+    await storage.setItem(key, [{ id: 'x' }])
+    expect(setStoreValue).toHaveBeenCalledWith(key, [{ id: 'x' }])
+  })
+
+  it('pmRecords builds a namespaced key that stays debounced', async () => {
+    expect(StorageKeyGenerator.pmRecords('acme')).toBe('pm:records:acme')
+    const storage = new StoreStorage()
+    await storage.setItem(StorageKeyGenerator.pmRecords('acme'), [])
+    expect(setStoreValue).not.toHaveBeenCalled()
+  })
+
   it('sourceCursor builds a namespaced key', () => {
     expect(StorageKeyGenerator.sourceCursor('abc')).toBe('source-cursor:abc')
   })
