@@ -10,6 +10,7 @@ import {
   type ModelMessage,
   type Provider,
   type ProviderMetadata,
+  RetryError,
   simulateStreamingMiddleware,
   stepCountIs,
   streamText,
@@ -44,6 +45,7 @@ export function persistedSensitiveToolErrorResult(toolName: string, serializedEr
 import type { ModelDependencies } from '../types/adapters'
 import { annotateTextWithGrounding, groundingMetadataToCitations } from '../utils/search'
 import { ApiError, ProviderAPIError } from './errors'
+import { apiErrorFromCallError } from './retry-after'
 import {
   applyReasoningDelta,
   applyTextDelta,
@@ -463,8 +465,9 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
   }
 
   private handleError(error: unknown, context: string = ''): never {
-    if (APICallError.isInstance(error)) {
-      throw new ApiError(`Error from ${this.name}${context}`, error.responseBody)
+    // streamText retries in-request, then wraps the last failed call in a RetryError: keep its status and Retry-After.
+    if (APICallError.isInstance(error) || (RetryError.isInstance(error) && APICallError.isInstance(error.lastError))) {
+      throw apiErrorFromCallError(error, `${this.name}${context}`)
     }
     if (error instanceof ApiError) {
       throw error

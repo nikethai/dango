@@ -4,9 +4,13 @@ import { toSessionAgentFieldsFromSelection } from '@shared/new-chat-agents'
 import { ModelProviderEnum, type Session } from '@shared/types'
 import { createFileRoute, useRouterState } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
+import { useSetAtom } from 'jotai'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { v4 as uuidv4 } from 'uuid'
+import { BeforeSendHost } from '@/components/chat/BeforeSendGate'
+import { ChatDropOverlay } from '@/components/chat/ChatDropOverlay'
+import { FirstChatSuggestionChips, firstChatChipsShown } from '@/components/chat/EmptyThreadState'
 import InputBox, { type InputBoxPayload } from '@/components/InputBox/InputBox'
 import Page from '@/components/layout/Page'
 import NewChatAgentBar from '@/components/new-chat/NewChatAgentBar'
@@ -20,7 +24,9 @@ import {
   NewChatSearchSchema,
   seedDraftFromLink,
 } from '@/lib/newChatSearch'
+import { scopeKindOf } from '@/packages/chat-settings'
 import { resolveDraftScopeId } from '@/projects/scope-navigation'
+import * as atoms from '@/stores/atoms'
 import { createSession as createSessionStore } from '@/stores/chatStore'
 import { submitNewUserMessage, switchCurrentSession } from '@/stores/sessionActions'
 import { initEmptyChatSession } from '@/stores/sessionHelpers'
@@ -53,6 +59,10 @@ function Index() {
     id: 'new',
     ...initEmptyChatSession(),
   })
+  /** Draft chat settings (provider options, plan mode); createSession copies them into the new chat's settings. */
+  const updateDraftSettings = useCallback((next: Partial<NonNullable<Session['settings']>>) => {
+    setSession((old) => ({ ...old, settings: { ...(old.settings || {}), ...next } }))
+  }, [])
   const [composerDraft, setComposerDraft] = useState('')
   const [composerKey, setComposerKey] = useState(0)
   /** Center → bottom dock animation in progress (blocks double-submit). */
@@ -137,7 +147,7 @@ function Index() {
   ])
 
   const routerState = useRouterState()
-  const { scopes } = useScopes()
+  const { scopes, getScope } = useScopes()
   // Seed once per link, and again only if the link's scope resolves differently once scopes load from storage
   // (or the scope is deleted) while the draft still holds the earlier resolution, so a pill choice is never undone.
   // An unknown or deleted scope starts unscoped.
@@ -162,6 +172,11 @@ function Index() {
     }
     lastPrefill.current = prefill
   }, [prefill])
+
+  // EM3: first-chat suggestions ask about the draft's scope; a pick fills the composer without remounting it.
+  const draftScope = getScope(session.projectId)
+  const setNewPrefillText = useSetAtom(atoms.inputBoxPrefillTextFamily('new'))
+  const composerHasDraft = useUIStore((s) => s.composerHasDraft)
 
   const handleAgentIdsChange = useCallback((ids: string[]) => {
     const fields = toSessionAgentFieldsFromSelection(ids)
@@ -280,7 +295,8 @@ function Index() {
 
   return (
     <Page title="">
-      <div className={`session-shell blank-home${isSending ? ' blank-home--sending' : ''}`}>
+      <div className={`session-shell blank-home dg-drop-host${isSending ? ' blank-home--sending' : ''}`}>
+        <ChatDropOverlay />
         <div className="blank-home-grow blank-home-grow-top" aria-hidden />
 
         <div className="blank-home-cluster">
@@ -301,7 +317,13 @@ function Index() {
               </Button>
             )}
           </div>
-          {/* Starters intentionally omitted — design contract: quiet Gemini blank home. */}
+          {!isSending && firstChatChipsShown({ sessionType: 'chat', composerHasDraft }) ? (
+            <FirstChatSuggestionChips
+              scopeName={draftScope?.name}
+              scopeKind={draftScope ? scopeKindOf(draftScope) : null}
+              onPick={setNewPrefillText}
+            />
+          ) : null}
 
           <div className="session-dock blank-home-dock">
             <div className="session-dock-pad flex flex-col gap-3">
@@ -323,15 +345,9 @@ function Index() {
                   session.roomMode === 'work' || session.roomMode === 'swarm' ? session.roomMode : 'discuss'
                 }
                 draftSettings={session.settings}
-                onDraftSettingsChange={(next) =>
-                  setSession((old) => ({
-                    ...old,
-                    settings: {
-                      ...(old.settings || {}),
-                      ...next,
-                    },
-                  }))
-                }
+                onDraftSettingsChange={updateDraftSettings}
+                planMode={session.settings?.planMode ?? false}
+                onPlanModeChange={(planMode) => updateDraftSettings({ planMode })}
                 onDraftRoomModeChange={(mode) => setSession((old) => ({ ...old, roomMode: mode }))}
                 onSelectModel={onSelectModel}
                 onToggleAgentMode={(agentMode) => setSession((old) => ({ ...old, agentMode }))}
@@ -350,6 +366,8 @@ function Index() {
         </div>
 
         <div className="blank-home-grow blank-home-grow-bottom" aria-hidden />
+        {/* The composer's before-send cost sheet. */}
+        <BeforeSendHost />
       </div>
     </Page>
   )

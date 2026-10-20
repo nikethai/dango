@@ -1,8 +1,39 @@
 import { SystemProviders } from '@shared/defaults'
 import { hasProviderCredentials } from '@shared/providers/provider-credentials'
-import { ModelProviderEnum, type ProviderInfo } from '@shared/types'
+import { ModelProviderEnum, type ProviderInfo, type Settings } from '@shared/types'
 import { useCallback, useMemo } from 'react'
 import { useSettingsStore } from '@/stores/settingsStore'
+
+/** Providers ready for chat model selection (credentials / local models), from the settings outside React. */
+export function chatProvidersFromSettings(
+  providerSettingsMap: Settings['providers'],
+  customProviders: Settings['customProviders']
+): ProviderInfo[] {
+  return [...SystemProviders(), ...(customProviders || [])]
+    .map((p) => {
+      const providerSettings = providerSettingsMap?.[p.id]
+      // Builtin: API key OR OAuth. Local/custom: models list (OpenClaw/ComfyUI may use defaults).
+      if (
+        (!p.isCustom && hasProviderCredentials(providerSettings)) ||
+        ((p.isCustom ||
+          p.id === ModelProviderEnum.Ollama ||
+          p.id === ModelProviderEnum.LMStudio ||
+          p.id === ModelProviderEnum.OpenClaw ||
+          p.id === ModelProviderEnum.ComfyUI) &&
+          (providerSettings?.models?.length ||
+            ((p.id === ModelProviderEnum.OpenClaw || p.id === ModelProviderEnum.ComfyUI) &&
+              p.defaultSettings?.models?.length)))
+      ) {
+        return {
+          models: p.defaultSettings?.models,
+          ...p,
+          ...providerSettings,
+        } as ProviderInfo
+      }
+      return null
+    })
+    .filter((p) => !!p)
+}
 
 /** Providers ready for chat model selection (credentials / local models). */
 export const useProviders = () => {
@@ -11,34 +42,9 @@ export const useProviders = () => {
   const customProviders = useSettingsStore((state) => state.customProviders)
   const favoritedModelsSettings = useSettingsStore((state) => state.favoritedModels)
 
-  const allProviderBaseInfos = useMemo(() => [...SystemProviders(), ...(customProviders || [])], [customProviders])
   const providers = useMemo(
-    () =>
-      allProviderBaseInfos
-        .map((p) => {
-          const providerSettings = providerSettingsMap?.[p.id]
-          // Builtin: API key OR OAuth. Local/custom: models list (OpenClaw/ComfyUI may use defaults).
-          if (
-            (!p.isCustom && hasProviderCredentials(providerSettings)) ||
-            ((p.isCustom ||
-              p.id === ModelProviderEnum.Ollama ||
-              p.id === ModelProviderEnum.LMStudio ||
-              p.id === ModelProviderEnum.OpenClaw ||
-              p.id === ModelProviderEnum.ComfyUI) &&
-              (providerSettings?.models?.length ||
-                ((p.id === ModelProviderEnum.OpenClaw || p.id === ModelProviderEnum.ComfyUI) &&
-                  p.defaultSettings?.models?.length)))
-          ) {
-            return {
-              models: p.defaultSettings?.models,
-              ...p,
-              ...providerSettings,
-            } as ProviderInfo
-          }
-          return null
-        })
-        .filter((p) => !!p),
-    [providerSettingsMap, allProviderBaseInfos]
+    () => chatProvidersFromSettings(providerSettingsMap, customProviders),
+    [providerSettingsMap, customProviders]
   )
 
   const favoritedModels = useMemo(

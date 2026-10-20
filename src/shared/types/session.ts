@@ -383,6 +383,10 @@ export const MessageSchema = z.object({
   usage: MessageUsageSchema.optional().catch(undefined),
   timestamp: z.number().optional(),
   firstTokenLatency: z.number().optional(),
+  /** How long the answer took, from the run's start to the finished answer (ms). Errors carry none. */
+  durationMs: z.number().optional().catch(undefined),
+  /** ER4 "Answer without tools": this user message's turn runs with no tools (set before sending, never mid-turn). */
+  toolsOff: z.boolean().optional().catch(undefined),
   tokenSpeed: z.number().optional(), // final tokens/sec after streaming completes
   finishReason: z.string().optional(),
   citations: z.array(SearchCitationSchema).optional().catch(undefined),

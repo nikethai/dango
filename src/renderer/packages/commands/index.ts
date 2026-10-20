@@ -24,6 +24,7 @@ export {
   extractCommandNamesFromText,
   fuzzyScoreCommand,
   getActiveCommandSlashQuery,
+  replaceActiveCommandSlashWithSkillToken,
   stripCommandSlashTokens,
 } from './slash-tokens'
 export {

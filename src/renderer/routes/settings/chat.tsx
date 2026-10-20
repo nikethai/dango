@@ -262,69 +262,6 @@ export function RouteComponent() {
         </SettingsCard>
       </SettingsSection>
 
-      <SettingsCollapsible title={t('Display')} description={t('What metadata shows on messages.')} badge={t('Advanced')}>
-        <SettingsCard divided>
-          <SettingsPrefRow
-            title={t('show message word count')}
-            control={
-              <Switch
-                checked={settings.showWordCount}
-                onChange={() =>
-                  setSettings((draft) => {
-                    draft.showWordCount = !draft.showWordCount
-                  })
-                }
-              />
-            }
-          />
-          <SettingsPrefRow
-            title={t('show message token usage')}
-            control={
-              <Switch
-                checked={settings.showTokenUsed}
-                onChange={() => setSettings({ showTokenUsed: !settings.showTokenUsed })}
-              />
-            }
-          />
-          <SettingsPrefRow
-            title={t('show model name')}
-            control={
-              <Switch
-                checked={settings.showModelName}
-                onChange={() => setSettings({ showModelName: !settings.showModelName })}
-              />
-            }
-          />
-          <SettingsPrefRow
-            title={t('show message timestamp')}
-            control={
-              <Switch
-                checked={settings.showMessageTimestamp}
-                onChange={() => setSettings({ showMessageTimestamp: !settings.showMessageTimestamp })}
-              />
-            }
-          />
-          <SettingsPrefRow
-            title={t('show first token latency')}
-            control={
-              <Switch
-                checked={settings.showFirstTokenLatency}
-                onChange={() => setSettings({ showFirstTokenLatency: !settings.showFirstTokenLatency })}
-              />
-            }
-          />
-          <SettingsPrefRow
-            title={t('show token speed')}
-            control={
-              <Switch
-                checked={settings.showTokenSpeed}
-                onChange={() => setSettings({ showTokenSpeed: !settings.showTokenSpeed })}
-              />
-            }
-          />
-        </SettingsCard>
-      </SettingsCollapsible>
-
       <SettingsCollapsible title={t('Function')} description={t('Rendering and automation behavior.')} badge={t('Advanced')}>
         <SettingsCard divided>
           <SettingsPrefRow

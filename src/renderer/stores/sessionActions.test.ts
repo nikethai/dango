@@ -24,6 +24,12 @@ const {
   getSessionSettingsMock,
   updateMessageCacheMock,
   addReviewEntryMock,
+  getModelMock,
+  insertMessageMock,
+  insertMessagesMock,
+  removeMessageMock,
+  setReviewEntryStateMock,
+  openReviewEntries,
 } = vi.hoisted(() => ({
   updateSessionWithMessages: vi.fn(),
   useSessionMock: vi.fn(),
@@ -33,6 +39,12 @@ const {
   getSessionSettingsMock: vi.fn(),
   updateMessageCacheMock: vi.fn(),
   addReviewEntryMock: vi.fn(async (input: unknown) => input),
+  getModelMock: vi.fn(),
+  insertMessageMock: vi.fn(),
+  insertMessagesMock: vi.fn(),
+  removeMessageMock: vi.fn(),
+  setReviewEntryStateMock: vi.fn(async () => {}),
+  openReviewEntries: { value: [] as unknown[] },
 }))
 
 vi.hoisted(() => {
@@ -66,15 +78,20 @@ vi.hoisted(() => {
 
 vi.mock('@shared/models', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@shared/models')>()),
-  getModel: () => ({
-    name: 'test',
-    modelId: 'test',
-    isSupportToolUse: () => false,
-    isSupportVision: () => false,
-    isSupportReasoning: () => false,
-    isSupportSystemMessage: () => true,
-  }),
+  getModel: (...args: unknown[]) => {
+    getModelMock(...args)
+    return testModel
+  },
 }))
+
+const testModel = {
+  name: 'test',
+  modelId: 'test',
+  isSupportToolUse: () => false,
+  isSupportVision: () => false,
+  isSupportReasoning: () => false,
+  isSupportSystemMessage: () => true,
+}
 
 vi.mock('./session/session-web-browsing', () => ({ getSessionWebBrowsing: () => false }))
 
@@ -90,6 +107,14 @@ vi.mock('./chatStore', () => ({
   getSessionSettings: getSessionSettingsMock,
   getSession: getSessionMock,
   useSession: useSessionMock,
+  insertMessage: insertMessageMock,
+  insertMessages: insertMessagesMock,
+  removeMessage: removeMessageMock,
+}))
+
+vi.mock('@/packages/context-management', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/packages/context-management')>()),
+  runCompactionWithUIState: async () => ({ success: true, truncateTokenLimit: undefined }),
 }))
 
 vi.mock('../platform', () => ({
@@ -145,16 +170,22 @@ vi.mock('@/i18n/locales', () => ({
 
 vi.mock('@/packages/apple_app_store', () => ({ tickAfterMessageGenerated: vi.fn() }))
 vi.mock('@/packages/notifications', () => ({ notifySystemEvent: vi.fn(async () => false) }))
-vi.mock('@/packages/review', () => ({ addReviewEntry: addReviewEntryMock }))
+vi.mock('@/packages/review', () => ({
+  addReviewEntry: addReviewEntryMock,
+  loadReviewEntries: vi.fn(async () => {}),
+  setReviewEntryState: setReviewEntryStateMock,
+  reviewStore: { getState: () => ({ loaded: true, entries: openReviewEntries.value }) },
+}))
 vi.mock('@/packages/model-calls/toolsets/file', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/packages/model-calls/toolsets/file')>()),
   getStagedChangeSetId: () => 'cs-plan',
 }))
 
+const globalSettingsMock = vi.hoisted(() => ({ value: {} as Record<string, unknown> }))
 vi.mock('@/stores/settingsStore', () => ({
   settingsStore: {
     getState: () => ({
-      getSettings: () => ({}),
+      getSettings: () => globalSettingsMock.value,
     }),
   },
   useLanguage: () => 'en',
@@ -203,6 +234,12 @@ beforeEach(() => {
   getSessionSettingsMock.mockReset()
   updateMessageCacheMock.mockReset()
   addReviewEntryMock.mockClear()
+  getModelMock.mockClear()
+  insertMessageMock.mockReset()
+  insertMessagesMock.mockReset()
+  removeMessageMock.mockReset()
+  setReviewEntryStateMock.mockClear()
+  openReviewEntries.value = []
 })
 
 describe('fork actions', () => {
@@ -499,6 +536,286 @@ describe('fork actions', () => {
     expect(fork!.lists).toHaveLength(2)
     expect(fork!.lists[0].messages).toEqual([target])
     expect(runGenerateMore).toHaveBeenCalledWith(session.id, pivot.id)
+  })
+})
+
+describe('redo with another model', () => {
+  const modelOverride = { provider: 'claude', modelId: 'claude-opus' }
+  const chatSession = (): Session => ({
+    id: 'redo-session',
+    name: 'Redo',
+    type: 'chat',
+    messages: [
+      { ...makeMessage('u1', 'user'), contentParts: [{ type: 'text', text: 'Hi' }] },
+      { ...makeMessage('a1', 'assistant'), contentParts: [{ type: 'text', text: 'Old answer' }] },
+    ],
+  })
+  const storedSettings = () => ({ provider: 'openai', modelId: 'gpt', maxContextMessageCount: 20 })
+
+  async function redo(stream: () => Promise<unknown>) {
+    const { streamText } = await import('@/packages/model-calls')
+    vi.mocked(streamText).mockImplementation(stream as never)
+    uuidQueue.push(...Array.from({ length: 50 }, (_, i) => `redo-${i}`))
+    let current = chatSession()
+    getSessionMock.mockImplementation(async () => current)
+    updateSessionWithMessages.mockImplementation(async (_, updater) => {
+      current = updater(current)
+      return current
+    })
+    insertMessageMock.mockImplementation(async (_sid: string, msg: Message, afterId: string) => {
+      const at = current.messages.findIndex((m) => m.id === afterId)
+      current = { ...current, messages: [...current.messages.slice(0, at + 1), msg, ...current.messages.slice(at + 1)] }
+    })
+    const settings = storedSettings()
+    getSessionSettingsMock.mockResolvedValue(settings)
+    try {
+      await sessionActions.regenerateInNewFork(current.id, current.messages[1], { modelOverride })
+    } finally {
+      vi.mocked(streamText).mockReset()
+    }
+    // The last whole message written; a rate-limit retry then patches errorExtra through an updater function.
+    const written = updateMessageMock.mock.calls.map((call) => call[2]).filter((m) => typeof m === 'object')
+    return { settings, saved: written.at(-1) as Message | undefined }
+  }
+
+  test('regenerateInNewFork forwards the model override to generateMore', async () => {
+    uuidQueue.push('fork-1', 'fork-2', 'fork-3', 'fork-4')
+    const session = chatSession()
+    getSessionMock.mockResolvedValue(session)
+    updateSessionWithMessages.mockImplementation(async (_, updater) => updater(session))
+    const runGenerateMore = vi.fn().mockResolvedValue(undefined)
+
+    await sessionActions.regenerateInNewFork(session.id, session.messages[1], { modelOverride, runGenerateMore })
+
+    expect(runGenerateMore).toHaveBeenCalledWith(session.id, 'u1', { modelOverride })
+  })
+
+  test('the redo answers with the picked model and never switches the chat model', async () => {
+    const { settings, saved } = await redo(async () => {
+      return {
+        result: { contentParts: [{ type: 'text', text: 'Redone' }], text: 'Redone', finishReason: 'stop' },
+        knowledgeIds: [],
+      }
+    })
+    expect(getModelMock).toHaveBeenCalled()
+    expect(getModelMock.mock.calls[0][0]).toMatchObject({ provider: 'claude', modelId: 'claude-opus' })
+    expect(saved?.aiProvider).toBe('claude')
+    // The chat keeps its own model: nothing rewrote the stored settings.
+    expect(settings).toEqual(storedSettings())
+    for (const call of updateSessionMock.mock.calls) {
+      expect(call[1]).not.toHaveProperty('settings')
+    }
+  })
+
+  test('a finished answer records how long it took; a failed one does not', async () => {
+    const ok = await redo(async () => ({
+      result: { contentParts: [{ type: 'text', text: 'Redone' }], text: 'Redone', finishReason: 'stop' },
+      knowledgeIds: [],
+    }))
+    expect(ok.saved?.error).toBeUndefined()
+    expect(typeof ok.saved?.durationMs).toBe('number')
+    expect(ok.saved?.durationMs).toBeGreaterThanOrEqual(0)
+
+    updateMessageMock.mockReset()
+    const failed = await redo(async () => {
+      throw new Error('boom')
+    })
+    expect(failed.saved?.error).toBe('boom')
+    expect(failed.saved?.durationMs).toBeUndefined()
+    // A retry of the failed redo keeps the picked model.
+    expect(failed.saved?.errorExtra?.modelOverride).toEqual(modelOverride)
+  })
+
+  test('an empty completion is an error and records no duration (R11)', async () => {
+    const empty = await redo(async () => ({
+      result: { contentParts: [], text: '', finishReason: 'stop' },
+      knowledgeIds: [],
+    }))
+    expect(empty.saved?.error).toBeTruthy()
+    expect(empty.saved?.durationMs).toBeUndefined()
+  })
+
+  test('a failed call keeps its HTTP status and Retry-After on the message', async () => {
+    const { ApiError } = await import('../../shared/models/errors')
+    const failed = await redo(() =>
+      Promise.reject(new ApiError('Error from Claude', '{"error":"rate"}', { status: 429, retryAfterMs: 7_000 }))
+    )
+    expect(failed.saved?.errorExtra).toMatchObject({
+      status: 429,
+      retryAfterMs: 7_000,
+      responseBody: '{"error":"rate"}',
+    })
+    const { cancelRateLimitRetry } = await import('./session/rate-limit-retry')
+    cancelRateLimitRetry('redo-session')
+  })
+
+  test('stop and new send cancel the pending retry: a rate-limited answer waits, Stop drops the wait', async () => {
+    const { ApiError } = await import('../../shared/models/errors')
+    const { isRateLimitRetryPending } = await import('./session/rate-limit-retry')
+    const { stopSessionGeneration } = await import('./session/stop-generation')
+    const failed = await redo(() =>
+      Promise.reject(new ApiError('Error from Claude', '{"error":"rate"}', { status: 429, retryAfterMs: 7_000 }))
+    )
+    const failedId = failed.saved?.id as string
+    expect(isRateLimitRetryPending('redo-session', failedId)).toBe(true)
+    await expect(stopSessionGeneration('redo-session', null)).resolves.toBe(false)
+    expect(isRateLimitRetryPending('redo-session', failedId)).toBe(false)
+  })
+
+  test('stop and new send cancel the pending retry: a new send drops the wait and only the new turn runs', async () => {
+    const { ApiError } = await import('../../shared/models/errors')
+    const { isRateLimitRetryPending } = await import('./session/rate-limit-retry')
+    const { streamText } = await import('@/packages/model-calls')
+    // A short provider wait, so a retry that was not cancelled would fire within this test.
+    const failed = await redo(() =>
+      Promise.reject(new ApiError('Error from Claude', '{"error":"rate"}', { status: 429, retryAfterMs: 30 }))
+    )
+    const failedId = failed.saved?.id as string
+    expect(isRateLimitRetryPending('redo-session', failedId)).toBe(true)
+
+    vi.mocked(streamText).mockImplementation((async () => ({
+      result: { contentParts: [{ type: 'text', text: 'New answer' }], text: 'New answer', finishReason: 'stop' },
+      knowledgeIds: [],
+    })) as never)
+    // The chat as stored after the failure: the failed answer is settled, nothing is streaming.
+    let current: Session = {
+      ...chatSession(),
+      messages: [...chatSession().messages, { ...(failed.saved as Message), generating: false }],
+    }
+    getSessionMock.mockImplementation(async () => current)
+    insertMessagesMock.mockImplementation(async (_sid: string, msgs: Message[]) => {
+      current = { ...current, messages: [...current.messages, ...msgs] }
+    })
+    try {
+      const newUserMsg = { ...makeMessage('u-new', 'user'), contentParts: [{ type: 'text' as const, text: 'Next' }] }
+      await sessionActions.submitNewUserMessage('redo-session', { newUserMsg, needGenerating: true })
+      expect(isRateLimitRetryPending('redo-session', failedId)).toBe(false)
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      // One model call: the new turn. The failed answer was not retried behind it.
+      expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.mocked(streamText).mockReset()
+    }
+  })
+
+  test('a send blocked by the usage budget is marked as a budget error', async () => {
+    vi.doMock('@/packages/usage-tracking', () => ({
+      providerUsageService: { init: async () => {}, getLocalSnapshot: () => ({}) },
+      evaluateBudget: () => ({ message: 'Monthly cap reached' }),
+      shouldHardStopSend: () => true,
+    }))
+    globalSettingsMock.value = { usageBudget: { enabled: true, pauseWhenExceeded: true, period: 'month' } }
+    try {
+      const blocked = await redo(() => Promise.reject(new Error('the model must not be called')))
+      expect(blocked.saved?.error).toMatch(/^Send blocked: Monthly cap reached/)
+      expect(blocked.saved?.errorExtra).toMatchObject({ kind: 'budget' })
+    } finally {
+      globalSettingsMock.value = {}
+      vi.doUnmock('@/packages/usage-tracking')
+    }
+  })
+})
+
+describe('rate-limit Needs you in rooms', () => {
+  const answered = async () => ({
+    result: { contentParts: [{ type: 'text', text: 'Answer' }], text: 'Answer', finishReason: 'stop' },
+    knowledgeIds: [],
+  })
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+  const roomSession = (): Session => ({
+    id: 'room-session',
+    name: 'Room',
+    type: 'chat',
+    agentIds: ['agent-a', 'agent-b'],
+    messages: [
+      { ...makeMessage('u1', 'user'), contentParts: [{ type: 'text', text: 'Hi' }] },
+      { ...makeMessage('a1', 'assistant'), generating: true },
+    ],
+  })
+
+  beforeEach(() => {
+    // The chat waits in Review after an earlier rate limit.
+    openReviewEntries.value = [
+      { id: 'r1', kind: 'needs-you', state: 'open', ref: { type: 'chat', id: 'room-session' }, chatId: 'room-session' },
+    ]
+  })
+
+  async function answerTurn(options: { roomMulti?: boolean }) {
+    const { streamText } = await import('@/packages/model-calls')
+    vi.mocked(streamText).mockImplementation(answered as never)
+    uuidQueue.push(...Array.from({ length: 50 }, (_, i) => `room-${i}`))
+    let current = roomSession()
+    getSessionMock.mockImplementation(async () => current)
+    updateSessionWithMessages.mockImplementation((_, updater) => {
+      current = updater(current)
+      return Promise.resolve(current)
+    })
+    getSessionSettingsMock.mockResolvedValue({ provider: 'openai', modelId: 'gpt', maxContextMessageCount: 20 })
+    try {
+      await sessionActions.generate('room-session', current.messages[1], { operationType: 'send_message', ...options })
+      await settle()
+    } finally {
+      vi.mocked(streamText).mockReset()
+    }
+  }
+
+  test("a plain answer resolves the chat's rate-limit Needs you entry", async () => {
+    await answerTurn({})
+    expect(setReviewEntryStateMock).toHaveBeenCalledWith({ ref: { type: 'chat', id: 'room-session' } }, 'done')
+  })
+
+  test('one room turn that answers (roomMulti) leaves the Needs you entry open', async () => {
+    await answerTurn({ roomMulti: true })
+    expect(setReviewEntryStateMock).not.toHaveBeenCalled()
+  })
+
+  async function sendInRoom(turns: Message[]) {
+    let current: Session = { ...roomSession(), messages: [roomSession().messages[0]] }
+    getSessionMock.mockImplementation(async () => current)
+    getSessionSettingsMock.mockResolvedValue({ provider: 'openai', modelId: 'gpt', maxContextMessageCount: 20 })
+    insertMessagesMock.mockImplementation((_sid: string, msgs: Message[]) => {
+      current = { ...current, messages: [...current.messages, ...msgs] }
+      return Promise.resolve()
+    })
+    removeMessageMock.mockImplementation((_sid: string, id: string) => {
+      current = { ...current, messages: current.messages.filter((m) => m.id !== id) }
+      return Promise.resolve()
+    })
+    const runAgentRoomDiscussion = vi.fn(() => {
+      current = { ...current, messages: [...current.messages, ...turns] }
+      return Promise.resolve()
+    })
+    vi.doMock('./session/multi-agent-room', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('./session/multi-agent-room')>()),
+      applyRoomMembership: async () => ['agent-a', 'agent-b'],
+      shouldRunMultiAgentRoom: () => true,
+      runAgentRoomDiscussion,
+    }))
+    uuidQueue.push(...Array.from({ length: 50 }, (_, i) => `send-${i}`))
+    try {
+      const newUserMsg = { ...makeMessage('u-room', 'user'), contentParts: [{ type: 'text' as const, text: 'Go' }] }
+      await sessionActions.submitNewUserMessage('room-session', { newUserMsg, needGenerating: true })
+      await settle()
+    } finally {
+      vi.doUnmock('./session/multi-agent-room')
+    }
+    expect(runAgentRoomDiscussion).toHaveBeenCalledTimes(1)
+  }
+
+  test('a room run where every turn answered resolves the Needs you entry', async () => {
+    await sendInRoom([
+      { ...makeMessage('t1', 'assistant'), contentParts: [{ type: 'text', text: 'A' }] },
+      { ...makeMessage('t2', 'assistant'), contentParts: [{ type: 'text', text: 'B' }] },
+    ])
+    expect(setReviewEntryStateMock).toHaveBeenCalledWith({ ref: { type: 'chat', id: 'room-session' } }, 'done')
+  })
+
+  test('a room run with a failed turn leaves the Needs you entry open', async () => {
+    await sendInRoom([
+      { ...makeMessage('t1', 'assistant'), contentParts: [{ type: 'text', text: 'A' }] },
+      { ...makeMessage('t2', 'assistant'), error: 'Rate limited' },
+    ])
+    expect(setReviewEntryStateMock).not.toHaveBeenCalled()
   })
 })
 

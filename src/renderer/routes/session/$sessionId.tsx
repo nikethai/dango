@@ -7,7 +7,9 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useTranslation } from 'react-i18next'
 import BrowserAgentPanel from '@/components/BrowserAgent/BrowserAgentPanel'
 import ComputerUseHud from '@/components/ComputerUse/ComputerUseHud'
+import { BeforeSendHost } from '@/components/chat/BeforeSendGate'
 import ChatDockStack from '@/components/chat/ChatDockStack'
+import { ChatDropOverlay } from '@/components/chat/ChatDropOverlay'
 import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
 import SessionStatusBar from '@/components/chat/SessionStatusBar'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
@@ -21,11 +23,12 @@ import { useProviders } from '@/hooks/useProviders'
 import platform from '@/platform'
 import { getEffectiveProjectId } from '@/projects/project-context'
 import { commitProjectContextDraft } from '@/projects/project-context-draft'
-import { moveSessionToScopeOrToast } from '@/projects/scope-feedback'
 import { updateSessionWithMessages as updateSessionStore, useSession } from '@/stores/chatStore'
 import { lastUsedModelStore } from '@/stores/lastUsedModelStore'
 import * as scrollActions from '@/stores/scrollActions'
+import { moveChatWithUndoOrToast } from '@/stores/session/chat-menu-actions'
 import { isSessionGenerationActive } from '@/stores/session/generation-cancel'
+import { setChatPlanMode } from '@/stores/session/plan-mode'
 import { isSessionGenerationLive, subscribeSessionGenerationLive } from '@/stores/session/session-live-generation'
 import { modifyMessage, removeCurrentThread, startNewThread, submitNewUserMessage } from '@/stores/sessionActions'
 import { getAllMessageList } from '@/stores/sessionHelpers'
@@ -279,7 +282,8 @@ function RouteComponent() {
           resolved={resolved}
           onDescriptorChange={setDescriptor}
         />
-        <div className="session-main-col">
+        <div className="session-main-col dg-drop-host">
+          <ChatDropOverlay />
           {/* key ensures a fresh MessageList instance per session */}
           <div className="session-thread">
             <MessageList ref={messageListRef} key={`message-list${currentSessionId}`} currentSession={currentSession} />
@@ -357,6 +361,10 @@ function RouteComponent() {
                     onToggleAgentMode={(agentMode) => {
                       void updateSessionStore(currentSession.id, { agentMode })
                     }}
+                    planMode={currentSession.settings?.planMode ?? false}
+                    onPlanModeChange={(on) => {
+                      void setChatPlanMode(currentSession.id, on)
+                    }}
                     onWorkspaceRootChange={(workspaceRoot) => {
                       void updateSessionStore(currentSession.id, { workspaceRoot })
                     }}
@@ -373,7 +381,7 @@ function RouteComponent() {
                     onSubmit={onSubmit}
                     onStopGenerating={onStopGenerating}
                     scopeId={getEffectiveProjectId(currentSession)}
-                    onScopeChange={(id) => void moveSessionToScopeOrToast(currentSessionId, id)}
+                    onScopeChange={(id) => void moveChatWithUndoOrToast(currentSessionId, id)}
                   />
                 </ErrorBoundary>
               </ChatDockStack>
@@ -398,6 +406,8 @@ function RouteComponent() {
       </div>
 
       <ThreadHistoryDrawer session={currentSession} />
+      {/* The before-send cost sheet for the composer and the message actions (Redo, Redo ▾, edit-and-resend…). */}
+      <BeforeSendHost />
     </div>
   ) : null
 }

@@ -2,7 +2,7 @@ import { ActionIcon, Flex, TextInput, Title, Tooltip } from '@mantine/core'
 import type { Session } from '@shared/types'
 import { IconCheck, IconMenu2, IconPencil, IconX } from '@tabler/icons-react'
 import clsx from 'clsx'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
@@ -59,10 +59,10 @@ export default function Header(props: { session: Session }) {
     }
   }, [currentSession])
 
-  const startRename = () => {
+  const startRename = useCallback(() => {
     setRenameValue(currentSession.name)
     setRenaming(true)
-  }
+  }, [currentSession.name])
 
   const cancelRename = () => {
     setRenaming(false)
@@ -225,7 +225,7 @@ export default function Header(props: { session: Session }) {
       </Flex>
 
       {/* Search lives in the sidebar only; session options live in the single ⋯ menu. */}
-      <Toolbar session={currentSession} />
+      <Toolbar session={currentSession} onRename={startRename} />
 
       <WindowControls className="-mr-3 ml-2" />
     </TitleBarRow>

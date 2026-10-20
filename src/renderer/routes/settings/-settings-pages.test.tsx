@@ -70,4 +70,21 @@ describe('chat settings page', () => {
     fireEvent.click(screen.getByLabelText('Closed'))
     expect(h.setSettings).toHaveBeenCalledWith({ showThinking: 'closed' })
   })
+
+  it('has no Display section: the answer row shows model · tokens · time on its own', async () => {
+    h.settings = {}
+    const { RouteComponent } = await import('./chat')
+    wrap(<RouteComponent />)
+    expect(screen.queryByText('Display')).toBeNull()
+    for (const label of [
+      'show message word count',
+      'show message token usage',
+      'show model name',
+      'show message timestamp',
+      'show first token latency',
+      'show token speed',
+    ]) {
+      expect(screen.queryByText(label)).toBeNull()
+    }
+  })
 })

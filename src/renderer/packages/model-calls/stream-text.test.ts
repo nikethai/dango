@@ -32,6 +32,9 @@ const {
   ),
 }))
 
+/** Toolset descriptions the prompt would carry; empty unless a case sets them. */
+const toolDescriptions = vi.hoisted(() => ({ attachment: '', video: '', videoUrl: '' }))
+
 const settingsState = vi.hoisted(() => ({
   extension: {
     webSearch: {
@@ -156,7 +159,9 @@ vi.mock('./toolsets/file', () => ({
     tools: {},
   },
   attachmentFileToolSet: {
-    description: '',
+    get description() {
+      return toolDescriptions.attachment
+    },
     tools: {},
   },
   createWorkspaceFileToolSet: vi.fn(() => ({
@@ -180,7 +185,9 @@ vi.mock('./toolsets/terminal', () => ({
 
 vi.mock('./toolsets/video', () => ({
   default: {
-    description: '',
+    get description() {
+      return toolDescriptions.video
+    },
     tools: {},
   },
   initVideoToolBudget: vi.fn(),
@@ -189,7 +196,9 @@ vi.mock('./toolsets/video', () => ({
 
 vi.mock('./toolsets/video-url', () => ({
   default: {
-    description: '',
+    get description() {
+      return toolDescriptions.videoUrl
+    },
     tools: {
       read_video_url: { description: 'read_video_url', execute: vi.fn() },
     },
@@ -539,5 +548,53 @@ describe('streamText approved knowledge', () => {
     expect(injected.length).toBeLessThan(scoped.length)
     expect(knowledgeIds).toEqual(injected)
     knowledgeTurn.items = []
+  })
+})
+
+describe('streamText tools-off turn', () => {
+  it('does not describe attachment, video or video-URL tools to a turn that has no tools', async () => {
+    toolDescriptions.attachment = 'ATTACHMENT FILE TOOLS'
+    toolDescriptions.video = 'VIDEO TOOLS'
+    toolDescriptions.videoUrl = 'VIDEO URL TOOLS'
+    settingsState.extension.videoUrl.enabled = true
+    const { streamText } = await import('./stream-text')
+    const messages = () => [
+      {
+        ...createMessage('user', 'Summarise these'),
+        links: [{ id: 'l1', url: 'https://example.com', title: 'Example' }],
+        files: [{ id: 'v1', name: 'clip.mp4', mediaKind: 'video' as const, storageKey: 'video-1' }],
+      } as Message,
+    ]
+    const instructionsSent = () =>
+      injectModelSystemPromptMock.mock.calls.map((call) => String(call[2] ?? '')).join('\n')
+    try {
+      // Control: with tools on, the instructions are there.
+      injectModelSystemPromptMock.mockClear()
+      const chat = vi.fn(async () => ({ contentParts: [], text: 'done' }) as StreamTextResult)
+      await streamText(createTestModel(chat), { messages: messages(), onResultChangeWithCancel: vi.fn() })
+      expect(instructionsSent()).toContain('ATTACHMENT FILE TOOLS')
+      expect(instructionsSent()).toContain('VIDEO URL TOOLS')
+
+      // Tools off (Answer without tools): `tools: {}` and no tool instructions.
+      injectModelSystemPromptMock.mockClear()
+      const toolsOffChat = vi.fn((_messages, options) => {
+        expect(Object.keys(options.tools ?? {})).toEqual([])
+        return Promise.resolve({ contentParts: [], text: 'done' } as StreamTextResult)
+      })
+      await streamText(createTestModel(toolsOffChat), {
+        messages: messages(),
+        tools: {},
+        onResultChangeWithCancel: vi.fn(),
+      })
+      expect(toolsOffChat).toHaveBeenCalled()
+      expect(instructionsSent()).not.toContain('ATTACHMENT FILE TOOLS')
+      expect(instructionsSent()).not.toContain('VIDEO TOOLS')
+      expect(instructionsSent()).not.toContain('VIDEO URL TOOLS')
+    } finally {
+      toolDescriptions.attachment = ''
+      toolDescriptions.video = ''
+      toolDescriptions.videoUrl = ''
+      settingsState.extension.videoUrl.enabled = false
+    }
   })
 })

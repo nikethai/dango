@@ -137,6 +137,11 @@ export async function getSession(sessionId: string) {
   return await queryClient.fetchQuery(getSessionQueryOptions(sessionId))
 }
 
+/** The session as cached right now, read synchronously; undefined when it is not loaded. */
+export function peekSession(sessionId: string): Session | undefined {
+  return queryClient.getQueryData<Session | null>(QueryKeys.ChatSession(sessionId)) ?? undefined
+}
+
 /** Read a session directly from storage without consulting the stale React Query cache. */
 export async function sessionExistsInStorage(sessionId: string): Promise<boolean> {
   return (await storage.getItem<Session | null>(StorageKeyGenerator.session(sessionId), null)) !== null
@@ -303,14 +308,17 @@ export async function updateSessionCache(sessionId: string, updater: Updater<Ses
   }
 }
 
-export async function deleteSession(id: string) {
+/** Delete a session. Resolves to the raw storage-list index it held (-1 when it was not listed), for restoreSession. */
+export async function deleteSession(id: string): Promise<number> {
   console.debug('chatStore', 'deleteSession', id)
   await storage.removeItem(StorageKeyGenerator.session(id))
   _setSessionCache(id, null)
+  let removedIndex = -1
   await updateSessionList((sessions) => {
     if (!sessions) {
       throw new Error('Session list not found')
     }
+    removedIndex = sessions.findIndex((session) => session.id === id)
     return sessions.filter((session) => session.id !== id)
   })
   if (getDefaultStore().get(currentSessionIdAtom) === id) {
@@ -331,6 +339,30 @@ export async function deleteSession(id: string) {
   } catch (err) {
     console.error('Failed to clear session tasks on delete', id, err)
   }
+  return removedIndex
+}
+
+/**
+ * Put a deleted session back (undo of delete): same id, same messages, at `index` in the raw storage list (clamped;
+ * -1 appends). The sorted display list then shows it where it was.
+ */
+export async function restoreSession(session: Session, index: number): Promise<void> {
+  console.debug('chatStore', 'restoreSession', session.id, index)
+  if (isImportedRecordId(session.id)) {
+    throw new Error('Imported records cannot use native session APIs')
+  }
+  await storage.setItemNow(StorageKeyGenerator.session(session.id), session)
+  queryClient.setQueryData(QueryKeys.ChatSession(session.id), session)
+  const sMeta = getSessionMeta(session)
+  await updateSessionList((sessions) => {
+    if (!sessions) {
+      throw new Error('Session list not found')
+    }
+    const rest = sessions.filter((s) => s.id !== session.id)
+    const at = index < 0 ? rest.length : Math.min(index, rest.length)
+    return [...rest.slice(0, at), sMeta, ...rest.slice(at)]
+  })
+  void broadcastSessionChanged(session.id)
 }
 
 // MARK: session settings operations

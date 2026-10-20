@@ -18,6 +18,8 @@ export type ModelSelectorProps = PropsWithChildren<
     autoText?: string
     onSelect?: (provider: ModelProvider | string, model: string) => void
     onDropdownOpen?: () => void
+    /** The list closed (picked, dismissed or Escape). */
+    onDropdownClose?: () => void
     modelFilter?: (model: ProviderModelInfo) => boolean
     selectedProviderId?: string
     selectedModelId?: string
@@ -32,6 +34,7 @@ export const ModelSelector = forwardRef<HTMLDivElement, ModelSelectorProps>(
       autoText,
       onSelect,
       onDropdownOpen,
+      onDropdownClose,
       children,
       modelFilter,
       selectedProviderId,
@@ -109,6 +112,8 @@ export const ModelSelector = forwardRef<HTMLDivElement, ModelSelectorProps>(
         onTabChange={setActiveTab}
         onSearchChange={setSearch}
         onOptionSubmit={handleOptionSubmit}
+        onDropdownOpen={onDropdownOpen}
+        onDropdownClose={onDropdownClose}
         modelFilter={modelFilter}
       >
         {children}
@@ -127,12 +132,9 @@ export const ModelSelector = forwardRef<HTMLDivElement, ModelSelectorProps>(
         onSearchChange={setSearch}
         onOptionSubmit={handleOptionSubmit}
         onDropdownOpen={onDropdownOpen}
+        onDropdownClose={onDropdownClose}
         modelFilter={modelFilter}
-        comboboxProps={
-          isQuickChat
-            ? { width: 320, ...comboboxProps }
-            : comboboxProps
-        }
+        comboboxProps={isQuickChat ? { width: 320, ...comboboxProps } : comboboxProps}
         searchPosition={searchPosition}
       >
         {children}

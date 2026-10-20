@@ -11,8 +11,8 @@ import { useProviders } from '@/hooks/useProviders'
 import { navigateToSettings } from '@/modals/Settings'
 import { collapsedProvidersAtom } from '@/stores/atoms/uiAtoms'
 import { ScalableIcon } from '../common/ScalableIcon'
-import { ProviderHeader } from './ProviderHeader'
 import { shouldShowProviderSetup } from './mobileModelSelectorUtils'
+import { ProviderHeader } from './ProviderHeader'
 import { groupFavoriteModels, ModelItemInDrawer, SELECTED_BG_CLASS } from './shared'
 
 type FilteredProvider = {
@@ -34,6 +34,8 @@ interface MobileModelSelectorProps {
   onTabChange: (tab: string | null) => void
   onSearchChange: (search: string) => void
   onOptionSubmit: (val: string) => void
+  onDropdownOpen?: () => void
+  onDropdownClose?: () => void
   modelFilter?: (model: ProviderModelInfo) => boolean
 }
 
@@ -51,13 +53,20 @@ export const MobileModelSelector = forwardRef<HTMLDivElement, MobileModelSelecto
       onTabChange,
       onSearchChange,
       onOptionSubmit,
+      onDropdownOpen,
+      onDropdownClose,
     },
     _ref
   ) => {
     const { t } = useTranslation()
     const { favoritedModels, favoriteModel, unfavoriteModel, isFavoritedModel } = useProviders()
     const [collapsedProviders, setCollapsedProviders] = useAtom(collapsedProvidersAtom)
-    const [open, setOpen] = useState(false)
+    const [open, setOpenState] = useState(false)
+    const setOpen = (next: boolean) => {
+      setOpenState(next)
+      if (next) onDropdownOpen?.()
+      else onDropdownClose?.()
+    }
 
     // Convert activeTab to index for SwipeableViews (0 = 'all', 1 = 'favorite')
     const swipeIndex = useMemo(() => {

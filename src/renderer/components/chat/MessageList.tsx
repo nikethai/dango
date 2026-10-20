@@ -33,9 +33,11 @@ import { useScopes } from '@/hooks/useScopes'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
 import { getShowThinking, scopeKindOf } from '@/packages/chat-settings'
-import { planContinueState } from '@/packages/plan/planSteps'
+import { isPlanModeOn, planContinueState, planModeToggleShown } from '@/packages/plan/planSteps'
 import { thinkingOpenByDefault } from '@/packages/thinking/thinking'
+import { platformCapabilities } from '@/platform'
 import * as atoms from '@/stores/atoms'
+import { turnOnChatPlanMode } from '@/stores/session/plan-mode'
 import {
   deleteFork,
   expandFork,
@@ -54,7 +56,7 @@ import ActionMenu from '../ActionMenu'
 import { ErrorBoundary } from '../common/ErrorBoundary'
 import { ScalableIcon } from '../common/ScalableIcon'
 import { BlockCodeCollapsedStateProvider } from '../Markdown'
-import EmptyThreadState from './EmptyThreadState'
+import EmptyThreadState, { firstChatChipsShown } from './EmptyThreadState'
 import Message from './Message'
 import SummaryMessage from './SummaryMessage'
 
@@ -164,7 +166,11 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   )
   // Continue on a stopped plan: only the latest plan, while it is the chat's last message and nothing generates.
   const lastMessageId = currentMessageList.at(-1)?.id
-  const planModeOn = Boolean(currentSession.agentMode && currentSession.settings?.planMode)
+  const planModeOn = isPlanModeOn(currentSession)
+  // A Continue blocked by plan mode offers to turn it back on (with Agent Mode); Continue stays a separate click.
+  // Only where the composer has the toggle: desktop settings, not a multi-agent room.
+  const onTurnOnPlanMode = useCallback(() => turnOnChatPlanMode(currentSession.id), [currentSession.id])
+  const turnOnPlanModeOffered = planModeToggleShown(currentSession, platformCapabilities.supportsDesktopOnlySettings)
   const planContinueFor = (messageId: string) =>
     planContinueState({
       latestPlan: messageId === latestPlanMessageId,
@@ -190,6 +196,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   )
 
   const threadEmpty = useMemo(() => isThreadVisuallyEmpty(currentMessageList), [currentMessageList])
+  const composerHasDraft = useUIStore((s) => s.composerHasDraft)
 
   const handleJumpToLatest = useCallback(() => {
     virtuoso.current?.scrollTo({ top: Infinity, behavior: 'smooth' })
@@ -236,7 +243,10 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
             <EmptyThreadState
               sessionName={currentSession.name}
               onPickStarter={handlePickStarter}
+              scopeName={scope?.name}
+              scopeKind={scope ? scopeKindOf(scope) : null}
               compact={alignToBottom || isSmallScreen}
+              showSuggestions={firstChatChipsShown({ sessionType: currentSession.type, composerHasDraft })}
             />
           ) : (
             <Virtuoso
@@ -331,6 +341,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
                           planTouchesFiles={planTouchesFiles}
                           latestPlan={msg.id === latestPlanMessageId}
                           planContinue={planContinueFor(msg.id)}
+                          onTurnOnPlanMode={turnOnPlanModeOffered ? onTurnOnPlanMode : undefined}
                         />
                       )}
                     </ErrorBoundary>

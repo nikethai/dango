@@ -2,7 +2,7 @@
  * Plan card rules (slice 6a): which steps a plan has, which state its card is in, and how far a run got.
  * Pure; the card and the plan lifecycle (`planTitle`) share this one step parser.
  */
-import type { MessagePlanPart } from '@shared/types'
+import type { Message, MessagePlanPart, Session } from '@shared/types'
 import type { Task, TaskStatus } from '@/stores/taskStore'
 
 export type PlanCardState = 'proposed' | 'running' | 'stopped' | 'finished' | 'rejected' | 'revised'
@@ -91,6 +91,15 @@ export function planHasMoreThanSteps(planText: string): boolean {
 }
 
 /**
+ * An execution run of an approved plan (Run plan or Continue): its answer carries the approved plan part. Such a run
+ * keeps its own bookkeeping (planPhase, the plan part), so a bare retry must not re-run it; the card's Continue is the
+ * fix. Shared by generation, the rate-limit retry and the error notice.
+ */
+export function isApprovedPlanRun(msg: Pick<Message, 'contentParts'>): boolean {
+  return msg.contentParts.some((part) => part.type === 'plan' && part.status === 'approved')
+}
+
+/**
  * Superseded by a newer version after Request changes: stored as 'rejected' plus `revised: true` (older builds read it
  * as rejected); a stored 'revised' from an early 6a build reads the same.
  */
@@ -133,6 +142,19 @@ export function planRunTasks(tasks: Task[], sessionId: string, startedAt: number
   return tasks.filter(
     (task) => task.sessionId === sessionId && (startedAt === undefined || task.createdAt >= startedAt)
   )
+}
+
+/** Plan mode is on for a chat: its plan-mode setting, in an agent chat (plan mode means nothing without agent mode). */
+export function isPlanModeOn(session: Pick<Session, 'agentMode' | 'settings'>): boolean {
+  return Boolean(session.agentMode && session.settings?.planMode)
+}
+
+/**
+ * Whether the chat has a plan-mode toggle in its composer (desktop settings, not a room of two or more agents), so a
+ * blocked Continue may offer "Turn on plan mode" there too. Pass `platformCapabilities.supportsDesktopOnlySettings`.
+ */
+export function planModeToggleShown(session: Pick<Session, 'agentIds'>, supportsDesktopOnlySettings: boolean): boolean {
+  return supportsDesktopOnlySettings && (session.agentIds?.length ?? 0) < 2
 }
 
 /** Whether a stopped plan's card offers Continue: ready, disabled (plan mode off), or not at all. */

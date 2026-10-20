@@ -19,6 +19,7 @@ import {
   type SessionSettings,
   type SessionType,
   type Settings,
+  type StreamTextResult,
 } from '@shared/types'
 import { cloneMessage, getMessageText, mergeMessages } from '@shared/utils/message'
 import type { ToolSet } from 'ai'
@@ -40,7 +41,9 @@ import {
 import { buildUntrustedImportedContextBlock } from '@/packages/imported-context'
 import { prependUntrustedBlockToPrompt } from '@/packages/imported-history/continue-session'
 import { generateImage, streamText } from '@/packages/model-calls'
+import { classifyModelError } from '@/packages/model-errors/classify'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
+import { isApprovedPlanRun } from '@/packages/plan/planSteps'
 import { buildSkillContextBlocks, resolveSkillActivations, selectCatalogForInject } from '@/packages/skills'
 import { estimateTokensFromMessages } from '@/packages/token'
 import { getVideoLimits } from '@/packages/video'
@@ -81,6 +84,7 @@ import {
   resumedRunParts,
   withResumedParts,
 } from './plan-lifecycle'
+import { cancelRateLimitRetry, rateLimitAnswered, scheduleRateLimitRetry } from './rate-limit-retry'
 import {
   clearSessionGenerationLive,
   isSessionGenerationLive,
@@ -88,6 +92,7 @@ import {
 } from './session-live-generation'
 import { getSessionWebBrowsing } from './session-web-browsing'
 import { buildVisibleAnswerContinuePrompt, mergeContinuedContentParts } from './tool-only-continue'
+import { isToolsOffTurn } from './tools-off'
 
 export { getSessionWebBrowsing }
 export { cancelSessionGeneration, clearGenerationCancel } from './generation-cancel'
@@ -112,6 +117,11 @@ function getMessageFromSession(session: Session, messageId: string): Message | n
   return location ? location.list[location.index] : null
 }
 
+/** The rejection an aborted fetch or stream ends with (a DOMException or an Error named AbortError). */
+function isAbortError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { name?: unknown }).name === 'AbortError'
+}
+
 function getPlanPart(message: Message): MessagePlanPart | null {
   return message.contentParts.find((part): part is MessagePlanPart => part.type === 'plan') ?? null
 }
@@ -124,6 +134,9 @@ function withPlanPart(
   const withoutPlan = contentParts.filter((part) => part.type !== 'plan')
   return [...withoutPlan, planPart]
 }
+
+/** The model a single turn answers with instead of the chat's (Redo ▾). */
+export type ModelOverride = { provider: string; modelId: string }
 
 type PlanDecisionFields = Partial<Pick<MessagePlanPart, 'startedAt' | 'revised' | 'runStartedAt'>>
 
@@ -499,7 +512,7 @@ async function getReadOnlyToolsForPlanning(
  * Run overflow handling and return truncateTokenLimit if applicable.
  * Used by regenerate flows to apply the same truncation as send-message.
  */
-async function getOverflowTruncateLimit(sessionId: string): Promise<number | undefined> {
+export async function getOverflowTruncateLimit(sessionId: string): Promise<number | undefined> {
   const session = await chatStore.getSession(sessionId)
   if (!session || (session.type !== 'chat' && session.type !== undefined)) {
     return undefined
@@ -646,8 +659,13 @@ export async function generate(
     skipQueuedMessages?: boolean
     /** Continue a stopped plan run in place: keep its visible work and tell the model where it stopped. */
     resumePlanRun?: boolean
+    /** Answer this turn with another model (Redo ▾). Never written to the chat's settings. */
+    modelOverride?: ModelOverride
   }
 ) {
+  // Any new turn in this chat (send, Retry, Redo, Run plan, Continue, edit and resend) replaces a waiting rate-limit
+  // retry: it must never fire into the new turn (ER3).
+  cancelRateLimitRetry(sessionId)
   // Long-run notifications time the run itself (send, regenerate, plan run, resume), not the message's age.
   const runStartedAt = Date.now()
   // Process the send-queue unless multi-agent intermediate turns opt out, or plan mode
@@ -655,7 +673,7 @@ export async function generate(
   let shouldProcessQueuedMessages = !options?.skipQueuedMessages
   let activeExecutionPlan: MessagePlanPart | undefined
   // An execution run (approve or Continue set planPhase 'executing') clears the phase however it ends.
-  const executionRun = getPlanPart(targetMsg)?.status === 'approved'
+  const executionRun = isApprovedPlanRun(targetMsg)
   let managesPlanPhase = executionRun
   const releaseExecutionPhase = async () => {
     if (!executionRun) return
@@ -686,7 +704,7 @@ export async function generate(
   // Overlay agent/copilot model settings. Prefer explicit speaker → message.agentId → room primary.
   const speakerAgentId = options?.speakerAgentId ?? targetMsg.agentId ?? session.agentIds?.[0] ?? session.copilotId
   const copilotOverrides = getCopilotSettings(speakerAgentId)
-  const effectiveSettings: SessionSettings = copilotOverrides
+  const overlaidSettings: SessionSettings = copilotOverrides
     ? {
         ...settings,
         temperature: copilotOverrides.temperature ?? settings.temperature,
@@ -694,6 +712,11 @@ export async function generate(
         maxTokens: copilotOverrides.maxTokens ?? settings.maxTokens,
       }
     : settings
+  // Redo ▾ answers this one turn with the picked model; the chat's stored settings keep their own.
+  const modelOverride = options?.modelOverride
+  const effectiveSettings: SessionSettings = modelOverride
+    ? { ...overlaidSettings, provider: modelOverride.provider, modelId: modelOverride.modelId }
+    : overlaidSettings
 
   // Track generation event
   trackGenerateEvent(sessionId, effectiveSettings, globalSettings, session.type, options)
@@ -719,6 +742,8 @@ export async function generate(
           generating: false,
           cancel: undefined,
           error: `Send blocked: ${evalResult.message}. Disable hard-stop in Settings → Usage, or raise your monthly cap.`,
+          // Not the provider's error: the notice points to Usage, never to Retry.
+          errorExtra: { kind: 'budget' },
           status: [],
         }
         await modifyMessage(sessionId, targetMsg, true)
@@ -790,6 +815,9 @@ export async function generate(
       return
     }
   }
+
+  // ER4 "Answer without tools": decided before sending (InputBox), only honoured here; no ability check mid-turn.
+  const toolsOffForTurn = isToolsOffTurn(messages, targetMsg.id)
 
   // Shared stream UI coalescing — visible to catch so error path can cancel pending writes.
   // ~32ms (~30fps) is smoother token growth than 50ms without the 16ms Virtuoso thrash.
@@ -1112,7 +1140,7 @@ export async function generate(
         let toolsToUse: ToolSet | undefined
         let planningToolsInstructions = ''
         const executionAgentImageFlowInstructions =
-          (roomMulti && !roomToolsAllowed) || !(!isPlanMode || isExecutionPhase)
+          toolsOffForTurn || (roomMulti && !roomToolsAllowed) || !(!isPlanMode || isExecutionPhase)
             ? undefined
             : agentImageFlowInstructions
 
@@ -1137,6 +1165,11 @@ export async function generate(
           planningToolsInstructions =
             (taskTracking.default?.description || '') +
             formatActiveTaskContext(taskStore.getState().getSessionTasks(sessionId))
+        }
+        // Answer without tools: empty object = no tools (undefined still attaches MCP), and no tool instructions.
+        if (toolsOffForTurn) {
+          toolsToUse = {}
+          planningToolsInstructions = ''
         }
 
         // Inject planning tools instructions into system prompt if in planning phase
@@ -1253,16 +1286,18 @@ export async function generate(
             ? 1
             : maxSteps
 
+        // What the stream last showed, as streamText would return it when stopped (see the catch below).
+        let lastStreamedParts: Message['contentParts'] = []
         const { result, knowledgeIds } = await streamText(model, {
           sessionId: session.id,
           knowledgeScopeId: getEffectiveProjectId(session) ?? null,
           knowledgeQuery: resumeQuery,
           messages: mainPromptMsgs,
           sessionSettings: effectiveSettings,
-          onResultChangeWithCancel:
-            resumedParts.length > 0
-              ? (updated) => modifyMessageCache(withResumedParts(resumedParts, updated))
-              : modifyMessageCache,
+          onResultChangeWithCancel: (updated) => {
+            if (updated.contentParts) lastStreamedParts = updated.contentParts
+            return modifyMessageCache(resumedParts.length > 0 ? withResumedParts(resumedParts, updated) : updated)
+          },
           onStatusChange: (status) => {
             targetMsg = {
               ...targetMsg,
@@ -1273,16 +1308,21 @@ export async function generate(
           providerOptions: effectiveSettings.providerOptions,
           // Discuss/plan/review: pure chat. Work/Swarm do/deliver: allow tools/web like solo agent.
           // Swarm plan: task tools only (no KB/web).
-          knowledgeBase: firstHandoff || roomBlocksExternalTools ? undefined : knowledgeBase,
-          webBrowsing: firstHandoff || roomBlocksExternalTools ? false : webBrowsing,
+          knowledgeBase: firstHandoff || roomBlocksExternalTools || toolsOffForTurn ? undefined : knowledgeBase,
+          webBrowsing: firstHandoff || roomBlocksExternalTools || toolsOffForTurn ? false : webBrowsing,
           nativeWebSearch:
-            firstHandoff || roomBlocksExternalTools ? undefined : useGeminiGrounding ? 'gemini-grounding' : undefined,
+            firstHandoff || roomBlocksExternalTools || toolsOffForTurn
+              ? undefined
+              : useGeminiGrounding
+                ? 'gemini-grounding'
+                : undefined,
           agentImageFlowInstructions: executionAgentImageFlowInstructions,
           // Default chat image generate/edit (provider-neutral) when tools are available.
-          enableImageGenerationTool: !firstHandoff && !roomBlocksExternalTools && model.isSupportToolUse(),
+          enableImageGenerationTool:
+            !firstHandoff && !roomBlocksExternalTools && !toolsOffForTurn && model.isSupportToolUse(),
           imageGenerationMessageId: targetMsg.id,
           agentCoding: await (async () => {
-            const enabled = !firstHandoff && isAgentExecuteTurn
+            const enabled = !firstHandoff && !toolsOffForTurn && isAgentExecuteTurn
             const projectId = session.projectId || session.folderId
             let capabilityId: string | undefined
             let rootGeneration: string | undefined
@@ -1336,7 +1376,7 @@ export async function generate(
             const toolsRoleOk = !roomMultiLocal || roomToolsAllowed
             const roomAllowed = !discussOff && toolsRoleOk && !roomBlocksExternalTools
             return {
-              armed: !firstHandoff && Boolean(session.browserArmed) && roomAllowed,
+              armed: !firstHandoff && !toolsOffForTurn && Boolean(session.browserArmed) && roomAllowed,
               sessionId,
               workspaceRoot: undefined,
               runId: targetMsg.id,
@@ -1350,15 +1390,15 @@ export async function generate(
             const toolsRoleOk = !roomMultiLocal || roomToolsAllowed
             const roomAllowed = !discussOff && toolsRoleOk && !roomBlocksExternalTools
             return {
-              armed: !firstHandoff && Boolean(session.computerArmed) && roomAllowed,
+              armed: !firstHandoff && !toolsOffForTurn && Boolean(session.computerArmed) && roomAllowed,
               sessionId,
               // Act tools only when computerArmed (observe+act share arm; master setting gates tools)
-              allowAct: !firstHandoff && Boolean(session.computerArmed),
+              allowAct: !firstHandoff && !toolsOffForTurn && Boolean(session.computerArmed),
               roomAllowed,
             }
           })(),
-          maxSteps: firstHandoff ? 1 : roomMaxSteps,
-          tools: firstHandoff ? {} : toolsToUse,
+          maxSteps: firstHandoff || toolsOffForTurn ? 1 : roomMaxSteps,
+          tools: firstHandoff || toolsOffForTurn ? {} : toolsToUse,
           toolAccess: firstHandoff ? firstHandoff.toolAccess : copilotOverrides?.toolAccess,
           memory: speakerAgentId
             ? {
@@ -1369,6 +1409,14 @@ export async function generate(
             : resumeQuery
               ? { userQuery: resumeQuery }
               : undefined,
+        }).catch((error: unknown) => {
+          // streamText resolves with the partial answer when Stop aborts it; a stream that rejects with an AbortError
+          // after Stop is the same Stop, so the run settles as stopped (plan time kept, Continue offered), not failed.
+          if (isAbortError(error) && wasGenerationCancelled(sessionId, targetMsg.id)) {
+            const stopped: StreamTextResult = { contentParts: lastStreamedParts }
+            return { result: stopped, knowledgeIds: [] as string[] }
+          }
+          throw error
         })
         // Read now: a visible-answer continue below registers a new abort function, which clears the Stop mark;
         // the continue stream's own Stop is read after it (finishExecutedPlan takes both).
@@ -1548,8 +1596,17 @@ export async function generate(
           searchProvider: streamResult.searchProvider ?? targetMsg.searchProvider,
           groundingMetadata: streamResult.groundingMetadata ?? targetMsg.groundingMetadata,
           error: emptyCompletionError,
+          // Only a finished answer shows how long it took; an empty completion is an error (R11).
+          durationMs: emptyCompletionError ? undefined : Date.now() - runStartedAt,
         }
         await settleStreamUi(targetMsg)
+        if (!emptyCompletionError) {
+          // Answered: the next rate limit starts the schedule again, and a waiting Needs you for this chat is done,
+          // except after one room turn (another agent may still be limited; the room run settles it when it ends).
+          void rateLimitAnswered(sessionId, targetMsg.id, {
+            roomTurn: Boolean(options?.roomMulti || targetMsg.roomRole),
+          }).catch(() => {})
+        }
         // The answer and the plan part (with finishedAt) are saved: from here the error path must keep this plan,
         // and nothing below may turn a finished turn into an error or file a second Change.
         if (isExecutionPhase) activeExecutionPlan = finalPlanPart
@@ -1747,6 +1804,8 @@ export async function generate(
     }
     const ocrError = error instanceof OCRError ? error : undefined
     const causeError = ocrError?.cause
+    // HTTP status and Retry-After of the failed call: they sort the error by its fix (bad key, credit, rate limit).
+    const apiError = error instanceof ApiError ? error : causeError instanceof ApiError ? causeError : undefined
     clearGenerationCancel(sessionId, targetMsg.id)
     clearGenerationCancelled(sessionId, targetMsg.id)
     clearSessionGenerationLive(sessionId, targetMsg.id)
@@ -1760,21 +1819,33 @@ export async function generate(
       cancel: undefined,
       errorCode: ocrError ? (causeError instanceof BaseError ? causeError.code : errorCode) : errorCode,
       error: `${error.message}`,
+      // Only a finished answer has a duration.
+      durationMs: undefined,
       errorExtra: {
         aiProvider: ocrError ? ocrError.ocrProvider : effectiveSettings.provider,
         host:
           error instanceof NetworkError ? error.host : causeError instanceof NetworkError ? causeError.host : undefined,
-        responseBody:
-          error instanceof ApiError
-            ? error.responseBody
-            : causeError instanceof ApiError
-              ? causeError.responseBody
-              : undefined,
+        responseBody: apiError?.responseBody,
+        ...(apiError?.status !== undefined ? { status: apiError.status } : {}),
+        ...(apiError?.retryAfterMs !== undefined ? { retryAfterMs: apiError.retryAfterMs } : {}),
+        // A retry of a failed Redo ▾ answers with the same picked model.
+        ...(modelOverride ? { modelOverride } : {}),
       },
       status: [],
     }
     // Drop any in-flight stream patch so it cannot overwrite the error state
     await settleStreamUi(targetMsg)
+
+    // Rate limited: retry on schedule, then ask in Review (ER3). A plan run or a room turn needs its own run options,
+    // which a bare retry would lose: it goes to Review at once (R18, R20).
+    if (classifyModelError(targetMsg) === 'rate-limit') {
+      const ownRun = executionRun || Boolean(activeExecutionPlan) || Boolean(options?.roomMulti || targetMsg.roomRole)
+      try {
+        scheduleRateLimitRetry(sessionId, targetMsg, { autoRetry: !ownRun })
+      } catch {
+        // non-fatal: the notice still offers Retry
+      }
+    }
 
     // Mark provider plan exhausted on quota errors (best-effort)
     try {
@@ -1785,12 +1856,7 @@ export async function generate(
           providerId: pid,
           modelId: effectiveSettings.modelId,
           message: error.message,
-          responseBody:
-            error instanceof ApiError
-              ? error.responseBody
-              : causeError instanceof ApiError
-                ? causeError.responseBody
-                : undefined,
+          responseBody: apiError?.responseBody,
           errorCode,
         })
       }
@@ -1812,12 +1878,16 @@ export async function generate(
  * @param sessionId Session ID
  * @param msgId Message ID
  */
-export async function generateMore(sessionId: string, msgId: string) {
+export async function generateMore(sessionId: string, msgId: string, options?: { modelOverride?: ModelOverride }) {
   const newAssistantMsg = createMessage('assistant', '')
   newAssistantMsg.generating = true // prevent estimating token count before generating done
   await insertMessageAfter(sessionId, newAssistantMsg, msgId)
   const truncateTokenLimit = await getOverflowTruncateLimit(sessionId)
-  await generate(sessionId, newAssistantMsg, { operationType: 'regenerate', truncateTokenLimit })
+  await generate(sessionId, newAssistantMsg, {
+    operationType: 'regenerate',
+    truncateTokenLimit,
+    modelOverride: options?.modelOverride,
+  })
 }
 
 export async function generateMoreInNewFork(sessionId: string, msgId: string) {
@@ -1825,14 +1895,15 @@ export async function generateMoreInNewFork(sessionId: string, msgId: string) {
   await generateMore(sessionId, msgId)
 }
 
-type GenerateMoreFn = (sessionId: string, msgId: string) => Promise<void>
+type GenerateMoreFn = (sessionId: string, msgId: string, options?: { modelOverride?: ModelOverride }) => Promise<void>
 
 export async function regenerateInNewFork(
   sessionId: string,
   msg: Message,
-  options?: { runGenerateMore?: GenerateMoreFn }
+  options?: { runGenerateMore?: GenerateMoreFn; modelOverride?: ModelOverride }
 ) {
   const runGenerateMore = options?.runGenerateMore ?? generateMore
+  const modelOverride = options?.modelOverride
   const session = await chatStore.getSession(sessionId)
   if (!session) {
     return
@@ -1840,19 +1911,21 @@ export async function regenerateInNewFork(
   const location = findMessageLocation(session, msg.id)
   if (!location) {
     const truncateTokenLimit = await getOverflowTruncateLimit(sessionId)
-    await generate(sessionId, msg, { operationType: 'regenerate', truncateTokenLimit })
+    await generate(sessionId, msg, { operationType: 'regenerate', truncateTokenLimit, modelOverride })
     return
   }
   const previousMessageIndex = location.index - 1
   if (previousMessageIndex < 0) {
     // If target message is the first message, regenerate directly
     const truncateTokenLimit = await getOverflowTruncateLimit(sessionId)
-    await generate(sessionId, msg, { operationType: 'regenerate', truncateTokenLimit })
+    await generate(sessionId, msg, { operationType: 'regenerate', truncateTokenLimit, modelOverride })
     return
   }
   const forkMessage = location.list[previousMessageIndex]
   await createNewFork(sessionId, forkMessage.id)
-  return runGenerateMore(sessionId, forkMessage.id)
+  return modelOverride
+    ? runGenerateMore(sessionId, forkMessage.id, { modelOverride })
+    : runGenerateMore(sessionId, forkMessage.id)
 }
 
 /**

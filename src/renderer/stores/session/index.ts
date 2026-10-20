@@ -42,6 +42,8 @@ export {
 export { cancelSessionGeneration, clearGenerationCancel } from './generation-cancel'
 export { stopSessionGeneration } from './stop-generation'
 export { getSessionWebBrowsing } from './session-web-browsing'
+// Plan mode (TASK-16)
+export { setChatPlanMode, turnOnChatPlanMode } from './plan-mode'
 // Message operations (5 functions)
 export { insertMessage, insertMessageAfter, modifyMessage, removeMessage, submitNewUserMessage } from './messages'
 export {

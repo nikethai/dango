@@ -30,6 +30,7 @@ import type React from 'react'
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createModelDependencies } from '@/adapters'
+import { estimateInputTokens, providerApiHost, runsForRoom } from '@/components/chat/before-send'
 import { useMyCopilots, useRemoteCopilots } from '@/hooks/useCopilots'
 import { exportRoomPack } from '@/stores/roomPack'
 import useInputBoxHistory from '@/hooks/useInputBoxHistory'
@@ -54,6 +55,7 @@ import {
   getActiveCommandSlashQuery,
   matchSystemSlashCommand,
   parseRewriteCommand,
+  replaceActiveCommandSlashWithSkillToken,
   stripCommandSlashTokens,
 } from '@/packages/commands'
 import {
@@ -105,7 +107,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { delay } from '@/utils'
 import { decideClipboardPaste, extractClipboardNonImageFiles, imagePayloadFingerprint } from '@/utils/clipboardImages'
 import { getModelDisplayName } from '@/utils/modelDisplayName'
-import { getModelReadiness } from '@/utils/modelReadiness'
+import { attachmentsNeedVision, getModelReadiness, isOcrModelSet, turnNeedsTools } from '@/utils/modelReadiness'
 import { trackEvent } from '@/utils/track'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
 import type {
@@ -156,6 +158,8 @@ import DictateButton from './DictateButton'
 import type { ComposerChipData } from './composer-chip-dom'
 import { ImageUploadInput } from './ImageUploadInput'
 import MemoryMentionPicker from './MemoryMentionPicker'
+import { ContextNearFullNotice } from './ContextNearFullNotice'
+import { contextFillRatio, shouldWarnContextFill } from './contextFill'
 import { ModelReadinessNotice } from './ModelReadinessNotice'
 import OpenClawCommandPicker, { filterOpenClawCommands, getCommandAlias } from './OpenClawCommandPicker'
 import PresetPicker, { filterPresets } from './PresetPicker'
@@ -175,6 +179,7 @@ import { ScopePill } from './ScopePill'
 import SkillPicker, { filterSkills } from './SkillPicker'
 import TeamModeSelect from './TeamModeSelect'
 import { voiceAuthFromSettings } from './VoiceHoldButton'
+import { useCostHeadsUp } from './useCostHeadsUp'
 
 export type InputBoxPayload = {
   constructedMessage: Message
@@ -206,6 +211,9 @@ export type InputBoxProps = {
   onClickSessionSettings?(): boolean | Promise<boolean>
   agentMode?: boolean
   onToggleAgentMode?(enabled: boolean): void
+  /** The chat's plan mode (`settings.planMode`), controlled like agentMode; the toggle shows in agent chats. */
+  planMode?: boolean
+  onPlanModeChange?(on: boolean): void
   workspaceRoot?: string
   onWorkspaceRootChange?(workspaceRoot: string | undefined): void
   browserArmed?: boolean
@@ -290,6 +298,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       onClickSessionSettings,
       agentMode: controlledAgentMode,
       onToggleAgentMode,
+      planMode: controlledPlanMode,
+      onPlanModeChange,
       workspaceRoot: controlledWorkspaceRoot,
       onWorkspaceRootChange,
       browserArmed: controlledBrowserArmed,
@@ -356,6 +366,11 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     )
 
     const { messageInput, setMessageInput, clearDraft } = useMessageInput(initialMessage, { isNewSession })
+    // First-chat chips hide while the composer holds text, so a pick never overwrites a draft.
+    const setComposerHasDraft = useUIStore((s) => s.setComposerHasDraft)
+    const composerHasText = messageInput.trim().length > 0
+    useEffect(() => setComposerHasDraft(composerHasText), [composerHasText, setComposerHasDraft])
+    useEffect(() => () => setComposerHasDraft(false), [setComposerHasDraft])
     const memoryReady = useMemoryStore((state) => state.ready)
     const globalMemoryBank = useMemoryStore((state) => state.globalBank)
 
@@ -481,6 +496,15 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       dom.focusMessageInput()
     }, [agentMode, onToggleAgentMode])
 
+    const planMode = controlledPlanMode ?? currentSession?.settings?.planMode ?? false
+    const changePlanMode = useCallback(
+      (on: boolean) => {
+        onPlanModeChange?.(on)
+        dom.focusMessageInput()
+      },
+      [onPlanModeChange]
+    )
+
     // Get current messages for token counting - will only recalculate when stable messages actually change
     // Uses getContextMessageIds to respect compaction points
     const currentContextMessageIds = useMemo(() => {
@@ -565,7 +589,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     const voiceSawGeneratingRef = useRef(false)
     const messageInputRef = useRef(messageInput)
     messageInputRef.current = messageInput
-    const handleSubmitRef = useRef<(needGenerating?: boolean) => Promise<void>>(async () => {})
+    const handleSubmitRef = useRef<(needGenerating?: boolean, opts?: { toolsOff?: boolean }) => Promise<void>>(
+      async () => {}
+    )
 
     // Check if any preprocessing is in progress
     const isPreprocessing = useMemo(() => {
@@ -621,21 +647,36 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       return modelInfo.capabilities.includes('vision')
     }, [providers, model])
 
-    const showNonVisionVideoBanner = hasVideoAttachments && !modelSupportsVision && !visionBannerDismissed
-
+    // ER4: abilities are checked here, before sending, never during a turn.
+    const browserArmedForTurn = controlledBrowserArmed ?? currentSession?.browserArmed
+    const computerArmedForTurn = controlledComputerArmed ?? currentSession?.computerArmed
+    const roomSizeForTurn = isNewSession ? (draftAgentIds?.length ?? 0) : (currentSession?.agentIds?.length ?? 0)
+    const roomModeForTurn = roomSizeForTurn > 1 ? (isNewSession ? draftRoomMode : currentSession?.roomMode) : undefined
+    const requiresTools =
+      sessionType === 'chat' &&
+      turnNeedsTools({
+        agentMode,
+        browserArmed: browserArmedForTurn,
+        computerArmed: computerArmedForTurn,
+        roomMode: roomModeForTurn,
+      })
+    // Pictures need vision only when no OCR model reads them (stream-text OCRs for models without vision).
+    const ocrReady = useSettingsStore((state) => isOcrModelSet(state))
+    const requiresVision = attachmentsNeedVision({
+      pictureCount: pictureKeys.length,
+      hasVideo: hasVideoAttachments,
+      ocrReady,
+    })
     const modelReadiness = useMemo(
-      () => getModelReadiness(model, providers, { requiresVision: pictureKeys.length > 0 || hasVideoAttachments }),
-      [hasVideoAttachments, model, pictureKeys.length, providers]
+      () => getModelReadiness(model, providers, { requiresVision, requiresTools }),
+      [model, providers, requiresVision, requiresTools]
     )
-
-    const videoLimitsForUi = useMemo(() => getVideoLimits(platform.formFactor === 'desktop' ? 'desktop' : 'mobile'), [])
-    const videoDropLimitsHint = useMemo(
-      () => ({
-        minutes: Math.floor(videoLimitsForUi.maxDurationSec / 60),
-        size: formatBytesForDisplay(videoLimitsForUi.maxFileBytes),
-      }),
-      [videoLimitsForUi]
-    )
+    const showReadinessNotice =
+      modelReadiness.status !== 'ready' &&
+      (platformCapabilities.isMobileLayout || modelReadiness.status === 'capability-required')
+    // One message at a time: the readiness notice already says the model can't analyze the video.
+    const showNonVisionVideoBanner =
+      hasVideoAttachments && !modelSupportsVision && !visionBannerDismissed && !showReadinessNotice
 
     // Re-show banner when a new successful video is attached after dismiss
     useEffect(() => {
@@ -703,7 +744,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       return compactionUIStateMap[currentSessionId]?.status === 'running'
     }, [compactionUIStateMap, currentSessionId, isNewSession])
 
-    const isModelReadinessBlocking = platformCapabilities.isMobileLayout && modelReadiness.status !== 'ready'
+    // A missing ability blocks on every layout (its notice shows the fix); setup/unavailable stay mobile-only.
+    const isModelReadinessBlocking =
+      modelReadiness.status === 'capability-required' ||
+      (platformCapabilities.isMobileLayout && modelReadiness.status !== 'ready')
     // While generating (or sticky race window), button is always Stop and always clickable.
     // Never key Stop on empty-draft (old: generating && disableSubmit) — that flipped Send mid-turn.
     const showStop = Boolean(generating || stickyStop)
@@ -738,6 +782,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       if (model?.modelId) return getModelContextWindowSync(model.modelId)
       return null
     }, [modelInfo?.contextWindow, model?.modelId])
+
+    const contextFill = contextFillRatio(contextTokens, effectiveContextWindow ?? undefined)
+    const showContextNearFull = !isNewSession && !!currentSessionId && shouldWarnContextFill(contextFill)
 
     useEffect(() => {
       if (!currentSessionId || isNewSession) {
@@ -1120,13 +1167,16 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         memoryMentionPickerDismissed,
       ]
     )
+    const selectedSkillIds = useMemo(() => selectedSkills.map((s) => s.id), [selectedSkills])
     const filteredCommandItems = useMemo(
       () =>
         buildCommandPickerItems(commandSlashQuery || '', enabledCommands, {
           excludePackageIds: selectedCommands.map((c) => c.id),
           includeSystem: true,
+          skills: enabledSkills,
+          excludeSkillIds: selectedSkillIds,
         }),
-      [enabledCommands, selectedCommands, commandSlashQuery]
+      [enabledCommands, selectedCommands, commandSlashQuery, enabledSkills, selectedSkillIds]
     )
     const filteredCommands = useMemo(
       () => filteredCommandItems.filter((i) => i.kind === 'package').map((i) => i.command),
@@ -1342,8 +1392,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       [isNewSession, onDraftRoomModeChange, sessionId]
     )
 
+    /** A skill picked from `$` (default) or from the / menu: same chip and selection, different trigger replaced. */
     const handleSkillSelect = useCallback(
-      (skill: SkillPackage) => {
+      (skill: SkillPackage, from: 'dollar' | 'slash' = 'dollar') => {
         setSelectedSkills((prev) => {
           if (prev.some((s) => s.id === skill.id) || prev.length >= SKILL_EXPLICIT_MAX) return prev
           return [...prev, skill]
@@ -1351,7 +1402,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         const token = `$${skill.name}`
         const chip: ComposerChipData = { kind: 'skill', token, label: skill.name, id: skill.id }
         if (richInputRef.current) {
-          richInputRef.current.insertChipAtTrigger(chip, 'skill')
+          richInputRef.current.insertChipAtTrigger(chip, from === 'slash' ? 'slash' : 'skill')
+        } else if (from === 'slash') {
+          setMessageInput((prev) => replaceActiveCommandSlashWithSkillToken(prev, skill.name))
         } else {
           setMessageInput((prev) => replaceActiveSkillDollarWithToken(prev, skill.name))
         }
@@ -1452,6 +1505,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     const handleCommandPickerItem = useCallback(
       (item: CommandPickerItem) => {
+        if (item.kind === 'skill') {
+          handleSkillSelect(item.skill, 'slash')
+          return
+        }
         if (item.kind === 'system') {
           if (item.command.id === 'compact') {
             void runManualCompact()
@@ -1464,7 +1521,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         }
         handleCommandSelect(item.command)
       },
-      [handleCommandSelect, runManualCompact, setMessageInput]
+      [handleCommandSelect, handleSkillSelect, runManualCompact, setMessageInput]
     )
 
     const handlePresetSelect = useCallback(
@@ -1500,7 +1557,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     )
 
     const closeSelectModelErrorTipCb = useRef<NodeJS.Timeout>()
-    const handleSubmit = async (needGenerating = true) => {
+    const { confirm: confirmCost } = useCostHeadsUp()
+    const handleSubmit = async (needGenerating = true, opts?: { toolsOff?: boolean }) => {
       if (disableSubmit || isSubmitting || isPreprocessing) {
         return
       }
@@ -1538,8 +1596,14 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         return
       }
 
-      // error tip
-      if (platformCapabilities.isMobileLayout && modelReadiness.status !== 'ready') {
+      // ER4 "Answer without tools": the one way past a model that can't use tools.
+      const answerWithoutTools = opts?.toolsOff === true
+      if (modelReadiness.status === 'capability-required') {
+        const skipsTools = answerWithoutTools && modelReadiness.capability === 'tool_use'
+        // The notice above the composer names the fix; nothing to send until it is chosen.
+        if (needGenerating && !skipsTools) return
+      } else if (platformCapabilities.isMobileLayout && modelReadiness.status !== 'ready') {
+        // error tip
         if (!model) {
           // (legacy comment)
           await delay(100)
@@ -1552,6 +1616,27 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           toastActions.add(t('Choose an available model before sending.'))
         }
         return
+      }
+
+      // CS1: a send that may cost more than the user's limit asks first. Only here, before sending —
+      // a run that has started is never interrupted. Cancel leaves the draft as it is.
+      if (needGenerating && model) {
+        const run = await confirmCost({
+          providerId: model.provider,
+          modelId: model.modelId,
+          apiHost: providerApiHost(model.provider),
+          // While the counts are still being worked out, totalTokens is stale: estimate from the text instead.
+          inputTokens: isCalculating
+            ? estimateInputTokens([
+                ...(currentSession?.messages ?? []),
+                ...(preConstructedMessage.message ? [preConstructedMessage.message] : []),
+              ])
+            : totalTokens,
+          maxOutputTokens: currentSessionMergedSettings?.maxTokens,
+          runs: runsForRoom(roomModeForTurn, roomSizeForTurn),
+          modelName: modelDisplayName || resolvedModelDisplayText || model.modelId,
+        })
+        if (!run) return
       }
 
       setIsSubmitting(true)
@@ -1572,6 +1657,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
         // Sample video frames for vision models right before send
         let constructedMessage = preConstructedMessage.message
+        if (answerWithoutTools) {
+          constructedMessage = { ...constructedMessage, toolsOff: true }
+        }
 
         // Parse @ / $ / # tokens from the message body (Slack-style).
         // Keep completed tokens in the sent text so models can follow who/what is directed.
@@ -2487,7 +2575,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
     // Window-level file DnD so drops work over the whole chat (not only the composer shell).
     // Tauri must set dragDropEnabled:false so HTML5 File events reach the webview.
-    const [isFileDragActive, setIsFileDragActive] = useState(false)
+    // The drag state lives in uiStore so <ChatDropOverlay /> can cover the chat column.
+    const isFileDragActive = useUIStore((s) => s.fileDragActive)
+    const setIsFileDragActive = useUIStore((s) => s.setFileDragActive)
     useEffect(() => {
       if (sessionType === 'picture') {
         return
@@ -2580,8 +2670,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         window.removeEventListener('dragend', onDragEnd)
         window.removeEventListener('keydown', onKeyDown)
         window.removeEventListener('blur', onWindowBlur)
+        // Never leave the chat overlay on after the composer goes away (route change, session switch).
+        setIsFileDragActive(false)
       }
-    }, [sessionType])
+    }, [sessionType, setIsFileDragActive])
 
     const onFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
       if (!event.target.files) {
@@ -2750,6 +2842,16 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           {currentSessionId && <CompactionStatus sessionId={currentSessionId} />}
           {currentSessionId && <QueuedMessageList sessionId={currentSessionId} />}
           {currentSessionId ? <TeamRoomActions sessionId={currentSessionId} /> : null}
+          {showContextNearFull && contextFill !== null && currentSessionId ? (
+            <ContextNearFullNotice
+              ratio={contextFill}
+              onStartNewChat={() =>
+                import('@/stores/session/new-chat-with-summary').then(({ startNewChatWithSummary }) =>
+                  startNewChatWithSummary(currentSessionId)
+                )
+              }
+            />
+          ) : null}
           <Stack
             ref={composerCardRef}
             className={cn(
@@ -2766,19 +2868,6 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             )}
             gap={0}
           >
-            <div
-              className={cn('composer-drop-overlay', isFileDragActive && 'is-active')}
-              aria-hidden={!isFileDragActive}
-            >
-              <div className="composer-drop-overlay-content">
-                <IconFolder className="composer-drop-overlay-icon" strokeWidth={1.5} size={28} />
-                <span className="composer-drop-overlay-title">{t('Drop to attach')}</span>
-                <span className="composer-drop-overlay-hint">{t('Images · video · PDFs · text · code')}</span>
-                <span className="composer-drop-overlay-limits font-mono tabular-nums">
-                  {t('MP4 · WebM · max {{minutes}} min · {{size}}', videoDropLimitsHint)}
-                </span>
-              </div>
-            </div>
             {showPresetPicker && (
               <PresetPicker
                 anchorRef={composerCardRef}
@@ -2834,6 +2923,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 query={commandSlashQuery || ''}
                 excludeIds={selectedCommands.map((c) => c.id)}
                 includeSystem
+                skills={enabledSkills}
+                excludeSkillIds={selectedSkillIds}
               />
             )}
             {showSkillPicker && (
@@ -3110,7 +3201,22 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
               </div>
             )}
 
-            {platformCapabilities.isMobileLayout && <ModelReadinessNotice readiness={modelReadiness} />}
+            {showReadinessNotice && (
+              <ModelReadinessNotice
+                readiness={modelReadiness}
+                modelName={modelSelectorDisplayText}
+                onAnswerWithoutTools={() => void handleSubmit(true, { toolsOff: true })}
+                answerWithoutToolsDisabled={
+                  disableSubmit ||
+                  isPreprocessing ||
+                  isSubmitting ||
+                  isSamplingVideoFrames ||
+                  isCompactionRunning ||
+                  hardStopBlocked
+                }
+                onSelectModel={onSelectModel}
+              />
+            )}
 
             {/* Toolbar row — mock .bar (rail bg + send on the right) */}
             <Flex align="center" gap={0} className="composer-bar shrink-0 w-full">
@@ -3138,6 +3244,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   }}
                   agentMode={agentMode}
                   onToggleAgentMode={toggleAgentMode}
+                  planMode={planMode}
+                  onPlanModeChange={onPlanModeChange ? changePlanMode : undefined}
+                  // Multi-agent rooms ignore plan mode.
+                  showPlanMode={roomSizeForTurn < 2}
                   workspaceRoot={workspaceRoot}
                   onWorkspaceRootChange={onWorkspaceRootChange}
                   browserArmed={controlledBrowserArmed ?? currentSession?.browserArmed}

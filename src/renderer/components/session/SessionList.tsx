@@ -32,8 +32,9 @@ import { useScopes } from '@/hooks/useScopes'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { startNewChat } from '@/lib/startNewChat'
 import { getEffectiveProjectId } from '@/projects/project-context'
-import { deleteScopeOrToast, moveSessionToScopeOrToast } from '@/projects/scope-feedback'
+import { deleteScopeOrToast } from '@/projects/scope-feedback'
 import { updateSessionList, useSessionList } from '@/stores/chatStore'
+import { moveChatWithUndoOrToast } from '@/stores/session/chat-menu-actions'
 import { useUIStore } from '@/stores/uiStore'
 import { DeleteScopeSheet } from '../scope/DeleteScopeSheet'
 import { EverywhereRow } from '../scope/EverywhereRow'
@@ -532,7 +533,7 @@ export default function SessionList({
         }
         setExpandedFolders((prev) => ({ ...prev, [dropTarget.folderId]: true }))
         projectsSection.ensureOpen()
-        await moveSessionToScopeOrToast(activeId, dropTarget.folderId)
+        await moveChatWithUndoOrToast(activeId, dropTarget.folderId)
         refetch()
         return
       }
@@ -542,7 +543,7 @@ export default function SessionList({
         return
       }
       recentsSection.ensureOpen()
-      await moveSessionToScopeOrToast(activeId, undefined)
+      await moveChatWithUndoOrToast(activeId, undefined)
       refetch()
       return
     }
@@ -559,7 +560,7 @@ export default function SessionList({
       } else {
         recentsSection.ensureOpen()
       }
-      await moveSessionToScopeOrToast(activeId, targetFolderId)
+      await moveChatWithUndoOrToast(activeId, targetFolderId)
       refetch()
       return
     }

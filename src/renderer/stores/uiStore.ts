@@ -47,6 +47,10 @@ export const uiStore = createStore(
         toasts: [] as Toast[],
         /** Pending quote for the composer chip (single slot; replace on new Quote). */
         quoteDraft: null as QuoteDraft | null,
+        /** A file is being dragged over the window; the chat column shows "Drop to attach" (not persisted). */
+        fileDragActive: false,
+        /** The mounted composer holds text (not persisted); first-chat chips hide so a pick never overwrites it. */
+        composerHasDraft: false,
         realTheme: localStorage.getItem('initial-theme') === 'dark' ? 'dark' : ('light' as 'light' | 'dark'),
         messageListElement: null as RefObject<HTMLDivElement> | null,
         messageScrolling: null as RefObject<VirtuosoHandle> | null,
@@ -107,6 +111,13 @@ export const uiStore = createStore(
 
         setQuoteDraft: (quoteDraft: QuoteDraft | null) => {
           set({ quoteDraft })
+        },
+
+        setComposerHasDraft: (composerHasDraft: boolean) => {
+          set((state) => (state.composerHasDraft === composerHasDraft ? state : { composerHasDraft }))
+        },
+        setFileDragActive: (fileDragActive: boolean) => {
+          set((state) => (state.fileDragActive === fileDragActive ? state : { fileDragActive }))
         },
 
         setShowSidebar: (showSidebar: boolean) => {

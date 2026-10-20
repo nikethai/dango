@@ -4,20 +4,22 @@ import {
   AIProviderNoImplementedPaintError,
   ApiError,
   BaseError,
-  ProviderAPIError,
   NetworkError,
+  ProviderAPIError,
 } from '@shared/models/errors'
 import { createMessage, type Message } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { createModelDependencies } from '@/adapters'
 import { checkSessionOverflowFast } from '@/packages/context-management'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
+import { isPlanModeOn } from '@/packages/plan/planSteps'
 import { estimateTokensFromMessages } from '@/packages/token'
 import platform from '@/platform'
 import * as chatStore from '../chatStore'
 import { getAllMessageList } from '../sessionHelpers'
 import { settingsStore } from '../settingsStore'
 import { messageQueueStore } from './messageQueue'
+import { cancelRateLimitRetry, resolveRateLimitNeedsYouAfterRoomRun } from './rate-limit-retry'
 import { getSessionWebBrowsing } from './session-web-browsing'
 
 /**
@@ -129,6 +131,8 @@ export async function submitNewUserMessage(
     userAlreadyInserted?: boolean
   }
 ) {
+  // A new send replaces a waiting rate-limit retry: it must never fire into the new turn.
+  cancelRateLimitRetry(sessionId)
   // Import generate lazily to avoid circular dependency
   // generate will be moved to generation.ts in US-006, then this import will change
   const { generate } = await import('../sessionActions.js')
@@ -321,7 +325,11 @@ export async function submitNewUserMessage(
   // (legacy comment removed)
   if (needGenerating) {
     let freshSession = await chatStore.getSession(sessionId)
-    if (freshSession?.planMode && freshSession?.agentMode && !freshSession?.planPhase) {
+    // Plan mode lives in the chat's settings; the legacy top-level field is still read for old payloads.
+    const planModeOn = freshSession
+      ? isPlanModeOn(freshSession) || Boolean(freshSession.agentMode && freshSession.planMode)
+      : false
+    if (freshSession && planModeOn && !freshSession.planPhase) {
       freshSession = await chatStore.updateSession(sessionId, { planPhase: 'planning' })
     }
 
@@ -330,6 +338,8 @@ export async function submitNewUserMessage(
         mentionedAgentIds: newUserMsg.mentionedAgentIds,
         truncateTokenLimit,
       })
+      // Room turns leave the chat's rate-limit Needs you alone; the run settles it once every turn answered.
+      void resolveRateLimitNeedsYouAfterRoomRun(sessionId, newUserMsg.id).catch(() => {})
       return
     }
 

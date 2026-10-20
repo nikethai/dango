@@ -34,9 +34,11 @@ export type PlanCardProps = {
   onContinue(): Promise<void>
   /** Whether a stopped card offers Continue (see planContinueState). Default hidden. */
   continueState?: PlanContinueState
+  /** Turns plan mode back on for the chat when Continue is blocked by it. No button when absent. */
+  onTurnOnPlanMode?(): Promise<void>
 }
 
-type Action = 'run' | 'request-changes' | 'reject' | 'continue'
+type Action = 'run' | 'request-changes' | 'reject' | 'continue' | 'turn-on-plan-mode'
 
 const NO_TASKS: Task[] = []
 
@@ -267,7 +269,8 @@ function LivePlan({
   onStop,
   onContinue,
   continueState,
-}: Pick<PlanCardProps, 'plan' | 'touchesFiles' | 'onStop' | 'onContinue'> & {
+  onTurnOnPlanMode,
+}: Pick<PlanCardProps, 'plan' | 'touchesFiles' | 'onStop' | 'onContinue' | 'onTurnOnPlanMode'> & {
   continueState: PlanContinueState
   steps: PlanStepView[]
   running: boolean
@@ -323,6 +326,17 @@ function LivePlan({
             {t("Plan mode is off in this chat, so this plan can't continue.")}
           </span>
         ) : null}
+        {!running && showContinue && continueState === 'blocked' && onTurnOnPlanMode ? (
+          // Changes the chat setting only: Continue stays a second, explicit click.
+          <button
+            type="button"
+            className="dg-btn dg-btn--ghost"
+            disabled={pending !== null}
+            onClick={() => void run('turn-on-plan-mode', onTurnOnPlanMode)}
+          >
+            {t('Turn on plan mode')}
+          </button>
+        ) : null}
         {running && touchesFiles ? (
           <span className="dg-plan__note">{t('Edits are staged and arrive in Review as one Change.')}</span>
         ) : null}
@@ -368,6 +382,7 @@ export default function PlanCard({
   onStop,
   onContinue,
   continueState = 'hidden',
+  onTurnOnPlanMode,
 }: PlanCardProps): JSX.Element {
   const { t } = useTranslation()
   const state = planCardState(plan, generating)
@@ -409,6 +424,7 @@ export default function PlanCard({
           onStop={onStop}
           onContinue={onContinue}
           continueState={continueState}
+          onTurnOnPlanMode={onTurnOnPlanMode}
         />
       )
     default:

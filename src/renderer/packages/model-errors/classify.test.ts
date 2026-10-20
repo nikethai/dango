@@ -1,0 +1,177 @@
+import type { Message } from '@shared/types'
+import { describe, expect, it } from 'vitest'
+import { classifyModelError, isContextLengthError, modelErrorProviderId, modelErrorProviderName } from './classify'
+
+type ErrorFields = Pick<Message, 'error' | 'errorCode' | 'errorExtra'>
+
+const apiError = (status?: number, responseBody?: string, extra: Partial<ErrorFields> = {}): ErrorFields => ({
+  error: 'API Error: Error from OpenAI',
+  errorCode: 10001,
+  errorExtra: { aiProvider: 'openai', status, responseBody },
+  ...extra,
+})
+
+describe('classifyModelError', () => {
+  it('too long: context length in the error or the body', () => {
+    expect(classifyModelError(apiError(400, '{"error":{"code":"context_length_exceeded"}}'))).toBe('too-long')
+    expect(
+      classifyModelError(apiError(400, undefined, { error: 'API Error: prompt is too long: 210000 tokens' }))
+    ).toBe('too-long')
+    expect(classifyModelError(apiError(400, 'prompt is too long'))).toBe('too-long')
+  })
+
+  it('out of credit: quota exhausted, code 10004, status 402', () => {
+    expect(classifyModelError(apiError(400, 'You exceeded your current quota'))).toBe('out-of-credit')
+    expect(classifyModelError({ error: 'quota', errorCode: 10004 })).toBe('out-of-credit')
+    expect(classifyModelError(apiError(402, 'Payment required'))).toBe('out-of-credit')
+  })
+
+  it('a 429 whose body says insufficient_quota is out of credit', () => {
+    expect(classifyModelError(apiError(429, '{"error":{"type":"insufficient_quota"}}'))).toBe('out-of-credit')
+  })
+
+  it('rate limit: quota rate_limit, code 20005, status 429', () => {
+    expect(classifyModelError(apiError(undefined, 'Rate limit reached for requests'))).toBe('rate-limit')
+    expect(classifyModelError({ error: 'limit', errorCode: 20005 })).toBe('rate-limit')
+    expect(classifyModelError(apiError(429, '{}'))).toBe('rate-limit')
+  })
+
+  it('invalid key: 401, 403 not exhausted, codes 20002-20004, key wording', () => {
+    expect(classifyModelError(apiError(401, '{}'))).toBe('invalid-key')
+    expect(classifyModelError(apiError(403, 'Forbidden'))).toBe('invalid-key')
+    expect(classifyModelError({ error: 'license', errorCode: 20002 })).toBe('invalid-key')
+    expect(classifyModelError({ error: 'license', errorCode: 20003 })).toBe('invalid-key')
+    expect(classifyModelError({ error: 'license', errorCode: 20004 })).toBe('invalid-key')
+    expect(classifyModelError(apiError(undefined, '{"error":{"code":"invalid_api_key"}}'))).toBe('invalid-key')
+    expect(classifyModelError(apiError(undefined, 'Incorrect API key provided'))).toBe('invalid-key')
+    expect(classifyModelError(apiError(undefined, 'Unauthorized'))).toBe('invalid-key')
+    expect(classifyModelError(apiError(undefined, 'authentication_error'))).toBe('invalid-key')
+  })
+
+  it('a 403 that says the quota is used up is out of credit', () => {
+    expect(classifyModelError(apiError(403, 'Your credit balance is too low'))).toBe('out-of-credit')
+  })
+
+  it('network: Network Error prefix or code 10002', () => {
+    expect(classifyModelError({ error: 'Network Error: fetch failed', errorExtra: { host: 'api.openai.com' } })).toBe(
+      'network'
+    )
+    expect(classifyModelError({ error: 'failed', errorCode: 10002 })).toBe('network')
+  })
+
+  it('anything else is a provider error', () => {
+    expect(classifyModelError(apiError(500, 'Internal server error'))).toBe('provider')
+    expect(classifyModelError({ error: 'API Error: Error from OpenAI: boom' })).toBe('provider')
+  })
+})
+
+describe('classifyModelError: budget and rate-limit wording', () => {
+  it('a send blocked by the usage budget is a budget error', () => {
+    const blocked = {
+      error: 'Send blocked: Monthly cap reached. Disable hard-stop in Settings → Usage, or raise your monthly cap.',
+      errorExtra: { kind: 'budget' },
+    }
+    expect(classifyModelError(blocked)).toBe('budget')
+  })
+
+  it('an Anthropic per-minute token rate limit is a rate limit, not too long', () => {
+    const body =
+      '{"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed the rate limit for your organization (abc) of 30,000 input tokens per minute. For details, refer to: https://docs.claude.com/en/api/rate-limits."}}'
+    expect(classifyModelError(apiError(429, body))).toBe('rate-limit')
+    expect(classifyModelError(apiError(undefined, body))).toBe('rate-limit')
+  })
+
+  it('a Gemini per-minute quota 429 is a rate limit, not out of credit', () => {
+    const body = JSON.stringify({
+      error: {
+        code: 429,
+        message:
+          'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 10, model: gemini-2.5-flash\nPlease retry in 41.8s.',
+        status: 'RESOURCE_EXHAUSTED',
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+            violations: [
+              {
+                quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests',
+                quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier',
+              },
+            ],
+          },
+          { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '41s' },
+        ],
+      },
+    })
+    const gemini = (status?: number) =>
+      apiError(status, body, { errorExtra: { aiProvider: 'gemini', status, responseBody: body } })
+    expect(classifyModelError(gemini(429))).toBe('rate-limit')
+    expect(classifyModelError(gemini(undefined))).toBe('rate-limit')
+  })
+
+  it('a Gemini per-day quota is not a per-minute rate limit: waiting a minute does not help', () => {
+    const body = JSON.stringify({
+      error: {
+        code: 429,
+        message:
+          'You exceeded your current quota, please check your plan and billing details.\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 250, model: gemini-2.5-flash\nPlease retry in 9h2m.',
+        status: 'RESOURCE_EXHAUSTED',
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+            violations: [
+              {
+                quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests',
+                quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier',
+              },
+            ],
+          },
+          { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '32520s' },
+        ],
+      },
+    })
+    const gemini = (status?: number) =>
+      apiError(status, body, { errorExtra: { aiProvider: 'gemini', status, responseBody: body } })
+    expect(classifyModelError(gemini(429))).not.toBe('rate-limit')
+    expect(classifyModelError(gemini(undefined))).not.toBe('rate-limit')
+  })
+
+  it('a Gemini RESOURCE_EXHAUSTED that names billing or credit is out of credit', () => {
+    const insufficient =
+      '{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"insufficient_quota: PerMinute"}}'
+    const credit =
+      '{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"Your credit balance is too low. retryDelay 5s"}}'
+    expect(classifyModelError(apiError(429, insufficient))).toBe('out-of-credit')
+    expect(classifyModelError(apiError(429, credit))).toBe('out-of-credit')
+  })
+
+  it('a 429 that names the context window is still too long', () => {
+    expect(classifyModelError(apiError(429, 'context_length_exceeded'))).toBe('too-long')
+  })
+})
+
+describe('isContextLengthError', () => {
+  it('matches the wording providers use', () => {
+    expect(isContextLengthError('This model maximum context length is 8192 tokens')).toBe(true)
+    expect(isContextLengthError('input token limit exceeded')).toBe(true)
+    expect(isContextLengthError('bad request')).toBe(false)
+    expect(isContextLengthError(undefined)).toBe(false)
+  })
+})
+
+describe('modelErrorProviderName', () => {
+  it('names built-in, custom and unknown providers', () => {
+    expect(modelErrorProviderName('openai')).toBe('OpenAI')
+    expect(modelErrorProviderName('custom-1', [{ id: 'custom-1', name: 'My Proxy' }])).toBe('My Proxy')
+    expect(modelErrorProviderName('mystery')).toBe('mystery')
+    expect(modelErrorProviderName(undefined)).toBeUndefined()
+  })
+})
+
+describe('modelErrorProviderId', () => {
+  it('prefers the provider the failed call used, else the message provider', () => {
+    expect(modelErrorProviderId({ aiProvider: 'openai', errorExtra: { aiProvider: 'claude' } })).toBe('claude')
+    expect(modelErrorProviderId({ aiProvider: 'openai', errorExtra: { aiProvider: '' } })).toBe('openai')
+    expect(modelErrorProviderId({ aiProvider: 'openai' })).toBe('openai')
+    expect(modelErrorProviderId({})).toBeUndefined()
+  })
+})

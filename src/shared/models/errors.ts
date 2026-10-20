@@ -10,9 +10,15 @@ export class BaseError extends Error {
 export class ApiError extends BaseError {
   public code = 10001
   public responseBody: string | undefined
-  constructor(message: string, responseBody?: string) {
+  /** HTTP status of the failed call, when the provider answered. */
+  public status?: number
+  /** How long the provider asked us to wait (Retry-After), in ms. */
+  public retryAfterMs?: number
+  constructor(message: string, responseBody?: string, meta?: { status?: number; retryAfterMs?: number }) {
     super('API Error: ' + message)
     this.responseBody = responseBody
+    if (meta?.status !== undefined) this.status = meta.status
+    if (meta?.retryAfterMs !== undefined) this.retryAfterMs = meta.retryAfterMs
   }
 }
 

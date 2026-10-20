@@ -15,6 +15,7 @@ import {
   type MessagePicture,
   type MessageToolCallPart,
   ModelProviderEnum,
+  type ProviderModelInfo,
   type SessionType,
 } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
@@ -23,6 +24,7 @@ import {
   IconBrain,
   IconCopy,
   IconDotsVertical,
+  IconGitBranch,
   IconInfoCircle,
   IconMessageReport,
   IconPencil,
@@ -39,7 +41,6 @@ import {
 } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import * as dateFns from 'date-fns'
 import { concat, isEqual } from 'lodash'
 import type { UIElementData } from 'photoswipe'
 import type React from 'react'
@@ -72,12 +73,15 @@ import {
   isTaskTrackingTool,
   snapshotTasksFromContentParts,
 } from '@/packages/tools/task-tools'
-import { countWord } from '@/packages/word-count'
 import platform from '@/platform'
 import { router } from '@/router'
 import storage from '@/storage'
+import { peekSession } from '@/stores/chatStore'
+import { branchChatFromMessage } from '@/stores/session/branch'
+import { editAndResend } from '@/stores/session/edit-resend'
+import { turnAbilityNeeds } from '@/stores/session/redo-needs'
 import { getLiveGenerationStartedAt } from '@/stores/session/session-live-generation'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import {
   contentPartsRevision,
@@ -85,6 +89,8 @@ import {
   hasVisibleAssistantReply,
   shouldShowAssistantPending,
 } from '@/utils/message-stream-ui'
+import { isNonChatComposerModel } from '@/utils/modelDisplayName'
+import { isOcrModelSet, type ModelNeeds, modelMeetsNeeds } from '@/utils/modelReadiness'
 import '../../static/Block.css'
 import { type PlanContinueState, planCardState } from '@/packages/plan/planSteps'
 import {
@@ -108,6 +114,7 @@ import {
   isContainRenderableCode,
 } from '../Artifact'
 import { ScalableIcon } from '../common/ScalableIcon'
+import { requestBeforeSend } from './before-send'
 import { ThinkingLine } from './ThinkingLine'
 
 // Tool/thinking renderers are agent-only — lazy-load them and skip on Android.
@@ -127,12 +134,14 @@ const PlanCard = isAgentEnabled ? lazy(() => import('../plan/PlanCard')) : null
 
 import FollowUpSuggestions from '../search/FollowUpSuggestions'
 import { SourceCardList } from '../search/SourceCardList'
+import { MessageActionRow } from './MessageActionRow'
 import { MessageAttachmentGrid } from './MessageAttachmentGrid'
-import MessageErrTips from './MessageErrTips'
 import MessageStatuses from './MessageLoading'
 import MessageQuoteBar from './MessageQuoteBar'
+import { ModelErrorNotice } from './ModelErrorNotice'
 import { saveAsKnowledgeFromMessage } from './save-as-knowledge'
 import TextSelectionToolbar from './TextSelectionToolbar'
+import { UserMessageEditor } from './UserMessageEditor'
 
 interface Props {
   id?: string
@@ -157,6 +166,8 @@ interface Props {
   latestPlan?: boolean
   /** Whether this message's stopped plan offers Continue, resolved by MessageList. Default hidden. */
   planContinue?: PlanContinueState
+  /** Turns the chat's plan mode back on when Continue is blocked by it (MessageList). */
+  onTurnOnPlanMode?(): Promise<void>
 }
 
 const _Message: FC<Props> = (props) => {
@@ -175,15 +186,13 @@ const _Message: FC<Props> = (props) => {
     planTouchesFiles = false,
     latestPlan = false,
     planContinue = 'hidden',
+    onTurnOnPlanMode,
   } = props
 
   const { t } = useTranslation()
   const isSamllScreen = useIsSmallScreen()
   const {
     userAvatarKey: _userAvatarKey,
-    showMessageTimestamp,
-    showWordCount,
-    showFirstTokenLatency,
     enableMarkdownRendering,
     enableLaTeXRendering,
     enableMermaidRendering,
@@ -279,14 +288,21 @@ const _Message: FC<Props> = (props) => {
     modifyMessage(sessionId, { ...msg, generating: false }, true)
   }, [sessionId, msg])
 
-  const handleRefresh = useCallback(() => {
+  // Redo, Redo ▾, Reply Again Below and edit-and-resend ask the before-send gate first (cost, abilities), like a send.
+  const handleRefresh = useCallback(async () => {
+    if (!(await requestBeforeSend(sessionId, { kind: 'redo', messageId: msg.id }))) return
     handleStop()
-    regenerateInNewFork(sessionId, msg)
+    void regenerateInNewFork(sessionId, msg)
   }, [handleStop, sessionId, msg])
 
-  const onGenerateMore = useCallback(() => {
-    generateMore(sessionId, msg.id)
-  }, [sessionId, msg.id])
+  const onGenerateMore = useCallback(async () => {
+    if (
+      props.sessionType === 'chat' &&
+      !(await requestBeforeSend(sessionId, { kind: 'reply-below', messageId: msg.id }))
+    )
+      return
+    void generateMore(sessionId, msg.id)
+  }, [sessionId, msg.id, props.sessionType])
 
   const onApprovePlan = useCallback(() => approveAndExecutePlan(sessionId, msg.id), [sessionId, msg.id])
 
@@ -322,9 +338,51 @@ const _Message: FC<Props> = (props) => {
     removeMessage(sessionId, msg.id)
   }, [msg.id, sessionId])
 
+  // A question is edited in place and sent again (the old answer stays as a branch); an answer keeps the edit modal.
+  const [editing, setEditing] = useState(false)
+  // The text an edit-and-resend tried to send: the editor reopens with it when the send is refused or fails.
+  const [editDraft, setEditDraft] = useState<string | null>(null)
   const onEditClick = useCallback(async () => {
+    if (msg.role === 'user') {
+      setEditing(true)
+      return
+    }
     await NiceModal.show('message-edit', { sessionId, msg: msg })
   }, [msg, sessionId])
+
+  const onEditSend = useCallback(
+    async (text: string) => {
+      setEditing(false)
+      const reopen = () => {
+        setEditDraft(text)
+        setEditing(true)
+      }
+      if (!(await requestBeforeSend(sessionId, { kind: 'edit-resend', messageId: msg.id, text }))) {
+        reopen()
+        return
+      }
+      try {
+        await editAndResend(sessionId, msg.id, text)
+        setEditDraft(null)
+      } catch (error: unknown) {
+        console.error('Edit and resend failed', error)
+        toastActions.add(t("Couldn't send that. Try again."))
+        reopen()
+      }
+    },
+    [sessionId, msg.id, t]
+  )
+  const onEditCancel = useCallback(() => {
+    setEditDraft(null)
+    setEditing(false)
+  }, [])
+
+  const onBranchFromHere = useCallback(() => {
+    void branchChatFromMessage(sessionId, msg.id).catch((error: unknown) => {
+      console.error('Branch failed', error)
+      toastActions.add(t("Couldn't save that. Try again."))
+    })
+  }, [sessionId, msg.id, t])
 
   const onSaveAsKnowledge = useCallback(() => saveAsKnowledgeFromMessage(msg, sessionId), [msg, sessionId])
 
@@ -468,37 +526,10 @@ const _Message: FC<Props> = (props) => {
     })
   }, [clearSelectionToolbar, msg.role])
 
-  // Per-message token/model chrome removed — session totals live in SessionStatusBar (dock statusline).
-  // Keep only critical finish-reason signals under the message.
+  // Model · tokens · time live in the answer row (MessageActionRow); only finish-reason signals stay here.
   const tips: string[] = []
   if (msg.finishReason && ['content-filter', 'length', 'error'].includes(msg.finishReason)) {
     tips.push(`finish reason: ${msg.finishReason}`)
-  }
-  // Optional debug metrics (settings) — still not the noisy default "tokens used / model" line
-  if (showWordCount && !msg.generating && (props.sessionType === 'chat' || !props.sessionType)) {
-    tips.push(`word count: ${msg.wordCount !== undefined ? msg.wordCount : countWord(getMessageText(msg))}`)
-  }
-  if (showFirstTokenLatency && msg.role === 'assistant' && !msg.generating) {
-    const latency = msg.firstTokenLatency ? `${msg.firstTokenLatency}ms` : 'unknown'
-    tips.push(`first token latency: ${latency}`)
-  }
-
-  // (legacy comment removed)
-  if (showMessageTimestamp && msg.timestamp !== undefined) {
-    const date = new Date(msg.timestamp)
-    let messageTimestamp: string
-    if (dateFns.isToday(date)) {
-      // - ， HH:mm
-      messageTimestamp = dateFns.format(date, 'HH:mm')
-    } else if (dateFns.isThisYear(date)) {
-      // - ， MM-dd HH:mm
-      messageTimestamp = dateFns.format(date, 'MM-dd HH:mm')
-    } else {
-      // - other：yyyy-MM-dd HH:mm
-      messageTimestamp = dateFns.format(date, 'yyyy-MM-dd HH:mm')
-    }
-
-    tips.push(`time: ${messageTimestamp}`)
   }
 
   // Aritfact
@@ -566,7 +597,73 @@ const _Message: FC<Props> = (props) => {
     </button>
   )
 
-  const actionMenuItems = useMemo<ActionMenuItemProps[]>(
+  // Chat messages get the MA1 row on every layout; picture sessions keep their own row.
+  const isChatSession = props.sessionType === 'chat'
+
+  const handleRedoWithModel = useCallback(
+    async (provider: string, modelId: string) => {
+      const model = { provider, modelId }
+      // Priced at the picked model; its list already offers only models that can take the turn.
+      if (!(await requestBeforeSend(sessionId, { kind: 'redo-with-model', messageId: msg.id, model }))) return
+      handleStop()
+      void regenerateInNewFork(sessionId, msg, { modelOverride: model })
+    },
+    [handleStop, sessionId, msg]
+  )
+
+  const deleteItem = useMemo<ActionMenuItemProps>(
+    () => ({
+      doubleCheck: true,
+      text: t('Delete'),
+      icon: IconTrash,
+      color: 'chatbox-error' as const,
+      onClick: onDelMsg,
+    }),
+    [t, onDelMsg]
+  )
+
+  // More for chat messages: the row already has Copy, Redo and Edit (user), so they are not repeated here.
+  const chatMenuItems = useMemo<ActionMenuItemProps[]>(() => {
+    const items: Array<ActionMenuItemProps | false> = [
+      msg.role !== 'assistant' && { text: t('Reply Again Below'), icon: IconArrowDown, onClick: onGenerateMore },
+      { text: t('Quote'), icon: IconQuoteFilled, onClick: quoteMsg },
+      msg.role === 'assistant' && { text: t('Edit'), icon: IconPencil, onClick: onEditClick },
+      !msg.generating &&
+        (msg.role === 'user' || msg.role === 'assistant') && {
+          text: t('Save as knowledge'),
+          icon: IconBrain,
+          onClick: () => void onSaveAsKnowledge(),
+        },
+      msg.role === 'assistant' &&
+        isComfyUIReady && { text: t('Send to Image Creator'), icon: IconPhoto, onClick: handleSendToImageCreator },
+      !msg.generating &&
+        (msg.role === 'user' || msg.role === 'assistant') && {
+          text: t('Branch from here'),
+          icon: IconGitBranch,
+          onClick: onBranchFromHere,
+        },
+      { divider: true },
+      msg.role === 'assistant' &&
+        platform.formFactor === 'mobile' && { text: t('Report'), icon: IconMessageReport, onClick: onReport },
+      deleteItem,
+    ]
+    return items.filter((i): i is ActionMenuItemProps => !!i)
+  }, [
+    t,
+    msg.role,
+    msg.generating,
+    onGenerateMore,
+    quoteMsg,
+    onEditClick,
+    onSaveAsKnowledge,
+    isComfyUIReady,
+    handleSendToImageCreator,
+    onBranchFromHere,
+    onReport,
+    deleteItem,
+  ])
+
+  const pictureMenuItems = useMemo<ActionMenuItemProps[]>(
     () => [
       ...(isSamllScreen
         ? [
@@ -581,19 +678,17 @@ const _Message: FC<Props> = (props) => {
               icon: IconArrowDown,
               onClick: onGenerateMore,
             },
-            !msg.model?.startsWith('chatboxai') &&
-              !(msg.role === 'assistant' && props.sessionType === 'picture') && {
-                text: t('Edit'),
-                icon: IconPencil,
-                onClick: onEditClick,
-              },
-            !(props.sessionType === 'picture' && msg.role === 'assistant') && {
+            msg.role !== 'assistant' && {
+              text: t('Edit'),
+              icon: IconPencil,
+              onClick: onEditClick,
+            },
+            msg.role !== 'assistant' && {
               text: t('Copy'),
               icon: IconCopy,
               onClick: onCopyMsg,
             },
             !msg.generating &&
-              props.sessionType === 'picture' &&
               msg.role === 'assistant' && {
                 text: t('Generate More Images Below'),
                 icon: IconPhotoPlus,
@@ -626,20 +721,13 @@ const _Message: FC<Props> = (props) => {
             },
           ]
         : []),
-      {
-        doubleCheck: true,
-        text: t('Delete'),
-        icon: IconTrash,
-        color: 'chatbox-error' as const,
-        onClick: onDelMsg,
-      },
+      deleteItem,
     ],
     [
       t,
       msg.role,
       onReport,
       quoteMsg,
-      onDelMsg,
       isSamllScreen,
       handleRefresh,
       msg.generating,
@@ -647,11 +735,30 @@ const _Message: FC<Props> = (props) => {
       onEditClick,
       onCopyMsg,
       onSaveAsKnowledge,
-      msg.model,
-      props.sessionType,
+      deleteItem,
     ]
   )
+  const actionMenuItems = isChatSession ? chatMenuItems : pictureMenuItems
   const [actionMenuOpened, setActionMenuOpened] = useState(false)
+  const [redoListOpened, setRedoListOpened] = useState(false)
+  // Redo ▾ obeys the composer's before-send ability checks: its list offers only models that can take this turn
+  // (tools unless the turn was sent without them, vision for a picture). Unknown capabilities are never left out.
+  const [redoNeeds, setRedoNeeds] = useState<ModelNeeds>({})
+  const handleRedoListChange = useCallback(
+    (opened: boolean) => {
+      if (opened) {
+        const session = peekSession(sessionId)
+        const ocrReady = isOcrModelSet(settingsStore.getState())
+        setRedoNeeds(session ? turnAbilityNeeds(session, msg.id, { ocrReady }) : {})
+      }
+      setRedoListOpened(opened)
+    },
+    [sessionId, msg.id]
+  )
+  const redoModelFilter = useCallback(
+    (model: ProviderModelInfo) => !isNonChatComposerModel(model) && modelMeetsNeeds(model, redoNeeds),
+    [redoNeeds]
+  )
   const isUser = msg.role === 'user'
   const isAssistant = msg.role === 'assistant'
 
@@ -722,7 +829,14 @@ const _Message: FC<Props> = (props) => {
             <MessageQuoteBar quote={msg.quoteAttachment} />
           </div>
         ) : null}
-        <div className={cn('msg-bubble', isUser ? 'inline-block' : 'w-full')}>
+        {editing && isUser ? (
+          <UserMessageEditor
+            initialText={editDraft ?? contentParts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n')}
+            onSend={(text) => void onEditSend(text)}
+            onCancel={onEditCancel}
+          />
+        ) : null}
+        <div className={cn('msg-bubble', isUser ? 'inline-block' : 'w-full', editing && isUser && 'hidden')}>
           <div
             ref={messageContentRef}
             className={cn('msg-content', { 'msg-content-small': small })}
@@ -879,6 +993,7 @@ const _Message: FC<Props> = (props) => {
                           onStop={onStopGeneration}
                           onContinue={onContinuePlan}
                           continueState={planContinue}
+                          onTurnOnPlanMode={onTurnOnPlanMode}
                         />
                       </Suspense>
                     ) : null
@@ -924,7 +1039,7 @@ const _Message: FC<Props> = (props) => {
               />
             </Flex>
           )}
-          <MessageErrTips msg={msg} />
+          <ModelErrorNotice msg={msg} sessionId={sessionId} />
           {needCollapse && !isCollapsed && CollapseButton}
           {msg.citations?.length ? <SourceCardList citations={msg.citations} /> : null}
           {msg.role === 'assistant' && !msg.generating ? (
@@ -976,6 +1091,7 @@ const _Message: FC<Props> = (props) => {
 
         {/* actions — hover-only; last assistant reserves height so settle does not shove the thread */}
         {buttonGroup !== 'none' &&
+          !(editing && isUser) &&
           !(isAssistant && !msg.error && !hasVisibleAssistantReply(contentParts) && !msg.generating) && (
             <div className={clsx('msg-actions-slot', buttonGroup === 'always' && 'is-reserved')}>
               {settledReady && !msg.generating && (
@@ -983,7 +1099,7 @@ const _Message: FC<Props> = (props) => {
                   gap={0}
                   className={clsx(
                     'msg-actions',
-                    (actionMenuOpened || buttonGroup === 'always') && 'is-visible',
+                    (actionMenuOpened || redoListOpened || buttonGroup === 'always') && 'is-visible',
                     isSamllScreen ? 'sticky bottom-4' : '',
                     isUser && 'justify-end'
                   )}
@@ -993,93 +1109,113 @@ const _Message: FC<Props> = (props) => {
                     gap={0}
                     className={
                       isSamllScreen
-                        ? 'p-xxs bg-chatbox-background-primary rounded-md border-[0.5px] border-solid border-chatbox-border-primary'
-                        : ''
+                        ? isChatSession
+                          ? 'dg-msg-actions-float'
+                          : 'p-xxs bg-chatbox-background-primary rounded-md border-[0.5px] border-solid border-chatbox-border-primary'
+                        : 'min-w-0 max-w-full'
                     }
                   >
-                    {/* Mock action order (assistant): copy · up · down · reload · more */}
-                    {!isSamllScreen && !(props.sessionType === 'picture' && msg.role === 'assistant') && (
-                      <MessageActionIcon icon={IconCopy} tooltip={t('copy')} onClick={onCopyMsg} />
-                    )}
-
-                    {!isSamllScreen && msg.role === 'assistant' && (
-                      <MessageActionIcon
-                        icon={msg.feedback?.rating === 'up' ? IconThumbUpFilled : IconThumbUp}
-                        tooltip={t('Thumbs Up')}
-                        color={msg.feedback?.rating === 'up' ? 'chatbox-success' : 'chatbox-tertiary'}
-                        onClick={() => toggleFeedbackRating('up')}
+                    {isChatSession ? (
+                      <MessageActionRow
+                        msg={msg}
+                        onCopy={onCopyMsg}
+                        onRedo={handleRefresh}
+                        onRedoWithModel={handleRedoWithModel}
+                        onFeedback={toggleFeedbackRating}
+                        onEdit={isUser ? onEditClick : undefined}
+                        menu={actionMenuItems}
+                        menuOpened={actionMenuOpened}
+                        onMenuChange={setActionMenuOpened}
+                        onRedoListChange={handleRedoListChange}
+                        redoModelFilter={redoModelFilter}
                       />
+                    ) : (
+                      <>
+                        {/* Mock action order (assistant): copy · up · down · reload · more */}
+                        {!isSamllScreen && !(props.sessionType === 'picture' && msg.role === 'assistant') && (
+                          <MessageActionIcon icon={IconCopy} tooltip={t('copy')} onClick={onCopyMsg} />
+                        )}
+
+                        {!isSamllScreen && msg.role === 'assistant' && (
+                          <MessageActionIcon
+                            icon={msg.feedback?.rating === 'up' ? IconThumbUpFilled : IconThumbUp}
+                            tooltip={t('Thumbs Up')}
+                            color={msg.feedback?.rating === 'up' ? 'chatbox-success' : 'chatbox-tertiary'}
+                            onClick={() => toggleFeedbackRating('up')}
+                          />
+                        )}
+
+                        {!isSamllScreen && msg.role === 'assistant' && (
+                          <MessageActionIcon
+                            icon={msg.feedback?.rating === 'down' ? IconThumbDownFilled : IconThumbDown}
+                            tooltip={t('Thumbs Down')}
+                            color={msg.feedback?.rating === 'down' ? 'chatbox-error' : 'chatbox-tertiary'}
+                            onClick={() => toggleFeedbackRating('down')}
+                          />
+                        )}
+
+                        {!isSamllScreen && !msg.generating && msg.role === 'assistant' && (
+                          <MessageActionIcon icon={IconReload} tooltip={t('Reply Again')} onClick={handleRefresh} />
+                        )}
+
+                        {!isSamllScreen && msg.role !== 'assistant' && (
+                          <MessageActionIcon
+                            icon={IconArrowDown}
+                            tooltip={t('Reply Again Below')}
+                            onClick={onGenerateMore}
+                          />
+                        )}
+
+                        {
+                          // legacy cloud model prefix
+                          !isSamllScreen &&
+                            !msg.model?.startsWith('chatboxai') &&
+                            // (legacy comment removed)
+                            !(msg.role === 'assistant' && props.sessionType === 'picture') && (
+                              <MessageActionIcon icon={IconPencil} tooltip={t('edit')} onClick={onEditClick} />
+                            )
+                        }
+
+                        {/* Save as knowledge — toolbar (same row as copy / edit / more) */}
+                        {!isSamllScreen &&
+                          !msg.generating &&
+                          (msg.role === 'user' || msg.role === 'assistant') &&
+                          !(props.sessionType === 'picture' && msg.role === 'assistant') && (
+                            <MessageActionIcon
+                              icon={IconBrain}
+                              tooltip={t('Save as knowledge')}
+                              onClick={() => void onSaveAsKnowledge()}
+                            />
+                          )}
+
+                        {!isSamllScreen && msg.role === 'assistant' && isComfyUIReady && (
+                          <MessageActionIcon
+                            icon={IconPhoto}
+                            tooltip={t('Send to Image Creator')}
+                            onClick={handleSendToImageCreator}
+                          />
+                        )}
+
+                        {!isSamllScreen &&
+                          !msg.generating &&
+                          props.sessionType === 'picture' &&
+                          msg.role === 'assistant' && (
+                            <MessageActionIcon
+                              icon={IconPhotoPlus}
+                              tooltip={t('Generate More Images Below')}
+                              onClick={onGenerateMore}
+                            />
+                          )}
+
+                        <ActionMenu
+                          items={actionMenuItems}
+                          opened={actionMenuOpened}
+                          onChange={(opened) => setActionMenuOpened(opened)}
+                        >
+                          <MessageActionIcon icon={IconDotsVertical} tooltip={t('More')} />
+                        </ActionMenu>
+                      </>
                     )}
-
-                    {!isSamllScreen && msg.role === 'assistant' && (
-                      <MessageActionIcon
-                        icon={msg.feedback?.rating === 'down' ? IconThumbDownFilled : IconThumbDown}
-                        tooltip={t('Thumbs Down')}
-                        color={msg.feedback?.rating === 'down' ? 'chatbox-error' : 'chatbox-tertiary'}
-                        onClick={() => toggleFeedbackRating('down')}
-                      />
-                    )}
-
-                    {!isSamllScreen && !msg.generating && msg.role === 'assistant' && (
-                      <MessageActionIcon icon={IconReload} tooltip={t('Reply Again')} onClick={handleRefresh} />
-                    )}
-
-                    {!isSamllScreen && msg.role !== 'assistant' && (
-                      <MessageActionIcon
-                        icon={IconArrowDown}
-                        tooltip={t('Reply Again Below')}
-                        onClick={onGenerateMore}
-                      />
-                    )}
-
-                    {
-                      // legacy cloud model prefix
-                      !isSamllScreen &&
-                        !msg.model?.startsWith('chatboxai') &&
-                        // (legacy comment removed)
-                        !(msg.role === 'assistant' && props.sessionType === 'picture') && (
-                          <MessageActionIcon icon={IconPencil} tooltip={t('edit')} onClick={onEditClick} />
-                        )
-                    }
-
-                    {/* Save as knowledge — toolbar (same row as copy / edit / more) */}
-                    {!isSamllScreen &&
-                      !msg.generating &&
-                      (msg.role === 'user' || msg.role === 'assistant') &&
-                      !(props.sessionType === 'picture' && msg.role === 'assistant') && (
-                        <MessageActionIcon
-                          icon={IconBrain}
-                          tooltip={t('Save as knowledge')}
-                          onClick={() => void onSaveAsKnowledge()}
-                        />
-                      )}
-
-                    {!isSamllScreen && msg.role === 'assistant' && isComfyUIReady && (
-                      <MessageActionIcon
-                        icon={IconPhoto}
-                        tooltip={t('Send to Image Creator')}
-                        onClick={handleSendToImageCreator}
-                      />
-                    )}
-
-                    {!isSamllScreen &&
-                      !msg.generating &&
-                      props.sessionType === 'picture' &&
-                      msg.role === 'assistant' && (
-                        <MessageActionIcon
-                          icon={IconPhotoPlus}
-                          tooltip={t('Generate More Images Below')}
-                          onClick={onGenerateMore}
-                        />
-                      )}
-
-                    <ActionMenu
-                      items={actionMenuItems}
-                      opened={actionMenuOpened}
-                      onChange={(opened) => setActionMenuOpened(opened)}
-                    >
-                      <MessageActionIcon icon={IconDotsVertical} tooltip={t('More')} />
-                    </ActionMenu>
                   </Flex>
                 </Flex>
               )}
