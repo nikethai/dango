@@ -1833,5 +1833,10 @@
   "captain": "captain",
   "Chat “{{name}}”": "Chat “{{name}}”",
   "{{scopeName}} knowledge": "{{scopeName}} knowledge",
-  "ChatGPT “{{title}}”": "ChatGPT “{{title}}”"
+  "ChatGPT “{{title}}”": "ChatGPT “{{title}}”",
+  "Search chats, knowledge and sources": "Search chats, knowledge and sources",
+  "Nothing found for “{{query}}”": "Nothing found for “{{query}}”",
+  "New chat with it": "New chat with it",
+  "Import ChatGPT archive": "Import ChatGPT archive",
+  "Ctrl": "Ctrl"
 }

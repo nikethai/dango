@@ -6,6 +6,7 @@ import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
 import { ToolPermissionHost } from '@/components/permission/ToolPermissionHost'
 import { registerChangeOpener } from '@/components/review/changeOpener'
 import { registerDefaultQuestionOpener } from '@/components/review/questionOpener'
+import { SearchOverlay } from '@/components/search/SearchOverlay'
 import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
 import { useDesktopShell } from '@/hooks/useDesktopShell'
@@ -30,7 +31,6 @@ import { getOS } from '@/packages/navigator'
 import { UndoToast, useUndoHotkey } from '@/packages/undo'
 import PictureDialog from '@/pages/PictureDialog'
 import RemoteDialogWindow from '@/pages/RemoteDialogWindow'
-import SearchDialog from '@/pages/SearchDialog'
 import platform from '@/platform'
 import { router } from '@/router'
 import Sidebar from '@/Sidebar'
@@ -241,8 +241,8 @@ function Root() {
       <RemoteDialogWindow />
       {/* Mobile report content */}
       {/* <ReportContentDialog /> */}
-      {/* Search */}
-      <SearchDialog />
+      {/* ⌘K search (not in Quick Chat: opening a hit would navigate the quick window) */}
+      {isQuickRoute ? null : <SearchOverlay />}
       {/* Tool permission sheet (main and quick window: it answers the turn in this window) */}
       <ToolPermissionHost />
       {/* One-time move of old memory into knowledge (not in Quick Chat) */}
