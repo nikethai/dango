@@ -83,7 +83,7 @@ describe('pmToolSet', () => {
   })
 
   it("passes the chat's scope and the cloud flag from the context, not from the model", async () => {
-    const set = pmToolSet({ sessionScopeId: 'acme', cloudModel: true })
+    const set = pmToolSet({ sessionScopeId: 'acme', cloudModel: true, userMessage: 'What did Acme say?' })
     const execute = (set.tools.client_recall as { execute: (input: unknown, opts: unknown) => Promise<unknown> })
       .execute
     await execute({ client: 'Acme', query: 'launch date', cloudModel: false, sessionScopeId: 'x', limit: 3 }, {})
@@ -93,6 +93,7 @@ describe('pmToolSet', () => {
       limit: 3,
       sessionScopeId: 'acme',
       cloudModel: true,
+      userMessage: 'What did Acme say?',
     })
   })
 })

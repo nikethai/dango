@@ -7,7 +7,7 @@ import { sequenceMessages } from '@shared/utils/message'
 import { getModelSettings } from '@shared/utils/model_settings'
 import { shouldPreserveReasoningInContext } from '@shared/utils/reasoning-replay'
 import { searchResultsToCitations } from '@shared/utils/search'
-import type { ModelMessage, ToolSet } from 'ai'
+import type { ModelMessage, Tool, ToolSet } from 'ai'
 import { t } from 'i18next'
 import { uniqueId } from 'lodash'
 import { createModelDependencies } from '@/adapters'
@@ -85,7 +85,13 @@ import generateImageToolSet, {
   formatImageCatalogInstructions,
 } from './toolsets/generate-image'
 import { getToolSet } from './toolsets/knowledge-base'
-import { loadPmToolSet } from './toolsets/pm-pilot'
+import { loadLocalOnlySourceIds, loadPmToolSet } from './toolsets/pm-pilot'
+import {
+  CLIENT_RECALL_TOOL,
+  hideLocalOnlyRecalls,
+  knowledgeMayReachCloud,
+  LOCAL_ONLY_ANSWER_PLACEHOLDER,
+} from './toolsets/pm-pilot-history'
 import taskTrackingToolSet from './toolsets/task-tracking'
 import videoToolSet, { initVideoToolBudget, resetVideoToolBudget } from './toolsets/video'
 import videoUrlToolSet from './toolsets/video-url'
@@ -365,6 +371,10 @@ export async function streamText(
     scopeId,
   } = params
   const globalSettings = settingsStore.getState().getSettings()
+  // ADR 0003: whether this turn's model is cloud (the chat's own provider). A cloud turn never carries an earlier
+  // answer built from local-only mail or tasks.
+  const cloudModel = !isLocalModelProvider(sessionSettings?.provider)
+  if (cloudModel) params.messages = hideLocalOnlyRecalls(params.messages, t(LOCAL_ONLY_ANSWER_PLACEHOLDER))
   const hasDocumentFileOrLink = params.messages.some(
     (m) => m.links?.length || m.files?.some((f) => f.mediaKind !== 'video')
   )
@@ -498,12 +508,18 @@ export async function streamText(
     }
   }
   // Slice 10 client_recall: local records only, so merged unwrapped like the knowledge base. Cloud is the chat model's.
+  // Not loaded (nor described) when the copilot's tool access or the allowed tools leave it out.
   let pmToolSet: Awaited<ReturnType<typeof loadPmToolSet>> = null
-  if (!customTools && model.isSupportToolUse()) {
+  const pmToolAllowed =
+    CLIENT_RECALL_TOOL in filterToolsByAccess({ [CLIENT_RECALL_TOOL]: {} as Tool }, toolAccess) &&
+    (!allowedTools || allowedTools.length === 0 || allowedTools.includes(CLIENT_RECALL_TOOL))
+  if (!customTools && model.isSupportToolUse() && pmToolAllowed) {
     try {
+      const lastUser = [...params.messages].reverse().find((m) => m.role === 'user')
       pmToolSet = await loadPmToolSet({
         sessionScopeId: scopeId,
-        cloudModel: !isLocalModelProvider(sessionSettings?.provider),
+        cloudModel,
+        userMessage: lastUser ? getMessageText(lastUser, false, false) : '',
       })
     } catch (err) {
       console.error('Failed to load client email and tasks toolset:', err)
@@ -537,7 +553,18 @@ export async function streamText(
   }
   // Within the token budget, Everywhere facts ranked against the question; knowledgeIds is what was injected.
   const lastUserMessage = [...params.messages].reverse().find((m) => m.role === 'user')
-  const knowledgeItems = fitKnowledgeToBudget(knowledgeScope, knowledgeForTurn(knowledgeScope), {
+  let turnKnowledge = knowledgeForTurn(knowledgeScope)
+  if (cloudModel) {
+    // The pipeline's rule: knowledge from a local-only source stays off a cloud model (unreadable sources: held back).
+    let localOnly: Set<string> | null = null
+    try {
+      localOnly = await loadLocalOnlySourceIds()
+    } catch (err) {
+      knowledgeLog.error('Failed to read local-only sources:', err)
+    }
+    turnKnowledge = turnKnowledge.filter((item) => knowledgeMayReachCloud(item, localOnly))
+  }
+  const knowledgeItems = fitKnowledgeToBudget(knowledgeScope, turnKnowledge, {
     query: params.knowledgeQuery ?? (lastUserMessage ? getMessageText(lastUserMessage, false, false) : ''),
   })
   const knowledgeIds = knowledgeItems.filter((i) => i.id !== NEVER_SEND_EMAIL.id).map((i) => i.id)

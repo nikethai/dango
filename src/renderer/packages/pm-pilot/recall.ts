@@ -44,7 +44,14 @@ export type RecalledRecord = {
 }
 
 export type ClientRecallResult =
-  | { ok: true; scope: ClientCandidate; records: RecalledRecord[]; gaps: string[] }
+  | {
+      ok: true
+      scope: ClientCandidate
+      records: RecalledRecord[]
+      gaps: string[]
+      /** Set when a record may not reach a cloud model (local-only or unknown source; only on a local model). */
+      localOnly?: true
+    }
   | { ok: false; code: ClientResolveErrorCode; candidates: ClientCandidate[] }
 
 const candidate = (s: Scope): ClientCandidate => ({ id: s.id, name: s.name })
@@ -52,7 +59,8 @@ const fold = (s: string) => s.trim().toLocaleLowerCase()
 
 /**
  * The client scope a recall is about. No name: the session's scope when it is a client scope, else `no_client_given`.
- * A name: an id, else an exact case-insensitive name, else names that contain it (or that it contains). Only
+ * A name: an id, else an exact case-insensitive name, else names whose words (accents folded, see `tokens`) all
+ * appear among the given name's words, or the reverse. Whole words only: "AB" never matches "lab report". Only
  * `kind === 'client'` scopes are considered.
  */
 export function resolveClientScope(
@@ -70,15 +78,34 @@ export function resolveClientScope(
   if (byId) return { ok: true, scope: byId }
   const exact = clients.filter((s) => fold(s.name) === wanted)
   if (exact.length === 1) return { ok: true, scope: exact[0] }
-  const matches = exact.length > 1 ? exact : clients.filter((s) => namesMatch(fold(s.name), wanted))
+  const wantedWords = tokens(wanted)
+  const matches =
+    exact.length > 1
+      ? exact
+      : clients.filter((s) => {
+          const nameWords = tokens(s.name)
+          return covers(nameWords, wantedWords) || covers(wantedWords, nameWords)
+        })
   if (matches.length === 1) return { ok: true, scope: matches[0] }
   if (matches.length > 1) return { ok: false, code: 'ambiguous_client', candidates: matches.map(candidate) }
   return { ok: false, code: 'unknown_client', candidates: clients.map(candidate) }
 }
 
-function namesMatch(name: string, wanted: string): boolean {
-  if (!name) return false
-  return name.includes(wanted) || (name.length >= 2 && wanted.includes(name))
+/** Same word, or one a prefix of the other when both have at least 4 letters ("corp" and "corporation"). */
+function sameWord(a: string, b: string): boolean {
+  return a === b || (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a)))
+}
+
+/** True when `words` is not empty and each of its words is in `among`. */
+function covers(words: Set<string>, among: Set<string>): boolean {
+  if (words.size === 0) return false
+  for (const w of words) if (![...among].some((a) => sameWord(w, a))) return false
+  return true
+}
+
+/** True when the client's name (its words) is in the user's message. */
+export function nameInMessage(name: string, message: string): boolean {
+  return covers(tokens(name), tokens(message))
 }
 
 function cap(text: string, max: number): string {
@@ -105,8 +132,13 @@ function toRecalled(r: SourceRecord): RecalledRecord {
     sentByMe: r.sentByMe,
     ...(link ? { link } : {}),
     occurredAt: r.occurredAt,
-    date: new Date(r.occurredAt).toISOString(),
+    date: isoDate(r.occurredAt),
   }
+}
+
+function isoDate(at: number): string {
+  const d = new Date(at)
+  return Number.isFinite(d.getTime()) ? d.toISOString() : ''
 }
 
 const kindName = (kind: ConnectedSource['kind']) => (kind === 'asana' ? i18n.t('Asana') : i18n.t('Gmail'))
@@ -124,14 +156,24 @@ async function freshenRecords(): Promise<void> {
  */
 export async function recallClient(input: {
   client?: string
+  /**
+   * The user's latest message. In a client scope's chat, another client is recalled only when the user named it there:
+   * a name the model took from mail (possibly injected) is refused.
+   */
+  userMessage?: string
   query: string
   sessionScopeId?: string
   cloudModel: boolean
   limit?: number
 }): Promise<ClientRecallResult> {
-  const resolved = resolveClientScope(input.client, input.sessionScopeId, await listClientScopes())
+  const clients = await listClientScopes()
+  const resolved = resolveClientScope(input.client, input.sessionScopeId, clients)
   if (!resolved.ok) return resolved
   const { scope } = resolved
+  const own = clients.find((s) => s.id === input.sessionScopeId)
+  if (own && own.id !== scope.id && !nameInMessage(scope.name, input.userMessage ?? '')) {
+    return { ok: false, code: 'ambiguous_client', candidates: [candidate(own), candidate(scope)] }
+  }
 
   await loadSources()
   const sources = listSources()
@@ -155,6 +197,11 @@ export async function recallClient(input: {
   }
 
   let usable = stored
+  // On a local model: whether any returned record is local-only (or of an unknown source), so later cloud turns hide it.
+  const mayNotLeave = (r: SourceRecord) => {
+    const source = r.sourceId ? byId.get(r.sourceId) : undefined
+    return !source || source.localOnly
+  }
   if (input.cloudModel) {
     const localOnlyKinds = new Set<ConnectedSource['kind']>()
     let unknown = false
@@ -187,6 +234,7 @@ export async function recallClient(input: {
 
   const records: RecalledRecord[] = []
   let total = 0
+  let localOnly = false
   for (const { r } of ranked) {
     if (records.length >= limit) break
     const out = toRecalled(r)
@@ -194,7 +242,14 @@ export async function recallClient(input: {
     if (total + size > RECALL_TOTAL_CHARS) break
     total += size
     records.push(out)
+    if (mayNotLeave(r)) localOnly = true
   }
 
-  return { ok: true, scope: candidate(scope), records, gaps: [...new Set(gaps)] }
+  return {
+    ok: true,
+    scope: candidate(scope),
+    records,
+    gaps: [...new Set(gaps)],
+    ...(localOnly ? { localOnly: true as const } : {}),
+  }
 }

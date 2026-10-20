@@ -128,6 +128,14 @@ describe('resolveClientScope', () => {
   it('returns unknown_client for a name that matches no client', () => {
     expect(resolveClientScope('Initech', 'acme', scopes)).toMatchObject({ ok: false, code: 'unknown_client' })
   })
+
+  it('matches whole words only, with accents folded', () => {
+    const few = [scope('ab', 'AB'), scope('viet', 'Việt Foods')]
+    expect(resolveClientScope('lab report', undefined, few)).toMatchObject({ ok: false, code: 'unknown_client' })
+    expect(resolveClientScope('AB team', undefined, few)).toMatchObject({ ok: true, scope: { id: 'ab' } })
+    expect(resolveClientScope('viet foods', undefined, few)).toMatchObject({ ok: true, scope: { id: 'viet' } })
+    expect(resolveClientScope('Viet', undefined, few)).toMatchObject({ ok: true, scope: { id: 'viet' } })
+  })
 })
 
 describe('recallClient', () => {
@@ -166,7 +174,13 @@ describe('recallClient', () => {
       rec({ externalId: 'theirs', scopeId: 'globex', sourceId: 'g-globex', text: 'Globex launch secret' }),
       rec({ externalId: 'nowhere', scopeId: null, text: 'unscoped launch' }),
     ])
-    const out = await recallClient({ client: 'Acme', query: 'launch', sessionScopeId: 'globex', cloudModel: false })
+    const out = await recallClient({
+      client: 'Acme',
+      query: 'launch',
+      sessionScopeId: 'globex',
+      userMessage: 'What did Acme say about the launch?',
+      cloudModel: false,
+    })
     if (!out.ok) throw new Error('expected ok')
     expect(out.records.map((r) => r.text)).toEqual(['Acme launch'])
     expect(getRecords.mock.calls.map(([id]) => id)).toEqual(['acme'])
@@ -235,6 +249,75 @@ describe('recallClient', () => {
     if (!local.ok) throw new Error('expected ok')
     expect(local.records).toHaveLength(4)
     expect(local.gaps).toEqual([])
+  })
+
+  it("in a client's chat, recalls another client only when the user named it", async () => {
+    getRecords.mockResolvedValue([rec({ externalId: 'm1', scopeId: 'globex', sourceId: 'g-globex' })])
+    // The model asks for Globex, but the user never mentioned it (the name may come from mail in Acme's records).
+    const refused = await recallClient({
+      client: 'Globex',
+      query: 'price',
+      sessionScopeId: 'acme',
+      userMessage: 'What did the lab report say?',
+      cloudModel: false,
+    })
+    expect(refused).toEqual({
+      ok: false,
+      code: 'ambiguous_client',
+      candidates: [
+        { id: 'acme', name: 'Acme' },
+        { id: 'globex', name: 'Globex' },
+      ],
+    })
+    expect(
+      await recallClient({ client: 'Globex', query: 'price', sessionScopeId: 'acme', cloudModel: false })
+    ).toMatchObject({ ok: false, code: 'ambiguous_client' })
+    expect(getRecords).not.toHaveBeenCalled()
+
+    const asked = await recallClient({
+      client: 'Globex',
+      query: 'price',
+      sessionScopeId: 'acme',
+      userMessage: 'and what did globex say about the price?',
+      cloudModel: false,
+    })
+    expect(asked).toMatchObject({ ok: true, scope: { id: 'globex' } })
+    // Outside a client chat, a name alone is enough.
+    expect(
+      await recallClient({ client: 'Globex', query: 'price', sessionScopeId: 'site', cloudModel: false })
+    ).toMatchObject({ ok: true, scope: { id: 'globex' } })
+  })
+
+  it('marks a result that holds local-only or unknown-source records (local model only)', async () => {
+    state.sources = [
+      source({ id: 'g-acme', scopeId: 'acme', localOnly: true }),
+      source({ id: 'a-acme', scopeId: 'acme', kind: 'asana', label: 'Asana' }),
+    ]
+    getRecords.mockResolvedValue([rec({ externalId: 'mail', text: 'Private launch mail' })])
+    const local = await recallClient({ query: 'launch', sessionScopeId: 'acme', cloudModel: false })
+    expect(local).toMatchObject({ ok: true, localOnly: true })
+
+    getRecords.mockResolvedValue([rec({ externalId: 'orphan', sourceId: null, text: 'Launch' })])
+    expect(await recallClient({ query: 'launch', sessionScopeId: 'acme', cloudModel: false })).toMatchObject({
+      localOnly: true,
+    })
+
+    getRecords.mockResolvedValue([rec({ externalId: 'task', sourceKind: 'asana', sourceId: 'a-acme', text: 'Launch' })])
+    const shared = await recallClient({ query: 'launch', sessionScopeId: 'acme', cloudModel: false })
+    expect(shared.ok && 'localOnly' in shared).toBe(false)
+
+    getRecords.mockResolvedValue([
+      rec({ externalId: 'mail', text: 'Private launch mail' }),
+      rec({ externalId: 'task', sourceKind: 'asana', sourceId: 'a-acme', text: 'Launch' }),
+    ])
+    const cloud = await recallClient({ query: 'launch', sessionScopeId: 'acme', cloudModel: true })
+    expect(cloud.ok && 'localOnly' in cloud).toBe(false)
+  })
+
+  it('does not fail on a record with an out-of-range date', async () => {
+    getRecords.mockResolvedValue([rec({ externalId: 'bad', occurredAt: 9e15 })])
+    const out = await recallClient({ query: 'launch', sessionScopeId: 'acme', cloudModel: false })
+    expect(out.ok && out.records[0].date).toBe('')
   })
 
   it('says when nothing is synced yet', async () => {

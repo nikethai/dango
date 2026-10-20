@@ -1917,5 +1917,6 @@
   "{{source}}: {{reason}} — results may be out of date": "{{source}}: {{reason}} — results may be out of date",
   "{{source}} stays on this device, so it was not searched": "{{source}} stays on this device, so it was not searched",
   "Some email or tasks from a removed source were not searched": "Some email or tasks from a removed source were not searched",
-  "No email or tasks synced yet": "No email or tasks synced yet"
+  "No email or tasks synced yet": "No email or tasks synced yet",
+  "(This answer used email or tasks kept on this device, so it is not shared with this model.)": "(This answer used email or tasks kept on this device, so it is not shared with this model.)"
 }

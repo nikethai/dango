@@ -14,6 +14,8 @@ export type PmToolContext = {
   sessionScopeId?: string
   /** True unless the chat model's provider runs on this device (ADR 0003). */
   cloudModel: boolean
+  /** The user's latest message: in a client's chat, another client is recalled only when the user named it. */
+  userMessage?: string
 }
 
 const DATA_RULE =
@@ -23,7 +25,7 @@ const DATA_RULE =
 const TOOL_DESCRIPTION = `Search a client's synced email (Gmail) and tasks (Asana) for what was said or agreed. Use it for questions about a client's work, dates, prices, decisions or status that approved knowledge does not answer.
 - Leave "client" empty to use this chat's client; otherwise give the client's name.
 - ${DATA_RULE}
-- On ok: false with code ambiguous_client or no_client_given, ask the user which client they mean (offer the candidates' names) and do not guess. On unknown_client, say no client has that name.
+- On ok: false with code ambiguous_client or no_client_given, ask the user which client they mean (offer the candidates' names) and do not guess. In a client's chat, another client is searched only when the user names it. On unknown_client, say no client has that name.
 - Cite the link of each record you rely on.
 - State every entry in gaps in your answer: those sources were not searched or may be out of date.`
 
@@ -53,6 +55,7 @@ export function pmToolSet(ctx: PmToolContext): { description: string; tools: { c
             limit: input.limit,
             sessionScopeId: ctx.sessionScopeId,
             cloudModel: ctx.cloudModel,
+            userMessage: ctx.userMessage,
           })
         },
       }),
@@ -70,4 +73,15 @@ export async function loadPmToolSet(ctx: PmToolContext): Promise<ReturnType<type
   const clientIds = new Set((await listClientScopes()).map((s) => s.id))
   const enabled = listSources().some((s) => (s.kind === 'gmail' || s.kind === 'asana') && clientIds.has(s.scopeId))
   return enabled ? pmToolSet(ctx) : null
+}
+
+/** The connected sources marked "Keep on this device only" (any kind). */
+export async function loadLocalOnlySourceIds(): Promise<Set<string>> {
+  const { listSources, loadSources } = await import('@/packages/sources')
+  await loadSources()
+  return new Set(
+    listSources()
+      .filter((s) => s.localOnly)
+      .map((s) => s.id)
+  )
 }
