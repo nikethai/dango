@@ -13,25 +13,30 @@ const RATE_LIMIT_REASONS = new Set([
 ])
 
 /**
- * Never send (slice 10 constraint): Dango only reads mail, writes drafts and sets labels. Only the paths below are
- * allowed, checked on the raw path and again on the URL that would be requested, so `messages/send`,
- * `drafts/send`, `messages/import` and any encoded, dotted or appended variant are refused before any request.
+ * Never send (slice 10 constraint): Dango only reads mail, writes drafts and sets labels. Only the method and path
+ * pairs below are allowed, the path checked raw and again on the URL that would be requested, so `messages/send`,
+ * `drafts/send`, `messages/import`, `POST messages` (messages.insert) and any encoded, dotted or appended variant
+ * are refused before any request.
  */
+type GmailMethod = 'GET' | 'POST' | 'DELETE'
 const ID = '[A-Za-z0-9_-]+'
-const ALLOWED_PATHS = [
-  /^profile$/,
-  /^messages$/,
-  /^history$/,
-  /^labels$/,
-  /^drafts$/,
-  new RegExp(`^drafts/${ID}$`),
-  new RegExp(`^threads/${ID}$`),
-  new RegExp(`^threads/${ID}/modify$`),
-]
+const ALLOWED: Readonly<Record<GmailMethod, readonly RegExp[]>> = {
+  GET: [
+    /^profile$/,
+    /^messages$/,
+    /^history$/,
+    /^labels$/,
+    new RegExp(`^threads/${ID}$`),
+    new RegExp(`^drafts/${ID}$`),
+  ],
+  POST: [/^labels$/, /^drafts$/, new RegExp(`^threads/${ID}/modify$`)],
+  DELETE: [new RegExp(`^drafts/${ID}$`)],
+}
 const RESERVED_SEGMENTS = new Set(['send', 'import'])
 
-function isAllowedPath(path: string): boolean {
-  if (!ALLOWED_PATHS.some((re) => re.test(path))) return false
+function isAllowedRequest(method: string, path: string): boolean {
+  const patterns = Object.hasOwn(ALLOWED, method) ? ALLOWED[method as GmailMethod] : undefined
+  if (!patterns?.some((re) => re.test(path))) return false
   if (path.split('/').some((segment) => RESERVED_SEGMENTS.has(segment.toLowerCase()))) return false
   let url: URL
   try {
@@ -109,11 +114,11 @@ export type GmailRequestOptions = {
  */
 export async function gmailRequest<T>(
   token: string,
-  method: 'GET' | 'POST' | 'DELETE',
+  method: GmailMethod,
   path: string,
   options: GmailRequestOptions = {}
 ): Promise<T> {
-  if (!isAllowedPath(path)) throw new Error('Dango does not make this Gmail request')
+  if (!isAllowedRequest(method, path)) throw new Error('Dango does not make this Gmail request')
   const { query, body, signal } = options
   try {
     return await ofetch<T>(`${GMAIL_API}/${path}`, {

@@ -191,10 +191,23 @@ describe('proposeFromChatTurn and the PM pilot (ADR 0003)', () => {
     for (let i = 0; i < 3; i++) await turn({ messages: chat, sessionSettings: { provider: 'openai' } })
     expect(extractFactsFromTranscript).toHaveBeenCalledTimes(1)
     expect(JSON.stringify(vi.mocked(transcriptFromMessages).mock.calls)).not.toContain('4,200')
+  })
 
-    vi.mocked(transcriptFromMessages).mockClear()
-    for (let i = 0; i < 3; i++) await turn({ sessionId: 's2', messages: chat, sessionSettings: { provider: 'ollama' } })
-    expect(JSON.stringify(vi.mocked(transcriptFromMessages).mock.calls)).toContain('4,200')
+  it('a local model proposes nothing from a chat that used a local-only recall (final review I5)', async () => {
+    const chat = [
+      { id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'price?' }] },
+      recallAnswer,
+      { id: 'a2', role: 'assistant', contentParts: [{ type: 'text', text: 'So 4,620 with tax.' }] },
+    ] as Message[]
+    for (let i = 0; i < 6; i++) await turn({ sessionId: 's2', messages: chat, sessionSettings: { provider: 'ollama' } })
+    expect(transcriptFromMessages).not.toHaveBeenCalled()
+    expect(extractFactsFromTranscript).not.toHaveBeenCalled()
+
+    const summary = { id: 'm1', role: 'user', pmLocalOnly: true, contentParts: [{ type: 'text', text: 'S: 4,200' }] }
+    for (let i = 0; i < 6; i++) {
+      await turn({ sessionId: 's3', messages: [summary] as Message[], sessionSettings: { provider: 'lm-studio' } })
+    }
+    expect(extractFactsFromTranscript).not.toHaveBeenCalled()
   })
 
   it('a Needs you chat (CH6) is never read for proposals: its opening is client mail', async () => {

@@ -369,6 +369,31 @@ describe('never send', () => {
     expect(hits).toEqual([])
     expect(seen).toHaveLength(seenBefore)
 
+    // Each path only with the method Dango uses on it (final review M1): messages.insert (POST messages) plants mail.
+    const wrongMethods = [
+      ['POST', 'messages'],
+      ['DELETE', 'messages'],
+      ['POST', 'profile'],
+      ['POST', 'history'],
+      ['DELETE', 'labels'],
+      ['GET', 'drafts'],
+      ['DELETE', 'drafts'],
+      ['POST', 'drafts/d1'],
+      ['POST', 'threads/t1'],
+      ['DELETE', 'threads/t1'],
+      ['GET', 'threads/t1/modify'],
+      ['DELETE', 'threads/t1/modify'],
+    ] as const
+    for (const [method, path] of wrongMethods) {
+      await expect(gmailRequest(token, method, path, { body: {} }), `${method} ${path}`).rejects.toThrow(
+        'Dango does not make this Gmail request'
+      )
+    }
+    const sneaky = 'PUT' as unknown as 'GET'
+    await expect(gmailRequest(token, sneaky, 'drafts/d1', { body: {} })).rejects.toThrow()
+    expect(hits).toEqual([])
+    expect(seen).toHaveLength(seenBefore)
+
     for (const mod of [await import('./gmail-write'), await import('./gmail-http'), await import('./gmail-sync')]) {
       expect(Object.keys(mod).filter((name) => /send/i.test(name))).toEqual([])
     }

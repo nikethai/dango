@@ -40,7 +40,7 @@ export function usedLocalOnlyRecall(message: Pick<Message, 'contentParts'>): boo
 }
 
 /** True when the message used a local-only recall, or is a summary built from messages that did. */
-function holdsLocalOnlyRecall(message: Pick<Message, 'contentParts' | 'pmLocalOnly'>): boolean {
+export function holdsLocalOnlyRecall(message: Pick<Message, 'contentParts' | 'pmLocalOnly'>): boolean {
   return message.pmLocalOnly === true || usedLocalOnlyRecall(message)
 }
 

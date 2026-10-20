@@ -645,7 +645,12 @@ export async function runGmailPipeline(
 
 type BackfillContext = { signal?: AbortSignal; progress?(text: string): void }
 
-/** The backfill itself; the caller holds the account's mailbox slot. Errors are not mapped here. */
+/**
+ * After "Which client is this?" adds `matcher` to `source`: reads `GMAIL_BACKFILL_DAYS` of the account's mail matching
+ * it and stores the threads that now route to a client scope. Leaves the account cursor alone and acts on nothing.
+ * Only `drainBackfills` calls it, in the jobs window, inside the account's run (which holds its mailbox slot). Errors
+ * are not mapped here. Returns how many records it stored.
+ */
 async function readMatcher(source: ConnectedSource, matcher: string, ctx: BackfillContext): Promise<number> {
   const { accountId } = gmailConfig(source)
   if (ctx.signal) throwIfAborted(ctx.signal)
@@ -673,24 +678,6 @@ async function readMatcher(source: ConnectedSource, matcher: string, ctx: Backfi
   await pmStore.upsertRecords(stored)
   await pmStore.flushRecords()
   return stored.length
-}
-
-/**
- * After "Which client is this?" adds `matcher` to `source`: reads `GMAIL_BACKFILL_DAYS` of the account's mail
- * matching it and stores the threads that now route to a client scope. Leaves the account cursor alone and acts on
- * nothing. It takes the account's mailbox slot: it starts after the poll in flight, and a poll waits for it. Runs in
- * the jobs window (record changes happen there). Returns how many records it stored.
- */
-export function backfillMatcher(source: ConnectedSource, matcher: string, ctx: BackfillContext = {}): Promise<number> {
-  const { accountId } = gmailConfig(source)
-  if (!accountId) return Promise.reject(signInAgain())
-  return onAccount(accountId, async () => {
-    try {
-      return await readMatcher(source, matcher, ctx)
-    } catch (e) {
-      throw mapGmailError(e, ctx.signal)
-    }
-  })
 }
 
 /** A pending backfill that failed this many runs is dropped and handed to the user. */

@@ -158,13 +158,7 @@ import { resolveBackgroundModel } from './background-model'
 import { addReviewEntry, ensureKnowledgeLoaded, loadSources, setReviewEntryState } from './bridge'
 import { GmailAuthError, GmailRateLimitError, syncGmailMailbox } from './gmail-sync'
 import { JUDGE_FAILED, JUDGE_LOCAL_ONLY, JUDGE_UNREADABLE, judgeThread } from './judge-call'
-import {
-  _resetPipelineForTests,
-  backfillMatcher,
-  getSourceHealth,
-  MAX_ATTEMPTS_PER_MESSAGE,
-  runGmailPipeline,
-} from './pipeline'
+import { _resetPipelineForTests, getSourceHealth, MAX_ATTEMPTS_PER_MESSAGE, runGmailPipeline } from './pipeline'
 import { LocalOnlyModelError, retrieveEvidence } from './retrieve'
 import { readBackSent } from './sent-readback'
 import { pmStore } from './store'
@@ -692,83 +686,6 @@ describe('runGmailPipeline, fix round', () => {
     expect(seen.aborted).toBe(true)
     release()
     await Promise.allSettled([runC, runD])
-  })
-})
-
-describe('backfillMatcher', () => {
-  it('backfillMatcher stores records and judges nothing', async () => {
-    h.cursors = [
-      { accountId: 'acc1', sourceKind: 'gmail', scope: 'mailbox', value: 'h1', updatedAt: 1, ownAddress: OWN },
-    ]
-    const s = source({ config: { accountId: 'acc1' } })
-    h.sources = [s]
-    syncReturns(
-      [
-        mail({ author: 'ann@newco.com', participants: ['ann@newco.com'] }),
-        mail({ author: 'bo@newco.com', participants: ['bo@newco.com'] }),
-      ],
-      true
-    )
-    const stored = await backfillMatcher(s, '@newco.com')
-    expect(stored).toBe(2)
-    const input = vi.mocked(syncGmailMailbox).mock.calls[0][0]
-    expect(input.cursor).toBeNull()
-    expect(input.backfillQuery).toBe('from:(@newco.com) OR to:(@newco.com)')
-    expect(h.records.every((r) => r.scopeId === 'acme' && r.sourceId === 'g1')).toBe(true)
-    expect(pmStore.setCursor).not.toHaveBeenCalled()
-    expect(h.cursors[0].value).toBe('h1')
-    expect(pmStore.flushRecords).toHaveBeenCalled()
-    expect(judgeThread).not.toHaveBeenCalled()
-    expect(actOnThread).not.toHaveBeenCalled()
-    expect(h.questions).toHaveLength(0)
-  })
-
-  it('takes the account slot: a poll and a backfill never read the mailbox at once', async () => {
-    const s = source()
-    let active = 0
-    let most = 0
-    const gates: Array<() => void> = []
-    vi.mocked(syncGmailMailbox).mockImplementation(async () => {
-      active += 1
-      most = Math.max(most, active)
-      await new Promise<void>((resolve) => gates.push(resolve))
-      active -= 1
-      return {
-        records: [],
-        backfilled: true,
-        ownAddress: OWN,
-        cursor: { accountId: 'acc1', sourceKind: 'gmail', scope: 'mailbox', value: 'h2', updatedAt: 1 },
-      }
-    })
-    const poll = runGmailPipeline(s, ctx())
-    const signal = new AbortController().signal
-    const progress = vi.fn()
-    const backfill = backfillMatcher(s, '@newco.com', { signal, progress })
-    await vi.waitFor(() => expect(gates).toHaveLength(1))
-    // The backfill waits for the poll in flight.
-    gates[0]()
-    await poll
-    await vi.waitFor(() => expect(gates).toHaveLength(2))
-    // A poll started during the backfill waits for it, rather than reading alongside.
-    const nextPoll = runGmailPipeline(s, ctx())
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(gates).toHaveLength(2)
-    gates[1]()
-    await backfill
-    await vi.waitFor(() => expect(gates).toHaveLength(3))
-    gates[2]()
-    await nextPoll
-    expect(most).toBe(1)
-    expect(syncGmailMailbox).toHaveBeenCalledTimes(3)
-    expect(vi.mocked(syncGmailMailbox).mock.calls[1][0]).toMatchObject({ cursor: null, signal })
-    expect(progress).toHaveBeenCalledWith('Reading earlier emails…')
-  })
-
-  it('a stopped backfill reads nothing', async () => {
-    const a = new AbortController()
-    a.abort()
-    await expect(backfillMatcher(source(), '@newco.com', { signal: a.signal })).rejects.toBeDefined()
-    expect(syncGmailMailbox).not.toHaveBeenCalled()
   })
 })
 
