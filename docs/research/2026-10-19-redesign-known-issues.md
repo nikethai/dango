@@ -52,7 +52,7 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
   - A grant given when a call's arguments raised its tier (for example MEDIUM to HIGH for a read of `~/.aws`) is stored at that tier and then covers other calls of the same tool at that tier.
   - Built-in low-risk tools (session and knowledge data only) skip the argument checks.
   - Each window keeps its own permission queue; grants and revokes sync across windows, the audit log is last-writer-wins.
-  - No list of dangerous commands is complete, so tools that run shell commands or code always ask and never take an Always grant ([ADR 0015](../adr/0015-command-tools-always-ask.md)). A command tool that hides its purpose in its name and description is only caught for CRITICAL calls.
+  - No list of dangerous commands is complete, so simple read-only commands (`ls`, `df`, `git status`…) run without asking and every other shell command or code run asks every time with no Always grant ([ADR 0015](../adr/0015-command-tools-always-ask.md)). A command tool that hides its purpose in its name and description is only caught for CRITICAL calls.
   - `chmod`/`chown` of a path one level below a system directory (`chmod 644 /etc/hosts`) asks every time.
   - Read-only tools with a payment word in their name (`get_payment_intent`) ask every time; reading `/dev/urandom` or `/dev/zero` and `chmod -rwx ~` ask every time (TASK-41).
 - **Swarm (06c).**

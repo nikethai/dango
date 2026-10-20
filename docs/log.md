@@ -3,7 +3,7 @@
 Newest first. Add a line when you create, accept, supersede or move a decision, spec or research note.
 
 ## 2026-10-20
-* **Proposal**: [ADR 0015 command tools always ask](adr/0015-command-tools-always-ask.md) (draft) — from the maintainer's instruction: tools that run shell commands or code ask every time and never take an Always grant, because no list of dangerous commands is complete.
+* **Proposal**: [ADR 0015 command tools ask unless read-only](adr/0015-command-tools-always-ask.md) (draft) — from the maintainer's instructions: simple read-only commands (`ls`, `df`, `git status`…) run without asking; every other shell command or code run asks every time and never takes an Always grant, because no list of dangerous commands is complete.
 * **Implementation**: [slice 06c permission sheet, Swarm card and Search](specs/2026-10-17-slice-06c-permission-swarm-search.md) built on `feat/redesign-06c-permission-swarm-search`: tool permissions ask in one sheet at a time with Allow once · Always in this scope · Not now, grants are per scope at the exact risk tier, sync across windows and can be revoked in the scope's settings; the risk engine rates each call from its arguments and treats recursive or forced deletes, disk writes and sudo as critical; Swarm is one toggle under Tools whose run shows one live card with Stop and ends in one answer with the agents folded behind it; ⌘K opens a search overlay over chats, knowledge and folder sources, replacing the old search dialog (fixes TASK-15).
 * **Update**: [multi-agent rooms](agents-multi-agent-rooms.md) — rewritten for the Swarm toggle; discuss and work modes are gone from the UI.
 
