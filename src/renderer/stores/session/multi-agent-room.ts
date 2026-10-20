@@ -127,6 +127,11 @@ async function generateSpeakerTurn(
     taskIndex?: number
     taskTotal?: number
     participantDirectory?: string
+    /** Swarm run this turn belongs to; written on the message as `swarm.runId`. */
+    runId?: string
+    agentCount?: number
+    /** Swarm deliver after Stop */
+    stoppedEarly?: boolean
   }
 ): Promise<{ msg: Message; interrupted: boolean }> {
   const assistantMsg: Message = {
@@ -136,6 +141,15 @@ async function generateSpeakerTurn(
     name: params.meta.name,
     roomRole: params.roomRole,
     roomRound: params.roomRound,
+    ...(params.runId
+      ? {
+          swarm: {
+            runId: params.runId,
+            ...(params.taskTitle ? { taskTitle: params.taskTitle } : {}),
+            ...(params.stoppedEarly ? { stoppedEarly: true } : {}),
+          },
+        }
+      : {}),
   }
   await insertMessage(sessionId, assistantMsg)
 
@@ -149,6 +163,8 @@ async function generateSpeakerTurn(
     taskIndex: params.taskIndex,
     taskTotal: params.taskTotal,
     taskTitle: params.taskTitle,
+    agentCount: params.agentCount,
+    runId: params.runId,
   })
 
   // Always pin viewport to the newest room turn (discuss turns used to leave user mid-list).
@@ -169,6 +185,7 @@ async function generateSpeakerTurn(
       taskId: params.taskId,
       taskTitle: params.taskTitle,
       participantDirectory: params.participantDirectory,
+      swarmStoppedEarly: params.stoppedEarly,
       skipQueuedMessages: true,
     })
   }

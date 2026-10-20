@@ -5,6 +5,7 @@ import {
   buildRoomContinuePrompt,
   buildRoomProtocol,
   buildSpeakerTurnQueue,
+  buildSwarmDeliverProtocol,
   buildSynthesisProtocol,
   canKeepDiscussing,
   mergeRoomMembers,
@@ -192,5 +193,18 @@ describe('agent-room', () => {
     })
     expect(text).toContain('Swarm')
     expect(text).toContain('create_task')
+  })
+
+  it('the Swarm deliver turn says when the user stopped the run early', () => {
+    const line = 'The user stopped the run early.'
+    expect(buildSwarmDeliverProtocol('Ana', ['Ana', 'Bo'], { stoppedEarly: true })).toContain(line)
+    expect(buildSwarmDeliverProtocol('Ana', ['Ana', 'Bo'])).not.toContain(line)
+    expect(
+      buildProtocolForRoomRole('deliver', 'Ana', ['Ana', 'Bo'], { roomMode: 'swarm', stoppedEarly: true })
+    ).toContain(line)
+    expect(buildRoomContinuePrompt('Ana', 'deliver', { roomMode: 'swarm', stoppedEarly: true })).toContain(
+      'stopped the run early'
+    )
+    expect(buildRoomContinuePrompt('Ana', 'deliver', { roomMode: 'swarm' })).not.toContain('stopped the run early')
   })
 })

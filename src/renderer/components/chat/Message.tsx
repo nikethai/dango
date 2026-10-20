@@ -325,8 +325,16 @@ const _Message: FC<Props> = (props) => {
   }, [messageText])
 
   const onStopGeneration = useCallback(() => {
-    void import('@/stores/session/stop-generation')
-      .then(({ stopSessionGeneration }) => stopSessionGeneration(sessionId, msg))
+    void import('@/stores/session/team-room-state')
+      .then(async ({ isSwarmStoppable, requestSwarmStop }) => {
+        // Stop on a Swarm turn stops the run and still lets the captain answer.
+        if (msg.swarm && isSwarmStoppable(sessionId)) {
+          await requestSwarmStop(sessionId)
+          return
+        }
+        const { stopSessionGeneration } = await import('@/stores/session/stop-generation')
+        await stopSessionGeneration(sessionId, msg)
+      })
       .catch((error) => console.error('Failed to stop generation', error))
   }, [sessionId, msg])
 

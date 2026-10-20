@@ -195,7 +195,7 @@ export function buildRoomProtocol(
 export function buildRoomContinuePrompt(
   speakerName: string,
   roomRole: RoomRole = 'turn',
-  options?: { roomMode?: RoomMode; taskTitle?: string }
+  options?: { roomMode?: RoomMode; taskTitle?: string; stoppedEarly?: boolean }
 ): string {
   const isSwarm = options?.roomMode === 'swarm'
   switch (roomRole) {
@@ -214,6 +214,9 @@ export function buildRoomContinuePrompt(
     case 'review':
       return `(Your turn as "${speakerName}". Review the lead's work briefly: what works, what to fix. Markdown OK; no tools. Never return blank.)`
     case 'deliver':
+      if (isSwarm && options?.stoppedEarly) {
+        return `(Your turn as "${speakerName}". The user stopped the run early. Write the best answer from the work so far and say in one line what was not done. ${MERMAID_DIAGRAM_REMINDER} Use tools only if a fix requires them. Never return blank.)`
+      }
       if (isSwarm) {
         return `(Your turn as "${speakerName}". Merge completed Swarm tasks into the final deliverable for the user. ${MERMAID_DIAGRAM_REMINDER} Use tools only if a fix requires them. Never return blank.)`
       }
@@ -363,7 +366,14 @@ export function buildSwarmExecuteProtocol(
   ].join('\n')
 }
 
-export function buildSwarmDeliverProtocol(leadName: string, participantNames: string[]): string {
+export const SWARM_STOPPED_EARLY_RULE =
+  '- The user stopped the run early. Write the best answer from the work so far and say in one line what was not done.'
+
+export function buildSwarmDeliverProtocol(
+  leadName: string,
+  participantNames: string[],
+  options?: { stoppedEarly?: boolean }
+): string {
   const others = participantNames.filter((n) => n !== leadName)
   const othersList = others.length > 0 ? others.join(', ') : 'none'
   return [
@@ -371,11 +381,14 @@ export function buildSwarmDeliverProtocol(leadName: string, participantNames: st
     `You are "${leadName}", the orchestrator. Teammates completed assigned tasks: ${othersList}.`,
     'Rules:',
     '- Merge the work above into one clear final deliverable for the user.',
+    options?.stoppedEarly ? SWARM_STOPPED_EARLY_RULE : '',
     '- Use tools only if a fix requires them.',
     '- Note any failed or skipped tasks briefly. Do not re-run the whole board.',
     '- Do not prefix with your name. Never return blank.',
     MERMAID_DIAGRAM_GUIDANCE,
-  ].join('\n')
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 /** Agent input for pure assignTasks. */
@@ -481,6 +494,8 @@ export function buildProtocolForRoomRole(
     taskId?: string
     taskTitle?: string
     participantDirectory?: string
+    /** Swarm deliver: the user stopped the run before every task finished. */
+    stoppedEarly?: boolean
   }
 ): string {
   const leadName = options?.leadName ?? participantNames[0] ?? speakerName
@@ -507,7 +522,7 @@ export function buildProtocolForRoomRole(
       return buildWorkReviewProtocol(speakerName, leadName)
     case 'deliver':
       return isSwarm
-        ? buildSwarmDeliverProtocol(speakerName, participantNames)
+        ? buildSwarmDeliverProtocol(speakerName, participantNames, { stoppedEarly: options?.stoppedEarly })
         : buildWorkDeliverProtocol(speakerName)
     default:
       return buildRoomProtocol(speakerName, participantNames, {

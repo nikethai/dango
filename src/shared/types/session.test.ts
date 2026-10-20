@@ -15,3 +15,17 @@ describe('MessageSchema knowledgeIds', () => {
     expect(MessageSchema.parse({ ...base, knowledgeIds: [1, 'k2'] }).knowledgeIds).toBeUndefined()
   })
 })
+
+describe('MessageSchema swarm', () => {
+  it('keeps the run id, task title and stopped-early mark', () => {
+    const swarm = { runId: 'swarm-1', taskTitle: 'Draft', stoppedEarly: true }
+    expect(MessageSchema.parse({ ...base, swarm }).swarm).toEqual(swarm)
+  })
+
+  it('a malformed value drops the field instead of failing the message', () => {
+    const parsed = MessageSchema.safeParse({ ...base, swarm: 5 })
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.swarm).toBeUndefined()
+    expect(MessageSchema.parse(base).swarm).toBeUndefined()
+  })
+})

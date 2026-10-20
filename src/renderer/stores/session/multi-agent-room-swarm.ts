@@ -2,12 +2,7 @@
  * Swarm orchestrator: lead plan → assign → sequential execute → deliver.
  */
 
-import {
-  assignTasks,
-  resolveRoomLead,
-  MAX_SWARM_TASKS,
-  MAX_SWARM_TURNS,
-} from '@shared/agent-room'
+import { assignTasks, MAX_SWARM_TASKS, MAX_SWARM_TURNS, resolveRoomLead } from '@shared/agent-room'
 import { hasActiveSwarmBoard, isSwarmUserInterrupt, parseSwarmPlanFromText } from '@shared/swarm-plan'
 import { createMessage, type Message } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
@@ -15,22 +10,31 @@ import { type AgentMeta, resolveAgentMeta } from '@/packages/agents'
 import * as chatStore from '../chatStore'
 import { generateTaskId, MAX_SESSION_TASKS, taskStore } from '../taskStore'
 import { insertMessage } from './messages'
-import { clearTeamRoomState, setTeamRoomLive } from './team-room-state'
+import { clearSwarmStopRequest, clearTeamRoomState, isSwarmStopRequested, setTeamRoomLive } from './team-room-state'
 
-export type SwarmSpeakerTurn = (sessionId: string, params: {
-  meta: AgentMeta
-  roomRole: 'plan' | 'do' | 'deliver'
-  participantNames: string[]
-  truncateTokenLimit?: number
-  skipQueuedMessages: boolean
-  leadName?: string
-  mode: 'swarm'
-  taskId?: string
-  taskTitle?: string
-  taskIndex?: number
-  taskTotal?: number
-  participantDirectory?: string
-}) => Promise<{ msg: Message; interrupted: boolean }>
+export type SwarmSpeakerTurn = (
+  sessionId: string,
+  params: {
+    meta: AgentMeta
+    roomRole: 'plan' | 'do' | 'deliver'
+    participantNames: string[]
+    truncateTokenLimit?: number
+    skipQueuedMessages: boolean
+    leadName?: string
+    mode: 'swarm'
+    taskId?: string
+    taskTitle?: string
+    taskIndex?: number
+    taskTotal?: number
+    participantDirectory?: string
+    /** Shared by every turn of one run: `swarm-${runStartedAt}` */
+    runId: string
+    /** Agents taking part in this run (live status) */
+    agentCount?: number
+    /** Deliver turn after the user pressed Stop */
+    stoppedEarly?: boolean
+  }
+) => Promise<{ msg: Message; interrupted: boolean }>
 
 function fallbackMeta(agentId: string): AgentMeta {
   return {
@@ -57,6 +61,7 @@ function buildParticipantDirectory(speakers: string[]): string {
 
 /**
  * Swarm mode: lead plans tasks → auto-assign → sequential execute → lead deliver.
+ * Stop (requestSwarmStop) ends the board early and still lets the lead write the answer; a new user message aborts.
  */
 export async function runAgentRoomSwarm(
   sessionId: string,
@@ -67,9 +72,24 @@ export async function runAgentRoomSwarm(
     generateSpeakerTurn: SwarmSpeakerTurn
   }
 ): Promise<void> {
-  const speakers = params.speakers
-  if (speakers.length < 2) return
+  if (params.speakers.length < 2) return
+  try {
+    await runSwarm(sessionId, params)
+  } finally {
+    clearSwarmStopRequest(sessionId)
+  }
+}
 
+async function runSwarm(
+  sessionId: string,
+  params: {
+    speakers: string[]
+    truncateTokenLimit?: number
+    roomLeadId?: string
+    generateSpeakerTurn: SwarmSpeakerTurn
+  }
+): Promise<void> {
+  const speakers = params.speakers
   const generateSpeakerTurn = params.generateSpeakerTurn
   const participantNames = speakers.map((id) => resolveAgentMeta(id)?.name ?? id)
   const participantDirectory = buildParticipantDirectory(speakers)
@@ -83,9 +103,12 @@ export async function runAgentRoomSwarm(
   // Old checklist history is not the Swarm run; chat messages keep prior context.
   taskStore.getState().clearSessionTasks(sessionId)
   const runStartedAt = Date.now()
+  const runId = `swarm-${runStartedAt}`
+  const agentCount = speakers.length
 
   let agentTurns = 0
   let interrupted = false
+  let stoppedEarly = false
 
   // Snapshot: the user message that started this swarm is already last in history.
   // Interrupt only when a *new* user message arrives (length grows + last is user).
@@ -104,6 +127,14 @@ export async function runAgentRoomSwarm(
     })
   }
 
+  const endRun = () => {
+    setTeamRoomLive(null)
+    clearTeamRoomState(sessionId)
+  }
+
+  // Live from the start, so Stop routes to the Swarm before the first turn registers its message.
+  setTeamRoomLive({ sessionId, phase: 'plan', mode: 'swarm', speakerName: leadName, agentCount, runId })
+
   const planTurnParams = {
     meta: leadMeta,
     roomRole: 'plan' as const,
@@ -113,143 +144,155 @@ export async function runAgentRoomSwarm(
     leadName,
     mode: 'swarm' as const,
     participantDirectory,
+    runId,
+    agentCount,
   }
 
   // --- Plan (lead, task tools only) ---
   {
     const { interrupted: planInterrupted, msg: planMsg } = await generateSpeakerTurn(sessionId, planTurnParams)
     agentTurns += 1
-    if (planInterrupted) {
-      setTeamRoomLive(null)
-      clearTeamRoomState(sessionId)
+    if (isSwarmStopRequested(sessionId)) {
+      stoppedEarly = true
+    } else if (planInterrupted) {
+      endRun()
+      return
+    } else {
+      await materializeSwarmBoardFromPlan(sessionId, planMsg, speakers, runStartedAt)
+
+      // Soft retry once if board still empty
+      if (!hasRunBoard(sessionId, runStartedAt) && agentTurns < MAX_SWARM_TURNS) {
+        if (await userInterrupted()) {
+          endRun()
+          return
+        }
+        const retry = await generateSpeakerTurn(sessionId, planTurnParams)
+        agentTurns += 1
+        if (isSwarmStopRequested(sessionId)) {
+          stoppedEarly = true
+        } else if (retry.interrupted) {
+          endRun()
+          return
+        } else {
+          await materializeSwarmBoardFromPlan(sessionId, retry.msg, speakers, runStartedAt)
+        }
+      }
+    }
+  }
+
+  if (!stoppedEarly) {
+    applySwarmAssignments(sessionId, speakers, leadId, runStartedAt)
+
+    const pendingOrActive = listRunTasks(sessionId, runStartedAt).filter(
+      (t) => t.status === 'pending' || t.status === 'in-progress'
+    )
+    if (pendingOrActive.length === 0) {
+      const total = taskStore.getState().getSessionTasks(sessionId).length
+      const capHint = total >= MAX_SESSION_TASKS ? ` Task limit is full (${total}/${MAX_SESSION_TASKS}).` : ''
+      await insertMessage(sessionId, {
+        ...createMessage(
+          'assistant',
+          `_Swarm could not plan tasks from this request.${capHint} Try a clearer multi-step goal, or turn on Agent Mode if tools failed._`
+        ),
+        agentId: leadId,
+        name: leadName,
+        roomRole: 'plan',
+        swarm: { runId },
+      })
+      endRun()
       return
     }
 
-    await materializeSwarmBoardFromPlan(sessionId, planMsg, speakers, runStartedAt)
+    const runTaskIds = new Set(
+      pendingOrActive
+        .slice()
+        .sort((a, b) => a.createdAt - b.createdAt)
+        .slice(0, MAX_SWARM_TASKS)
+        .map((t) => t.id)
+    )
+    const taskTotal = runTaskIds.size
+    let taskIndex = 0
 
-    // Soft retry once if board still empty
-    if (!hasRunBoard(sessionId, runStartedAt) && agentTurns < MAX_SWARM_TURNS) {
+    while (agentTurns < MAX_SWARM_TURNS) {
+      if (isSwarmStopRequested(sessionId)) {
+        stoppedEarly = true
+        break
+      }
       if (await userInterrupted()) {
-        setTeamRoomLive(null)
-        clearTeamRoomState(sessionId)
-        return
+        interrupted = true
+        break
       }
-      const retry = await generateSpeakerTurn(sessionId, planTurnParams)
+
+      const ready = taskStore
+        .getState()
+        .listReadyTasks(sessionId)
+        .filter((t) => runTaskIds.has(t.id))
+      if (ready.length === 0) {
+        // Stuck pending (failed/missing deps): mark remaining open run tasks failed so deliver can run
+        const stuck = listRunTasks(sessionId, runStartedAt).filter(
+          (t) => runTaskIds.has(t.id) && (t.status === 'pending' || t.status === 'in-progress')
+        )
+        for (const t of stuck) {
+          taskStore.getState().updateTask(t.id, { status: 'failed' })
+        }
+        break
+      }
+
+      const task = ready[0]
+      const assigneeId = task.assigneeAgentId && speakers.includes(task.assigneeAgentId) ? task.assigneeAgentId : leadId
+      const meta = resolveAgentMeta(assigneeId) ?? fallbackMeta(assigneeId)
+      taskIndex += 1
+
+      taskStore.getState().updateTask(task.id, { status: 'in-progress' })
+
+      const { interrupted: turnInterrupted, msg } = await generateSpeakerTurn(sessionId, {
+        meta,
+        roomRole: 'do',
+        participantNames,
+        truncateTokenLimit: params.truncateTokenLimit,
+        skipQueuedMessages: true,
+        leadName,
+        mode: 'swarm',
+        taskId: task.id,
+        taskTitle: task.title,
+        taskIndex,
+        taskTotal,
+        participantDirectory,
+        runId,
+        agentCount,
+      })
       agentTurns += 1
-      if (retry.interrupted) {
-        setTeamRoomLive(null)
-        clearTeamRoomState(sessionId)
-        return
+
+      // Stop wins over the interrupt check: a stopped turn also reports itself as interrupted.
+      const stopRequested = isSwarmStopRequested(sessionId)
+      if (stopRequested || turnInterrupted) {
+        if (stopRequested) stoppedEarly = true
+        else interrupted = true
+        const current = taskStore.getState().tasks.find((t) => t.id === task.id)
+        if (current?.status === 'in-progress') {
+          taskStore.getState().updateTask(task.id, { status: 'pending' })
+        }
+        break
       }
-      await materializeSwarmBoardFromPlan(sessionId, retry.msg, speakers, runStartedAt)
-    }
-  }
 
-  applySwarmAssignments(sessionId, speakers, leadId, runStartedAt)
-
-  const pendingOrActive = listRunTasks(sessionId, runStartedAt).filter(
-    (t) => t.status === 'pending' || t.status === 'in-progress'
-  )
-  if (pendingOrActive.length === 0) {
-    const total = taskStore.getState().getSessionTasks(sessionId).length
-    const capHint =
-      total >= MAX_SESSION_TASKS
-        ? ` Task limit is full (${total}/${MAX_SESSION_TASKS}).`
-        : ''
-    await insertMessage(sessionId, {
-      ...createMessage(
-        'assistant',
-        `_Swarm could not build a task board from the plan.${capHint} The lead must call create_task (or emit a JSON/bullet task list). Try a clearer multi-step goal, ensure Agent mode is on if tools fail, or switch to Work mode._`
-      ),
-      agentId: leadId,
-      name: leadName,
-      roomRole: 'plan',
-    })
-    setTeamRoomLive(null)
-    clearTeamRoomState(sessionId)
-    return
-  }
-
-  const runTaskIds = new Set(
-    pendingOrActive
-      .slice()
-      .sort((a, b) => a.createdAt - b.createdAt)
-      .slice(0, MAX_SWARM_TASKS)
-      .map((t) => t.id)
-  )
-  const taskTotal = runTaskIds.size
-  let taskIndex = 0
-
-  while (agentTurns < MAX_SWARM_TURNS) {
-    if (await userInterrupted()) {
-      interrupted = true
-      break
-    }
-
-    const ready = taskStore
-      .getState()
-      .listReadyTasks(sessionId)
-      .filter((t) => runTaskIds.has(t.id))
-    if (ready.length === 0) {
-      // Stuck pending (failed/missing deps): mark remaining open run tasks failed so deliver can run
-      const stuck = listRunTasks(sessionId, runStartedAt).filter(
-        (t) => runTaskIds.has(t.id) && (t.status === 'pending' || t.status === 'in-progress')
-      )
-      for (const t of stuck) {
-        taskStore.getState().updateTask(t.id, { status: 'failed' })
-      }
-      break
-    }
-
-    const task = ready[0]
-    const assigneeId = task.assigneeAgentId && speakers.includes(task.assigneeAgentId) ? task.assigneeAgentId : leadId
-    const meta = resolveAgentMeta(assigneeId) ?? fallbackMeta(assigneeId)
-    taskIndex += 1
-
-    taskStore.getState().updateTask(task.id, { status: 'in-progress' })
-
-    const { interrupted: turnInterrupted, msg } = await generateSpeakerTurn(sessionId, {
-      meta,
-      roomRole: 'do',
-      participantNames,
-      truncateTokenLimit: params.truncateTokenLimit,
-      skipQueuedMessages: true,
-      leadName,
-      mode: 'swarm',
-      taskId: task.id,
-      taskTitle: task.title,
-      taskIndex,
-      taskTotal,
-      participantDirectory,
-    })
-    agentTurns += 1
-
-    if (turnInterrupted) {
-      interrupted = true
-      const current = taskStore.getState().tasks.find((t) => t.id === task.id)
-      if (current?.status === 'in-progress') {
-        taskStore.getState().updateTask(task.id, { status: 'pending' })
-      }
-      break
-    }
-
-    const after = taskStore.getState().tasks.find((t) => t.id === task.id)
-    if (after && (after.status === 'pending' || after.status === 'in-progress')) {
-      if (messageHasUsableText(msg) && !msg.error) {
-        taskStore.getState().updateTask(task.id, { status: 'done' })
-      } else {
-        taskStore.getState().updateTask(task.id, { status: 'failed' })
+      const after = taskStore.getState().tasks.find((t) => t.id === task.id)
+      if (after && (after.status === 'pending' || after.status === 'in-progress')) {
+        if (messageHasUsableText(msg) && !msg.error) {
+          taskStore.getState().updateTask(task.id, { status: 'done' })
+        } else {
+          taskStore.getState().updateTask(task.id, { status: 'failed' })
+        }
       }
     }
   }
 
   if (interrupted) {
-    setTeamRoomLive(null)
-    clearTeamRoomState(sessionId)
+    endRun()
     return
   }
 
-  if (agentTurns < MAX_SWARM_TURNS && !(await userInterrupted())) {
+  // After Stop the captain still answers (even past the turn cap); a new user message never gets one.
+  if ((stoppedEarly || agentTurns < MAX_SWARM_TURNS) && !(await userInterrupted())) {
     await generateSpeakerTurn(sessionId, {
       meta: leadMeta,
       roomRole: 'deliver',
@@ -259,11 +302,13 @@ export async function runAgentRoomSwarm(
       leadName,
       mode: 'swarm',
       participantDirectory,
+      runId,
+      agentCount,
+      ...(stoppedEarly ? { stoppedEarly: true } : {}),
     })
   }
 
-  setTeamRoomLive(null)
-  clearTeamRoomState(sessionId)
+  endRun()
   try {
     const { notifySystemEvent } = await import('@/packages/notifications')
     const session = await chatStore.getSession(sessionId)

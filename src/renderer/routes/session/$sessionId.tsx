@@ -220,9 +220,16 @@ function RouteComponent() {
     if (!currentSession) {
       return false
     }
-    void import('@/stores/session/stop-generation').then(({ stopSessionGeneration }) =>
-      stopSessionGeneration(currentSession.id, lastGeneratingMessage)
-    )
+    const sessionId = currentSession.id
+    void import('@/stores/session/team-room-state').then(async ({ isSwarmStoppable, requestSwarmStop }) => {
+      // A running Swarm stops its board and still lets the captain answer; Stop during that answer stops it.
+      if (isSwarmStoppable(sessionId)) {
+        await requestSwarmStop(sessionId)
+        return
+      }
+      const { stopSessionGeneration } = await import('@/stores/session/stop-generation')
+      await stopSessionGeneration(sessionId, lastGeneratingMessage)
+    })
     return true
   }, [currentSession, lastGeneratingMessage])
 

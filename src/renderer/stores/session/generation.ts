@@ -655,6 +655,8 @@ export async function generate(
     taskTitle?: string
     /** Swarm plan: "Name (id: …)" directory for assigneeAgentId */
     participantDirectory?: string
+    /** Swarm deliver after the user pressed Stop: answer from the work so far. */
+    swarmStoppedEarly?: boolean
     /** Skip processing message queue after this turn (intermediate multi-agent turns) */
     skipQueuedMessages?: boolean
     /** Continue a stopped plan run in place: keep its visible work and tell the model where it stopped. */
@@ -966,6 +968,7 @@ export async function generate(
                 taskId: options?.taskId,
                 taskTitle: options?.taskTitle,
                 participantDirectory: options?.participantDirectory,
+                stoppedEarly: options?.swarmStoppedEarly,
               })
             }
             const persona = agentDetail?.prompt?.trim() || `You are "${speakerName}", a helpful AI participant.`
@@ -1004,6 +1007,7 @@ export async function generate(
                     buildRoomContinuePrompt(speakerName, role, {
                       roomMode: options?.roomMode,
                       taskTitle: options?.taskTitle,
+                      stoppedEarly: options?.swarmStoppedEarly,
                     })
                   ),
                 ]
@@ -1886,9 +1890,16 @@ export async function generate(
  * @param sessionId Session ID
  * @param msgId Message ID
  */
-export async function generateMore(sessionId: string, msgId: string, options?: { modelOverride?: ModelOverride }) {
+type GenerateMoreOptions = {
+  modelOverride?: ModelOverride
+  /** Redo of a Swarm answer: the new answer stays in that run so it keeps folding with it. */
+  swarm?: Message['swarm']
+}
+
+export async function generateMore(sessionId: string, msgId: string, options?: GenerateMoreOptions) {
   const newAssistantMsg = createMessage('assistant', '')
   newAssistantMsg.generating = true // prevent estimating token count before generating done
+  if (options?.swarm) newAssistantMsg.swarm = options.swarm
   await insertMessageAfter(sessionId, newAssistantMsg, msgId)
   const truncateTokenLimit = await getOverflowTruncateLimit(sessionId)
   await generate(sessionId, newAssistantMsg, {
@@ -1903,7 +1914,7 @@ export async function generateMoreInNewFork(sessionId: string, msgId: string) {
   await generateMore(sessionId, msgId)
 }
 
-type GenerateMoreFn = (sessionId: string, msgId: string, options?: { modelOverride?: ModelOverride }) => Promise<void>
+type GenerateMoreFn = (sessionId: string, msgId: string, options?: GenerateMoreOptions) => Promise<void>
 
 export async function regenerateInNewFork(
   sessionId: string,
@@ -1931,8 +1942,12 @@ export async function regenerateInNewFork(
   }
   const forkMessage = location.list[previousMessageIndex]
   await createNewFork(sessionId, forkMessage.id)
-  return modelOverride
-    ? runGenerateMore(sessionId, forkMessage.id, { modelOverride })
+  const moreOptions: GenerateMoreOptions = {
+    ...(modelOverride ? { modelOverride } : {}),
+    ...(msg.swarm ? { swarm: msg.swarm } : {}),
+  }
+  return Object.keys(moreOptions).length > 0
+    ? runGenerateMore(sessionId, forkMessage.id, moreOptions)
     : runGenerateMore(sessionId, forkMessage.id)
 }
 
