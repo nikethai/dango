@@ -4,7 +4,7 @@ title: Phone-width chat polish and unused translation keys
 status: Ideas
 assignee: []
 created_date: '2026-10-19 18:31'
-updated_date: '2026-10-19 18:31'
+updated_date: '2026-10-20 03:38'
 labels:
   - design
 dependencies: []
@@ -22,3 +22,9 @@ At 375 px the last message's floating action row sits half behind the composer, 
 - [ ] #1 At 375 px the action row, composer model name and sidebar behave
 - [ ] #2 Unused 06b-era keys are removed and one spelling is used
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Slice 06c review: five en keys used by 6b's ComposerToolsMenu Mode section are missing from en/translation.json (fallback shows English, harmless).
+<!-- SECTION:NOTES:END -->

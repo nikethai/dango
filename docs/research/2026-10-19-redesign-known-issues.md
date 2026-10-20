@@ -21,6 +21,7 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
 | 08 | The Quick Chat window, menu bar and notifications have not been compiled or walked on the desktop. | PR checklist for slice 08. |
 | 06b | Agent Mode and Plan mode only appear on desktop, so the new Mode section in the Tools menu and the plan-mode toggle were not seen in a real window. The web build was walked headless in light and dark at 1280 and 375 px. | Desktop walk in the slice 06b PR. |
 | 06b | No real model has run a plan end to end. A scripted-model test covers it. | TASK-16 AC #3. |
+| 06c | The permission sheet in the Quick Chat window, real tool calls through MCP servers, and a live Swarm run with real agents were not exercised; the web build was walked headless (sheets triggered directly, Swarm runs seeded). | Desktop walk in the slice 06c PR. |
 | all | No CI runs the tests. The local gates are the only check. | — |
 
 ## Trade-offs accepted on purpose
@@ -45,6 +46,22 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
 - **Cost estimate (06b).** It prices one model call per run at the uncached price, so an Agent Mode turn with many tool calls can cost more than the sheet says. Quick Chat and plan runs never show the sheet.
 - **Quick Chat (06b).** It still shows raw model errors and runs no ability or cost checks.
 - **Desktop vision block (06b).** A model known to lack vision is now blocked on desktop when a picture is attached, unless an OCR model is set. Video is always blocked.
+- **Permissions (06c).**
+  - "Always" grants are per scope (per chat when a chat has no scope) and apply only at the exact risk tier they were given at. Send, delete, pay, file-change and critical calls never offer Always.
+  - In scoped chats, older per-chat approvals are no longer read, so those chats ask once more and offer "Always in this scope".
+  - A grant given when a call's arguments raised its tier (for example MEDIUM to HIGH for a read of `~/.aws`) is stored at that tier and then covers other calls of the same tool at that tier.
+  - Built-in low-risk tools (session and knowledge data only) skip the argument checks.
+  - Each window keeps its own permission queue; grants and revokes sync across windows, the audit log is last-writer-wins.
+  - Read-only tools with a payment word in their name (`get_payment_intent`) ask every time; reading `/dev/urandom` or `/dev/zero` and `chmod -rwx ~` ask every time (TASK-41).
+- **Swarm (06c).**
+  - Swarm is one toggle per chat. Chats saved with the old discuss or work modes keep their data but now answer as their first agent; room members show only when Swarm is on.
+  - A Stop pressed in the first seconds of a run, before the planning turn has registered, lets planning finish; the run still ends in one answer marked "Stopped early". A Redo of a stopped-early answer keeps the mark.
+  - Plan mode can still show for a one-agent room whose message @-mentions two more agents with Swarm on.
+  - The new-chat agent bar and a single agent's header still show with Swarm off.
+- **Search (06c).**
+  - Hidden chats are left out of search. "Search in current conversation" from the old dialog is gone.
+  - A scoped search shows no Everywhere knowledge unless the Everywhere chip is chosen. Folder search returns at most 8 hits across all scopes.
+  - TASK-15 (`#root` aria-hidden on web) is fixed: the ⌘K overlay renders nothing while closed.
 
 ## Follow-ups filed
 
@@ -68,8 +85,9 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
 - TASK-30: models with unknown capabilities silently lose their tools.
 - TASK-31: multi-agent rooms have gaps in the ability, cost and plan-mode checks.
 - TASK-32: decide whether Redo on a tool-capable model turns tools back on after "Answer without tools".
+- TASK-34 to TASK-41: from slice 06c — search more source kinds, remove the unreachable Team room discuss/work code, name the requester on the permission sheet, hidden Quick Chat permission requests, per-chat live Swarm status, grant cleanup on scope delete and timeout wording, failed Swarm tasks on the card, risk-engine false positives.
 - TASK-33: phone-width polish (action row behind the composer, model name truncation, sidebar opening on load) and unused translation keys.
 
 ## Per slice still to come
 
-Slices 06c and 10 add their sections here when their PRs open.
+Slice 10 adds its section here when its PR opens.

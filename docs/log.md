@@ -2,6 +2,10 @@
 
 Newest first. Add a line when you create, accept, supersede or move a decision, spec or research note.
 
+## 2026-10-20
+* **Implementation**: [slice 06c permission sheet, Swarm card and Search](specs/2026-10-17-slice-06c-permission-swarm-search.md) built on `feat/redesign-06c-permission-swarm-search`: tool permissions ask in one sheet at a time with Allow once · Always in this scope · Not now, grants are per scope at the exact risk tier, sync across windows and can be revoked in the scope's settings; the risk engine rates each call from its arguments and treats recursive or forced deletes, disk writes and sudo as critical; Swarm is one toggle under Tools whose run shows one live card with Stop and ends in one answer with the agents folded behind it; ⌘K opens a search overlay over chats, knowledge and folder sources, replacing the old search dialog (fixes TASK-15).
+* **Update**: [multi-agent rooms](agents-multi-agent-rooms.md) — rewritten for the Swarm toggle; discuss and work modes are gone from the UI.
+
 ## 2026-10-19
 * **Implementation**: [slice 06b chat actions and errors](specs/2026-10-17-slice-06b-chat-actions-errors.md) built on `feat/redesign-06b-chat-actions-errors`: one chat menu with 5 s undo for delete, archive and moves; the answer row (Copy, Redo, Redo with another model for one turn, thumbs, model · tokens · time); edit-and-resend that keeps the old answer, and branches; model errors that put the fix on the button (including Dango's own usage budget); rate limits that follow Retry-After, back off, then wait in Review; ability and cost checks before any send or Redo, never during a turn; the "/" menu, a chat-wide drop overlay and first-chat suggestions. Adds the maintainer-requested plan-mode toggle (TASK-16) with a Mode section in the desktop Tools menu and an end-to-end plan test. Settings › Chat loses its Display section, whose six toggles no longer did anything.
 * **Research**: [redesign known issues](research/2026-10-19-redesign-known-issues.md) (draft) — running list of what the slices leave unverified, the trade-offs taken on purpose and the follow-up cards, to review once the slices are merged.
