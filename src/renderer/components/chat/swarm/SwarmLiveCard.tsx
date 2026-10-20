@@ -18,7 +18,11 @@ export function SwarmLiveCard(props: { sessionId: string; runId?: string }): JSX
   if (!live || (runId !== undefined && live.runId !== runId)) return null
 
   const liveRun = live.runId ?? ''
-  const disabled = live.stopping || pressedRun === `${liveRun}:${live.phase === 'deliver' ? 'deliver' : 'board'}`
+  // After the first Stop the button stays usable during the captain's answer: swarmStopRoute ignores a double press
+  // in the first 1.5 s and then stops a slow answer.
+  const disabled =
+    (live.stopping && live.phase !== 'deliver') ||
+    pressedRun === `${liveRun}:${live.phase === 'deliver' ? 'deliver' : 'board'}`
 
   const onStop = () => {
     // Same routing as the composer Stop: the first press stops the board and lets the captain answer; during the

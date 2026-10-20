@@ -4,12 +4,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import i18next from 'i18next'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import en from '@/i18n/locales/en/translation.json'
-import { setTeamRoomLive } from '@/stores/session/team-room-state'
+import { clearSwarmStopRequest, setTeamRoomLive } from '@/stores/session/team-room-state'
 import type { SwarmRun } from './foldSwarmRuns'
 import { SwarmLiveCard } from './SwarmLiveCard'
 import { SwarmWorkedWith } from './SwarmWorkedWith'
 
 const h = vi.hoisted(() => ({
+  realRequestSwarmStop: undefined as undefined | ((sessionId: string) => Promise<void>),
   requestSwarmStop: vi.fn(async (_sessionId: string) => {}),
   stopChatIfRunning: vi.fn(async (_sessionId: string) => true),
 }))
@@ -19,6 +20,7 @@ vi.mock('react-i18next', () => ({
 }))
 vi.mock('@/stores/session/team-room-state', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/stores/session/team-room-state')>()
+  h.realRequestSwarmStop = actual.requestSwarmStop
   return { ...actual, requestSwarmStop: h.requestSwarmStop }
 })
 vi.mock('@/stores/session/stop-generation', () => ({ stopChatIfRunning: h.stopChatIfRunning }))
@@ -30,6 +32,7 @@ beforeAll(async () => {
 afterEach(() => {
   cleanup()
   act(() => setTeamRoomLive(null))
+  clearSwarmStopRequest('s1')
   h.requestSwarmStop.mockClear()
   h.stopChatIfRunning.mockClear()
 })
@@ -84,6 +87,37 @@ describe('SwarmLiveCard', () => {
     })
     await waitFor(() => expect(h.stopChatIfRunning).toHaveBeenCalledWith('s1'))
     expect(h.requestSwarmStop).not.toHaveBeenCalled()
+  })
+
+  it('after Stop, the card can stop a slow captain answer once the double-press guard has passed', async () => {
+    let now = 1_000_000
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    try {
+      goLive({ phase: 'do' })
+      await act(async () => {
+        await h.realRequestSwarmStop?.('s1')
+      })
+      h.stopChatIfRunning.mockClear()
+      render(<SwarmLiveCard sessionId="s1" />)
+      // While the board stops, the card's Stop stays disabled.
+      expect((screen.getByRole('button', { name: 'Stop' }) as HTMLButtonElement).disabled).toBe(true)
+      goLive({ phase: 'deliver' })
+      const stop = screen.getByRole('button', { name: 'Stop' }) as HTMLButtonElement
+      expect(stop.disabled).toBe(false)
+      // A press right away is the double press: ignored.
+      act(() => {
+        fireEvent.click(stop)
+      })
+      expect(h.stopChatIfRunning).not.toHaveBeenCalled()
+      now += 1_500
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+      })
+      await waitFor(() => expect(h.stopChatIfRunning).toHaveBeenCalledWith('s1'))
+      expect((screen.getByRole('button', { name: 'Stop' }) as HTMLButtonElement).disabled).toBe(true)
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   it('shows only for the run that is live (R26)', () => {

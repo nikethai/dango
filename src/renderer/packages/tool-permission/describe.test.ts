@@ -51,6 +51,20 @@ describe('describeToolAction', () => {
     expect(describeToolAction('run_command', { command: 'x'.repeat(80) }).touches[0]).toBe('x'.repeat(80))
   })
 
+  it('never splits an emoji at either cut', () => {
+    const isWellFormed = (text: string) =>
+      !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text)
+    // Emojis (two UTF-16 units each) straddle code unit 40 and the start of the last 39.
+    const command = `${'a'.repeat(39)}${'🚀'.repeat(30)}${'b'.repeat(38)}`
+    const shown = describeToolAction('run_command', { command }).touches[0]
+    expect(isWellFormed(shown)).toBe(true)
+    expect(Array.from(shown)).toHaveLength(80)
+    expect(shown).toBe(`${'a'.repeat(39)}🚀…🚀${'b'.repeat(38)}`)
+    // Exactly 80 code points (more than 80 code units) is shown whole.
+    const eighty = '🚀'.repeat(80)
+    expect(describeToolAction('run_command', { command: eighty }).touches[0]).toBe(eighty)
+  })
+
   it('reads cmd, script and code as the command when command is absent', () => {
     expect(describeToolAction('run_command', { cmd: 'rm -r x' }).touches).toEqual(['rm -r x'])
     expect(describeToolAction('run_command', { script: 'echo hi' }).touches).toEqual(['echo hi'])
