@@ -334,6 +334,8 @@ export async function streamText(
     }
     /** The session's scope for approved knowledge; null or omitted means Everywhere. */
     knowledgeScopeId?: string | null
+    /** The session's scope for permission grants ("Always in this scope"); omitted means grants are per chat. */
+    scopeId?: string
     /** What knowledge is ranked against; omitted means the last user message (a resumed plan run passes the person's turn). */
     knowledgeQuery?: string
   },
@@ -357,6 +359,7 @@ export async function streamText(
     tools: customTools,
     memory: memoryContext,
     knowledgeScopeId,
+    scopeId,
   } = params
   const globalSettings = settingsStore.getState().getSettings()
   const hasDocumentFileOrLink = params.messages.some(
@@ -491,7 +494,7 @@ export async function streamText(
       console.error('Failed to load knowledge base toolset:', err)
     }
   }
-  const mcpTools = wrapToolsWithApproval(sessionId, mcpController.getAvailableTools())
+  const mcpTools = wrapToolsWithApproval(sessionId, mcpController.getAvailableTools(), { scopeId })
   // Task tools must be decided before grounding: Gemini forbids mixing provider tools
   // (google.tools.googleSearch) with function tools. Counting tasks too late caused
   // grounding + create_task together → INVALID_ARGUMENT / hung tool loops.
@@ -885,7 +888,7 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (needAttachmentFileToolSet) {
-        const wrappedAttachmentTools = wrapToolsWithApproval(sessionId, attachmentFileToolSet.tools)
+        const wrappedAttachmentTools = wrapToolsWithApproval(sessionId, attachmentFileToolSet.tools, { scopeId })
         tools = {
           ...tools,
           ...wrappedAttachmentTools,
@@ -893,7 +896,7 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (workspaceFileToolSet) {
-        const wrappedWorkspaceTools = wrapToolsWithApproval(sessionId, workspaceFileToolSet.tools)
+        const wrappedWorkspaceTools = wrapToolsWithApproval(sessionId, workspaceFileToolSet.tools, { scopeId })
         tools = {
           ...tools,
           ...wrappedWorkspaceTools,
@@ -901,7 +904,7 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (needVideoToolSet) {
-        const wrappedVideoTools = wrapToolsWithApproval(sessionId, videoToolSet.tools as ToolSet)
+        const wrappedVideoTools = wrapToolsWithApproval(sessionId, videoToolSet.tools as ToolSet, { scopeId })
         tools = {
           ...tools,
           ...wrappedVideoTools,
@@ -909,7 +912,7 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (needVideoUrlToolSet) {
-        const wrappedVideoUrlTools = wrapToolsWithApproval(sessionId, videoUrlToolSet.tools as ToolSet)
+        const wrappedVideoUrlTools = wrapToolsWithApproval(sessionId, videoUrlToolSet.tools as ToolSet, { scopeId })
         tools = {
           ...tools,
           ...wrappedVideoUrlTools,
@@ -917,16 +920,20 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (needGenerateImageTool) {
-        const generateImageTools = wrapToolsWithApproval(sessionId, {
-          generate_image: createGenerateImageTool({
-            sessionId,
-            messageId: imageGenerationMessageId,
-            imageCatalog,
-            waitForCompletion: true,
-            // Specialized ComfyUI research→tags flow still forces ComfyUI when agent instructions are present.
-            comfyuiAgentMode: Boolean(agentImageFlowInstructions),
-          }),
-        })
+        const generateImageTools = wrapToolsWithApproval(
+          sessionId,
+          {
+            generate_image: createGenerateImageTool({
+              sessionId,
+              messageId: imageGenerationMessageId,
+              imageCatalog,
+              waitForCompletion: true,
+              // Specialized ComfyUI research→tags flow still forces ComfyUI when agent instructions are present.
+              comfyuiAgentMode: Boolean(agentImageFlowInstructions),
+            }),
+          },
+          { scopeId }
+        )
         tools = {
           ...tools,
           ...generateImageTools,
@@ -934,7 +941,7 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (browserToolSet) {
-        const wrappedBrowserTools = wrapToolsWithApproval(sessionId, browserToolSet.tools)
+        const wrappedBrowserTools = wrapToolsWithApproval(sessionId, browserToolSet.tools, { scopeId })
         tools = {
           ...tools,
           ...wrappedBrowserTools,
@@ -942,7 +949,7 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (computerToolSet) {
-        const wrappedComputerTools = wrapToolsWithApproval(sessionId, computerToolSet.tools)
+        const wrappedComputerTools = wrapToolsWithApproval(sessionId, computerToolSet.tools, { scopeId })
         tools = {
           ...tools,
           ...wrappedComputerTools,

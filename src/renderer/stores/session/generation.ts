@@ -1291,6 +1291,7 @@ export async function generate(
         const { result, knowledgeIds } = await streamText(model, {
           sessionId: session.id,
           knowledgeScopeId: getEffectiveProjectId(session) ?? null,
+          scopeId: getEffectiveProjectId(session),
           knowledgeQuery: resumeQuery,
           messages: mainPromptMsgs,
           sessionSettings: effectiveSettings,
@@ -1515,6 +1516,7 @@ export async function generate(
           const { result: continueResult } = await streamText(model, {
             sessionId: session.id,
             knowledgeScopeId: getEffectiveProjectId(session) ?? null,
+            scopeId: getEffectiveProjectId(session),
             messages: [
               ...promptMsgs,
               { ...targetMsg, contentParts: firstParts },

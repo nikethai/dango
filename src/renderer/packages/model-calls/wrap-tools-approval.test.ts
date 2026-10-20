@@ -2,31 +2,36 @@ import { ToolRiskTier } from '@shared/types/mcp'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getToolApprovalMock = vi.hoisted(() => vi.fn())
+const getScopeGrantMock = vi.hoisted(() => vi.fn())
 const addAuditEntryMock = vi.hoisted(() => vi.fn())
 const addApprovalMock = vi.hoisted(() => vi.fn())
+const addScopeGrantMock = vi.hoisted(() => vi.fn())
 const removeApprovalMock = vi.hoisted(() => vi.fn())
-const showModalMock = vi.hoisted(() => vi.fn())
+const requestToolPermissionMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/stores/toolApprovalStore', () => ({
   getToolApproval: getToolApprovalMock,
+  getScopeGrant: getScopeGrantMock,
   toolApprovalStore: {
     getState: () => ({
       addAuditEntry: addAuditEntryMock,
       addApproval: addApprovalMock,
+      addScopeGrant: addScopeGrantMock,
       removeApproval: removeApprovalMock,
     }),
   },
 }))
 
-vi.mock('@ebay/nice-modal-react', () => ({
-  default: {
-    show: showModalMock,
-  },
+vi.mock('@/packages/tool-permission', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/packages/tool-permission')>()),
+  requestToolPermission: requestToolPermissionMock,
 }))
 
 vi.mock('../tools/risk-engine', () => ({
   getToolRiskTier: (name: string) => {
     if (name === 'delete_file' || name === 'edit_file' || name === 'create_file') return ToolRiskTier.HIGH
+    if (name === 'browser_click') return ToolRiskTier.HIGH
+    if (name === 'wipe_disk_now') return ToolRiskTier.CRITICAL
     if (name === 'web_search') return ToolRiskTier.LOW
     return ToolRiskTier.MEDIUM
   },
@@ -36,15 +41,22 @@ vi.mock('i18next', () => ({
   t: (s: string) => s,
 }))
 
-import { wrapToolsWithApproval, workspaceApprovalFingerprint } from './wrap-tools-approval'
+import { workspaceApprovalFingerprint, wrapToolsWithApproval } from './wrap-tools-approval'
+
+type Exec = { execute: (a: unknown, c: unknown) => Promise<{ denied?: boolean; message?: string } | unknown> }
+
+const REFUSAL =
+  'The user chose "Not now" for this action. Do not retry it. Tell the user in one sentence what you did not do and why.'
 
 describe('wrapToolsWithApproval shipped wrapper', () => {
   beforeEach(() => {
     getToolApprovalMock.mockReset()
+    getScopeGrantMock.mockReset()
     addAuditEntryMock.mockReset()
     addApprovalMock.mockReset()
+    addScopeGrantMock.mockReset()
     removeApprovalMock.mockReset()
-    showModalMock.mockReset()
+    requestToolPermissionMock.mockReset()
   })
 
   it('never session-auto-approves delete_file even with a session HIGH approval', async () => {
@@ -59,54 +71,31 @@ describe('wrapToolsWithApproval shipped wrapper', () => {
     const wrapped = wrapToolsWithApproval('sess-1', {
       delete_file: { description: 'delete a file', execute },
     } as never)
-    showModalMock.mockResolvedValue('deny')
-    const result = await (wrapped.delete_file as { execute: (a: unknown, c: unknown) => Promise<{ denied?: boolean }> }).execute(
-      { path: 'a.txt', expected_revision: 'r' },
-      {}
-    )
+    requestToolPermissionMock.mockResolvedValue('deny')
+    const result = (await (wrapped.delete_file as Exec).execute({ path: 'a.txt', expected_revision: 'r' }, {})) as {
+      denied?: boolean
+    }
     expect(execute).not.toHaveBeenCalled()
     expect(result.denied).toBe(true)
-    expect(showModalMock).toHaveBeenCalled()
+    expect(requestToolPermissionMock).toHaveBeenCalled()
   })
 
-  it('stores argsFingerprint and requires a new approval when args change', async () => {
+  it('a sensitive tool asks again when its args change', async () => {
     getToolApprovalMock.mockReturnValue(undefined)
     const execute = vi.fn(async () => ({ ok: true }))
     const wrapped = wrapToolsWithApproval('sess-1', {
       edit_file: { description: 'edit a file', execute },
     } as never)
-    showModalMock.mockResolvedValue('once')
+    requestToolPermissionMock.mockResolvedValue('once')
     const args = { path: 'a.txt', old_string: 'a', new_string: 'b', expected_revision: 'r1' }
-    await (wrapped.edit_file as { execute: (a: unknown, c: unknown) => Promise<unknown> }).execute(args, {})
-    expect(addApprovalMock).toHaveBeenCalledWith(
-      'sess-1',
-      expect.objectContaining({
-        toolName: 'edit_file',
-        argsFingerprint: workspaceApprovalFingerprint('edit_file', args),
-      })
-    )
-    expect(execute).toHaveBeenCalled()
-
-    addApprovalMock.mockClear()
-    execute.mockClear()
-    showModalMock.mockClear()
-    const previous = workspaceApprovalFingerprint('edit_file', args)
-    getToolApprovalMock.mockReturnValue({
-      toolName: 'edit_file',
-      riskTier: ToolRiskTier.HIGH,
-      scope: 'session',
-      timestamp: 1,
-      argsFingerprint: previous,
-    })
-    showModalMock.mockResolvedValue('once')
-    const changed = { ...args, new_string: 'c' }
-    await (wrapped.edit_file as { execute: (a: unknown, c: unknown) => Promise<unknown> }).execute(changed, {})
-    expect(showModalMock).toHaveBeenCalled()
-    expect(addApprovalMock).toHaveBeenCalledWith(
-      'sess-1',
-      expect.objectContaining({
-        argsFingerprint: workspaceApprovalFingerprint('edit_file', changed),
-      })
+    await (wrapped.edit_file as Exec).execute(args, {})
+    await (wrapped.edit_file as Exec).execute({ ...args, new_string: 'c' }, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(2)
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(addApprovalMock).not.toHaveBeenCalled()
+    expect(addScopeGrantMock).not.toHaveBeenCalled()
+    expect(addAuditEntryMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ argsFingerprint: workspaceApprovalFingerprint('edit_file', args) })
     )
   })
 
@@ -116,26 +105,195 @@ describe('wrapToolsWithApproval shipped wrapper', () => {
     const wrapped = wrapToolsWithApproval('sess-1', {
       create_file: { description: 'create a file', execute },
     } as never)
-    showModalMock.mockResolvedValue('once')
+    requestToolPermissionMock.mockResolvedValue('once')
     const sentinel = 'SECRET_SENTINEL_BYTES_9f3a'
-    await (wrapped.create_file as { execute: (a: unknown, c: unknown) => Promise<unknown> }).execute(
-      { path: 'a.txt', content: sentinel },
-      {}
-    )
+    await (wrapped.create_file as Exec).execute({ path: 'a.txt', content: sentinel }, {})
     const auditArgs = addAuditEntryMock.mock.calls[0]?.[0]?.args
     expect(JSON.stringify(auditArgs)).not.toContain(sentinel)
     expect(auditArgs.redacted).toBe(true)
-    expect(JSON.stringify(showModalMock.mock.calls[0]?.[1]?.parameters)).not.toContain(sentinel)
+    expect(JSON.stringify(requestToolPermissionMock.mock.calls[0]?.[0]?.summary)).not.toContain(sentinel)
   })
 
-  it('auto-approves LOW tools without a modal', async () => {
+  it('auto-approves LOW tools without a request', async () => {
     getToolApprovalMock.mockReturnValue(undefined)
     const execute = vi.fn(async () => ({ hits: [] }))
     const wrapped = wrapToolsWithApproval('sess-1', {
       web_search: { description: 'search the web', execute },
     } as never)
-    await (wrapped.web_search as { execute: (a: unknown, c: unknown) => Promise<unknown> }).execute({ q: 'x' }, {})
-    expect(showModalMock).not.toHaveBeenCalled()
+    await (wrapped.web_search as Exec).execute({ q: 'x' }, {})
+    expect(requestToolPermissionMock).not.toHaveBeenCalled()
     expect(execute).toHaveBeenCalled()
+  })
+
+  it('scope grant auto-approves in the same scope', async () => {
+    getScopeGrantMock.mockImplementation((scopeId: string, toolName: string) =>
+      scopeId === 's1' && toolName === 'browser_click'
+        ? { toolName: 'browser_click', riskTier: ToolRiskTier.HIGH, grantedAt: 1 }
+        : undefined
+    )
+    requestToolPermissionMock.mockResolvedValue('once')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const tools = { browser_click: { description: 'click', execute } } as never
+
+    await (wrapToolsWithApproval('sess-1', tools, { scopeId: 's1' }).browser_click as Exec).execute({ x: 1 }, {})
+    expect(requestToolPermissionMock).not.toHaveBeenCalled()
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(addAuditEntryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ decision: 'auto-approve', scope: 'scope' })
+    )
+
+    await (wrapToolsWithApproval('sess-1', tools, { scopeId: 's2' }).browser_click as Exec).execute({ x: 1 }, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+    expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ sessionId: 'sess-1', scopeId: 's2', toolName: 'browser_click', allowAlways: true })
+    )
+  })
+
+  it('grant does not cover a riskier tier', async () => {
+    getScopeGrantMock.mockReturnValue({ toolName: 'browser_click', riskTier: ToolRiskTier.MEDIUM, grantedAt: 1 })
+    requestToolPermissionMock.mockResolvedValue('once')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const wrapped = wrapToolsWithApproval('sess-1', { browser_click: { description: 'click', execute } } as never, {
+      scopeId: 's1',
+    })
+    await (wrapped.browser_click as Exec).execute({}, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+    expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ riskTier: ToolRiskTier.HIGH })
+    )
+  })
+
+  it('a session approval does not cover a riskier tier either', async () => {
+    getToolApprovalMock.mockReturnValue({
+      toolName: 'browser_click',
+      riskTier: ToolRiskTier.MEDIUM,
+      scope: 'session',
+      timestamp: 1,
+    })
+    requestToolPermissionMock.mockResolvedValue('once')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const wrapped = wrapToolsWithApproval('sess-1', { browser_click: { description: 'click', execute } } as never)
+    await (wrapped.browser_click as Exec).execute({}, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('always in a scope stores a scope grant', async () => {
+    requestToolPermissionMock.mockResolvedValue('always')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const tools = { browser_click: { description: 'click', execute } } as never
+
+    await (wrapToolsWithApproval('sess-1', tools, { scopeId: 's1' }).browser_click as Exec).execute({}, {})
+    expect(addScopeGrantMock).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ toolName: 'browser_click', riskTier: ToolRiskTier.HIGH })
+    )
+    expect(addApprovalMock).not.toHaveBeenCalled()
+
+    addScopeGrantMock.mockClear()
+    await (wrapToolsWithApproval('sess-1', tools).browser_click as Exec).execute({}, {})
+    expect(addApprovalMock).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({ toolName: 'browser_click', riskTier: ToolRiskTier.HIGH, scope: 'session' })
+    )
+    expect(addScopeGrantMock).not.toHaveBeenCalled()
+    expect(execute).toHaveBeenCalledTimes(2)
+  })
+
+  it('delete never offers always', async () => {
+    getScopeGrantMock.mockReturnValue({ toolName: 'delete_file', riskTier: ToolRiskTier.HIGH, grantedAt: 1 })
+    requestToolPermissionMock.mockResolvedValue('always')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const wrapped = wrapToolsWithApproval('sess-1', { delete_file: { description: 'delete', execute } } as never, {
+      scopeId: 's1',
+    })
+    await (wrapped.delete_file as Exec).execute({ path: 'a.txt' }, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+    expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ allowAlways: false }))
+    // Even if 'always' came back, nothing is stored for a tool that always asks.
+    expect(addScopeGrantMock).not.toHaveBeenCalled()
+    expect(addApprovalMock).not.toHaveBeenCalled()
+  })
+
+  it('never auto-approves a CRITICAL call even with a matching grant', async () => {
+    getScopeGrantMock.mockReturnValue({ toolName: 'wipe_disk_now', riskTier: ToolRiskTier.CRITICAL, grantedAt: 1 })
+    getToolApprovalMock.mockReturnValue({
+      toolName: 'wipe_disk_now',
+      riskTier: ToolRiskTier.CRITICAL,
+      scope: 'session',
+      timestamp: 1,
+    })
+    requestToolPermissionMock.mockResolvedValue('deny')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const tools = { wipe_disk_now: { description: 'x', execute } } as never
+    await (wrapToolsWithApproval('sess-1', tools).wipe_disk_now as Exec).execute({}, {})
+    const wrapped = wrapToolsWithApproval('sess-1', tools, { scopeId: 's1' })
+    await (wrapped.wipe_disk_now as Exec).execute({}, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(2)
+    expect(requestToolPermissionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ allowAlways: false, riskTier: ToolRiskTier.CRITICAL }),
+      expect.anything()
+    )
+    expect(execute).not.toHaveBeenCalled()
+  })
+
+  it('passes the abort signal so Stop settles the request', async () => {
+    requestToolPermissionMock.mockResolvedValue('deny')
+    const controller = new AbortController()
+    const wrapped = wrapToolsWithApproval('sess-1', {
+      browser_click: { description: 'click', execute: vi.fn() },
+    } as never)
+    await (wrapped.browser_click as Exec).execute({}, { abortSignal: controller.signal })
+    expect(requestToolPermissionMock.mock.calls[0]?.[1]).toEqual({ signal: controller.signal })
+  })
+
+  it('refusal is a sentence', async () => {
+    requestToolPermissionMock.mockResolvedValue('deny')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const wrapped = wrapToolsWithApproval('sess-1', { browser_click: { description: 'click', execute } } as never)
+    const result = await (wrapped.browser_click as Exec).execute({}, {})
+    expect(result).toEqual({ denied: true, toolName: 'browser_click', riskTier: ToolRiskTier.HIGH, message: REFUSAL })
+    expect(execute).not.toHaveBeenCalled()
+    expect(addAuditEntryMock).toHaveBeenCalledWith(expect.objectContaining({ decision: 'deny', scope: 'none' }))
+  })
+})
+
+describe('toolApprovalStore merge', () => {
+  it('hydrates scopeGrants to {} from a payload without it; revokeScopeGrant removes only that tool', async () => {
+    const actual = await vi.importActual<typeof import('@/stores/toolApprovalStore')>('@/stores/toolApprovalStore')
+    const { toolApprovalStore } = actual
+    const options = toolApprovalStore.persist.getOptions()
+    const oldPayload = {
+      auditLog: [],
+      approvedTools: {
+        'sess-1:browser_click': {
+          toolName: 'browser_click',
+          riskTier: ToolRiskTier.HIGH,
+          scope: 'session',
+          timestamp: 1,
+        },
+      },
+    }
+    const merged = options.merge?.(oldPayload, toolApprovalStore.getState()) as ReturnType<
+      typeof toolApprovalStore.getState
+    >
+    expect(merged.scopeGrants).toEqual({})
+    expect(merged.approvedTools.get('sess-1:browser_click')?.scope).toBe('session')
+
+    const state = toolApprovalStore.getState()
+    state.addScopeGrant('s1', { toolName: 'browser_click', riskTier: ToolRiskTier.HIGH, grantedAt: 1 })
+    state.addScopeGrant('s1', { toolName: 'browser_type', riskTier: ToolRiskTier.MEDIUM, grantedAt: 2 })
+    state.addScopeGrant('s2', { toolName: 'browser_click', riskTier: ToolRiskTier.HIGH, grantedAt: 3 })
+    toolApprovalStore.getState().revokeScopeGrant('s1', 'browser_click')
+    expect(actual.getScopeGrant('s1', 'browser_click')).toBeUndefined()
+    expect(actual.getScopeGrant('s1', 'browser_type')?.riskTier).toBe(ToolRiskTier.MEDIUM)
+    expect(actual.getScopeGrant('s2', 'browser_click')?.riskTier).toBe(ToolRiskTier.HIGH)
+
+    const persisted = options.partialize?.(toolApprovalStore.getState()) as { scopeGrants?: unknown }
+    expect(persisted.scopeGrants).toEqual(toolApprovalStore.getState().scopeGrants)
+    const roundTrip = options.merge?.(
+      JSON.parse(JSON.stringify(persisted)),
+      toolApprovalStore.getState()
+    ) as ReturnType<typeof toolApprovalStore.getState>
+    expect(roundTrip.scopeGrants.s1.browser_type.grantedAt).toBe(2)
   })
 })

@@ -1,14 +1,24 @@
-import NiceModal from '@ebay/nice-modal-react'
-import { fingerprintSensitiveToolArgs, isSensitiveToolName, redactSensitiveToolPayload } from '@shared/privacy/sensitive-tools'
+import {
+  fingerprintSensitiveToolArgs,
+  isSensitiveToolName,
+  redactSensitiveToolPayload,
+} from '@shared/privacy/sensitive-tools'
 import { ToolRiskTier } from '@shared/types/mcp'
 import type { ToolSet } from 'ai'
-import { t } from 'i18next'
-import type { ToolApprovalModalResult } from '@/modals/ToolApproval'
-import { getToolApproval, toolApprovalStore } from '@/stores/toolApprovalStore'
+import { alwaysAsks, canAlways, describeToolAction, requestToolPermission } from '@/packages/tool-permission'
+import {
+  getScopeGrant,
+  getToolApproval,
+  type ToolApprovalAuditEntry,
+  toolApprovalStore,
+} from '@/stores/toolApprovalStore'
 import { getToolRiskTier } from '../tools/risk-engine'
 
 const TOOL_EXECUTE_TIMEOUT_MS = 90_000
-const TOOL_APPROVAL_TIMEOUT_MS = 120_000
+
+/** Sent to the model, not shown as UI copy. */
+export const TOOL_REFUSAL_MESSAGE =
+  'The user chose "Not now" for this action. Do not retry it. Tell the user in one sentence what you did not do and why.'
 
 export function workspaceApprovalFingerprint(toolName: string, args: unknown): string | null {
   if (!isSensitiveToolName(toolName)) {
@@ -22,8 +32,15 @@ function createToolDeniedResult(toolName: string, riskTier: ToolRiskTier) {
     denied: true,
     toolName,
     riskTier,
-    message: t('Tool execution denied by user.'),
+    message: TOOL_REFUSAL_MESSAGE,
   }
+}
+
+/** The risk tier the user said "Always" for: the scope's grant when scoped, else this chat's session approval. */
+function grantedRiskTier(sessionId: string, scopeId: string | undefined, toolName: string): ToolRiskTier | undefined {
+  if (scopeId) return getScopeGrant(scopeId, toolName)?.riskTier
+  const approval = getToolApproval(sessionId, toolName)
+  return approval?.scope === 'session' ? approval.riskTier : undefined
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -44,101 +61,95 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   })
 }
 
-/** Shared approval wrapper. Workspace mutations never session-auto; fingerprint changes need a new approval. */
-export function wrapToolsWithApproval(sessionId: string | undefined, tools: ToolSet): ToolSet {
+/**
+ * Shared approval gate. Per call: LOW tools that do not always ask run at once. Otherwise a grant with exactly the
+ * same risk tier (the scope's grant when `scopeId` is set, else this chat's session approval) runs the call, unless the
+ * tool always asks or the call is CRITICAL. Everything else asks through the permission sheet; the wait for an answer
+ * is outside the execute timeout, and Stop (`abortSignal`) settles it as "Not now".
+ */
+export function wrapToolsWithApproval(
+  sessionId: string | undefined,
+  tools: ToolSet,
+  opts: { scopeId?: string } = {}
+): ToolSet {
   if (!sessionId) {
     return tools
   }
+  const scopeId = opts.scopeId || undefined
 
   return Object.fromEntries(
     Object.entries(tools).map(([toolName, definition]) => {
       const riskTier = getToolRiskTier(toolName, definition?.description)
+      const asksEveryTime = alwaysAsks(toolName)
+      // R9: never Always, and never a grant, for tools that always ask or CRITICAL calls.
+      const grantable = canAlways(toolName, riskTier) && riskTier !== ToolRiskTier.CRITICAL && !asksEveryTime
 
       return [
         toolName,
         {
           ...definition,
           execute: async (args: unknown, context) => {
-            const existingApproval = getToolApproval(sessionId, toolName)
-            const fingerprint = workspaceApprovalFingerprint(toolName, args)
-            const destructiveWorkspace = fingerprint !== null
-            const fingerprintMatches = !fingerprint || existingApproval?.argsFingerprint === fingerprint
-            const canAutoApprove =
-              !destructiveWorkspace &&
-              (riskTier === ToolRiskTier.LOW ||
-                (existingApproval?.scope === 'session' &&
-                  existingApproval.riskTier === riskTier &&
-                  riskTier !== ToolRiskTier.CRITICAL &&
-                  fingerprintMatches))
-
-            let approvedScope: 'auto' | 'once' | 'session' = 'auto'
-
-            if (canAutoApprove) {
+            const fingerprint = workspaceApprovalFingerprint(toolName, args) ?? undefined
+            const audit = (scope: ToolApprovalAuditEntry['scope'], decision: ToolApprovalAuditEntry['decision']) =>
               toolApprovalStore.getState().addAuditEntry({
                 sessionId,
                 toolName,
                 riskTier,
-                scope: existingApproval?.scope || 'session',
-                decision: 'auto-approve',
+                scope,
+                decision,
                 timestamp: Date.now(),
                 args: redactSensitiveToolPayload(toolName, args),
+                ...(fingerprint ? { argsFingerprint: fingerprint } : {}),
               })
-            } else {
-              const modalResult = (await withTimeout(
-                NiceModal.show('tool-approval', {
-                  toolName,
-                  description: definition?.description,
-                  riskTier,
-                  parameters: redactSensitiveToolPayload(toolName, args),
-                }) as Promise<ToolApprovalModalResult | undefined>,
-                TOOL_APPROVAL_TIMEOUT_MS,
-                `Tool approval for ${toolName}`
-              ).catch(() => 'deny' as const)) as ToolApprovalModalResult | undefined
 
-              if (!modalResult || modalResult === 'deny') {
-                toolApprovalStore.getState().addAuditEntry({
+            const grantedTier = grantable ? grantedRiskTier(sessionId, scopeId, toolName) : undefined
+
+            if (riskTier === ToolRiskTier.LOW && !asksEveryTime) {
+              audit('none', 'auto-approve')
+            } else if (grantable && grantedTier === riskTier) {
+              audit(scopeId ? 'scope' : 'session', 'auto-approve')
+            } else {
+              const choice = await requestToolPermission(
+                {
                   sessionId,
+                  scopeId,
                   toolName,
                   riskTier,
-                  scope: 'none',
-                  decision: 'deny',
-                  timestamp: Date.now(),
-                  args: redactSensitiveToolPayload(toolName, args),
-                })
+                  summary: describeToolAction(toolName, args, definition?.description),
+                  allowAlways: grantable,
+                },
+                { signal: context?.abortSignal }
+              )
+
+              if (choice === 'deny') {
+                audit('none', 'deny')
                 return createToolDeniedResult(toolName, riskTier)
               }
 
-              approvedScope = modalResult
-              const approval = {
-                toolName,
-                riskTier,
-                scope: modalResult,
-                timestamp: Date.now(),
-                argsFingerprint: fingerprint ?? undefined,
+              if (choice === 'always' && grantable) {
+                const now = Date.now()
+                if (scopeId) {
+                  toolApprovalStore.getState().addScopeGrant(scopeId, { toolName, riskTier, grantedAt: now })
+                  audit('scope', 'allow')
+                } else {
+                  toolApprovalStore.getState().addApproval(sessionId, {
+                    toolName,
+                    riskTier,
+                    scope: 'session',
+                    timestamp: now,
+                  })
+                  audit('session', 'allow')
+                }
+              } else {
+                audit('once', 'allow')
               }
-              toolApprovalStore.getState().addApproval(sessionId, approval)
-              toolApprovalStore.getState().addAuditEntry({
-                sessionId,
-                toolName,
-                riskTier,
-                scope: modalResult,
-                decision: 'allow',
-                timestamp: approval.timestamp,
-                args: redactSensitiveToolPayload(toolName, args),
-              })
             }
 
-            try {
-              return await withTimeout(
-                Promise.resolve(definition.execute?.(args, context)),
-                TOOL_EXECUTE_TIMEOUT_MS,
-                `Tool ${toolName}`
-              )
-            } finally {
-              if (approvedScope === 'once') {
-                toolApprovalStore.getState().removeApproval(sessionId, toolName)
-              }
-            }
+            return await withTimeout(
+              Promise.resolve(definition.execute?.(args, context)),
+              TOOL_EXECUTE_TIMEOUT_MS,
+              `Tool ${toolName}`
+            )
           },
         },
       ]

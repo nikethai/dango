@@ -7,7 +7,7 @@ const {
   navigateMock,
   webSearchExecutorMock,
   parseUserLinkFreeMock,
-  modalShowMock,
+  requestToolPermissionMock,
   convertToModelMessagesMock,
   injectModelSystemPromptMock,
 } = vi.hoisted(() => ({
@@ -15,7 +15,7 @@ const {
   navigateMock: vi.fn(),
   webSearchExecutorMock: vi.fn(),
   parseUserLinkFreeMock: vi.fn(),
-  modalShowMock: vi.fn(),
+  requestToolPermissionMock: vi.fn(),
   convertToModelMessagesMock: vi.fn(async (messages: Message[]) =>
     messages.map((message) => ({
       role: message.role,
@@ -52,10 +52,9 @@ const settingsState = vi.hoisted(() => ({
   } as Record<string, Record<string, unknown>>,
 }))
 
-vi.mock('@ebay/nice-modal-react', () => ({
-  default: {
-    show: modalShowMock,
-  },
+vi.mock('@/packages/tool-permission', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/packages/tool-permission')>()),
+  requestToolPermission: requestToolPermissionMock,
 }))
 
 vi.mock('@/router', () => ({
@@ -111,10 +110,12 @@ vi.mock('@/stores/memoryStore', () => ({
 
 vi.mock('@/stores/toolApprovalStore', () => ({
   getToolApproval: vi.fn(() => undefined),
+  getScopeGrant: vi.fn(() => undefined),
   toolApprovalStore: {
     getState: () => ({
       addAuditEntry: vi.fn(),
       addApproval: vi.fn(),
+      addScopeGrant: vi.fn(),
       removeApproval: vi.fn(),
     }),
   },
@@ -238,13 +239,13 @@ describe('streamText agent image flow', () => {
     navigateMock.mockReset()
     webSearchExecutorMock.mockReset()
     parseUserLinkFreeMock.mockReset()
-    modalShowMock.mockReset()
+    requestToolPermissionMock.mockReset()
     convertToModelMessagesMock.mockClear()
     injectModelSystemPromptMock.mockClear()
 
     createAndGenerateMock.mockResolvedValue('record-1')
     navigateMock.mockResolvedValue(undefined)
-    modalShowMock.mockResolvedValue('once')
+    requestToolPermissionMock.mockResolvedValue('once')
     webSearchExecutorMock.mockResolvedValue({
       query: 'anime trend',
       searchResults: [
