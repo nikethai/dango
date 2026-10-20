@@ -1801,5 +1801,11 @@
   "Always in this chat": "Always in this chat",
   "Touches": "Touches",
   "and {{count}} more": "and {{count}} more",
-  "Dango always asks before it sends, deletes or changes your files.": "Dango always asks before it sends, deletes or changes your files."
+  "Dango always asks before it sends, deletes or changes your files.": "Dango always asks before it sends, deletes or changes your files.",
+  "Allowed without asking": "Allowed without asking",
+  "Dango does these in this scope without asking. Sending and deleting always ask.": "Dango does these in this scope without asking. Sending and deleting always ask.",
+  "Since {{date}}": "Since {{date}}",
+  "Stop allowing": "Stop allowing",
+  "Nothing yet. When you choose Always in this scope, it shows here.": "Nothing yet. When you choose Always in this scope, it shows here.",
+  "Dango will ask before “{{label}}” again.": "Dango will ask before “{{label}}” again."
 }
