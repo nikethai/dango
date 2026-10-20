@@ -123,15 +123,46 @@ describe('foldSwarmRuns', () => {
     expect(runs.r1.rounds).toBe(0)
   })
 
-  it('the "could not plan" note stays in the thread as a message', () => {
+  it("a redone answer (Redo keeps only swarm, no roomRole) is the run's answer", () => {
+    const redone = {
+      id: 'a2',
+      role: 'assistant',
+      contentParts: [{ type: 'text', text: 'New answer' }],
+      swarm: { runId: 'r1', stoppedEarly: true },
+    } as Message
+    const messages = [
+      user('u1'),
+      turn('p1', 'plan', 'Ana', 'r1'),
+      turn('d1', 'do', 'Bo', 'r1', {}, 'Draft intro'),
+      redone,
+    ]
+    const { visible, runs, anchorOf } = foldSwarmRuns(messages)
+    expect(visible.map((m) => m.id)).toEqual(['u1', 'a2'])
+    expect(runs.r1.answerId).toBe('a2')
+    expect(anchorOf).toEqual({ a2: 'r1' })
+    expect(runs.r1.stoppedEarly).toBe(true)
+    expect(runs.r1.rounds).toBe(1)
+  })
+
+  it('the "could not plan" note (swarm.note) stands alone: no "Worked with" anchor', () => {
+    const note = turn('n1', 'plan', 'Ana', 'r1')
+    note.swarm = { runId: 'r1', note: true }
+    note.contentParts = [{ type: 'text', text: '_Something else entirely._' }]
+    const messages = [user('u1'), turn('p1', 'plan', 'Ana', 'r1'), note]
+    const { visible, anchorOf } = foldSwarmRuns(messages)
+    expect(visible.map((m) => m.id)).toEqual(['u1', 'n1'])
+    expect(anchorOf).toEqual({})
+  })
+
+  it('a note saved before swarm.note is still found by its text', () => {
     const note = turn('n1', 'plan', 'Ana', 'r1')
     note.contentParts = [
       { type: 'text', text: '_Swarm could not plan tasks from this request. Try a clearer multi-step goal._' },
     ]
     const messages = [user('u1'), turn('p1', 'plan', 'Ana', 'r1'), note]
     const { visible, anchorOf } = foldSwarmRuns(messages)
-    expect(visible.map((m) => m.id)).toEqual(['u1', 'p1', 'n1'])
-    expect(anchorOf).toEqual({ p1: 'r1' })
+    expect(visible.map((m) => m.id)).toEqual(['u1', 'n1'])
+    expect(anchorOf).toEqual({})
   })
 
   it('a run that could not plan keeps its failed plan turns, so their error and fix show', () => {

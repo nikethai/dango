@@ -25,11 +25,20 @@ export type SwarmRun = {
   answerId?: string
 }
 
-/** The orchestrator's "could not plan" note (multi-agent-room-swarm.ts) stays in the thread: it is what the user reads. */
+/**
+ * The orchestrator's "could not plan" note (multi-agent-room-swarm.ts) stays in the thread: it is what the user reads.
+ * It carries `swarm.note`; notes saved before that mark are found by their text.
+ */
 const RUN_NOTE_PREFIX = '_Swarm could not plan tasks'
 
 function isRunNote(msg: Message): boolean {
+  if (msg.swarm?.note) return true
   return getMessageText(msg, false, false).trimStart().startsWith(RUN_NOTE_PREFIX)
+}
+
+/** The captain's answer: a deliver turn, or its Redo (regenerated messages keep only `swarm`, with no roomRole). */
+function isAnswer(msg: Message): boolean {
+  return msg.roomRole === 'deliver' || !msg.roomRole
 }
 
 function messageTokens(msg: Message): number | undefined {
@@ -43,7 +52,7 @@ function messageTokens(msg: Message): number | undefined {
 function contributionOf(msg: Message): string | undefined {
   if (msg.roomRole === 'plan') return i18next.t('Planned the work')
   if (msg.roomRole === 'do') return msg.swarm?.taskTitle?.trim() || i18next.t('Did a task')
-  if (msg.roomRole === 'deliver') return i18next.t('Wrote the answer')
+  if (isAnswer(msg)) return i18next.t('Wrote the answer')
   return undefined
 }
 
@@ -59,14 +68,15 @@ export function foldSwarmRuns(messages: Message[]): {
   anchorOf: Record<string, string>
 } {
   const drafts = new Map<string, RunDraft>()
-  // A run that could not plan ends in a note and no answer: its failed turns stay in the thread, because their error
-  // (with its fix) is why there is no answer. Elsewhere a failed turn folds away (a stopped plan turn's empty answer).
+  // A run that could not plan ends in a note and no answer: the note stands alone (no "Worked with": nobody stopped it),
+  // and its failed turns stay in the thread, because their error (with its fix) is why there is no answer. Elsewhere a
+  // failed turn folds away (a stopped plan turn's empty answer).
   const unplannedRuns = new Set<string>()
   for (const msg of messages) {
     if (msg.swarm?.runId && isRunNote(msg)) unplannedRuns.add(msg.swarm.runId)
   }
   const keepsOwnRow = (msg: Message) =>
-    isRunNote(msg) || (unplannedRuns.has(msg.swarm?.runId ?? '') && msg.roomRole !== 'deliver' && hasError(msg))
+    isRunNote(msg) || (unplannedRuns.has(msg.swarm?.runId ?? '') && !isAnswer(msg) && hasError(msg))
 
   for (const msg of messages) {
     const runId = msg.swarm?.runId
@@ -78,7 +88,7 @@ export function foldSwarmRuns(messages: Message[]): {
     }
     const { run } = draft
     if (!keepsOwnRow(msg)) draft.lastTurnId = msg.id
-    if (msg.roomRole === 'deliver') run.answerId = msg.id
+    if (isAnswer(msg)) run.answerId = msg.id
     if (msg.roomRole === 'do') run.rounds += 1
     if (msg.swarm?.stoppedEarly) run.stoppedEarly = true
     if (msg.roomRole === 'plan' && !draft.captainId && msg.agentId) draft.captainId = msg.agentId
@@ -110,14 +120,14 @@ export function foldSwarmRuns(messages: Message[]): {
     for (const row of run.agents) row.captain = row.agentId === captainId
     if (draft.hasTokens) run.tokens = draft.tokens
     runs[run.runId] = run
-    const anchorId = run.answerId ?? draft.lastTurnId
+    const anchorId = run.answerId ?? (unplannedRuns.has(run.runId) ? undefined : draft.lastTurnId)
     if (anchorId) anchorOf[anchorId] = run.runId
   }
 
   if (drafts.size === 0) return { visible: messages, runs, anchorOf }
 
   const visible = messages.filter(
-    (msg) => !msg.swarm?.runId || msg.roomRole === 'deliver' || anchorOf[msg.id] !== undefined || keepsOwnRow(msg)
+    (msg) => !msg.swarm?.runId || isAnswer(msg) || anchorOf[msg.id] !== undefined || keepsOwnRow(msg)
   )
   return { visible, runs, anchorOf }
 }

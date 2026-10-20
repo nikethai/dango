@@ -22,6 +22,11 @@ describe('MessageSchema swarm', () => {
     expect(MessageSchema.parse({ ...base, swarm }).swarm).toEqual(swarm)
   })
 
+  it('keeps the could-not-plan note mark', () => {
+    const swarm = { runId: 'swarm-1', note: true }
+    expect(MessageSchema.parse({ ...base, swarm }).swarm).toEqual(swarm)
+  })
+
   it('a malformed value drops the field instead of failing the message', () => {
     const parsed = MessageSchema.safeParse({ ...base, swarm: 5 })
     expect(parsed.success).toBe(true)

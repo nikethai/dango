@@ -200,7 +200,7 @@ async function runSwarm(
         agentId: leadId,
         name: leadName,
         roomRole: 'plan',
-        swarm: { runId },
+        swarm: { runId, note: true },
       })
       endRun()
       return

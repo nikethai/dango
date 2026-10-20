@@ -220,7 +220,7 @@ describe('runAgentRoomSwarm', () => {
     await run(turn)
     expect(calls.map((c) => c.roomRole)).toEqual(['plan', 'plan'])
     const note = h.insertMessage.mock.calls[0]?.[1] as Message
-    expect(note.swarm).toEqual({ runId: calls[0].runId })
+    expect(note.swarm).toEqual({ runId: calls[0].runId, note: true })
     expect(JSON.stringify(note.contentParts)).toContain('Swarm could not plan tasks from this request.')
   })
 

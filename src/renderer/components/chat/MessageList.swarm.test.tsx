@@ -144,6 +144,27 @@ describe('MessageList: Swarm runs fold into one answer', () => {
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
   })
 
+  it('a redone answer (no roomRole, like real Redo) renders as a message with "Worked with" below', () => {
+    const redone = {
+      id: 'a2',
+      role: 'assistant',
+      contentParts: [{ type: 'text', text: 'New answer' }],
+      swarm: { runId: 'r1' },
+    } as MessageType
+    renderList(chat([user('u1'), turn('p1', 'plan', 'Ana', 'r1'), turn('d1', 'do', 'Bo', 'r1'), redone]))
+    expect(screen.getByTestId('row-a2')).toBeTruthy()
+    expect(screen.getByText('Worked with 2 agents · 1 round')).toBeTruthy()
+    expect(screen.queryByText(/stopped before an answer/)).toBeNull()
+  })
+
+  it('a run that could not plan shows only its note', () => {
+    const note = { ...turn('n1', 'plan', 'Ana', 'r1'), swarm: { runId: 'r1', note: true } } as MessageType
+    renderList(chat([user('u1'), turn('p1', 'plan', 'Ana', 'r1'), note]))
+    expect(screen.getByTestId('row-n1')).toBeTruthy()
+    expect(screen.queryByTestId('row-p1')).toBeNull()
+    expect(screen.queryByText(/Worked with/)).toBeNull()
+  })
+
   it('moves the fork switcher of a hidden turn onto the run', () => {
     const forks = {
       d1: {
