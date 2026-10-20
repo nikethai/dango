@@ -1855,5 +1855,9 @@
   "Nothing found for “{{query}}”": "Nothing found for “{{query}}”",
   "New chat with it": "New chat with it",
   "Import ChatGPT archive": "Import ChatGPT archive",
-  "Ctrl": "Ctrl"
+  "Ctrl": "Ctrl",
+  "your {{date}} email": "your {{date}} email",
+  "{{name}}'s {{date}} email": "{{name}}'s {{date}} email",
+  "Asana \"{{title}}\"": "Asana \"{{title}}\"",
+  "approved: {{text}}": "approved: {{text}}"
 }
