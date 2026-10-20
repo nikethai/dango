@@ -1,4 +1,11 @@
-import { buildReplyMime, type ClientDraft, DRAFT_LABEL, type GmailThread, parseAddresses } from '@shared/pm-pilot'
+import {
+  buildReplyMime,
+  type ClientDraft,
+  DRAFT_LABEL,
+  type GmailThread,
+  isPlainAddress,
+  parseAddresses,
+} from '@shared/pm-pilot'
 import { gmailRequest, gmailStatus } from './gmail-http'
 
 // Slice 10: the only Gmail writes Dango makes: a label and a draft in the client's thread. Nothing here sends;
@@ -101,17 +108,19 @@ function warnLabel(what: string, error: unknown): void {
 
 /**
  * Writes `draft` into its Gmail thread as an unsent draft, then labels the thread `DRAFT_LABEL`. The draft goes
- * only to addresses already on the thread (checked against Gmail, never trusting `draft.to` alone); otherwise
- * `GmailRecipientError` and nothing is written. A failed label is logged and the draft kept. Never sends.
+ * only to plain addresses already on the thread (checked against Gmail, never trusting `draft.to` alone), less the
+ * mailbox's own `from`; otherwise `GmailRecipientError` and nothing is written. A failed label is logged and the draft kept. Never sends.
  */
 export async function writeDraft(
   token: string,
   draft: ClientDraft,
   from: string
-): Promise<{ gmailDraftId: string; gmailMessageId: string }> {
-  const recipients = parseAddresses(draft.to.replace(/[\r\n]+/g, ' '))
+): Promise<{ gmailDraftId: string; gmailMessageId?: string }> {
+  const own = new Set(parseAddresses(from.replace(/[\r\n]+/g, ' ')))
+  const recipients = parseAddresses(draft.to.replace(/[\r\n]+/g, ' ')).filter((a) => !own.has(a))
+  if (recipients.length === 0 || !recipients.every(isPlainAddress)) throw new GmailRecipientError()
   const participants = await threadParticipants(token, draft.threadId)
-  if (recipients.length === 0 || recipients.some((a) => !participants.has(a))) throw new GmailRecipientError()
+  if (recipients.some((a) => !participants.has(a))) throw new GmailRecipientError()
 
   const raw = buildReplyMime({
     from,
@@ -123,14 +132,17 @@ export async function writeDraft(
   const created = await gmailRequest<DraftResource>(token, 'POST', 'drafts', {
     body: { message: { raw, threadId: draft.threadId } },
   })
-  if (!created.id || !created.message?.id) throw new Error('Gmail did not return the draft id')
+  if (!created.id) throw new Error('Gmail did not return the draft id')
 
   try {
     await modifyThreadLabels(token, draft.threadId, { addLabelIds: [await ensureLabel(token, DRAFT_LABEL)] })
   } catch (error) {
     warnLabel('add', error)
   }
-  return { gmailDraftId: created.id, gmailMessageId: created.message.id }
+  // Without the message id, undo cannot prove the draft is untouched and keeps it.
+  return created.message?.id
+    ? { gmailDraftId: created.id, gmailMessageId: created.message.id }
+    : { gmailDraftId: created.id }
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildReplyMime } from './mime'
+import { buildReplyMime, isPlainAddress } from './mime'
 
 function fromB64url(raw: string): string {
   return Buffer.from(raw.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
@@ -53,6 +53,22 @@ describe('buildReplyMime', () => {
 
   it('leaves an ASCII subject plain', () => {
     expect(parse(buildReplyMime({ ...base, subject: 'Quote for May' })).headers.subject).toEqual(['Re: Quote for May'])
+  })
+
+  it('folds a very long ASCII subject so no header line passes 998', () => {
+    const subject = Array.from({ length: 200 }, (_, i) => `word${i}`).join(' ')
+    const raw = buildReplyMime({ ...base, subject })
+    const head = fromB64url(raw).split('\r\n\r\n')[0]
+    for (const line of head.split('\r\n')) expect(line.length).toBeLessThanOrEqual(998)
+    expect(decodeWords(parse(raw).headers.subject[0])).toBe(`Re: ${subject}`)
+  })
+
+  it('isPlainAddress accepts only plain ASCII addresses', () => {
+    expect(isPlainAddress('jo@acme.example')).toBe(true)
+    expect(isPlainAddress("o'neil+x@acme.example")).toBe(true)
+    for (const bad of ['joé@acme.example', 'jo@acme.example\r\n', 'jo acme@x', 'jo', '', '<jo@acme.example>']) {
+      expect(isPlainAddress(bad)).toBe(false)
+    }
   })
 
   it('does not double the Re: prefix', () => {

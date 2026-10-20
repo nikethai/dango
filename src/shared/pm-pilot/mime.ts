@@ -27,10 +27,15 @@ const ADDRESS = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+$/
 /** A message id is printable ASCII between angle brackets. */
 const MESSAGE_ID = /^<[!-;=?-~]+>$/
 
+/** A bare ASCII address with nothing a header could misread; the only kind of recipient Dango writes. */
+export function isPlainAddress(value: string): boolean {
+  return ADDRESS.test(value)
+}
+
 /** Bare addresses only: display names from mail are dropped, so nothing but an address reaches the header. */
 function addressList(value: string | undefined): string {
   return parseAddresses(oneLine(value ?? ''))
-    .filter((a) => ADDRESS.test(a))
+    .filter(isPlainAddress)
     .join(', ')
 }
 
@@ -75,10 +80,13 @@ function encodeWords(text: string): string {
   return words.map((w) => `=?UTF-8?B?${utf8Base64(w)}?=`).join('\r\n ')
 }
 
+/** Longer plain subjects are encoded and folded too, so no header line nears the 998-character limit. */
+const MAX_PLAIN_SUBJECT = 900
+
 function replySubject(subject: string): string {
   const clean = oneLine(subject)
   const prefixed = /^re:/i.test(clean) ? clean : `Re: ${clean}`
-  return /^[\x20-\x7e]*$/.test(prefixed) ? prefixed : encodeWords(prefixed)
+  return /^[\x20-\x7e]*$/.test(prefixed) && prefixed.length <= MAX_PLAIN_SUBJECT ? prefixed : encodeWords(prefixed)
 }
 
 function wrap(text: string, width: number): string {

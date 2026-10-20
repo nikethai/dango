@@ -31,7 +31,7 @@ export function parseAddresses(value: string | undefined): string[] {
   if (!value) return []
   const unquoted = value.replace(/"(?:[^"\\]|\\.)*"/g, '""')
   const out: string[] = []
-  for (const part of unquoted.split(',')) {
+  for (const part of unquoted.split(/[,;]/)) {
     const angle = /<([^<>\s]+@[^<>\s]+)>/.exec(part)
     const bare = angle ? null : /[^\s<>"',;:()]+@[^\s<>"',;:()]+/.exec(part)
     const address = (angle?.[1] ?? bare?.[0])?.toLowerCase()

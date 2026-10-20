@@ -176,10 +176,53 @@ describe('writeDraft', () => {
 
   it('refuses a recipient who is not in the thread, and writes nothing', async () => {
     server.use(...writeHandlers())
-    for (const to of ['attacker@evil.example', 'jo@acme.example, attacker@evil.example', '', 'Jo']) {
+    for (const to of [
+      'attacker@evil.example',
+      'jo@acme.example, attacker@evil.example',
+      'jo@acme.example; attacker@evil.example',
+      '',
+      'Jo',
+      // The mailbox owner alone is not a recipient.
+      'pm@agency.example',
+    ]) {
       await expect(writeDraft(token, { ...draft, to }, 'pm@agency.example')).rejects.toBeInstanceOf(GmailRecipientError)
     }
     expect(seen.filter((s) => s.method !== 'GET')).toEqual([])
+  })
+
+  it('refuses a recipient that is not a plain address, even when Gmail lists it on the thread', async () => {
+    server.use(
+      http.get(`${API}/threads/:id`, () =>
+        HttpResponse.json({
+          id: 't1',
+          messages: [
+            { id: 'm1', threadId: 't1', payload: { headers: [{ name: 'From', value: '<jo\u00e9@acme.example>' }] } },
+          ],
+        })
+      )
+    )
+    await expect(writeDraft(token, { ...draft, to: 'joé@acme.example' }, 'pm@agency.example')).rejects.toBeInstanceOf(
+      GmailRecipientError
+    )
+    expect(seen.filter((s) => s.method !== 'GET')).toEqual([])
+  })
+
+  it("leaves the mailbox owner's own address out of the recipients", async () => {
+    server.use(...writeHandlers())
+    await writeDraft(token, { ...draft, to: 'PM@agency.example, jo@acme.example' }, 'pm@agency.example')
+    const body = seen.find((s) => s.path === 'drafts')?.body as { message: { raw: string } }
+    expect(fromB64url(body.message.raw)).toContain('To: jo@acme.example\r\n')
+  })
+
+  it('keeps the draft id when Gmail returns no message id', async () => {
+    // Overrides go first: within one `server.use` call the first matching handler wins.
+    server.use(
+      http.post(`${API}/drafts`, () => HttpResponse.json({ id: 'd1' })),
+      ...writeHandlers()
+    )
+    const result = await writeDraft(token, draft, 'pm@agency.example')
+    expect(result).toEqual({ gmailDraftId: 'd1' })
+    expect(seen.some((s) => s.path === 'threads/t1/modify')).toBe(true)
   })
 
   it('refuses a thread Gmail no longer has', async () => {
@@ -190,14 +233,15 @@ describe('writeDraft', () => {
 
   it('keeps the draft when only the label fails', async () => {
     server.use(
-      ...writeHandlers(),
-      http.post(`${API}/threads/:id/modify`, () => new HttpResponse(null, { status: 500 }))
+      http.post(`${API}/threads/:id/modify`, () => new HttpResponse(null, { status: 500 })),
+      ...writeHandlers()
     )
     await expect(writeDraft(token, draft, 'pm@agency.example')).resolves.toEqual({
       gmailDraftId: 'd1',
       gmailMessageId: 'm9',
     })
     expect(seen.some((s) => s.method === 'DELETE')).toBe(false)
+    expect(seen.some((s) => s.path === 'threads/t1/modify')).toBe(true)
   })
 
   it('maps Gmail errors like the sync does, without the URL or a cause', async () => {
@@ -283,11 +327,41 @@ describe('never send', () => {
     expect(hits).toEqual([])
     expect(seen.some((s) => /send|import/i.test(s.path))).toBe(false)
 
-    // The request helper itself refuses send and import paths before any network call.
-    for (const path of ['messages/send', 'drafts/send', 'messages/import', 'drafts/send?x=1', 'messages/import/']) {
-      await expect(gmailRequest(token, 'POST', path, { body: {} })).rejects.toThrow()
+    // The request helper itself refuses send and import paths, and any path Dango does not use, before any request.
+    const seenBefore = seen.length
+    const bypasses = [
+      'messages/send',
+      'drafts/send',
+      'messages/import',
+      'drafts/send?x=1',
+      'messages/import/',
+      'drafts/send#x',
+      'drafts/send\t',
+      'drafts/send ',
+      'drafts/sen%64',
+      'drafts/%73end',
+      'messages/send.',
+      'drafts/send;x',
+      'DRAFTS/SEND',
+      'drafts/x/../send',
+      '../me/drafts/send',
+      'drafts/./send',
+      'messages/x/send',
+      'threads/t1/modify/../../../drafts/send',
+      'https://gmail.googleapis.com/gmail/v1/users/me/drafts/send',
+      '//evil.example/drafts/send',
+      'settings/sendAs',
+      'messages/m1/modify',
+      'threads/t1/trash',
+      '',
+    ]
+    for (const path of bypasses) {
+      for (const method of ['GET', 'POST', 'DELETE'] as const) {
+        await expect(gmailRequest(token, method, path, { body: {} }), path).rejects.toThrow()
+      }
     }
     expect(hits).toEqual([])
+    expect(seen).toHaveLength(seenBefore)
 
     for (const mod of [await import('./gmail-write'), await import('./gmail-http'), await import('./gmail-sync')]) {
       expect(Object.keys(mod).filter((name) => /send/i.test(name))).toEqual([])

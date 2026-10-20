@@ -4,7 +4,7 @@ import plainJson from '../../../test/fixtures/pm-pilot/gmail/plain.json'
 import quotedReplyJson from '../../../test/fixtures/pm-pilot/gmail/quoted-reply.json'
 import sentReplyJson from '../../../test/fixtures/pm-pilot/gmail/sent-reply.json'
 import vietnameseJson from '../../../test/fixtures/pm-pilot/gmail/vietnamese.json'
-import { extractNewText, type GmailThread, htmlToText, normalizeGmailThread } from './gmail-normalize'
+import { extractNewText, type GmailThread, htmlToText, normalizeGmailThread, parseAddresses } from './gmail-normalize'
 import { ClientQuestionSchema, recordId, SourceRecordSchema } from './types'
 
 const plain = plainJson as GmailThread
@@ -256,5 +256,15 @@ describe('htmlToText without DOMParser', () => {
       htmlToText(hostile)
       expect(performance.now() - start).toBeLessThan(1000)
     }
+  })
+})
+
+describe('parseAddresses', () => {
+  it('splits on commas and semicolons outside quotes', () => {
+    expect(parseAddresses('Jo <jo@acme.example>; an@acme.example, "Tran; Bo, Sr" <bo@acme.example>')).toEqual([
+      'jo@acme.example',
+      'an@acme.example',
+      'bo@acme.example',
+    ])
   })
 })

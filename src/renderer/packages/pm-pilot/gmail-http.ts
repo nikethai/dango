@@ -13,10 +13,34 @@ const RATE_LIMIT_REASONS = new Set([
 ])
 
 /**
- * Never send (slice 10 constraint): Dango only reads mail, writes drafts and sets labels. `messages/send`,
- * `drafts/send` and `messages/import` are refused here, before any request leaves.
+ * Never send (slice 10 constraint): Dango only reads mail, writes drafts and sets labels. Only the paths below are
+ * allowed, checked on the raw path and again on the URL that would be requested, so `messages/send`,
+ * `drafts/send`, `messages/import` and any encoded, dotted or appended variant are refused before any request.
  */
-const FORBIDDEN_PATH = /(^|\/)(send|import)(\/|\?|$)/i
+const ID = '[A-Za-z0-9_-]+'
+const ALLOWED_PATHS = [
+  /^profile$/,
+  /^messages$/,
+  /^history$/,
+  /^labels$/,
+  /^drafts$/,
+  new RegExp(`^drafts/${ID}$`),
+  new RegExp(`^threads/${ID}$`),
+  new RegExp(`^threads/${ID}/modify$`),
+]
+const RESERVED_SEGMENTS = new Set(['send', 'import'])
+
+function isAllowedPath(path: string): boolean {
+  if (!ALLOWED_PATHS.some((re) => re.test(path))) return false
+  if (path.split('/').some((segment) => RESERVED_SEGMENTS.has(segment.toLowerCase()))) return false
+  let url: URL
+  try {
+    url = new URL(path, `${GMAIL_API}/`)
+  } catch {
+    return false
+  }
+  return url.origin === new URL(GMAIL_API).origin && url.pathname === `${new URL(GMAIL_API).pathname}/${path}`
+}
 
 /** Gmail refused the token (401 or 403): the account needs signing in again. */
 export class GmailAuthError extends Error {
@@ -89,7 +113,7 @@ export async function gmailRequest<T>(
   path: string,
   options: GmailRequestOptions = {}
 ): Promise<T> {
-  if (FORBIDDEN_PATH.test(path)) throw new Error('Dango never sends mail')
+  if (!isAllowedPath(path)) throw new Error('Dango does not make this Gmail request')
   const { query, body, signal } = options
   try {
     return await ofetch<T>(`${GMAIL_API}/${path}`, {
