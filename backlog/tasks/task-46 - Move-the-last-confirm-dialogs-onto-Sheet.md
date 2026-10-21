@@ -4,6 +4,7 @@ title: Move the last confirm dialogs onto Sheet
 status: Ideas
 assignee: []
 created_date: '2026-10-21 02:42'
+updated_date: '2026-10-21 04:06'
 labels:
   - a11y
 dependencies: []
@@ -22,3 +23,9 @@ From slice 09 Task 6 review: three dialogs confirming the user's own action stil
 - [ ] #2 Deleting an imported source asks first
 - [ ] #3 The inventory test also flags raw Modal/Drawer.Root for decisions
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Slice 09 Task 10 adds three more confirm overlays on Mantine Modal (allow-listed in sheetInventory.test.ts): SummaryMessage delete, KnowledgeBase delete, MemoryBankWorkspace 'Clear memories'.
+<!-- SECTION:NOTES:END -->
