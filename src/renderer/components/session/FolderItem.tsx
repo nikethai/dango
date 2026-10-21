@@ -153,55 +153,58 @@ function FolderItem({
         {count}
       </Text>
 
-      {/* Hover-only + on desktop; always available on small screens + inside menu */}
-      {!implicit && onCreateChat && (
-        <Tooltip label={t('New chat')} withArrow openDelay={400}>
-          <ActionIcon
-            variant="transparent"
-            size={28}
-            color="chatbox-tertiary"
-            className={clsx(
-              'active:scale-[0.96] transition-transform',
-              isSmallScreen || menuOpened ? '' : 'group-hover/folder-item:visible invisible'
-            )}
-            aria-label={t('New chat')}
-            onClick={(event) => {
-              event.stopPropagation()
-              event.preventDefault()
-              onCreateChat()
-            }}
-          >
-            <ScalableIcon icon={IconPlus} size={15} />
-          </ActionIcon>
-        </Tooltip>
-      )}
+      {/* Hover-only + on desktop; always available on small screens + inside menu. Above phone they overlay the row's
+          end (dango-layout.css), so at the 220 px sidebar they don't squeeze the name to nothing. */}
+      <span className={clsx('project-folder-actions', (isSmallScreen || menuOpened) && 'is-shown')}>
+        {!implicit && onCreateChat && (
+          <Tooltip label={t('New chat')} withArrow openDelay={400}>
+            <ActionIcon
+              variant="transparent"
+              size={28}
+              color="chatbox-tertiary"
+              className={clsx(
+                'active:scale-[0.96] transition-transform',
+                isSmallScreen || menuOpened ? '' : 'group-hover/folder-item:visible invisible'
+              )}
+              aria-label={t('New chat')}
+              onClick={(event) => {
+                event.stopPropagation()
+                event.preventDefault()
+                onCreateChat()
+              }}
+            >
+              <ScalableIcon icon={IconPlus} size={15} />
+            </ActionIcon>
+          </Tooltip>
+        )}
 
-      {!implicit && (
-        <ActionMenu
-          type="desktop"
-          items={actionMenuItems}
-          position="bottom-start"
-          opened={menuOpened}
-          onChange={(opened) => setMenuOpened(opened)}
-        >
-          <ActionIcon
-            variant="transparent"
-            size={28}
-            color="chatbox-tertiary"
-            className={clsx(
-              'active:scale-[0.96] transition-transform',
-              isSmallScreen || menuOpened ? '' : 'group-hover/folder-item:visible invisible'
-            )}
-            aria-label={t('Scope options')}
-            onClick={(event) => {
-              event.stopPropagation()
-              event.preventDefault()
-            }}
+        {!implicit && (
+          <ActionMenu
+            type="desktop"
+            items={actionMenuItems}
+            position="bottom-start"
+            opened={menuOpened}
+            onChange={(opened) => setMenuOpened(opened)}
           >
-            <ScalableIcon icon={IconDots} size={15} />
-          </ActionIcon>
-        </ActionMenu>
-      )}
+            <ActionIcon
+              variant="transparent"
+              size={28}
+              color="chatbox-tertiary"
+              className={clsx(
+                'active:scale-[0.96] transition-transform',
+                isSmallScreen || menuOpened ? '' : 'group-hover/folder-item:visible invisible'
+              )}
+              aria-label={t('Scope options')}
+              onClick={(event) => {
+                event.stopPropagation()
+                event.preventDefault()
+              }}
+            >
+              <ScalableIcon icon={IconDots} size={15} />
+            </ActionIcon>
+          </ActionMenu>
+        )}
+      </span>
     </Flex>
   )
 }

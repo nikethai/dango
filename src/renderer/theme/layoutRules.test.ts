@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import postcss, { type AtRule, type Rule } from 'postcss'
 import { describe, expect, test } from 'vitest'
 import { createDangoMantineTheme } from './mantineTheme'
@@ -57,6 +57,28 @@ describe('phone shell rules (RS3)', () => {
     }
   })
 
+  test('more phone targets (Task 12 walk): Mantine buttons and tabs, any tab, the artifact card', () => {
+    for (const cls of [
+      '.mantine-Button-root',
+      '.mantine-Tabs-tab',
+      '[role="tab"]',
+      '.artifact-card',
+      '.settings-tabs a',
+    ]) {
+      expect(valueFor(`:root[data-layout="phone"] ${cls}`, 'min-height'), cls).toBe('44px')
+    }
+  })
+
+  test('compact controls keep their look and get a 44 px hit area at phone (chips, status line, settings chrome)', () => {
+    for (const cls of ['button.dg-chip', '.session-statusline-action']) {
+      expect(valueFor(`:root[data-layout="phone"] ${cls}`, 'position'), cls).toBe('relative')
+      expect(valueFor(`:root[data-layout="phone"] ${cls}::after`, 'height'), cls).toBe('44px')
+      expect(valueFor(`:root[data-layout="phone"] ${cls}::after`, 'content'), cls).toBe('""')
+    }
+    // 32 px button + 6 px on each side.
+    expect(valueFor(':root[data-layout="phone"] .settings-chrome-btn::after', 'inset')).toBe('-6px')
+  })
+
   test('tab colours: active green text, inactive muted, raised surface, hairline top border', () => {
     // More specific than index.css's html[data-theme='dark'] a, which would otherwise win.
     expect(valueFor('.dg-tabbar a.dg-tabbar__tab', 'color')).toBe('var(--dango-muted)')
@@ -111,6 +133,12 @@ describe('reduced motion (A11Y1 rule 2)', () => {
       // Spinners stop turning but stay visible; pulses hold full opacity.
       '.animate-spin',
       '.animate-pulse',
+      // Task 12 walk: message actions slide in on hover, the chat column and the docked inspector change width
+      // (the aside's inline width transition), the artifact card fades its hover.
+      '.msg-actions',
+      '.session-main-col',
+      '.workspace-panel',
+      '.artifact-card',
     ]) {
       const decls = reducedMotionDecls(selector)
       expect({ selector, animation: decls.animation }).toEqual({ selector, animation: 'none !important' })
@@ -135,5 +163,44 @@ describe('reduced motion (A11Y1 rule 2)', () => {
 
   test('rail buttons do not shrink when pressed', () => {
     expect(reducedMotionDecls('.studio-rail button:active').transform).toBe('none !important')
+  })
+})
+
+describe('focus rings (A11Y1 rule 3, Task 12 walk)', () => {
+  test('a first-run step title takes focus without a ring (it is not a control; first launch showed one)', () => {
+    expect(valueFor('.dg-first-run__title:focus', 'outline')).toBe('none')
+  })
+
+  test('scrollers that take Tab (react-virtuoso lists) show the focus ring', () => {
+    expect(valueFor('[data-virtuoso-scroller]:focus-visible', 'outline')).toBe('2px solid var(--dango-focus)')
+  })
+
+  test('the knowledge row toggle is reset by a class, so the focus ring still applies', () => {
+    expect(valueFor('.dango-knowledge-toggle', 'all')).toBe('unset')
+    expect(valueFor('.dango-knowledge-toggle:focus-visible', 'outline')).toBe('2px solid var(--dango-focus)')
+  })
+
+  test('no inline all: unset on an element (it removes the focus ring)', () => {
+    const walk = (dir: string): string[] =>
+      readdirSync(dir).flatMap((f) => {
+        const p = join(dir, f)
+        return statSync(p).isDirectory() ? walk(p) : /\.tsx$/.test(f) && !/\.test\.tsx$/.test(f) ? [p] : []
+      })
+    const offenders = walk(resolve(process.cwd(), 'src/renderer')).filter((p) =>
+      /all:\s*['"]unset['"]/.test(readFileSync(p, 'utf8'))
+    )
+    expect(offenders).toEqual([])
+  })
+})
+
+describe('sidebar rows at the 220 px default (R15, Task 12 walk)', () => {
+  test('scope row hover actions overlay the row end above phone, so the name keeps its room', () => {
+    expect(valueFor(':root:not([data-layout="phone"]) .project-folder-actions', 'position')).toBe('absolute')
+    expect(valueFor(':root:not([data-layout="phone"]) .project-folder-row', 'position')).toBe('relative')
+  })
+
+  test('section header buttons sit above the stretched toggle, not inside it', () => {
+    expect(valueFor('.rail-section-toggle::after', 'inset')).toBe('0')
+    expect(valueFor('.rail-section-trail .mantine-ActionIcon-root', 'z-index')).toBe('1')
   })
 })

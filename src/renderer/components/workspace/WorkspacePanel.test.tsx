@@ -242,6 +242,46 @@ describe('WorkspacePanel by window size (slice 9 RS1, RS2)', () => {
     composer.remove()
   })
 
+  it('wide: Esc closes the docked pane and focus goes back to what opened it (Task 12 walk: it fell to body)', async () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+    const store = await setup()
+    expect(document.activeElement).toBe(screen.getByRole('complementary', { name: 'Artifact' }))
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    await act(async () => {})
+    expect(store.getState().workspacePanel).toBeNull()
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
+  })
+
+  it('wide: closing the docked pane after its opener is gone puts focus on #main', async () => {
+    const main = document.createElement('div')
+    main.id = 'main'
+    main.tabIndex = -1
+    document.body.appendChild(main)
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+    await setup()
+    opener.remove()
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    await act(async () => {})
+    expect(document.activeElement).toBe(main)
+    main.remove()
+  })
+
+  it('wide: closing the pane while focus is elsewhere (the composer) leaves focus there', async () => {
+    const store = await setup()
+    const composer = document.createElement('textarea')
+    document.body.appendChild(composer)
+    composer.focus()
+    act(() => store.getState().setWorkspacePanel(null))
+    await act(async () => {})
+    expect(document.activeElement).toBe(composer)
+    composer.remove()
+  })
+
   it('full screen from wide does not carry into the sheet', async () => {
     const store = await setup()
     fireEvent.click(screen.getByRole('button', { name: 'Full screen' }))

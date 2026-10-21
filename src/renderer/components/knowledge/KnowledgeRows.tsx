@@ -84,8 +84,7 @@ function KnowledgeRow({ item, onNoneLeft }: { item: KnowledgeItem; onNoneLeft?: 
             type="button"
             aria-expanded={open}
             onClick={() => setOpen(!open)}
-            className="dg-type-body"
-            style={{ all: 'unset', cursor: 'pointer', display: 'block' }}
+            className="dg-type-body dango-knowledge-toggle"
           >
             {item.text}
           </button>

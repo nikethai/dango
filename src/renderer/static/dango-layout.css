@@ -66,6 +66,11 @@
   color: var(--dango-ink);
 }
 
+/* The step title takes focus on each step (so the step is read); it is not a control, so no ring. */
+.dg-first-run__title:focus {
+  outline: none;
+}
+
 .dg-first-run__lead {
   margin: 0;
   color: var(--dango-ink-2);
@@ -277,6 +282,31 @@
   outline: none;
 }
 
+/* react-virtuoso scrollers (sidebar lists, the chat thread) are Tab stops for keyboard scrolling: show the ring
+   (!important: Virtuoso sets an inline outline: none). */
+[data-virtuoso-scroller]:focus-visible {
+  outline: 2px solid var(--dango-focus) !important;
+  outline-offset: -2px;
+}
+
+/* A knowledge row's text opens its detail. Reset by class (an inline all: unset would also remove the ring). */
+.dango-knowledge-toggle {
+  all: unset;
+  display: block;
+  cursor: pointer;
+}
+
+.dango-knowledge-toggle:focus-visible {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: 2px;
+  border-radius: var(--dango-radius-sm);
+}
+
+/* A shortcut hint inside a primary button: muted text fails contrast on green. */
+.dg-btn--primary .dg-kbd {
+  color: var(--dango-on-green);
+}
+
 /* Phone (RS3): one pane, bottom tabs (PhoneTabBar), 44 px targets. */
 
 /* The tab bar carries the safe-area bottom at phone, so .App (index.css) stops padding it. */
@@ -356,6 +386,126 @@
   background: var(--dango-green);
 }
 
+/* Settings › Agents: the tile is a card whose main button (the agent's name) is stretched over it, so the star,
+   edit and delete buttons are siblings, not buttons inside a button (agents-surfaces.css styles the card). */
+.agent-tile-main {
+  position: static;
+  flex: 1 1 auto;
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-tile-main::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.agent-tile-main:focus-visible {
+  outline: none;
+}
+
+.agent-tile-main:focus-visible::after {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: 2px;
+}
+
+.agent-tile-actions {
+  position: relative;
+  z-index: 1;
+}
+
+/* Hidden until hover; a keyboard user reaching them sees them too. */
+.agent-tile:focus-within .agent-tile-icon-btn:not(.is-starred) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Sidebar section headers (SectionHeader): the toggle's hit area covers the header; New scope, archive and clean up
+   sit above it as siblings (they used to be buttons inside the toggle button). */
+.rail-section {
+  position: relative;
+}
+
+.rail-section-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rail-section-toggle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--dango-radius-sm);
+}
+
+.rail-section-toggle:focus-visible {
+  outline: none;
+}
+
+.rail-section-toggle:focus-visible::after {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: -2px;
+}
+
+.rail-section-trail .mantine-ActionIcon-root {
+  position: relative;
+  z-index: 1;
+}
+
+.rail-section-chevron {
+  pointer-events: none;
+}
+
+/* Sidebar scope rows (FolderItem): above phone the hover actions (New chat, Scope options) overlay the row's end
+   instead of reserving 62 px, so at the default 220 px sidebar a client scope's name is not squeezed to nothing. */
+.project-folder-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+:root:not([data-layout="phone"]) .project-folder-row {
+  position: relative;
+}
+
+:root:not([data-layout="phone"]) .project-folder-actions {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  border-radius: var(--dango-radius-sm);
+}
+
+:root:not([data-layout="phone"]) .project-folder-row:hover .project-folder-actions,
+:root:not([data-layout="phone"]) .project-folder-actions.is-shown {
+  background: inherit;
+}
+
+/* Reduced motion, Task 12 walk: message actions slide in on hover, the chat column and the docked inspector change
+   width (the aside's inline width transition), the artifact card fades its hover. Kept before the rules for the same
+   elements below (lint: no descending specificity); !important wins anyway. */
+@media (prefers-reduced-motion: reduce) {
+  .msg-actions,
+  .session-main-col,
+  .workspace-panel,
+  .artifact-card {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 /* Phone targets: buttons, rows and icon buttons at least 44 px (icon buttons also 44 px wide). */
 :root[data-layout="phone"] .dg-btn,
 :root[data-layout="phone"] .dg-btn--icon,
@@ -384,6 +534,44 @@
 
 :root[data-layout="phone"] .dango-inspector-sheet .workspace-action-btn {
   min-width: 44px;
+}
+
+/* More phone targets found in the Task 12 walk: Mantine buttons and tabs (settings, sheets), the scope page's tabs,
+   the artifact card in a reply. */
+:root[data-layout="phone"] .mantine-Button-root,
+:root[data-layout="phone"] .mantine-Tabs-tab,
+:root[data-layout="phone"] [role="tab"],
+:root[data-layout="phone"] .artifact-card {
+  min-height: 44px;
+}
+
+/* Settings section switchers (Privacy · Memory · Sync): links, centred in their 44 px. */
+:root[data-layout="phone"] .settings-tabs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* Compact controls keep their size and get a 44 px hit area: chips used as buttons (suggestions, filters, search
+   scopes) and the composer status line. Settings' back and close already extend theirs to 40 px; 44 at phone. */
+:root[data-layout="phone"] button.dg-chip,
+:root[data-layout="phone"] .session-statusline-action {
+  position: relative;
+}
+
+:root[data-layout="phone"] button.dg-chip::after,
+:root[data-layout="phone"] .session-statusline-action::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 44px;
+  transform: translateY(-50%);
+}
+
+:root[data-layout="phone"] .settings-chrome-btn::after {
+  inset: -6px;
 }
 
 /* Inspector (InspectorFrame): docked at wide, a right sheet at medium, a bottom sheet at phone. */

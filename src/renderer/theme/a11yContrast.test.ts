@@ -20,6 +20,7 @@ const PAIRS: Array<[fg: DangoColor, bg: DangoColor, min: number, why: string]> =
   ['green', 'raised', 3, 'progress dots, switch'],
   ['green', 'surface', 3, 'progress dots, switch'],
   ['on-blue', 'blue', 4.5, 'text on blue'],
+  ['on-green', 'green', 4.5, 'text on green: primary buttons and their shortcut hint'],
 ]
 
 describe('contrast pairs (A11Y1 rule 5)', () => {
@@ -97,5 +98,11 @@ describe('phone targets in the moved sheets and the inspector sheet (A11Y1 rule 
       expect(layoutValue(`${phone} .dango-inspector-sheet ${cls}`, 'min-height'), cls).toBe('44px')
     }
     expect(layoutValue(`${phone} .dango-inspector-sheet .workspace-action-btn`, 'min-width')).toBe('44px')
+  })
+})
+
+describe('text inside primary buttons (A11Y1 rule 5, Task 12 walk)', () => {
+  test('a shortcut hint in a primary button uses the on-green text colour, not muted (muted on green fails)', () => {
+    expect(layoutValue('.dg-btn--primary .dg-kbd', 'color')).toBe('var(--dango-on-green)')
   })
 })

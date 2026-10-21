@@ -179,12 +179,36 @@ function WorkspacePanel({ session }: { session?: Session }) {
   // The docked pane takes focus when it opens, not on each update (a streaming artifact replaces `panel` per token)
   // nor when the window size changes; a sheet places first focus itself.
   const hasPanel = Boolean(panel)
+  // What had focus when the docked pane took it; closing the pane gives focus back (a sheet does this itself).
+  const openerRef = useRef<HTMLElement | null>(null)
+  const wasOpen = useRef(false)
   // biome-ignore lint/correctness/useExhaustiveDependencies: only on open
   useEffect(() => {
     if (docked && open && hasPanel && panelRef.current) {
+      const active = document.activeElement
+      openerRef.current =
+        active instanceof HTMLElement && active !== document.body && !panelRef.current.contains(active) ? active : null
       panelRef.current.focus({ preventScroll: true })
     }
   }, [open, hasPanel])
+
+  // Closing the docked pane while focus is in it (Esc, Close) would leave focus in a hidden aside, then on the body:
+  // back to the opener, or #main when the opener is gone. Focus elsewhere (the composer) stays where it is.
+  useEffect(() => {
+    if (hasPanel) {
+      wasOpen.current = true
+      return
+    }
+    if (!wasOpen.current) return
+    wasOpen.current = false
+    const opener = openerRef.current
+    openerRef.current = null
+    const pane = panelRef.current
+    const active = document.activeElement
+    if (!pane || !active || !(active === document.body || pane.contains(active))) return
+    if (opener?.isConnected) opener.focus({ preventScroll: true })
+    else document.getElementById('main')?.focus({ preventScroll: true })
+  }, [hasPanel])
 
   const onResizePointerDown = useCallback(
     (e: React.PointerEvent) => {
