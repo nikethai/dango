@@ -85,4 +85,25 @@ describe('a failed Always grant really asks again', () => {
     expect(requestToolPermissionMock).toHaveBeenCalledTimes(2)
     expect(persistedState().approvedTools?.['sess-1:browser_click']).toBeUndefined()
   })
+
+  it('audits a grant that was not saved as allowed once, in a scope or a session', async () => {
+    failWrites()
+    await (wrapToolsWithApproval('sess-1', tools(), { scopeId: 's1' }).browser_click as Exec).execute({}, {})
+    await (wrapToolsWithApproval('sess-1', tools()).browser_click as Exec).execute({}, {})
+    const entries = toolApprovalStore.getState().auditLog.filter((e) => e.toolName === 'browser_click')
+    expect(entries.map((e) => [e.scope, e.decision])).toEqual([
+      ['once', 'allow'],
+      ['once', 'allow'],
+    ])
+  })
+
+  it('audits a saved grant by where it was saved', async () => {
+    await (wrapToolsWithApproval('sess-1', tools(), { scopeId: 's1' }).browser_click as Exec).execute({}, {})
+    await (wrapToolsWithApproval('sess-2', tools()).browser_click as Exec).execute({}, {})
+    const entries = toolApprovalStore.getState().auditLog.filter((e) => e.toolName === 'browser_click')
+    expect(entries.map((e) => [e.scope, e.decision])).toEqual([
+      ['scope', 'allow'],
+      ['session', 'allow'],
+    ])
+  })
 })

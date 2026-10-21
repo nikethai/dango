@@ -200,7 +200,8 @@ export function wrapToolsWithApproval(
                     else store.revokeScopeGrant(scopeId, toolName)
                     notifyAlwaysNotSaved(toolName)
                   }
-                  audit('scope', 'allow')
+                  // A grant that was not saved let only this call run, and the log says so.
+                  audit(stored ? 'scope' : 'once', 'allow')
                 } else {
                   const store = toolApprovalStore.getState()
                   const previous = getToolApproval(sessionId, toolName)
@@ -216,7 +217,8 @@ export function wrapToolsWithApproval(
                     else store.removeApproval(sessionId, toolName)
                     notifyAlwaysNotSaved(toolName)
                   }
-                  audit('session', 'allow')
+                  // A grant that was not saved let only this call run, and the log says so.
+                  audit(stored ? 'session' : 'once', 'allow')
                 }
               } else {
                 audit('once', 'allow')

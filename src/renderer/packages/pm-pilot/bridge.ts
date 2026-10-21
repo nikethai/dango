@@ -50,13 +50,7 @@ export {
   sourcesStore,
   updateSource,
 } from '@/packages/sources'
-export {
-  backgroundModelChoice,
-  hasUsableModel,
-  isLocalModel,
-  isLocalModelIn,
-  LOCAL_PROVIDERS,
-} from '@/packages/sources/model-check'
+export { backgroundModelChoice, hasUsableModel, isLocalModelIn } from '@/packages/sources/model-check'
 export { pushUndo } from '@/packages/undo'
 
 // Slice 3 scopes, read outside React. Lazy: the scope hooks pull in Jotai atoms and storage (preflight R4).
