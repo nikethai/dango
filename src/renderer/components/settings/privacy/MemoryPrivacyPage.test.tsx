@@ -62,7 +62,13 @@ vi.mock('@/stores/settingsStore', async () => {
 })
 
 import { emptyKnowledgeState } from '@shared/types/knowledge'
-import { _resetKnowledgeForTests, commitKnowledge, startKnowledgeOver } from '@/packages/knowledge/store'
+import {
+  _resetKnowledgeForTests,
+  commitKnowledge,
+  ensureKnowledgeLoaded,
+  knowledgeStore,
+  startKnowledgeOver,
+} from '@/packages/knowledge/store'
 import { getRaw, putRaw, putRawText, resetTestStorage } from '@/packages/knowledge/test-storage'
 import { settingsStore } from '@/stores/settingsStore'
 import { DontSuggestList } from './DontSuggestList'
@@ -249,6 +255,18 @@ describe('MemoryPrivacyPage', () => {
       expect(buttons.map((b) => b.textContent)).toEqual(['Cancel', 'Delete and start over'])
       expect(document.activeElement).toBe(buttons[0])
       expect(buttons[1].className).toBe('dg-btn dg-btn--danger')
+    })
+
+    it('a document that became unreadable after this window loaded shows the row when the page opens', async () => {
+      resetTestStorage()
+      _resetKnowledgeForTests()
+      await ensureKnowledgeLoaded()
+      expect(knowledgeStore.getState().unreadable).toBe(false)
+      // Another window (or a hand edit) corrupts the stored document after this window loaded it.
+      putRaw('knowledge', null)
+      putRawText('knowledge', '{"items": [')
+      renderPage()
+      await waitFor(() => expect(screen.getByText("Knowledge can't be read")).toBeTruthy())
     })
 
     it('Esc and Cancel close the sheet without starting over', async () => {

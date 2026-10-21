@@ -39,8 +39,9 @@ export function MemoryPrivacyPage() {
   const unreadable = useStore(knowledgeStore, (s) => s.unreadable)
   const [startOverOpen, setStartOverOpen] = useState(false)
   useEffect(() => {
-    // Loads knowledge so an unreadable store shows here; a failed read is the flag itself.
-    ensureKnowledgeLoaded().catch(() => undefined)
+    // Re-reads knowledge so an unreadable store shows here, even one that broke after this window loaded it;
+    // a failed read is the flag itself.
+    ensureKnowledgeLoaded({ fresh: true }).catch(() => undefined)
   }, [])
   const trustLine =
     trustLevel === 'auto'
