@@ -1,10 +1,8 @@
 import NiceModal, { useModal } from '@ebay/nice-modal-react'
-import { Box, Button, Group, Slider, Stack, Text, UnstyledButton } from '@mantine/core'
 import { IconTrash } from '@tabler/icons-react'
-import clsx from 'clsx'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AdaptiveModal } from '@/components/common/AdaptiveModal'
+import { Sheet } from '@/components/ui/Sheet'
 import { trackingEvent } from '@/packages/event'
 import { useSessionList } from '@/stores/chatStore'
 import { clearConversationList } from '@/stores/sessionActions'
@@ -12,7 +10,7 @@ import * as toastActions from '@/stores/toastActions'
 
 /**
  * Product clean-up: pick how many newest chats to keep.
- * Small lists use chips; large lists use a calm slider (never a red “keep” control).
+ * Small lists use chips; large lists use a calm slider (never a red “keep” control). A sheet (A11Y1 rule 4).
  */
 const ClearSessionList = NiceModal.create(() => {
   const modal = useModal()
@@ -31,6 +29,7 @@ const ClearSessionList = NiceModal.create(() => {
 
   const [keepCount, setKeepCount] = useState(defaultKeep)
   const [submitting, setSubmitting] = useState(false)
+  const keepLabelId = useId()
 
   useEffect(() => {
     setKeepCount(defaultKeep)
@@ -67,9 +66,7 @@ const ClearSessionList = NiceModal.create(() => {
       await clearConversationList(keep)
       trackingEvent('clear_conversation_list', { event_category: 'user' })
       toastActions.add(
-        keep === 0
-          ? t('All conversations deleted')
-          : t('Deleted {{count}} older conversations', { count: remove })
+        keep === 0 ? t('All conversations deleted') : t('Deleted {{count}} older conversations', { count: remove })
       )
       handleClose()
     } catch (err) {
@@ -81,142 +78,133 @@ const ClearSessionList = NiceModal.create(() => {
 
   if (total <= 1) {
     return (
-      <AdaptiveModal
+      <Sheet
         opened={modal.visible}
         onClose={handleClose}
-        centered
-        size="sm"
         title={t('Clean up chats')}
-        classNames={{ content: 'cleanup-modal' }}
+        actions={
+          <button type="button" className="dg-btn dg-btn--primary" onClick={handleClose}>
+            {t('Done')}
+          </button>
+        }
       >
-        <Stack gap="md">
-          <Text size="sm" c="chatbox-secondary" className="text-pretty leading-relaxed">
-            {total === 0
-              ? t('You have no conversations yet.')
-              : t('You only have one conversation — nothing to clean up.')}
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="default" onClick={handleClose}>
-              {t('Done')}
-            </Button>
-          </Group>
-        </Stack>
-      </AdaptiveModal>
+        <p className="dg-type-body dango-cleanup__text">
+          {total === 0
+            ? t('You have no conversations yet.')
+            : t('You only have one conversation — nothing to clean up.')}
+        </p>
+      </Sheet>
     )
   }
 
+  // Deleting chats is destructive: first focus is the safe action (Cancel), and Esc cancels.
   return (
-    <AdaptiveModal
+    <Sheet
       opened={modal.visible}
       onClose={handleClose}
-      centered
-      size="sm"
       title={t('Clean up chats')}
-      classNames={{ content: 'cleanup-modal' }}
+      actions={
+        <>
+          <button
+            type="button"
+            className="dg-btn dg-btn--ghost"
+            data-autofocus
+            onClick={handleClose}
+            disabled={submitting}
+          >
+            {t('Cancel')}
+          </button>
+          <button
+            type="button"
+            className="dg-btn dg-btn--danger"
+            onClick={() => void clean()}
+            disabled={!canClean || submitting}
+            aria-busy={submitting || undefined}
+          >
+            <IconTrash size={15} stroke={1.75} aria-hidden="true" />
+            {keep === 0 ? t('Delete all') : t('Delete {{count}}', { count: remove })}
+          </button>
+        </>
+      }
     >
-      <Stack gap="md" className="cleanup-modal-body">
-        <Text size="sm" c="chatbox-secondary" className="text-pretty leading-relaxed">
+      <div className="dango-cleanup">
+        <p className="dg-type-body dango-cleanup__text">
           {t('Keep your newest chats. Older ones will be permanently deleted.', {
             total,
           })}
-        </Text>
+        </p>
 
-        <Text size="xs" c="chatbox-tertiary" className="tabular-nums">
-          {t('{{count}} conversations total', { count: total })}
-        </Text>
+        <p className="dg-type-caption dango-cleanup__count">{t('{{count}} conversations total', { count: total })}</p>
 
-        <Stack gap="xs">
-          <Group justify="space-between" align="baseline">
-            <Text size="sm" fw={600}>
+        <div className="dango-cleanup__keep">
+          <div className="dango-cleanup__keep-head">
+            <span id={keepLabelId} className="dg-type-body dango-cleanup__keep-label">
               {t('Keep newest')}
-            </Text>
-            <Text size="sm" fw={650} className="tabular-nums text-[var(--chatbox-tint-primary)]">
-              {keep === total
-                ? t('All')
-                : keep === 0
-                  ? t('None')
-                  : t('{{count}} of {{total}}', { count: keep, total })}
-            </Text>
-          </Group>
+            </span>
+            <span className="dg-type-body dango-cleanup__count">
+              {keep === total ? t('All') : keep === 0 ? t('None') : t('{{count}} of {{total}}', { count: keep, total })}
+            </span>
+          </div>
 
           {useChips ? (
-            <div className="cleanup-keep-chips" role="listbox" aria-label={t('Keep newest')}>
+            <div className="dango-cleanup__chips" role="group" aria-labelledby={keepLabelId}>
               {chipOptions.map((n) => {
                 const selected = keep === n
-                const label =
-                  n === total ? t('All') : n === 0 ? t('None') : t('{{count}} newest', { count: n })
+                const label = n === total ? t('All') : n === 0 ? t('None') : t('{{count}} newest', { count: n })
                 return (
-                  <UnstyledButton
+                  <button
                     key={n}
                     type="button"
-                    role="option"
-                    aria-selected={selected}
-                    className={clsx('cleanup-keep-chip', selected && 'is-selected')}
+                    aria-pressed={selected}
+                    className="dg-btn dango-cleanup__chip"
                     onClick={() => setKeepCount(n)}
                   >
                     {label}
-                  </UnstyledButton>
+                  </button>
                 )
               })}
             </div>
           ) : (
-            <Slider
-              value={keep}
-              onChange={setKeepCount}
-              min={0}
-              max={total}
-              step={1}
-              label={null}
-              marks={[
-                { value: 0, label: t('None') },
-                { value: total, label: t('All') },
-              ]}
-              color="chatbox-brand"
-              size="sm"
-              className="cleanup-keep-slider mb-1"
-            />
+            <div className="dango-cleanup__range">
+              <input
+                type="range"
+                aria-labelledby={keepLabelId}
+                min={0}
+                max={total}
+                step={1}
+                value={keep}
+                onChange={(e) => setKeepCount(Number(e.currentTarget.value))}
+              />
+              <div className="dg-type-caption dango-cleanup__marks" aria-hidden="true">
+                <span>{t('None')}</span>
+                <span>{t('All')}</span>
+              </div>
+            </div>
           )}
-        </Stack>
+        </div>
 
-        <Box className={clsx('cleanup-summary', remove > 0 ? 'is-destructive' : 'is-idle')}>
+        <div className={remove > 0 ? 'dango-cleanup__summary is-destructive' : 'dango-cleanup__summary'}>
           {remove > 0 ? (
-            <Stack gap={6}>
-              <Text size="sm" fw={600} className="leading-snug">
+            <>
+              <p className="dg-type-body dango-cleanup__summary-title">
                 {keep === 0
                   ? t('Delete all {{total}} conversations', { total })
                   : t('{{remove}} older chats will be deleted', { remove })}
-              </Text>
-              <Text size="xs" c="chatbox-secondary" className="leading-snug">
+              </p>
+              <p className="dg-type-caption">
                 {keep === 0
                   ? t('This cannot be undone.')
                   : t('Keeping {{keep}} newest. This cannot be undone.', { keep })}
-              </Text>
-            </Stack>
+              </p>
+            </>
           ) : (
-            <Text size="sm" c="chatbox-secondary" className="leading-snug">
+            <p className="dg-type-body dango-cleanup__text">
               {t('Select fewer chats to keep if you want to free space.')}
-            </Text>
+            </p>
           )}
-        </Box>
-
-        <Group justify="flex-end" gap="sm" mt={4}>
-          <Button variant="default" onClick={handleClose} disabled={submitting}>
-            {t('Cancel')}
-          </Button>
-          <Button
-            color="red"
-            leftSection={<IconTrash size={15} stroke={1.75} />}
-            onClick={() => void clean()}
-            loading={submitting}
-            disabled={!canClean}
-          >
-            {keep === 0
-              ? t('Delete all')
-              : t('Delete {{count}}', { count: remove })}
-          </Button>
-        </Group>
-      </Stack>
-    </AdaptiveModal>
+        </div>
+      </div>
+    </Sheet>
   )
 })
 

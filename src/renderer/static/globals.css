@@ -4787,66 +4787,6 @@ button.mantine-Button-root[data-variant="filled"] .mantine-Button-label {
   text-transform: lowercase;
 }
 
-/* ── Clean up chats modal — calm product, not red-slider joke ── */
-.cleanup-modal-body {
-  min-width: 0;
-}
-
-.cleanup-keep-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.cleanup-keep-chip {
-  min-height: 34px;
-  padding: 0.4rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid var(--chatbox-border-primary);
-  background: var(--chatbox-background-secondary);
-  color: var(--chatbox-tint-secondary);
-  font-size: 0.8125rem;
-  font-weight: 550;
-  letter-spacing: -0.01em;
-  transition:
-    background-color 120ms var(--chatbox-ease),
-    border-color 120ms var(--chatbox-ease),
-    color 120ms var(--chatbox-ease);
-}
-
-.cleanup-keep-chip:hover {
-  background: var(--chatbox-background-tertiary);
-  color: var(--chatbox-tint-primary);
-}
-
-.cleanup-keep-chip.is-selected {
-  border-color: color-mix(in srgb, var(--chatbox-tint-brand) 45%, var(--chatbox-border-primary));
-  background: color-mix(in srgb, var(--chatbox-tint-brand) 12%, var(--chatbox-background-secondary));
-  color: var(--chatbox-tint-primary);
-  font-weight: 600;
-}
-
-.cleanup-keep-slider .mantine-Slider-markLabel {
-  font-size: 0.65rem;
-  color: var(--chatbox-tint-tertiary);
-}
-
-.cleanup-summary {
-  border-radius: 10px;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--chatbox-border-primary);
-  background: var(--chatbox-background-secondary);
-}
-
-.cleanup-summary.is-destructive {
-  border-color: color-mix(in srgb, var(--chatbox-tint-error, #d65c63) 28%, var(--chatbox-border-primary));
-  background: color-mix(in srgb, var(--chatbox-tint-error, #d65c63) 7%, var(--chatbox-background-secondary));
-}
-
-.cleanup-summary.is-idle {
-  opacity: 0.95;
-}
-
 /* ── App dialogs (desktop, not web marketing modals) ── */
 .studio-modal-content,
 .app-dialog-content,
