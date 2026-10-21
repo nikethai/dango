@@ -105,8 +105,10 @@ export default function useShortcut() {
       }
     }
     // CmdOrCtrl + \ : the sidebar toggle (peek at medium, expand or collapse at wide, nothing at phone). The physical
-    // Backslash key counts too, and AltGr is allowed, for layouts where \ is not a plain key.
-    if ((e.key === '\\' || e.code === 'Backslash') && ctrlKey && !shift) {
+    // Backslash key counts too, for layouts where \ is not a plain key. Off Mac, AltGr arrives as Ctrl+Alt and is how
+    // many layouts (German, French, Nordic…) type \, so Alt or AltGraph means the user is typing, not toggling.
+    const altGr = getOS() !== 'Mac' && (e.altKey || e.getModifierState?.('AltGraph') === true)
+    if ((e.key === '\\' || e.code === 'Backslash') && ctrlKey && !shift && !altGr) {
       e.preventDefault()
       if (!hasOpenSheet()) toggleSidebar()
       return

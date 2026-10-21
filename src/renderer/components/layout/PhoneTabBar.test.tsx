@@ -57,6 +57,17 @@ const nav = () => screen.getByRole('navigation', { name: 'Main' })
 const link = (name: string | RegExp) => within(nav()).getByRole('link', { name })
 
 describe('PhoneTabBar (RS3)', () => {
+  it('marks <html> with data-tabbar only while it shows (phone), and clears it on unmount', () => {
+    const root = document.documentElement
+    const { unmount } = render(<PhoneTabBar />)
+    expect(root.dataset.tabbar).toBe('1')
+    unmount()
+    expect(root.dataset.tabbar).toBeUndefined()
+    h.mode = 'medium'
+    render(<PhoneTabBar />)
+    expect(root.dataset.tabbar).toBeUndefined()
+  })
+
   it('is a nav named Main with Review, Chat, Scopes and Settings in that order', () => {
     render(<PhoneTabBar />)
     const names = within(nav())

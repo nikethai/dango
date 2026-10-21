@@ -20,9 +20,10 @@ describe('__root layout wiring (RS1, RS2)', () => {
     expect(root).not.toContain('220ms')
   })
 
-  it('turns data-layout off in the Quick Chat window and on first run', () => {
+  it('turns data-layout off in the Quick Chat window only; first run keeps it (44 px phone targets)', () => {
     expect(root).toContain('useLayoutMode()')
-    expect(root).toContain('const suppressLayoutAttribute = isQuickRoute || isFirstRunRoute')
+    expect(root).toContain('const suppressLayoutAttribute = isQuickRoute')
+    expect(root).not.toContain('isQuickRoute || isFirstRunRoute')
     expect(root).toContain('setLayoutAttributeSuppressed(suppressLayoutAttribute)')
   })
 })

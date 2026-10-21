@@ -1,6 +1,6 @@
 import { Link, useLocation } from '@tanstack/react-router'
 import { Inbox, Layers, type LucideIcon, MessageCircle, Settings } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLayoutMode } from '@/hooks/useLayoutMode'
 import { useReviewWaitingCount } from '@/packages/review/hooks'
@@ -69,6 +69,16 @@ export function PhoneTabBar() {
 
   // A deleted chat falls back to /new (the list is unknown until loaded).
   const lastSessionId = chatId && (!sessionMetaList || sessionMetaList.some((m) => m.id === chatId)) ? chatId : null
+
+  // dango-layout.css lets the bar, not .App, pad the safe-area bottom only while the bar shows.
+  useLayoutEffect(() => {
+    if (mode !== 'phone') return
+    const root = document.documentElement
+    root.dataset.tabbar = '1'
+    return () => {
+      delete root.dataset.tabbar
+    }
+  }, [mode])
 
   if (mode !== 'phone') return null
 

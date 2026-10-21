@@ -71,7 +71,7 @@ describe('useLayoutMode', () => {
     expect(root.dataset.layout).toBeUndefined()
   })
 
-  it('removes data-layout while suppressed (Quick Chat window found late, first run)', () => {
+  it('removes data-layout while suppressed (Quick Chat window found late)', () => {
     render(<Probe />)
     expect(root.dataset.layout).toBe('wide')
     setLayoutAttributeSuppressed(true)

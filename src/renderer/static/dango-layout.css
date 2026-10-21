@@ -309,8 +309,9 @@
 
 /* Phone (RS3): one pane, bottom tabs (PhoneTabBar), 44 px targets. */
 
-/* The tab bar carries the safe-area bottom at phone, so .App (index.css) stops padding it. */
-:root[data-layout="phone"] .App {
+/* The tab bar carries the safe-area bottom at phone, so .App (index.css) stops padding it. Only while the bar shows
+   (PhoneTabBar sets data-tabbar): first run has none and keeps .App's padding. */
+:root[data-layout="phone"][data-tabbar] .App {
   padding-bottom: 0;
 }
 
@@ -542,6 +543,13 @@
 :root[data-layout="phone"] .mantine-Tabs-tab,
 :root[data-layout="phone"] [role="tab"],
 :root[data-layout="phone"] .artifact-card {
+  min-height: 44px;
+}
+
+/* First run at phone: the key and scope name fields and the "Ollama and other providers" link (its text stays put,
+   the button grows around it). Buttons are covered above. */
+:root[data-layout="phone"] .dg-first-run .mantine-Input-input,
+:root[data-layout="phone"] .dg-first-run__other {
   min-height: 44px;
 }
 

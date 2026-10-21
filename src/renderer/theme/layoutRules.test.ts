@@ -26,8 +26,10 @@ const SAFE_BOTTOM =
   'var(--mobile-safe-area-inset-bottom-layout, var(--mobile-safe-area-inset-bottom, env(safe-area-inset-bottom)))'
 
 describe('phone shell rules (RS3)', () => {
-  test('the tab bar, not .App, pads the safe-area bottom at phone', () => {
-    expect(valueFor(':root[data-layout="phone"] .App', 'padding-bottom')).toBe('0')
+  test('the tab bar, not .App, pads the safe-area bottom at phone, only where the tab bar shows (not first run)', () => {
+    expect(valueFor(':root[data-layout="phone"][data-tabbar] .App', 'padding-bottom')).toBe('0')
+    // Without the tab bar (first run) .App keeps its safe-area padding.
+    expect(valueFor(':root[data-layout="phone"] .App', 'padding-bottom')).toBeUndefined()
     expect(valueFor('.dg-tabbar', 'padding-bottom')).toBe(SAFE_BOTTOM)
   })
 
@@ -65,6 +67,12 @@ describe('phone shell rules (RS3)', () => {
       '.artifact-card',
       '.settings-tabs a',
     ]) {
+      expect(valueFor(`:root[data-layout="phone"] ${cls}`, 'min-height'), cls).toBe('44px')
+    }
+  })
+
+  test('first run at phone: text fields and the "other providers" link are 44 px too (I2)', () => {
+    for (const cls of ['.dg-first-run .mantine-Input-input', '.dg-first-run__other']) {
       expect(valueFor(`:root[data-layout="phone"] ${cls}`, 'min-height'), cls).toBe('44px')
     }
   })

@@ -113,10 +113,7 @@ export function useLayoutMode(): LayoutMode {
   return mode
 }
 
-/**
- * The root turns `data-layout` off where the app shell is not shown: the Quick Chat window (known only once its label
- * resolves) and the full-window first run.
- */
+/** The root turns `data-layout` off in the Quick Chat window (known only once its label resolves). */
 export function setLayoutAttributeSuppressed(suppressed: boolean) {
   attributeSuppressed = suppressed
   syncLayoutAttribute()

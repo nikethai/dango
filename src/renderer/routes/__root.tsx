@@ -185,8 +185,9 @@ function Root() {
   }, [needRoomForMacWindowControls])
 
   const isQuickRoute = isQuickWindow || location.pathname === '/quick'
-  // No data-layout in the Quick Chat window (its label resolves late) or on the full-window first run.
-  const suppressLayoutAttribute = isQuickRoute || isFirstRunRoute
+  // No data-layout in the Quick Chat window (its label resolves late). First run keeps it, for the phone targets; the
+  // tab bar marks <html> itself (data-tabbar), so .App keeps its safe-area padding there.
+  const suppressLayoutAttribute = isQuickRoute
   useLayoutEffect(() => {
     setLayoutAttributeSuppressed(suppressLayoutAttribute)
   }, [suppressLayoutAttribute])
