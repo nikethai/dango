@@ -309,6 +309,23 @@ function filterToolsByAccess(tools: ToolSet, toolAccess?: CopilotToolAccess): To
 const WEB_TOOL_NAMES: ReadonlySet<string> = new Set(['web_search', 'parse_link', 'google_search'])
 
 /**
+ * ADR 0016: tools that send content off the device, all off on a turn that may read local-only text. MCP tools (Dango
+ * can't know where a server sends data), browser and video-URL reading, image generation, web search and link reading.
+ * Computer use is not here: its screenshots go to the turn's (local) model.
+ */
+const OUTSIDE_TOOL_PREDICATES: ReadonlyArray<(name: string) => boolean> = [
+  (name) => name.startsWith(MCP_TOOL_PREFIX),
+  (name) => name.startsWith('browser_'),
+  (name) => name === 'read_video_url',
+  (name) => name === 'generate_image',
+  (name) => WEB_TOOL_NAMES.has(name),
+]
+
+function isOutsideTool(name: string): boolean {
+  return OUTSIDE_TOOL_PREDICATES.some((matches) => matches(name))
+}
+
+/**
  * (legacy comment removed)
  */
 export async function streamText(
@@ -353,7 +370,13 @@ export async function streamText(
     knowledgeQuery?: string
   },
   signal?: AbortSignal
-): Promise<{ result: StreamTextResult; coreMessages: ModelMessage[]; knowledgeIds: string[] }> {
+): Promise<{
+  result: StreamTextResult
+  coreMessages: ModelMessage[]
+  knowledgeIds: string[]
+  /** ADR 0016: this local-only turn had its web toggle on, or had outside tools removed. */
+  localOnlyToolsOff: boolean
+}> {
   const {
     knowledgeBase,
     webBrowsing,
@@ -540,6 +563,8 @@ export async function streamText(
   // writes would carry that text to the search provider or the site.
   const searchWeb = Boolean(webBrowsing) && !turnIsLocalOnly
   const webNotSupported = searchWeb && !model.isSupportToolUse('web-browsing')
+  // ADR 0016: the answer says so when the web toggle was on, or outside tools are removed below.
+  let localOnlyToolsOff = turnIsLocalOnly && Boolean(webBrowsing)
   const mcpTools = wrapToolsWithApproval(sessionId, mcpController.getAvailableTools(), { scopeId })
   // Task tools must be decided before grounding: Gemini forbids mixing provider tools
   // (google.tools.googleSearch) with function tools. Counting tasks too late caused
@@ -628,7 +653,7 @@ export async function streamText(
   if (workspaceFileToolSet) {
     toolSetInstructions += workspaceFileToolSet.description
   }
-  if (browserToolSet) {
+  if (browserToolSet && !turnIsLocalOnly) {
     toolSetInstructions += browserToolSet.description
   }
   if (computerToolSet) {
@@ -655,7 +680,7 @@ ${!capabilityId ? '- No native Project folder is bound. Ask the user to Open Fol
   if (needVideoToolSet) {
     toolSetInstructions += videoToolSet.description
   }
-  if (needVideoUrlToolSet) {
+  if (needVideoUrlToolSet && !turnIsLocalOnly) {
     toolSetInstructions += videoUrlToolSet.description
   }
   // Memory tools + priority instructions BEFORE web search so models see recall first.
@@ -716,7 +741,7 @@ Do not open with repeated web searches when personal memory may apply.
       toolSetInstructions += formatActiveTaskContext(taskStore.getState().getSessionTasks(sessionId))
     }
   }
-  if (needGenerateImageTool) {
+  if (needGenerateImageTool && !turnIsLocalOnly) {
     toolSetInstructions += generateImageToolSet.description
     toolSetInstructions += `\n\n${formatImageCatalogInstructions(imageCatalog)}`
     if (agentImageFlowInstructions) {
@@ -725,7 +750,13 @@ Do not open with repeated web searches when personal memory may apply.
   }
 
   // Command tools always ask: have the model say in `reason` what the command does (the sheet shows it as "why").
-  toolSetInstructions += commandToolInstructions(customTools ?? { ...mcpTools, ...(workspaceFileToolSet?.tools ?? {}) })
+  // ADR 0016: outside (MCP) tools are removed below on a local-only turn, so they are not described either.
+  const describedTools = customTools ?? { ...mcpTools, ...(workspaceFileToolSet?.tools ?? {}) }
+  toolSetInstructions += commandToolInstructions(
+    turnIsLocalOnly
+      ? Object.fromEntries(Object.entries(describedTools).filter(([name]) => !isOutsideTool(name)))
+      : describedTools
+  )
 
   const memoryForceHybridFallback =
     memorySettings.enabled && memorySettings.retrievalMode === 'on_demand' && !model.isSupportToolUse()
@@ -878,6 +909,7 @@ Do not open with repeated web searches when personal memory may apply.
             dependencies
           )),
           knowledgeIds,
+          localOnlyToolsOff,
         }
       }
       // (legacy comment removed)
@@ -904,6 +936,7 @@ Do not open with repeated web searches when personal memory may apply.
             dependencies
           )),
           knowledgeIds,
+          localOnlyToolsOff,
         }
       }
       // (legacy comment removed)
@@ -929,6 +962,7 @@ Do not open with repeated web searches when personal memory may apply.
             dependencies
           )),
           knowledgeIds,
+          localOnlyToolsOff,
         }
       }
     }
@@ -1061,9 +1095,12 @@ Do not open with repeated web searches when personal memory may apply.
       tools = Object.fromEntries(Object.entries(tools).filter(([name]) => allowedSet.has(name)))
     }
 
-    // S13: a turn's own tools (plan mode) may bring web tools too; none on a turn that may read local-only text.
+    // S13 / ADR 0016: no outside tools on a turn that may read local-only text, including tools the turn brings
+    // itself (plan mode, Swarm, a copilot's allowlist). Computer use stays.
     if (turnIsLocalOnly) {
-      tools = Object.fromEntries(Object.entries(tools).filter(([name]) => !WEB_TOOL_NAMES.has(name)))
+      const kept = Object.entries(tools).filter(([name]) => !isOutsideTool(name))
+      if (kept.length < Object.keys(tools).length) localOnlyToolsOff = true
+      tools = Object.fromEntries(kept)
     }
 
     // Computer UI space lock: strip tools that collide with "find" / leave the desktop app.
@@ -1133,12 +1170,12 @@ Do not open with repeated web searches when personal memory may apply.
       })
     )
 
-    return { result, coreMessages, knowledgeIds }
+    return { result, coreMessages, knowledgeIds, localOnlyToolsOff }
   } catch (err) {
     console.error(err)
     // if a cancellation is performed, do not throw an exception, otherwise the content will be overwritten.
     if (controller.signal.aborted) {
-      return { result, coreMessages, knowledgeIds }
+      return { result, coreMessages, knowledgeIds, localOnlyToolsOff }
     }
     throw err
   } finally {

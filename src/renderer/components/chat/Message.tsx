@@ -134,6 +134,7 @@ const PlanCard = isAgentEnabled ? lazy(() => import('../plan/PlanCard')) : null
 
 import FollowUpSuggestions from '../search/FollowUpSuggestions'
 import { SourceCardList } from '../search/SourceCardList'
+import { LocalOnlyToolsNote } from './LocalOnlyToolsNote'
 import { MessageActionRow } from './MessageActionRow'
 import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageStatuses from './MessageLoading'
@@ -1052,6 +1053,7 @@ const _Message: FC<Props> = (props) => {
           <ModelErrorNotice msg={msg} sessionId={sessionId} />
           {needCollapse && !isCollapsed && CollapseButton}
           {msg.citations?.length ? <SourceCardList citations={msg.citations} /> : null}
+          <LocalOnlyToolsNote msg={msg} />
           {msg.role === 'assistant' && !msg.generating ? (
             <KnowledgeProposalCard sessionId={sessionId} messageId={msg.id} />
           ) : null}

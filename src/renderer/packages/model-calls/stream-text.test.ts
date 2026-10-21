@@ -143,9 +143,10 @@ vi.mock('@/packages/remote', () => ({
   parseUserLinkFree: parseUserLinkFreeMock,
 }))
 
+const mcpToolsState = vi.hoisted(() => ({ tools: {} as Record<string, unknown> }))
 vi.mock('../mcp/controller', () => ({
   mcpController: {
-    getAvailableTools: () => ({}),
+    getAvailableTools: () => mcpToolsState.tools,
   },
 }))
 
@@ -1123,5 +1124,145 @@ describe('streamText web search on a local-only turn (S13)', () => {
     })
     expect(seen[1].google_search).toBeUndefined()
     expect(seen[1].web_search).toBeUndefined()
+  })
+})
+
+describe('streamText outside tools on a local-only turn (D2)', () => {
+  const localOnlyRecall = (): Message => ({
+    ...createMessage('assistant', ''),
+    contentParts: [
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'c1',
+        toolName: 'client_recall',
+        args: { query: 'price' },
+        result: { ok: true, records: [{ text: 'The price is 4,200 USD' }], gaps: [], localOnly: true },
+      },
+      { type: 'text', text: 'Jo said the price is 4,200 USD.' },
+    ],
+  })
+  const messages = () => [createMessage('user', 'Price?'), localOnlyRecall(), createMessage('user', 'And now?')]
+  const toolsSeen = () => {
+    const seen: Record<string, unknown>[] = []
+    const chat = vi.fn((_messages, options) => {
+      seen.push({ ...(options.tools ?? {}) })
+      return Promise.resolve({ contentParts: [], text: 'done' } as StreamTextResult)
+    })
+    return { chat, seen }
+  }
+  const ollama = { provider: ModelProviderEnum.Ollama, modelId: 'test-model' }
+  const openai = { provider: ModelProviderEnum.OpenAI, modelId: 'gpt' }
+  const OUTSIDE = ['mcp__notes__search', 'mcp__web_search', 'read_video_url', 'generate_image']
+
+  beforeEach(() => {
+    loadPmToolSetMock.mockReset().mockResolvedValue(null)
+    mcpToolsState.tools = {
+      mcp__notes__search: { description: 'search notes', execute: vi.fn() },
+      mcp__web_search: { description: 'search', execute: vi.fn() },
+    }
+    settingsState.extension.videoUrl.enabled = true
+  })
+  afterEach(() => {
+    mcpToolsState.tools = {}
+    settingsState.extension.videoUrl.enabled = false
+  })
+
+  it('offers no MCP, video-URL or image tools to a local-only turn and says so; a cloud turn keeps them', async () => {
+    const { streamText } = await import('./stream-text')
+    const { chat, seen } = toolsSeen()
+    const local = await streamText(createTestModel(chat), {
+      messages: messages(),
+      enableImageGenerationTool: true,
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    for (const name of OUTSIDE) expect(seen[0][name]).toBeUndefined()
+    expect(local.localOnlyToolsOff).toBe(true)
+    const instructions = String(injectModelSystemPromptMock.mock.calls.at(-1)?.[2] ?? '')
+    expect(instructions).not.toContain('generate_image')
+
+    const cloud = await streamText(createTestModel(chat), {
+      messages: messages(),
+      enableImageGenerationTool: true,
+      sessionSettings: openai,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    for (const name of OUTSIDE) expect(seen[1][name]).toBeDefined()
+    expect(cloud.localOnlyToolsOff).toBe(false)
+  })
+
+  it('removes outside tools a turn brings itself (browser, MCP, web) and keeps computer use', async () => {
+    const { streamText } = await import('./stream-text')
+    const { chat, seen } = toolsSeen()
+    const ownTools = () => ({
+      browser_navigate: { description: 'go', execute: vi.fn() },
+      browser_snapshot: { description: 'look', execute: vi.fn() },
+      mcp__x__fetch: { description: 'fetch', execute: vi.fn() },
+      read_video_url: { description: 'video', execute: vi.fn() },
+      generate_image: { description: 'image', execute: vi.fn() },
+      web_search: { description: 'search', execute: vi.fn() },
+      computer_screenshot: { description: 'see', execute: vi.fn() },
+      read_file: { description: 'read', execute: vi.fn() },
+    })
+    const local = await streamText(createTestModel(chat), {
+      messages: messages(),
+      tools: ownTools() as never,
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(Object.keys(seen[0]).sort()).toEqual(['computer_screenshot', 'read_file'])
+    expect(local.localOnlyToolsOff).toBe(true)
+
+    await streamText(createTestModel(chat), {
+      messages: messages(),
+      tools: ownTools() as never,
+      sessionSettings: openai,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(Object.keys(seen[1]).sort()).toEqual(Object.keys(ownTools()).sort())
+  })
+
+  it('applies after a copilot allowlist that names outside tools', async () => {
+    const { streamText } = await import('./stream-text')
+    const { chat, seen } = toolsSeen()
+    await streamText(createTestModel(chat), {
+      messages: messages(),
+      sessionSettings: ollama,
+      toolAccess: { mode: 'allowlist', tools: ['mcp__notes__search', 'read_video_url'], includeMcp: true },
+      allowedTools: ['mcp__notes__search', 'read_video_url'],
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(Object.keys(seen[0])).toEqual([])
+  })
+
+  it('carries no flag when nothing was removed and the web toggle was off; the web toggle alone sets it', async () => {
+    mcpToolsState.tools = {}
+    settingsState.extension.videoUrl.enabled = false
+    const { streamText } = await import('./stream-text')
+    const { chat } = toolsSeen()
+    const quiet = await streamText(createTestModel(chat), {
+      messages: messages(),
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(quiet.localOnlyToolsOff).toBe(false)
+
+    const web = await streamText(createTestModel(chat), {
+      messages: messages(),
+      webBrowsing: true,
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(web.localOnlyToolsOff).toBe(true)
+
+    // A model without tool use takes the prompt-engineered path; the web toggle still reads as off.
+    const noTools = await streamText(createTestModel(chat, false), {
+      messages: messages(),
+      webBrowsing: true,
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(noTools.localOnlyToolsOff).toBe(true)
   })
 })

@@ -834,3 +834,9 @@
     transform: none !important;
   }
 }
+
+/* ADR 0016: the quiet line under an answer whose turn had web and outside tools off. */
+.dg-msg-note {
+  margin: var(--dango-space-1) 0 0;
+  color: var(--dango-muted);
+}

@@ -1297,7 +1297,7 @@ export async function generate(
 
         // What the stream last showed, as streamText would return it when stopped (see the catch below).
         let lastStreamedParts: Message['contentParts'] = []
-        const { result, knowledgeIds } = await streamText(model, {
+        const { result, knowledgeIds, localOnlyToolsOff } = await streamText(model, {
           sessionId: session.id,
           knowledgeScopeId: getEffectiveProjectId(session) ?? null,
           scopeId: getEffectiveProjectId(session),
@@ -1428,7 +1428,7 @@ export async function generate(
           // after Stop is the same Stop, so the run settles as stopped (plan time kept, Continue offered), not failed.
           if (isAbortError(error) && wasGenerationCancelled(sessionId, targetMsg.id)) {
             const stopped: StreamTextResult = { contentParts: lastStreamedParts }
-            return { result: stopped, knowledgeIds: [] as string[] }
+            return { result: stopped, knowledgeIds: [] as string[], localOnlyToolsOff: false }
           }
           throw error
         })
@@ -1437,7 +1437,9 @@ export async function generate(
         const stoppedDuringStream = wasGenerationCancelled(sessionId, targetMsg.id)
 
         // The approved knowledge this answer was given with: kept on the message and recorded as a use.
-        targetMsg = { ...targetMsg, knowledgeIds }
+        // ADR 0016: a device-only turn that lost its web toggle or outside tools says so under the answer (a regenerated
+        // answer drops an earlier turn's mark).
+        targetMsg = { ...targetMsg, knowledgeIds, localOnlyToolsOff: localOnlyToolsOff || undefined }
         if (knowledgeIds.length) {
           void import('@/packages/knowledge/uses')
             .then(({ recordKnowledgeUse }) =>
