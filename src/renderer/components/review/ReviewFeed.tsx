@@ -26,7 +26,7 @@ export type ReviewFeedProps = { scopeId?: string; caughtUp?: ReactNode }
 
 const CONTROLS = 'button, a[href], input, textarea, select'
 const SAVED = 'data-feed-tabindex'
-const KEYS = 'ArrowUp ArrowDown J K A E X Enter'
+const KEYS = 'ArrowUp ArrowDown ArrowRight ArrowLeft J K A E X Enter'
 
 type FeedRowProps = {
   entry: ReviewEntry

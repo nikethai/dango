@@ -117,6 +117,32 @@ describe('Review is keyboard first (A11Y1 rule 3)', () => {
     expect(rows().filter((r) => r.tabIndex === 0)).toEqual([rowEl('r2')])
   })
 
+  it('when the stop row leaves while focus is outside the feed, the next row becomes the stop', async () => {
+    await mount()
+    await key(rowEl('r1'), 'ArrowDown')
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    try {
+      await act(() => outside.focus())
+      const setEntries = (entries: ReviewEntry[]) =>
+        act(async () => {
+          data['review-entries'] = { entries }
+          reviewStore.setState({ entries })
+          await tick()
+        })
+      await setEntries([entry(1), entry(3)])
+      expect(rowEl('r2')).toBeNull()
+      expect(rows().filter((r) => r.tabIndex === 0)).toEqual([rowEl('r3')])
+      expect(active()).toBe(outside)
+      // A newer row arriving on top does not take the stop.
+      await setEntries([{ ...entry(0), createdAt: now + 1000 }, entry(1), entry(3)])
+      expect(rows().filter((r) => r.tabIndex === 0)).toEqual([rowEl('r3')])
+      expect(active()).toBe(outside)
+    } finally {
+      outside.remove()
+    }
+  })
+
   it('↓ and J move to the next row, ↑ and K back; the focused row shows is-focused', async () => {
     await mount()
     const ring = () => rows().filter((r) => r.querySelector('.is-focused'))

@@ -121,7 +121,7 @@ describe('ReviewFeed', () => {
     expect(within(lists[2]).getByTestId('fake-old')).toBeTruthy()
     const li = rowEl('today')
     expect(li.tabIndex).toBe(0)
-    expect(li.getAttribute('aria-keyshortcuts')).toBe('ArrowUp ArrowDown J K A E X Enter')
+    expect(li.getAttribute('aria-keyshortcuts')).toBe('ArrowUp ArrowDown ArrowRight ArrowLeft J K A E X Enter')
   })
 
   it('scopeId filters the rows', async () => {
