@@ -1,5 +1,5 @@
 import type { SourceKind } from '@shared/types/sources'
-import { useId } from 'react'
+import { useId, useLayoutEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Mascot } from '@/components/brand/Mascot'
 import { formatShortcutLabel } from '@/components/Shortcut'
@@ -24,6 +24,40 @@ function quickChatHotkey(shortcut: string | undefined): string | undefined {
   if (platform.type !== 'desktop' || !shortcut) return undefined
   const parts = shortcut.split('+').map((key) => formatShortcutLabel(key))
   return getOS() === 'Mac' ? parts.join('') : parts.join('+')
+}
+
+// Between the sync ending and its first review starting the card renders nothing for a moment, so a focused Stop is
+// removed and focus falls to the body (T4 M1). Remember that for a short while: the card's next Stop takes focus back;
+// if no card comes back, focus goes to the page's main region instead of staying on the body.
+const HANDOVER_MS = 1000
+let focusLost: ReturnType<typeof setTimeout> | null = null
+
+const focusOnBody = () => !document.activeElement || document.activeElement === document.body
+
+function StopButton({ onStop }: { onStop(): void }) {
+  const { t } = useTranslation()
+  const ref = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => {
+    const button = ref.current
+    if (focusLost) {
+      clearTimeout(focusLost)
+      focusLost = null
+      if (focusOnBody()) button?.focus()
+    }
+    // Layout cleanups run before React removes the DOM, so a focused Stop is still the active element here.
+    return () => {
+      if (!button || document.activeElement !== button) return
+      focusLost = setTimeout(() => {
+        focusLost = null
+        if (focusOnBody()) document.getElementById('main')?.focus()
+      }, HANDOVER_MS)
+    }
+  }, [])
+  return (
+    <button ref={ref} type="button" className="dg-btn dg-btn--ghost" onClick={onStop}>
+      {t('Stop')}
+    </button>
+  )
 }
 
 /**
@@ -55,9 +89,7 @@ export function FirstReadCard() {
           </h2>
           <p className="dg-type-caption dg-first-read__sub">{sub}</p>
         </div>
-        <button type="button" className="dg-btn dg-btn--ghost" onClick={() => void stopJob(job.id)}>
-          {t('Stop')}
-        </button>
+        <StopButton onStop={() => void stopJob(job.id)} />
       </section>
       <p className="dg-type-caption dg-first-read__meanwhile">
         <Mascot state="working" size={20} />

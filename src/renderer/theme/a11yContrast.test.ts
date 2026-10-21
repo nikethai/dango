@@ -66,3 +66,36 @@ describe('targets (A11Y1 rule 6)', () => {
     for (const value of values) expect(value).toBeGreaterThanOrEqual(28)
   })
 })
+
+/** The last `prop` value in dango-layout.css on a top-level rule whose selector list holds `selector`. */
+const layoutValue = (selector: string, prop: string): string | undefined => {
+  let value: string | undefined
+  STYLES[1].walkRules((rule: Rule) => {
+    if (rule.parent?.type !== 'root') return
+    if (!rule.selectors.map((s) => s.replace(/\s+/g, ' ').trim()).includes(selector)) return
+    rule.walkDecls(prop, (decl) => {
+      value = decl.value.trim()
+    })
+  })
+  return value
+}
+
+describe('phone targets in the moved sheets and the inspector sheet (A11Y1 rule 6, 44 px)', () => {
+  const phone = ':root[data-layout="phone"]'
+  test('buttons and chips (dg-btn) and icon buttons are covered by the shared phone rule', () => {
+    expect(layoutValue(`${phone} .dg-btn`, 'min-height')).toBe('44px')
+    expect(layoutValue(`${phone} .mantine-ActionIcon-root`, 'min-height')).toBe('44px')
+    expect(layoutValue(`${phone} .mantine-ActionIcon-root`, 'min-width')).toBe('44px')
+  })
+
+  test('the Clean up slider is 44 px tall at phone (T6)', () => {
+    expect(layoutValue(`${phone} .dango-cleanup__range input`, 'min-height')).toBe('44px')
+  })
+
+  test('the inspector sheet’s tabs and header buttons are 44 px at phone (T7 M4)', () => {
+    for (const cls of ['.workspace-tab', '.workspace-action-btn']) {
+      expect(layoutValue(`${phone} .dango-inspector-sheet ${cls}`, 'min-height'), cls).toBe('44px')
+    }
+    expect(layoutValue(`${phone} .dango-inspector-sheet .workspace-action-btn`, 'min-width')).toBe('44px')
+  })
+})

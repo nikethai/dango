@@ -321,8 +321,8 @@ describe('SourceStep (FR2)', () => {
     expect(document.activeElement).toBe(screen.getByText('pick folder'))
   })
 
-  it('a first visit does not move focus', () => {
+  it('a first visit starts at the step title, not in the list (T4 M2: never the body)', () => {
     render(<SourceStep onNext={vi.fn()} />)
-    expect(document.activeElement).toBe(document.body)
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }))
   })
 })

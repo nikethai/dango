@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { BackgroundJob } from '@shared/types/background'
 import type { ConnectedSource, SourceKind } from '@shared/types/sources'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('react-i18next', () => ({
@@ -154,6 +154,56 @@ describe('FirstReadCard (FR5)', () => {
     expect(screen.getByText('Reviewed 2 of 9 items. Items appear here as they are found.')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
     expect(h.stopJob).toHaveBeenCalledWith('r1')
+  })
+
+  it('keeps focus on Stop when the sync hands over to the first review (T4 M1)', () => {
+    const { rerender } = render(<FirstReadCard />)
+    act(() => screen.getByRole('button', { name: 'Stop' }).focus())
+    // The sync is done and its review not yet started: for a moment the card renders nothing.
+    h.jobs = [job({ status: 'done', finishedAt: 25 })]
+    rerender(<FirstReadCard />)
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+    h.jobs = [job({ id: 'r1', kind: 'review', startedAt: 30 }), job({ status: 'done', finishedAt: 25 })]
+    rerender(<FirstReadCard />)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Stop' }))
+  })
+
+  it('when the card ends while Stop has focus, focus goes to #main, not the body (T4 M1)', () => {
+    vi.useFakeTimers()
+    const main = document.createElement('div')
+    main.id = 'main'
+    main.tabIndex = -1
+    document.body.appendChild(main)
+    try {
+      const { rerender } = render(<FirstReadCard />)
+      act(() => screen.getByRole('button', { name: 'Stop' }).focus())
+      h.jobs = [job({ status: 'failed', stoppedAt: 20 })]
+      rerender(<FirstReadCard />)
+      act(() => vi.advanceTimersByTime(1000))
+      expect(document.activeElement).toBe(main)
+    } finally {
+      main.remove()
+      vi.useRealTimers()
+    }
+  })
+
+  it('a card that ends without focus on Stop moves no focus', () => {
+    vi.useFakeTimers()
+    const main = document.createElement('div')
+    main.id = 'main'
+    main.tabIndex = -1
+    document.body.appendChild(main)
+    try {
+      const { rerender } = render(<FirstReadCard />)
+      h.jobs = [job({ status: 'done', finishedAt: 25 })]
+      h.sources = [source('folder', { backgroundReview: false })]
+      rerender(<FirstReadCard />)
+      act(() => vi.advanceTimersByTime(1000))
+      expect(document.activeElement).toBe(document.body)
+    } finally {
+      main.remove()
+      vi.useRealTimers()
+    }
   })
 
   it('has no live region (its line changes as files are counted)', () => {

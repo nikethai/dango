@@ -374,6 +374,18 @@
   min-width: 44px;
 }
 
+/* Phone targets inside sheets: Clean up's slider (its chips and actions are dg-btn), the inspector sheet's tabs and
+   header buttons (Mantine ActionIcons, also covered above). */
+:root[data-layout="phone"] .dango-cleanup__range input,
+:root[data-layout="phone"] .dango-inspector-sheet .workspace-tab,
+:root[data-layout="phone"] .dango-inspector-sheet .workspace-action-btn {
+  min-height: 44px;
+}
+
+:root[data-layout="phone"] .dango-inspector-sheet .workspace-action-btn {
+  min-width: 44px;
+}
+
 /* Inspector (InspectorFrame): docked at wide, a right sheet at medium, a bottom sheet at phone. */
 
 .dango-inspector {

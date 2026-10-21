@@ -93,7 +93,9 @@ export function useSheetFocus(ref: RefObject<HTMLElement | null>, opts: { onClos
       document.removeEventListener('keydown', onKeyDown)
       const index = openSheets.lastIndexOf(el)
       if (index !== -1) openSheets.splice(index, 1)
-      if (opener?.isConnected) {
+      // The body is no opener: it means the element that had focus went away before the sheet opened (the docked
+      // inspector the layout turned into this sheet), so focus goes to the main region.
+      if (opener?.isConnected && opener !== document.body) {
         opener.focus()
       } else {
         document.getElementById('main')?.focus()

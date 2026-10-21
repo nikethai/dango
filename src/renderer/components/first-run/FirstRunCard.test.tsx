@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('react-i18next', () => ({
@@ -60,5 +60,30 @@ describe('FirstRunCard', () => {
       </FirstRunCard>
     )
     expect(container.querySelector('.dg-first-run__lead')).toBeNull()
+  })
+
+  it('takes focus to its title when a step opens with focus on the body (T4 M2)', () => {
+    const card = (step: 2 | 3 | 4, title: string) => (
+      <FirstRunCard step={step} title={title} footer={null}>
+        {null}
+      </FirstRunCard>
+    )
+    const { rerender } = render(card(2, 'Connect a source'))
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Connect a source' }))
+    act(() => (document.activeElement as HTMLElement).blur())
+    rerender(card(4, 'How much should it do on its own?'))
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }))
+  })
+
+  it('leaves focus where a step put it', () => {
+    function Step() {
+      return (
+        <FirstRunCard step={3} title="Name this scope" footer={null}>
+          <input aria-label="Name" autoFocus />
+        </FirstRunCard>
+      )
+    }
+    render(<Step />)
+    expect(document.activeElement).toBe(screen.getByLabelText('Name'))
   })
 })

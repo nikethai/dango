@@ -1,4 +1,4 @@
-import { type ReactNode, useId } from 'react'
+import { type ReactNode, useEffect, useId, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Mascot } from '@/components/brand/Mascot'
 import type { FirstRunStep } from '@/packages/first-run'
@@ -21,6 +21,14 @@ export function FirstRunCard({
 }) {
   const { t } = useTranslation()
   const titleId = useId()
+  // A step change unmounts the control that moved on (Continue, Skip), dropping focus to the body. Start the new step
+  // at its title, unless the step already put focus somewhere (its effects run first).
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs on each step change, by design
+  useEffect(() => {
+    const active = document.activeElement
+    if (!active || active === document.body) titleRef.current?.focus()
+  }, [step])
   return (
     <section className="dg dg-first-run__card" aria-labelledby={titleId}>
       <div className="dg-first-run__header">
@@ -34,7 +42,7 @@ export function FirstRunCard({
           ))}
         </div>
       </div>
-      <h1 id={titleId} className="dg-first-run__title">
+      <h1 ref={titleRef} id={titleId} tabIndex={-1} className="dg-first-run__title">
         {title}
       </h1>
       {lead ? <p className="dg-type-body dg-first-run__lead">{lead}</p> : null}
