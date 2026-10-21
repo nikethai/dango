@@ -134,4 +134,9 @@ describe('SettingsSchema firstRun', () => {
       scopeId: 's1',
     })
   })
+
+  it('keeps the first read source (FR5 follows its sync and review)', () => {
+    const firstRun = { step: 4, sourceSkipped: false, scopeId: 's1', firstReadJobId: 'j1', firstReadSourceId: 'src1' }
+    expect(SettingsSchema.parse({ ...defaults.settings(), firstRun }).firstRun).toEqual(firstRun)
+  })
 })

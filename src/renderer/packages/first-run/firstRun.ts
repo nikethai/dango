@@ -7,6 +7,8 @@ export type FirstRunRecord = {
   sourceSkipped: boolean
   scopeId?: string
   firstReadJobId?: string
+  /** The source connected in step 2; FR5's card follows its sync and first review (R9). */
+  firstReadSourceId?: string
   completedAt?: number
 }
 

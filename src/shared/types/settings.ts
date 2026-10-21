@@ -612,6 +612,7 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
       sourceSkipped: z.boolean().default(false),
       scopeId: z.string().optional(),
       firstReadJobId: z.string().optional(),
+      firstReadSourceId: z.string().optional(),
       completedAt: z.number().optional(),
     })
     .optional()

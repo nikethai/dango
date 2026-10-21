@@ -143,3 +143,37 @@
   font: inherit;
   cursor: pointer;
 }
+
+/* FR2 and FR3: connect a source, name the scope. */
+
+.dg-first-run__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-1);
+}
+
+.dg-first-run__selected {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dango-space-2);
+}
+
+.dg-first-run__mono {
+  font-family: var(--dango-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.dg-first-run__switch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-1);
+}
+
+.dg-first-run__waiting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dango-space-3);
+  color: var(--dango-ink-2);
+}

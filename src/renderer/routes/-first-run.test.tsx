@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
@@ -24,6 +24,29 @@ vi.mock('@/components/first-run/ModelStep', () => ({
   ModelStep: ({ modelOnly, from }: { modelOnly: boolean; from?: string }) => (
     <div data-testid="model-step" data-model-only={String(modelOnly)} data-from={from ?? ''} />
   ),
+}))
+const steps = vi.hoisted(() => ({
+  source: null as null | {
+    onNext: (draft: unknown, backgroundReview: boolean) => void
+    error?: { text: string }
+  },
+  scope: null as null | {
+    draft: unknown
+    backgroundReview: boolean
+    onDraftLost?: (error: { text: string }) => void
+  },
+}))
+vi.mock('@/components/first-run/SourceStep', () => ({
+  SourceStep: (p: NonNullable<typeof steps.source>) => {
+    steps.source = p
+    return <div data-testid="source-step" data-error={p.error?.text ?? ''} />
+  },
+}))
+vi.mock('@/components/first-run/ScopeStep', () => ({
+  ScopeStep: (p: NonNullable<typeof steps.scope>) => {
+    steps.scope = p
+    return <div data-testid="scope-step" data-has-draft={String(p.draft !== null)} />
+  },
 }))
 vi.mock('@/packages/first-run', async () => {
   const actual = await vi.importActual<typeof import('@/packages/first-run/firstRun')>('@/packages/first-run/firstRun')
@@ -68,10 +91,35 @@ describe('/first-run', () => {
   })
 
   it('shows the resolved step', () => {
+    h.resolution = { show: true, step: 4, modelOnly: false }
+    render(<Page />)
+    expect(screen.getByRole('heading', { level: 1, name: 'How much should it do on its own?' })).toBeTruthy()
+    expect(screen.getByLabelText('Step 4 of 5')).toBeTruthy()
+  })
+
+  it('step 2 renders the source step, then the scope step with the picked draft (kept in memory only)', () => {
+    h.resolution = { show: true, step: 2, modelOnly: false }
+    render(<Page />)
+    expect(screen.getByTestId('source-step')).toBeTruthy()
+    const draft = { kind: 'folder', label: 'dango', config: {} }
+    act(() => steps.source?.onNext(draft, true))
+    expect(screen.getByTestId('scope-step').getAttribute('data-has-draft')).toBe('true')
+    expect(steps.scope?.draft).toBe(draft)
+    expect(steps.scope?.backgroundReview).toBe(true)
+  })
+
+  it('a draft lost in step 3 goes back to the source step with the error', () => {
+    h.resolution = { show: true, step: 2, modelOnly: false }
+    render(<Page />)
+    act(() => steps.source?.onNext({ kind: 'folder', label: 'dango', config: {} }, true))
+    act(() => steps.scope?.onDraftLost?.({ text: 'This folder already belongs to Acme.' }))
+    expect(screen.getByTestId('source-step').getAttribute('data-error')).toBe('This folder already belongs to Acme.')
+  })
+
+  it('step 3 (source skipped, or a relaunch) renders the scope step without a draft', () => {
     h.resolution = { show: true, step: 3, modelOnly: false }
     render(<Page />)
-    expect(screen.getByRole('heading', { level: 1, name: 'Name this scope' })).toBeTruthy()
-    expect(screen.getByLabelText('Step 3 of 5')).toBeTruthy()
+    expect(screen.getByTestId('scope-step').getAttribute('data-has-draft')).toBe('false')
   })
 
   it('writes no record itself (the gate in __root does)', () => {

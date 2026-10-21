@@ -9,4 +9,5 @@ export {
   setFirstRun,
   stepAfterModel,
 } from './firstRun'
+export { defaultScopeKind, suggestScopeName } from './scopeName'
 export { useFirstRunGate, useFirstRunResolution } from './useFirstRun'

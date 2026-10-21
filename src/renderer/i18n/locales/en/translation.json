@@ -1940,5 +1940,10 @@
   "Provider": "Provider",
   "API key": "API key",
   "Ollama and other providers": "Ollama and other providers",
-  "Dango could not reach {{provider}}.": "Dango could not reach {{provider}}."
+  "Dango could not reach {{provider}}.": "Dango could not reach {{provider}}.",
+  "A source is where Dango reads from. Pick one to start; add more later in Settings.": "A source is where Dango reads from. Pick one to start; add more later in Settings.",
+  "Selected:": "Selected:",
+  "Skip for now": "Skip for now",
+  "A scope is one project or one client. Everything Dango learns from this source stays inside it.": "A scope is one project or one client. Everything Dango learns from this source stays inside it.",
+  "{{name}} already exists. Continue adds this source to it.": "{{name}} already exists. Continue adds this source to it."
 }
