@@ -5,6 +5,7 @@ import {
 } from '@shared/privacy/sensitive-tools'
 import { ToolRiskTier } from '@shared/types/mcp'
 import type { ToolSet } from 'ai'
+import { t } from 'i18next'
 import {
   alwaysAsks,
   alwaysAsksByEffect,
@@ -12,6 +13,7 @@ import {
   describeToolAction,
   isShellCommandTool,
   requestToolPermission,
+  toolLabel,
 } from '@/packages/tool-permission'
 import {
   getScopeGrant,
@@ -22,6 +24,15 @@ import {
 import { getToolRiskTier, isReadOnlyCommand, secretPathIn } from '../tools/risk-engine'
 
 const TOOL_EXECUTE_TIMEOUT_MS = 90_000
+
+/** The Always choice applies to this call, but it was not saved; tell the user it will ask again. */
+function notifyAlwaysNotSaved(toolName: string) {
+  const message = t("Couldn't save “Always” for {{label}}. Dango will ask again next time.", {
+    label: toolLabel(toolName),
+  })
+  // Dynamic import: toastActions pulls in the UI store, which this module's callers may not load.
+  void import('@/stores/toastActions').then(({ add }) => add(message)).catch(() => undefined)
+}
 
 /** Sent to the model, not shown as UI copy. */
 export const TOOL_REFUSAL_MESSAGE =
@@ -175,20 +186,22 @@ export function wrapToolsWithApproval(
               if (choice === 'always' && grantable) {
                 const now = Date.now()
                 if (scopeId) {
-                  toolApprovalStore.getState().addScopeGrant(scopeId, {
+                  const stored = toolApprovalStore.getState().addScopeGrant(scopeId, {
                     toolName,
                     riskTier,
                     grantedAt: now,
                     ...(description ? { toolDescription: description } : {}),
                   })
+                  if (!stored) notifyAlwaysNotSaved(toolName)
                   audit('scope', 'allow')
                 } else {
-                  toolApprovalStore.getState().addApproval(sessionId, {
+                  const stored = toolApprovalStore.getState().addApproval(sessionId, {
                     toolName,
                     riskTier,
                     scope: 'session',
                     timestamp: now,
                   })
+                  if (!stored) notifyAlwaysNotSaved(toolName)
                   audit('session', 'allow')
                 }
               } else {

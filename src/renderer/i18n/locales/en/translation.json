@@ -1826,6 +1826,8 @@
   "Stop allowing": "Stop allowing",
   "Nothing yet. When you choose Always in this scope, it shows here.": "Nothing yet. When you choose Always in this scope, it shows here.",
   "Dango will ask before “{{label}}” again.": "Dango will ask before “{{label}}” again.",
+  "Couldn't save this change. “{{label}}” may be allowed again after Dango restarts. Free up some disk space and try again.": "Couldn't save this change. “{{label}}” may be allowed again after Dango restarts. Free up some disk space and try again.",
+  "Couldn't save “Always” for {{label}}. Dango will ask again next time.": "Couldn't save “Always” for {{label}}. Dango will ask again next time.",
   "Swarm": "Swarm",
   "Several agents work on one answer": "Several agents work on one answer",
   "Add 2 or 3 agents with @": "Add 2 or 3 agents with @",

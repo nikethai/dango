@@ -2,6 +2,7 @@ import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { alwaysAsks, toolLabel } from '@/packages/tool-permission'
 import { pushUndo } from '@/packages/undo'
+import { add as addToast } from '@/stores/toastActions'
 import { getScopeGrant, type ScopeToolGrant, toolApprovalStore, useScopeGrants } from '@/stores/toolApprovalStore'
 
 /** Tools this scope runs without asking ("Always" grants), with a way to stop each one. */
@@ -14,7 +15,16 @@ export function ScopePermissions({ scopeId }: { scopeId: string }) {
 
   const stopAllowing = (grant: ScopeToolGrant) => {
     const label = toolLabel(grant.toolName)
-    toolApprovalStore.getState().revokeScopeGrant(scopeId, grant.toolName)
+    if (!toolApprovalStore.getState().revokeScopeGrant(scopeId, grant.toolName)) {
+      // Stopped in this window, but the saved grant is unchanged; undo would not be honest here.
+      addToast(
+        t(
+          "Couldn't save this change. “{{label}}” may be allowed again after Dango restarts. Free up some disk space and try again.",
+          { label }
+        )
+      )
+      return
+    }
     pushUndo({
       message: t('Dango will ask before “{{label}}” again.', { label }),
       undo: () => {

@@ -4,10 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const getToolApprovalMock = vi.hoisted(() => vi.fn())
 const getScopeGrantMock = vi.hoisted(() => vi.fn())
 const addAuditEntryMock = vi.hoisted(() => vi.fn())
-const addApprovalMock = vi.hoisted(() => vi.fn())
-const addScopeGrantMock = vi.hoisted(() => vi.fn())
+const addApprovalMock = vi.hoisted(() => vi.fn(() => true))
+const addScopeGrantMock = vi.hoisted(() => vi.fn(() => true))
 const removeApprovalMock = vi.hoisted(() => vi.fn())
 const requestToolPermissionMock = vi.hoisted(() => vi.fn())
+const addToastMock = vi.hoisted(() => vi.fn())
+
+vi.mock('@/stores/toastActions', () => ({ add: addToastMock }))
 
 vi.mock('@/stores/toolApprovalStore', () => ({
   getToolApproval: getToolApprovalMock,
@@ -43,7 +46,8 @@ vi.mock('../tools/risk-engine', async (importOriginal) => ({
 }))
 
 vi.mock('i18next', () => ({
-  t: (s: string) => s,
+  t: (key: string, vars?: Record<string, unknown>) =>
+    key.replace(/\{\{(\w+)\}\}/g, (_, name) => String(vars?.[name] ?? name)),
 }))
 
 import { workspaceApprovalFingerprint, wrapToolsWithApproval } from './wrap-tools-approval'
@@ -62,6 +66,7 @@ describe('wrapToolsWithApproval shipped wrapper', () => {
     addScopeGrantMock.mockReset()
     removeApprovalMock.mockReset()
     requestToolPermissionMock.mockReset()
+    addToastMock.mockReset()
   })
 
   it('never session-auto-approves delete_file even with a session HIGH approval', async () => {
@@ -202,6 +207,35 @@ describe('wrapToolsWithApproval shipped wrapper', () => {
     )
     expect(addScopeGrantMock).not.toHaveBeenCalled()
     expect(execute).toHaveBeenCalledTimes(2)
+  })
+
+  it('says so when an Always grant cannot be saved, and still runs the call', async () => {
+    requestToolPermissionMock.mockResolvedValue('always')
+    addScopeGrantMock.mockReturnValueOnce(false)
+    const execute = vi.fn(async () => ({ ok: true }))
+    const tools = { browser_click: { description: 'click', execute } } as never
+
+    await (wrapToolsWithApproval('sess-1', tools, { scopeId: 's1' }).browser_click as Exec).execute({}, {})
+    await vi.waitFor(() =>
+      expect(addToastMock).toHaveBeenCalledWith(
+        "Couldn't save “Always” for Browser click. Dango will ask again next time."
+      )
+    )
+    expect(execute).toHaveBeenCalledTimes(1)
+
+    addToastMock.mockClear()
+    addApprovalMock.mockReturnValueOnce(false)
+    await (wrapToolsWithApproval('sess-1', tools).browser_click as Exec).execute({}, {})
+    await vi.waitFor(() => expect(addToastMock).toHaveBeenCalledTimes(1))
+  })
+
+  it('shows no toast when an Always grant saves', async () => {
+    requestToolPermissionMock.mockResolvedValue('always')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const tools = { browser_click: { description: 'click', execute } } as never
+    await (wrapToolsWithApproval('sess-1', tools, { scopeId: 's1' }).browser_click as Exec).execute({}, {})
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(addToastMock).not.toHaveBeenCalled()
   })
 
   it('delete never offers always', async () => {

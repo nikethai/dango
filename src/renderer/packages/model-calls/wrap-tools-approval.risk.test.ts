@@ -5,8 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const getToolApprovalMock = vi.hoisted(() => vi.fn())
 const getScopeGrantMock = vi.hoisted(() => vi.fn())
 const addAuditEntryMock = vi.hoisted(() => vi.fn())
-const addApprovalMock = vi.hoisted(() => vi.fn())
-const addScopeGrantMock = vi.hoisted(() => vi.fn())
+const addApprovalMock = vi.hoisted(() => vi.fn(() => true))
+const addScopeGrantMock = vi.hoisted(() => vi.fn(() => true))
 const requestToolPermissionMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/stores/toolApprovalStore', () => ({
