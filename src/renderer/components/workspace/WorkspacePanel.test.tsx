@@ -226,6 +226,22 @@ describe('WorkspacePanel by window size (slice 9 RS1, RS2)', () => {
     expect(document.querySelectorAll('.dg-sheet-scrim')).toHaveLength(1)
   })
 
+  it('wide: the docked pane takes focus when it opens, not on every update', async () => {
+    const store = await setup()
+    const panel = screen.getByRole('complementary', { name: 'Artifact' })
+    expect(document.activeElement).toBe(panel)
+    const composer = document.createElement('textarea')
+    document.body.appendChild(composer)
+    composer.focus()
+    const current = store.getState().workspacePanel
+    act(() => store.getState().setWorkspacePanel(current ? { ...current, content: '<h1>streamed</h1>' } : null))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(document.activeElement).toBe(composer)
+    composer.remove()
+  })
+
   it('full screen from wide does not carry into the sheet', async () => {
     const store = await setup()
     fireEvent.click(screen.getByRole('button', { name: 'Full screen' }))
@@ -236,13 +252,41 @@ describe('WorkspacePanel by window size (slice 9 RS1, RS2)', () => {
   })
 })
 
-describe('session route shell classes', () => {
-  it('only the wide layout reserves room for the docked inspector', async () => {
+describe('inspector wiring and layout rules (source scans)', () => {
+  const read = async (path: string) => {
     const { readFileSync } = await import('node:fs')
     const { resolve } = await import('node:path')
-    const src = readFileSync(resolve(__dirname, '../../routes/session/$sessionId.tsx'), 'utf8')
-    expect(src).toMatch(/useLayoutMode\(\)/)
-    expect(src).toMatch(/layoutMode === 'wide' && workspaceChromeActive/)
-    expect(src).toMatch(/layoutMode === 'wide' && workspaceExpanded/)
+    return readFileSync(resolve(__dirname, path), 'utf8')
+  }
+  const rule = (css: string, selector: string) => {
+    const start = css.indexOf(`${selector} {`)
+    return start === -1 ? '' : css.slice(start, css.indexOf('}', start))
+  }
+
+  it('the panel takes its shell from InspectorFrame; the route reads the layout mode for its shell classes', async () => {
+    const panel = await read('./WorkspacePanel.tsx')
+    expect(panel).toMatch(/import \{ InspectorFrame \} from '\.\.\/layout\/InspectorFrame'/)
+    expect(panel).toMatch(/<InspectorFrame\b/)
+    const route = await read('../../routes/session/$sessionId.tsx')
+    expect(route).toMatch(/from '@\/hooks\/useLayoutMode'/)
+    expect(route).toMatch(/useLayoutMode\(\)/)
+    expect(route).toMatch(/'wide'/)
+  })
+
+  it('at wide the chat column and the explorer give way so the docked inspector fits the row', async () => {
+    const css = await read('../../static/dango-layout.css')
+    const chat = rule(css, '.session-shell.has-workspace:not(.has-workspace-expanded) .session-main-col')
+    expect(chat).toMatch(/min-width: min\(420px, max\(320px, 100% - 380px\)\)/)
+    const explorer = rule(css, '.session-shell.has-workspace:not(.has-workspace-expanded) .project-explorer')
+    expect(explorer).toMatch(/flex-shrink: 1/)
+    expect(explorer).toMatch(/min-width: 0/)
+  })
+
+  it('no old narrow-window overlay rules for the workspace remain', async () => {
+    const css = await read('../../static/globals.css')
+    const start = css.indexOf('@media (max-width: 900px)')
+    const block = css.slice(start, css.indexOf('\n}\n', start))
+    expect(block).toMatch(/\.project-explorer/)
+    expect(block).not.toMatch(/\.workspace-/)
   })
 })

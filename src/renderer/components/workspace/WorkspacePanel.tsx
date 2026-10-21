@@ -176,13 +176,15 @@ function WorkspacePanel({ session }: { session?: Session }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [docked, panel, expanded, setWorkspaceExpanded, setWorkspacePanel])
 
-  // The docked pane takes focus when it opens; a sheet places first focus itself.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only on open, not when the window size changes
+  // The docked pane takes focus when it opens, not on each update (a streaming artifact replaces `panel` per token)
+  // nor when the window size changes; a sheet places first focus itself.
+  const hasPanel = Boolean(panel)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only on open
   useEffect(() => {
-    if (docked && open && panel && panelRef.current) {
+    if (docked && open && hasPanel && panelRef.current) {
       panelRef.current.focus({ preventScroll: true })
     }
-  }, [open, panel])
+  }, [open, hasPanel])
 
   const onResizePointerDown = useCallback(
     (e: React.PointerEvent) => {

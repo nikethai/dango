@@ -21,12 +21,13 @@ import {
   IconPlayerStop,
   IconReload,
 } from '@tabler/icons-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useLayoutMode } from '@/hooks/useLayoutMode'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
 import { getMessageThreadContext } from '@/stores/sessionActions'
-import { useUIStore, type WorkspaceArtifactVersion, type WorkspacePanelState } from '@/stores/uiStore'
+import { uiStore, useUIStore, type WorkspaceArtifactVersion, type WorkspacePanelState } from '@/stores/uiStore'
 import { getMessageText } from '../../shared/utils/message'
 import Markdown from './Markdown'
 import { MessageMermaid } from './Mermaid'
@@ -84,6 +85,30 @@ export function toWorkspacePanelState(
     versionIndex,
   }
 }
+
+/**
+ * The open inspector, brought up to date with a message's streaming artifact. Versions from other messages and the
+ * version on screen are kept; only this message's entry changes.
+ */
+function syncPanelWithArtifact(
+  shown: WorkspaceContentState,
+  artifact: MessageArtifactRecord,
+  messageId: string
+): WorkspacePanelState {
+  const versions = shown.versions ?? []
+  if (versions.length <= 1) return toWorkspacePanelState(artifact, messageId)
+  const next = toVersion(artifact, messageId)
+  return {
+    ...shown,
+    versions: versions.map((item) => (item.messageId === messageId ? { ...next, version: item.version } : item)),
+  }
+}
+
+type WorkspaceContentState = NonNullable<WorkspacePanelState>
+
+// Messages whose artifact already opened the inspector by itself: once per message, across re-mounts (the list is
+// virtualised, so a message mounts again each time it scrolls back into view).
+const autoOpenedMessages = new Set<string>()
 
 export async function getPreviousArtifactVersion(
   sessionId: string,
@@ -157,15 +182,31 @@ export function MessageArtifact(props: {
     artifact,
   } = props
 
-  const setWorkspacePanel = useUIStore((s) => s.setWorkspacePanel)
+  const layoutMode = useLayoutMode()
+  // Only a reply streamed while this card was on screen may open the inspector, never one loaded from history.
+  const sawGenerating = useRef(false)
+  if (generating) sawGenerating.current = true
 
   const derived = useMemo(() => artifact ?? deriveMessageArtifacts(messageContent)?.[0], [artifact, messageContent])
 
   useEffect(() => {
-    if (!autoOpenWorkspace || !derived?.content) return
+    if (!derived?.content) return
+    const { workspacePanel: shown, setWorkspacePanel } = uiStore.getState()
+    // The inspector already shows this message: keep it in step with the stream (that is not opening it).
+    if (shown?.messageId === messageId) {
+      const current = shown.versions?.find((item) => item.messageId === messageId)?.content ?? shown.content
+      if (current !== derived.content) setWorkspacePanel(syncPanelWithArtifact(shown, derived, messageId))
+      return
+    }
+    if (!autoOpenWorkspace || !sawGenerating.current) return
     if (generating && derived.content.length < 24) return
+    // Below 1200 px the inspector is a modal sheet: it opens only from the card's Open button (slice 9 RS1, RS2).
+    if (layoutMode !== 'wide') return
+    // Once per message: a pane the user closed stays closed for the rest of the reply.
+    if (autoOpenedMessages.has(messageId)) return
+    autoOpenedMessages.add(messageId)
     setWorkspacePanel(toWorkspacePanelState(derived, messageId))
-  }, [autoOpenWorkspace, derived, generating, messageId, setWorkspacePanel])
+  }, [autoOpenWorkspace, derived, generating, messageId, layoutMode])
 
   if (!derived) return null
 

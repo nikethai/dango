@@ -291,6 +291,20 @@
   border-left: 1px solid var(--dango-line);
 }
 
+/*
+ * The docked workspace inspector always fits in the row: at the narrow end of wide (1200 px with the project
+ * explorer, or a custom sidebar up to 500 px) the chat column and the explorer give way first. The row is at least
+ * 700 px at wide, so the chat keeps min(420px, row - 380px) and never less than 320 px; the explorer may collapse.
+ */
+.session-shell.has-workspace:not(.has-workspace-expanded) .session-main-col {
+  min-width: min(420px, max(320px, 100% - 380px));
+}
+
+.session-shell.has-workspace:not(.has-workspace-expanded) .project-explorer {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
 .dango-inspector-sheet {
   overflow: hidden;
   container-type: inline-size;

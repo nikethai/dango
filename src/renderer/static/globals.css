@@ -8240,7 +8240,7 @@ button.session-statusline-plan:focus-visible {
   padding: 0.3rem 0.45rem;
 }
 
-/* Mobile: workspace becomes overlay sheet */
+/* Narrow windows: no project explorer. The workspace inspector is a sheet below 1200 px (InspectorFrame, slice 9). */
 @media (max-width: 900px) {
   .session-body-row {
     position: relative;
@@ -8248,33 +8248,6 @@ button.session-statusline-plan:focus-visible {
 
   .project-explorer {
     display: none;
-  }
-
-  .workspace-panel {
-    position: absolute;
-    inset: 0;
-    width: 100% !important;
-    max-width: 100%;
-    z-index: 40;
-  }
-
-  .workspace-panel.is-open {
-    width: 100% !important;
-  }
-
-  .workspace-panel-shell {
-    width: 100% !important;
-  }
-
-  .workspace-panel-resizer,
-  .workspace-header-expand {
-    display: none;
-  }
-
-  .workspace-panel-inner {
-    box-shadow: none;
-    background: var(--chatbox-background-primary);
-    padding: 4px;
   }
 }
 
