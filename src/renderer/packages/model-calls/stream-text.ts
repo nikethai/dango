@@ -374,6 +374,7 @@ export async function streamText(
   const globalSettings = settingsStore.getState().getSettings()
   // ADR 0003: whether this turn's model is cloud (the chat's provider and its host, and the model id this call sends).
   // A cloud turn never carries an earlier answer built from local-only mail or tasks.
+  // Invariant: callers build `model` from these same `sessionSettings` (generation.ts: both from `effectiveSettings`).
   const calledModel = { provider: sessionSettings?.provider, modelId: model.modelId || sessionSettings?.modelId }
   const cloudModel = !isLocalModelIn(globalSettings, calledModel)
   // B3: taken before cloudSafeMessages, whose placeholder drops the tool parts that mark it.

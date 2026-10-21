@@ -158,6 +158,9 @@ async function askModel(source: ConnectedSource, batch: SourceItem[]): Promise<s
   ])
   const global = settingsStore.getState().getSettings()
   const choice = backgroundModelChoice(global, lastUsedModelStore.getState().chat)
+  // Per batch: the background model (or the source's "Keep on this device only") can change while a long review runs.
+  const localOnly = source.localOnly || !!getSource(source.id)?.localOnly
+  if (localOnly && !isLocalModelIn(global, choice)) throw new NeedsUserError(LOCAL_ONLY_REASON, chooseModel())
   const settings = { ...global, ...(choice ? { provider: choice.provider, modelId: choice.modelId } : {}) }
   const model = getModel(settings, global, await platform.getConfig(), await createModelDependencies())
   const { system, user } = buildReviewPrompt(source.label, batch)

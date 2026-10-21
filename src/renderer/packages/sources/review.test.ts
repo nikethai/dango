@@ -437,6 +437,56 @@ describe('reviewJobHandler', () => {
   })
 })
 
+describe('reviewJobHandler re-checks the model per batch (B2)', () => {
+  const LOCAL_MODEL = {
+    defaultChatModel: { provider: 'ollama', model: 'llama3' },
+    providers: { ollama: { models: [{ modelId: 'llama3' }] } },
+  }
+  const twoBatches = () => [
+    { ref: 't1', label: 'Thread one', text: 'x'.repeat(7_000) },
+    { ref: 't2', label: 'Thread two', text: 'secret-two '.repeat(600) },
+  ]
+
+  it('a switch to a cloud model between batches stops before the next model call, with choose-model', async () => {
+    storeSources(sourceOf({ localOnly: true }))
+    h.settings = { ...LOCAL_MODEL }
+    read.mockResolvedValue({ items: twoBatches(), cursor: 'c2' })
+    vi.mocked(generateText).mockImplementationOnce(() => {
+      h.settings = { ...CLOUD_MODEL }
+      return Promise.resolve({ contentParts: [{ type: 'text', text: JSON.stringify({ proposals: [] }) }] } as never)
+    })
+    const error = await reviewJobHandler(ctxOf()).catch((e) => e)
+    expect(error).toBeInstanceOf(NeedsUserError)
+    expect(error).toMatchObject({
+      reason: 'this source stays on this device; choose a local model',
+      fix: { action: 'choose-model' },
+    })
+    expect(generateText).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(vi.mocked(generateText).mock.calls)).not.toContain('secret-two')
+  })
+
+  it('a source marked local-only between batches stops before a cloud model call', async () => {
+    storeSources(sourceOf())
+    read.mockResolvedValue({ items: twoBatches(), cursor: 'c2' })
+    vi.mocked(generateText).mockImplementationOnce(async () => {
+      await updateSource('s1', { localOnly: true })
+      return { contentParts: [{ type: 'text', text: JSON.stringify({ proposals: [] }) }] } as never
+    })
+    const error = await reviewJobHandler(ctxOf()).catch((e) => e)
+    expect(error).toMatchObject({ fix: { action: 'choose-model' } })
+    expect(generateText).toHaveBeenCalledTimes(1)
+  })
+
+  it('a local model reviews every batch of a local-only source', async () => {
+    storeSources(sourceOf({ localOnly: true }))
+    h.settings = { ...LOCAL_MODEL }
+    read.mockResolvedValue({ items: twoBatches(), cursor: 'c2' })
+    modelSays({ proposals: [] }, { proposals: [] })
+    await reviewJobHandler(ctxOf())
+    expect(generateText).toHaveBeenCalledTimes(2)
+  })
+})
+
 describe('syncJobHandler', () => {
   it('runs the kind sync and records lastSyncAt', async () => {
     storeSources(sourceOf())

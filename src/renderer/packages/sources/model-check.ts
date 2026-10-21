@@ -2,6 +2,7 @@ import { getSystemProviders } from '@shared/providers'
 import { isProviderListedInSettings } from '@shared/providers/provider-credentials'
 import type { Settings } from '@shared/types'
 import { ModelProviderEnum } from '@shared/types/provider'
+import { normalizeOpenAIApiHostAndPath } from '@shared/utils/llm_utils'
 
 type ChatModel = { provider: string; modelId: string }
 
@@ -20,13 +21,15 @@ const CLOUD_MODEL_ID = /(?:^|[-:])cloud$/i
 export type ModelRef = { provider?: string | null; modelId?: string | null }
 export type ProviderHostSettings = Pick<Settings, 'providers' | 'customProviders'>
 
+/**
+ * The hostname the Ollama and LM Studio models send to: the host as `normalizeOpenAIApiHostAndPath` rewrites it (it
+ * adds `https://` unless the host starts with exactly `http://` or `https://`, so `HTTP://127.0.0.1` goes to host
+ * `http`).
+ */
 function hostnameOf(host: string): string | null {
-  const trimmed = host.trim()
-  if (!trimmed) return null
-  // `localhost:11434` would otherwise parse as the scheme `localhost:`.
-  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
+  if (!host.trim()) return null
   try {
-    return new URL(withScheme).hostname
+    return new URL(normalizeOpenAIApiHostAndPath({ apiHost: host }).apiHost).hostname
   } catch {
     return null
   }

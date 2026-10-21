@@ -31,6 +31,17 @@ describe('isLocalModel', () => {
     expect(local('ollama', 'not a host')).toBe(false)
   })
 
+  it('reads the hostname the way the Ollama and LM Studio request normalises the host', () => {
+    expect(local('ollama', 'HTTP://127.0.0.1:11434')).toBe(false)
+    expect(local('ollama', 'Http://localhost:11434')).toBe(false)
+    expect(local('ollama', 'ftp://127.0.0.1:11434')).toBe(false)
+    expect(local('ollama', 'ws://localhost:11434')).toBe(false)
+    expect(local('ollama', 'localhost:11434')).toBe(true)
+    expect(local('ollama', 'http://127.0.0.1:11434')).toBe(true)
+    expect(local('lm-studio', 'http://[::1]:1234')).toBe(true)
+    expect(local('lm-studio', 'https://localhost:1234/v1')).toBe(true)
+  })
+
   it('treats any cloud model id as cloud, and a missing provider or model as cloud', () => {
     expect(local('ollama', 'http://127.0.0.1:11434', 'qwen3-coder:480b-cloud')).toBe(false)
     expect(local('ollama', 'http://127.0.0.1:11434', 'deepseek:cloud')).toBe(false)
