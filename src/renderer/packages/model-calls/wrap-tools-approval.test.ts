@@ -7,6 +7,7 @@ const addAuditEntryMock = vi.hoisted(() => vi.fn())
 const addApprovalMock = vi.hoisted(() => vi.fn(() => true))
 const addScopeGrantMock = vi.hoisted(() => vi.fn(() => true))
 const removeApprovalMock = vi.hoisted(() => vi.fn())
+const revokeScopeGrantMock = vi.hoisted(() => vi.fn(() => true))
 const requestToolPermissionMock = vi.hoisted(() => vi.fn())
 const addToastMock = vi.hoisted(() => vi.fn())
 
@@ -21,6 +22,7 @@ vi.mock('@/stores/toolApprovalStore', () => ({
       addApproval: addApprovalMock,
       addScopeGrant: addScopeGrantMock,
       removeApproval: removeApprovalMock,
+      revokeScopeGrant: revokeScopeGrantMock,
     }),
   },
 }))
@@ -65,6 +67,7 @@ describe('wrapToolsWithApproval shipped wrapper', () => {
     addApprovalMock.mockReset()
     addScopeGrantMock.mockReset()
     removeApprovalMock.mockReset()
+    revokeScopeGrantMock.mockReset()
     requestToolPermissionMock.mockReset()
     addToastMock.mockReset()
   })
@@ -222,11 +225,13 @@ describe('wrapToolsWithApproval shipped wrapper', () => {
       )
     )
     expect(execute).toHaveBeenCalledTimes(1)
+    expect(revokeScopeGrantMock).toHaveBeenCalledWith('s1', 'browser_click')
 
     addToastMock.mockClear()
     addApprovalMock.mockReturnValueOnce(false)
     await (wrapToolsWithApproval('sess-1', tools).browser_click as Exec).execute({}, {})
     await vi.waitFor(() => expect(addToastMock).toHaveBeenCalledTimes(1))
+    expect(removeApprovalMock).toHaveBeenCalledWith('sess-1', 'browser_click')
   })
 
   it('shows no toast when an Always grant saves', async () => {

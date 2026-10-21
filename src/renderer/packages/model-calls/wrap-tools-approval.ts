@@ -186,22 +186,36 @@ export function wrapToolsWithApproval(
               if (choice === 'always' && grantable) {
                 const now = Date.now()
                 if (scopeId) {
-                  const stored = toolApprovalStore.getState().addScopeGrant(scopeId, {
+                  const store = toolApprovalStore.getState()
+                  const previous = getScopeGrant(scopeId, toolName)
+                  const stored = store.addScopeGrant(scopeId, {
                     toolName,
                     riskTier,
                     grantedAt: now,
                     ...(description ? { toolDescription: description } : {}),
                   })
-                  if (!stored) notifyAlwaysNotSaved(toolName)
+                  if (!stored) {
+                    // Not saved: put memory back as it was, so the next call asks and no later write saves this grant.
+                    if (previous) store.addScopeGrant(scopeId, previous)
+                    else store.revokeScopeGrant(scopeId, toolName)
+                    notifyAlwaysNotSaved(toolName)
+                  }
                   audit('scope', 'allow')
                 } else {
-                  const stored = toolApprovalStore.getState().addApproval(sessionId, {
+                  const store = toolApprovalStore.getState()
+                  const previous = getToolApproval(sessionId, toolName)
+                  const stored = store.addApproval(sessionId, {
                     toolName,
                     riskTier,
                     scope: 'session',
                     timestamp: now,
                   })
-                  if (!stored) notifyAlwaysNotSaved(toolName)
+                  if (!stored) {
+                    // Not saved: put memory back as it was, so the next call asks and no later write saves it.
+                    if (previous) store.addApproval(sessionId, previous)
+                    else store.removeApproval(sessionId, toolName)
+                    notifyAlwaysNotSaved(toolName)
+                  }
                   audit('session', 'allow')
                 }
               } else {
