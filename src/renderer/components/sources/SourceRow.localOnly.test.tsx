@@ -129,3 +129,25 @@ describe('SourceRow local-only switch', () => {
     expect(openConfiguration).toHaveBeenCalledWith('/settings/sources')
   })
 })
+
+describe('SourceRow Background review caption (B6)', () => {
+  const OFF_LINE = "Off: Dango keeps new mail for search but doesn't read it with a model or write drafts."
+
+  it('Gmail says what off means, linked to the switch; other kinds do not', async () => {
+    await renderRow(source({ kind: 'gmail' }))
+    const toggle = screen.getByRole('switch', { name: 'Background review' })
+    const caption = screen.getByText(OFF_LINE)
+    expect(toggle.getAttribute('aria-describedby')?.split(' ')).toEqual([
+      screen.getByText('Background review line').id,
+      caption.id,
+    ])
+    cleanup()
+    for (const kind of ['asana', 'folder', 'codex-threads'] as const) {
+      await renderRow(source({ kind }))
+      const other = screen.getByRole('switch', { name: 'Background review' })
+      expect(other.getAttribute('aria-describedby')).toBe(screen.getByText('Background review line').id)
+      expect(screen.queryByText(OFF_LINE)).toBeNull()
+      cleanup()
+    }
+  })
+})

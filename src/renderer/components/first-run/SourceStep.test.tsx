@@ -166,6 +166,27 @@ describe('SourceStep (FR2)', () => {
     expect(onNext).toHaveBeenCalledWith(FOLDER, false)
   })
 
+  it('a Gmail draft says under the switch what off means, linked to it; a folder does not (B6)', async () => {
+    const OFF_LINE = "Off: Dango keeps new mail for search but doesn't read it with a model or write drafts."
+    const LINE =
+      'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.'
+    render(<SourceStep onNext={vi.fn()} />)
+    h.pickSource.mockResolvedValueOnce({ kind: 'gmail', label: 'pm@acme.com', config: { accountId: 'a1' } })
+    fireEvent.click(screen.getByText('pick gmail'))
+    await flush()
+    const toggle = screen.getByRole('switch', { name: 'Background review' })
+    const caption = screen.getByText(OFF_LINE)
+    expect(caption.className).toContain('dg-type-caption')
+    expect(toggle.getAttribute('aria-describedby')?.split(' ')).toEqual([screen.getByText(LINE).id, caption.id])
+    cleanup()
+    render(<SourceStep onNext={vi.fn()} />)
+    await pickFolder()
+    expect(screen.getByRole('switch', { name: 'Background review' }).getAttribute('aria-describedby')).toBe(
+      screen.getByText(LINE).id
+    )
+    expect(screen.queryByText(OFF_LINE)).toBeNull()
+  })
+
   it('documents has no background review switch', async () => {
     const onNext = vi.fn()
     render(<SourceStep onNext={onNext} />)

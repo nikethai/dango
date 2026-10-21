@@ -658,6 +658,20 @@ describe('runGmailPipeline with Background review off (B6)', () => {
     expect(judgeThread).not.toHaveBeenCalled()
   })
 
+  it("keeps a review-off source's mail out of the evidence of a reviewed source in the same scope", async () => {
+    h.sources = [
+      source(),
+      source({ id: 'g2', backgroundReview: false, config: { accountId: 'acc1', matchers: ['@acme-hq.com'] } }),
+      source({ id: 'g3', backgroundReview: false, kind: 'asana', config: { accountId: 'as1' } }),
+    ]
+    syncReturns([mail(), mail({ author: 'ceo@acme-hq.com', participants: ['ceo@acme-hq.com', OWN] })])
+    await runGmailPipeline(h.sources[0], ctx())
+    expect(h.records.map((r) => r.sourceId).sort()).toEqual(['g1', 'g2'])
+    expect(judgeThread).toHaveBeenCalledTimes(1)
+    // Decided once per run: Gmail sources with review off only (Asana stays evidence by design).
+    expect(vi.mocked(retrieveEvidence).mock.calls[0][0]).toMatchObject({ excludeSourceIds: new Set(['g2']) })
+  })
+
   it('a second source on the same account with review on still gets its new mail judged', async () => {
     h.sources = [
       source({ backgroundReview: false }),

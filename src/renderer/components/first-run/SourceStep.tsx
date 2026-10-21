@@ -37,6 +37,7 @@ export function SourceStep({ onNext, error: initialError, returned = false }: So
   const { t } = useTranslation()
   const switchLabelId = useId()
   const switchLineId = useId()
+  const switchOffId = useId()
   const [draft, setDraft] = useState<SourceDraft | null>(null)
   const [waiting, setWaiting] = useState<{ kind: SourceKind; choice?: SourceChoice } | null>(null)
   const [error, setError] = useState<SourceError | undefined>(initialError)
@@ -183,13 +184,19 @@ export function SourceStep({ onNext, error: initialError, returned = false }: So
                     className="dg-switch"
                     aria-checked={backgroundReview ? 'true' : 'false'}
                     aria-labelledby={switchLabelId}
-                    aria-describedby={switchLineId}
+                    aria-describedby={draft.kind === 'gmail' ? `${switchLineId} ${switchOffId}` : switchLineId}
                     onClick={() => setBackgroundReview((on) => !on)}
                   />
                 </div>
                 <span id={switchLineId} className="dg-type-caption dg-first-run__choice-line">
                   {t(BACKGROUND_REVIEW_LINE)}
                 </span>
+                {/* B6: with the switch off, Gmail mail is only synced and stored. */}
+                {draft.kind === 'gmail' ? (
+                  <span id={switchOffId} className="dg-type-caption dg-first-run__choice-line">
+                    {t("Off: Dango keeps new mail for search but doesn't read it with a model or write drafts.")}
+                  </span>
+                ) : null}
               </div>
             ) : null}
           </>

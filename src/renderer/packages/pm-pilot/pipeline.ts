@@ -210,6 +210,8 @@ type RunContext = {
   /** Decided once per run: the background model (null: none) and the sources that stay on this device. */
   model: BackgroundModel | null
   localOnly: Set<string>
+  /** Gmail sources with Background review off (B6): their mail is never evidence. Decided once per run. */
+  reviewOff: Set<string>
   /** The account's processed message ids, read once per run and kept up to date by this run. */
   processed: Set<string>
 }
@@ -281,6 +283,11 @@ async function runAccount(ctx: RunContext): Promise<void> {
   ctx.localOnly = new Set(
     listSources()
       .filter((s) => s.localOnly)
+      .map((s) => s.id)
+  )
+  ctx.reviewOff = new Set(
+    listSources()
+      .filter((s) => s.kind === 'gmail' && !s.backgroundReview)
       .map((s) => s.id)
   )
 
@@ -427,6 +434,7 @@ async function judgeAndAct(ctx: RunContext, c: Candidate, model: BackgroundModel
     inbound: c.inbound,
     localOnlySourceIds: ctx.localOnly,
     cloudModel: model.cloud,
+    excludeSourceIds: ctx.reviewOff,
   })
   throwIfAborted(ctx.signal)
   const { judgement, error } = await judgeThread({
@@ -611,6 +619,7 @@ function accountRun(accountId: string, joiner: Joiner, now: number): Promise<Run
     scopes: new Map(),
     model: null,
     localOnly: new Set(),
+    reviewOff: new Set(),
     processed: new Set(),
   }
   run.promise = onAccount(accountId, async () => {

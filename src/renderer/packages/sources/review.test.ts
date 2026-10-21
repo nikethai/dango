@@ -487,6 +487,52 @@ describe('reviewJobHandler re-checks the model per batch (B2)', () => {
   })
 })
 
+describe('reviewJobHandler with Background review off (B6)', () => {
+  const OFF = { summary: 'Background review is off for this source.', addDoneEntry: false }
+  const twoBatches = () => [
+    { ref: 't1', label: 'Thread one', text: 'x'.repeat(7_000) },
+    { ref: 't2', label: 'Thread two', text: 'secret-two '.repeat(600) },
+  ]
+
+  it('a job started (resumed or retried) for a source whose switch is off reads nothing and asks no model', async () => {
+    storeSources(sourceOf({ backgroundReview: false }))
+    h.settings = {}
+    read.mockResolvedValue({ items: twoBatches(), cursor: 'c2' })
+    await expect(reviewJobHandler(ctxOf())).resolves.toEqual(OFF)
+    expect(read).not.toHaveBeenCalled()
+    expect(generateText).not.toHaveBeenCalled()
+    expect(getSource('s1')?.lastReviewAt).toBeUndefined()
+  })
+
+  it('turning the switch off between batches stops before the next model call and keeps the cursor', async () => {
+    storeSources(sourceOf())
+    h.memory.set('source-cursor:s1', 'c1')
+    read.mockResolvedValue({ items: twoBatches(), cursor: 'c2' })
+    vi.mocked(generateText).mockImplementationOnce(async () => {
+      await updateSource('s1', { backgroundReview: false })
+      return {
+        contentParts: [{ type: 'text', text: JSON.stringify({ proposals: [{ kind: 'fact', text: 'A', ref: 't1' }] }) }],
+      } as never
+    })
+    await expect(reviewJobHandler(ctxOf())).resolves.toEqual(OFF)
+    expect(generateText).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(vi.mocked(generateText).mock.calls)).not.toContain('secret-two')
+    // The first batch's proposal stays filed; the cursor does not move, so a later switch-on resumes.
+    expect(proposeKnowledge).toHaveBeenCalledTimes(1)
+    expect(h.memory.get('source-cursor:s1')).toBe('c1')
+    expect(getSource('s1')?.lastReviewAt).toBeUndefined()
+  })
+
+  it('applies to every kind: a folder source with the switch off is not reviewed', async () => {
+    const folderRead = vi.fn(async () => ({ items: [{ ref: 'f1', label: 'a.md', text: 'Hello.' }], cursor: 'c2' }))
+    registerSourceAdapter('folder', { read: folderRead as never })
+    storeSources(sourceOf({ kind: 'folder', backgroundReview: false }))
+    await expect(reviewJobHandler(ctxOf())).resolves.toEqual(OFF)
+    expect(folderRead).not.toHaveBeenCalled()
+    expect(generateText).not.toHaveBeenCalled()
+  })
+})
+
 describe('syncJobHandler', () => {
   it('runs the kind sync and records lastSyncAt', async () => {
     storeSources(sourceOf())

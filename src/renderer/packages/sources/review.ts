@@ -132,6 +132,12 @@ async function sourceFor(sourceId: string | undefined): Promise<ConnectedSource 
 /** A run of a removed source: no error (so no retries and no Needs you entry) and no Done entry. */
 const removedOutcome = () => ({ summary: i18n.t('This source was removed.'), addDoneEntry: false })
 
+/**
+ * A review of a source whose Background review is off (B6): a job that was running, waiting to retry or resumed when
+ * the switch went off. Ends like a removed source: no error, no Done entry, and the cursor is not saved.
+ */
+const switchedOffOutcome = () => ({ summary: i18n.t('Background review is off for this source.'), addDoneEntry: false })
+
 async function cursorStorage() {
   const [mod, { StorageKeyGenerator }] = await Promise.all([import('@/storage'), import('@/storage/StoreStorage')])
   return { storage: mod.default, key: StorageKeyGenerator.sourceCursor }
@@ -199,6 +205,7 @@ function reviewSummary(read: number, proposals: number, label: string): string {
 export const reviewJobHandler: JobHandler = async ({ job, signal, progress }) => {
   const source = await sourceFor(job.sourceId)
   if (!source) return removedOutcome()
+  if (!source.backgroundReview) return switchedOffOutcome()
   await checkModel(source)
   const def = getSourceKind(source.kind)
   if (!def?.read) throw new Error(i18n.t('This source cannot be reviewed.'))
@@ -215,6 +222,8 @@ export const reviewJobHandler: JobHandler = async ({ job, signal, progress }) =>
   let done = items.length - pending.length
   for (const batch of toBatches(pending)) {
     throwIfAborted(signal)
+    // Turned off mid-run: stop before the next model call. Proposals filed so far stay; the cursor is not saved.
+    if (getSource(source.id)?.backgroundReview === false) return switchedOffOutcome()
     progress(i18n.t('Reviewed {{done}} of {{count}} items', { done, count: items.length }))
     const drafts = parseProposalDraft(await askModel(source, batch), new Set(batch.map((item) => item.ref)))
     const byRef = new Map(batch.map((item) => [item.ref, item]))

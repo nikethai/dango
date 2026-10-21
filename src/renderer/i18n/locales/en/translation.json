@@ -1437,6 +1437,7 @@
   "Client scopes read it unless turned off": "Client scopes read it unless turned off",
   "When {{condition}}": "When {{condition}}",
   "Background review": "Background review",
+  "Background review is off for this source.": "Background review is off for this source.",
   "Off: Dango keeps new mail for search but doesn't read it with a model or write drafts.": "Off: Dango keeps new mail for search but doesn't read it with a model or write drafts.",
   "Migration": "Migration",
   "proposed": "proposed",
