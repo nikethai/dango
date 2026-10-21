@@ -3,9 +3,9 @@
  * Used when the assistant is generating and there is no answer text yet.
  */
 
+import clsx from 'clsx'
 import type { FC, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import clsx from 'clsx'
 
 export type AssistantPendingProps = {
   /** Accessible + visible label. Defaults to “Thinking…”. */
@@ -31,7 +31,7 @@ export const AssistantPending: FC<AssistantPendingProps> = ({ label, className, 
   const text = label ?? t('Thinking…')
 
   return (
-    <div className={clsx('assistant-pending', className)} role="status" aria-live="polite" aria-label={text}>
+    <div className={clsx('assistant-pending', className)}>
       <PendingDots />
       {!dotsOnly ? <span className="assistant-pending-label">{text}</span> : null}
     </div>
@@ -41,7 +41,7 @@ export const AssistantPending: FC<AssistantPendingProps> = ({ label, className, 
 /** Quiet status row for file read / webpage load / retry (not a blue bootstrap card). */
 export function AssistantStatusRow({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={clsx('assistant-status-row', className)} role="status" aria-live="polite">
+    <div className={clsx('assistant-status-row', className)}>
       <PendingDots />
       <div className="assistant-status-row-body">{children}</div>
     </div>

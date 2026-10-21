@@ -1959,5 +1959,13 @@
   "{{progress}}. Items appear here as they are found.": "{{progress}}. Items appear here as they are found.",
   "Ask anything meanwhile: {{hotkey}}.": "Ask anything meanwhile: {{hotkey}}.",
   "Connect a source so Dango has something to read.": "Connect a source so Dango has something to read.",
-  "Skipped during setup": "Skipped during setup"
+  "Skipped during setup": "Skipped during setup",
+  "Code block.": "Code block.",
+  "Stopped before answering.": "Stopped before answering.",
+  "Thinking, {{count}} seconds_one": "Thinking, {{count}} second",
+  "Thinking, {{count}} seconds_other": "Thinking, {{count}} seconds",
+  "Thinking, {{count}} seconds, {{summary}}_one": "Thinking, {{count}} second, {{summary}}",
+  "Thinking, {{count}} seconds, {{summary}}_other": "Thinking, {{count}} seconds, {{summary}}",
+  "Writing the answer, {{count}} seconds_one": "Writing the answer, {{count}} second",
+  "Writing the answer, {{count}} seconds_other": "Writing the answer, {{count}} seconds"
 }
