@@ -37,13 +37,21 @@ function press(row: HTMLElement, label: string): 'pressed' | 'disabled' | 'none'
   return buttons.length > 0 ? 'disabled' : 'none'
 }
 
+/** The row's actions in DOM order, for → and ←: enabled buttons and links. */
+function actions(row: HTMLElement): HTMLElement[] {
+  return Array.from(row.querySelectorAll<HTMLElement>('button, a[href]')).filter(
+    (el) => !(el instanceof HTMLButtonElement && el.disabled)
+  )
+}
+
 function findPrimary(row: HTMLElement): HTMLButtonElement | undefined {
   return Array.from(row.querySelectorAll<HTMLButtonElement>('button.dg-btn--primary')).find((b) => !b.disabled)
 }
 
 /**
  * Keys for the focused Review row. They press the row's own buttons, so a slice that owns a row
- * keeps its own logic and undo record. ⌘Z is 1b's global hotkey.
+ * keeps its own logic and undo record. ⌘Z is 1b's global hotkey. → enters the row's actions (and steps through
+ * them), ← leaves them for the row.
  *
  * A and the buttons are found by their translated text (`Approve`, `Edit`, `Dismiss`, `Open`, `Keep this`). The E and
  * X fallbacks (open through the opener, dismiss through the feed) act only on rows the feed renders itself
@@ -96,6 +104,19 @@ export function useReviewKeys(o: ReviewKeysOptions): { onKeyDown: KeyboardEventH
       case 'ArrowUp':
       case 'k':
         move(id, -1)
+        break
+      case 'ArrowRight': {
+        // Into the row's first action; from an action, on to the next one.
+        const list = actions(row)
+        const next = target === row ? list[0] : list[list.indexOf(target as HTMLElement) + 1]
+        if (!next) return
+        next.focus()
+        break
+      }
+      case 'ArrowLeft':
+        // Back out of an action to its row.
+        if (target === row) return
+        row.focus()
         break
       case 'a':
         if (press(row, t('Approve')) === 'none') click(findPrimary(row))

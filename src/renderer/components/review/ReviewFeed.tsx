@@ -31,12 +31,14 @@ const KEYS = 'ArrowUp ArrowDown J K A E X Enter'
 type FeedRowProps = {
   entry: ReviewEntry
   focused: boolean
+  /** The feed's single tab stop (roving tabindex): every other row is reached with the arrow keys. */
+  tabStop: boolean
   rowsRef: RefObject<Map<string, HTMLElement>>
   onFocus(id: string): void
   onKeyDown: KeyboardEventHandler<HTMLElement>
 }
 
-function FeedRow({ entry, focused, rowsRef, onFocus, onKeyDown }: FeedRowProps) {
+function FeedRow({ entry, focused, tabStop, rowsRef, onFocus, onKeyDown }: FeedRowProps) {
   const { t } = useTranslation()
   const kind = displayKind(entry)
   // A resolved row renders as Done, so a done knowledge row never gets slice 4's live Approve.
@@ -44,7 +46,7 @@ function FeedRow({ entry, focused, rowsRef, onFocus, onKeyDown }: FeedRowProps) 
   const Renderer = Registered ?? DefaultReviewRenderer
   return (
     <li
-      tabIndex={0}
+      tabIndex={tabStop ? 0 : -1}
       data-entry-id={entry.id}
       data-feed-default={Registered ? undefined : ''}
       aria-label={t('{{kind}}: {{text}}', { kind: t(KIND_LABEL[kind]), text: entry.text })}
@@ -96,8 +98,12 @@ export function ReviewFeed({ scopeId, caughtUp }: ReviewFeedProps) {
   focusedRef.current = focusedId
   // The last row that held focus, kept after focus leaves the feed (which clears the ring) for the removal logic.
   const lastFocusedRef = useRef<string | null>(null)
+  // The row Tab lands on: the last row that held focus while it remains, else the first row.
+  const [tabStopId, setTabStopId] = useState<string | null>(null)
+  const stopId = tabStopId && ids.includes(tabStopId) ? tabStopId : (ids[0] ?? null)
   const onRowFocus = useCallback((id: string) => {
     lastFocusedRef.current = id
+    setTabStopId(id)
     setFocusedId(id)
   }, [])
   const onBlur = (event: FocusEvent<HTMLDivElement>) => {
@@ -143,6 +149,7 @@ export function ReviewFeed({ scopeId, caughtUp }: ReviewFeedProps) {
     // No surviving neighbour but rows remain (they were all replaced): the first row.
     const next = nextFocusAfterRemoval(prev, ids, last) ?? ids[0] ?? null
     lastFocusedRef.current = next
+    setTabStopId(next)
     if (!focusIsOurs) return
     setFocusedId(next)
     if (next) rowsRef.current.get(next)?.focus()
@@ -205,6 +212,7 @@ export function ReviewFeed({ scopeId, caughtUp }: ReviewFeedProps) {
                 key={entry.id}
                 entry={entry}
                 focused={entry.id === focusedId}
+                tabStop={entry.id === stopId}
                 rowsRef={rowsRef}
                 onFocus={onRowFocus}
                 onKeyDown={onKeyDown}
