@@ -12,7 +12,7 @@ import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
 import { useDesktopShell } from '@/hooks/useDesktopShell'
 import { useI18nEffect } from '@/hooks/useI18nEffect'
-import { setLayoutAttributeSuppressed, useLayoutMode } from '@/hooks/useLayoutMode'
+import { setLayoutAttributeSuppressed, setSidebarShown, useLayoutMode } from '@/hooks/useLayoutMode'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { useSidebarEffectiveWidth } from '@/hooks/useScreenChange'
 import useShortcut from '@/hooks/useShortcut'
@@ -23,7 +23,7 @@ import Box from '@mui/material/Box'
 import CssBaseline from '@mui/material/CssBaseline'
 import Grid from '@mui/material/Grid'
 import { ThemeProvider } from '@mui/material/styles'
-import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
+import { createRootRoute, Outlet, useLocation, useRouterState } from '@tanstack/react-router'
 import { useSetAtom } from 'jotai'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { navigateToSettings } from '@/modals/Settings'
@@ -87,7 +87,12 @@ function Root() {
     void router.navigate({ to, search: { from }, replace: true })
   }, [])
   const firstRunFromPath = `${location.pathname}${location.searchStr}${location.hash ? `#${location.hash}` : ''}`
-  useFirstRunGate(location.pathname, goToFirstRun, firstRunFromPath)
+  const firstRunPending = useFirstRunGate(location.pathname, goToFirstRun, firstRunFromPath)
+  // The location moves to /first-run before its lazy chunk loads, while the old match still renders.
+  const firstRunMatched = useRouterState({ select: (s) => s.matches.some((m) => m.routeId === FIRST_RUN_PATH) })
+  useEffect(() => {
+    if (firstRunPending) void router.preloadRoute({ to: FIRST_RUN_PATH })
+  }, [firstRunPending])
 
   useEffect(() => {
     if (initialized.current) {
@@ -117,8 +122,10 @@ function Root() {
   const sidebarWidth = useSidebarEffectiveWidth()
   const isSettingsRoute = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
   const isFirstRunRoute = location.pathname === FIRST_RUN_PATH
+  // A new user never sees Review (or the sidebar) before first run: nothing is painted until its page renders (M1).
+  const holdForFirstRun = firstRunPending || (isFirstRunRoute && !firstRunMatched)
   // Settings owns its own navigation, and first run is a full-window page; keep the app chrome out of both.
-  const hideAppChrome = isSettingsRoute || isFirstRunRoute
+  const hideAppChrome = isSettingsRoute || isFirstRunRoute || holdForFirstRun
   // The docked sidebar or rail; 0 at phone, where the drawer lays over the content.
   const offsetMainForSidebar = !hideAppChrome && sidebarWidth > 0
 
@@ -191,6 +198,10 @@ function Root() {
   useLayoutEffect(() => {
     setLayoutAttributeSuppressed(suppressLayoutAttribute)
   }, [suppressLayoutAttribute])
+  // ⌘\ only acts where a sidebar or rail is on screen.
+  useLayoutEffect(() => {
+    setSidebarShown(!isQuickRoute && !hideAppChrome && !isPhoneLayout)
+  }, [isQuickRoute, hideAppChrome, isPhoneLayout])
 
   return (
     <Box
@@ -240,12 +251,12 @@ function Root() {
               {/* #main: where focus lands when a sheet's opener is gone (1b useSheetFocus) */}
               {/* biome-ignore lint/nursery/useUniqueElementIds: the app shell renders once per window */}
               <Box id="main" tabIndex={-1} className="dg-main h-full min-h-0 flex flex-col flex-1">
-                <Outlet />
+                {holdForFirstRun ? null : <Outlet />}
               </Box>
             </ErrorBoundary>
           </Box>
           {/* Phone tabs (renders only at phone); first run is a full-window page without them */}
-          {!isFirstRunRoute && <PhoneTabBar />}
+          {!isFirstRunRoute && !holdForFirstRun && <PhoneTabBar />}
         </Grid>
       )}
       {/* Session settings */}

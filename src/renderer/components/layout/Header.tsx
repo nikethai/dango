@@ -4,12 +4,13 @@ import { IconCheck, IconMenu2, IconPencil, IconX } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toggleSidebar, useLayoutMode } from '@/hooks/useLayoutMode'
+import { toggleSidebar, useLayoutMode, useSidebarShown } from '@/hooks/useLayoutMode'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { updateSession } from '@/stores/chatStore'
 import { scheduleGenerateNameAndThreadName, scheduleGenerateThreadName } from '@/stores/sessionActions'
 import * as settingActions from '@/stores/settingActions'
 import { useUIStore } from '@/stores/uiStore'
+import { sidebarToggleLabel } from '@/utils/sidebarToggle'
 import { ScalableIcon } from '../common/ScalableIcon'
 import { WorkspaceHeaderControls } from '../project/WorkspaceHeaderControls'
 import TitleBarRow from './TitleBarRow'
@@ -21,6 +22,7 @@ export default function Header(props: { session: Session }) {
   const sidebarLayout = useUIStore((s) => s.sidebarLayout)
   const railPeek = useUIStore((s) => s.railPeek)
   const layoutMode = useLayoutMode()
+  const sidebarShown = useSidebarShown()
   const isSmallScreen = layoutMode === 'phone'
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
 
@@ -81,13 +83,13 @@ export default function Header(props: { session: Session }) {
   }
 
   // Medium opens or closes the rail peek; wide collapsed to the rail expands in place; never at phone.
-  const showSidebarToggle = layoutMode === 'medium' || (layoutMode === 'wide' && sidebarLayout === 'rail')
+  const showSidebarToggle =
+    sidebarShown && (layoutMode === 'medium' || (layoutMode === 'wide' && sidebarLayout === 'rail'))
   const macTrafficInset = showSidebarToggle && needRoomForMacWindowControls
 
   const handleSidebarToggle = () => toggleSidebar(layoutMode)
 
-  const sidebarToggleLabel =
-    layoutMode === 'wide' ? t('Expand sidebar') : railPeek ? t('Hide sidebar') : t('Show sidebar')
+  const toggleLabel = sidebarToggleLabel(t, layoutMode, railPeek)
 
   return (
     <TitleBarRow
@@ -105,7 +107,7 @@ export default function Header(props: { session: Session }) {
             color="chatbox-tertiary"
             mr={isSmallScreen ? 'xs' : 'sm'}
             onClick={handleSidebarToggle}
-            aria-label={sidebarToggleLabel}
+            aria-label={toggleLabel}
             data-sidebar-toggle
           >
             <IconMenu2 />

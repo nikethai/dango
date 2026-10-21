@@ -1,17 +1,13 @@
 // @vitest-environment jsdom
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, render, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ui = vi.hoisted(() => {
   const state = {
     railPeek: false,
-    showSidebar: true,
     sidebarLayout: 'expanded' as 'expanded' | 'rail',
     setRailPeek: (v: boolean) => {
       state.railPeek = v
-    },
-    setShowSidebar: (v: boolean) => {
-      state.showSidebar = v
     },
     setSidebarLayout: (v: 'expanded' | 'rail') => {
       state.sidebarLayout = v
@@ -21,7 +17,13 @@ const ui = vi.hoisted(() => {
 })
 vi.mock('@/stores/uiStore', () => ({ uiStore: { getState: () => ui } }))
 
-import { setLayoutAttributeSuppressed, toggleSidebar, useLayoutMode } from './useLayoutMode'
+import {
+  setLayoutAttributeSuppressed,
+  setSidebarShown,
+  toggleSidebar,
+  useLayoutMode,
+  useSidebarShown,
+} from './useLayoutMode'
 
 function setWidth(width: number) {
   Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width })
@@ -40,9 +42,9 @@ const root = document.documentElement
 beforeEach(() => {
   setWidth(1300)
   ui.railPeek = false
-  ui.showSidebar = true
   ui.sidebarLayout = 'expanded'
   setLayoutAttributeSuppressed(false)
+  setSidebarShown(true)
   delete root.dataset.quickChat
 })
 
@@ -90,13 +92,12 @@ describe('useLayoutMode', () => {
     expect(ui.railPeek).toBe(false)
   })
 
-  it('closes the rail peek and the phone drawer when the width drops below 760 px', () => {
+  it('closes the rail peek when the width drops below 760 px', () => {
     render(<Probe />)
     setWidth(960)
     ui.railPeek = true
     setWidth(700)
     expect(ui.railPeek).toBe(false)
-    expect(ui.showSidebar).toBe(false)
   })
 
   it('keeps the peek while resizing inside one mode', () => {
@@ -124,8 +125,31 @@ describe('toggleSidebar', () => {
   it('does nothing at phone', () => {
     render(<Probe />)
     setWidth(390)
-    ui.showSidebar = false
     toggleSidebar()
-    expect(ui).toMatchObject({ railPeek: false, showSidebar: false, sidebarLayout: 'expanded' })
+    expect(ui).toMatchObject({ railPeek: false, sidebarLayout: 'expanded' })
+  })
+
+  it('does nothing while no sidebar is shown (first run, Settings, Quick Chat) (M8)', () => {
+    render(<Probe />)
+    setSidebarShown(false)
+    toggleSidebar()
+    expect(ui).toMatchObject({ railPeek: false, sidebarLayout: 'expanded' })
+    setWidth(960)
+    toggleSidebar()
+    expect(ui.railPeek).toBe(false)
+    setSidebarShown(true)
+    toggleSidebar()
+    expect(ui.railPeek).toBe(true)
+  })
+})
+
+describe('useSidebarShown', () => {
+  it('follows what the root reports, so page toggles hide where there is no sidebar', () => {
+    const { result } = renderHook(() => useSidebarShown())
+    expect(result.current).toBe(true)
+    act(() => setSidebarShown(false))
+    expect(result.current).toBe(false)
+    act(() => setSidebarShown(true))
+    expect(result.current).toBe(true)
   })
 })

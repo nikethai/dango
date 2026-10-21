@@ -35,6 +35,7 @@ import { trackingEvent } from './packages/event'
 import appIcon from './static/icon.png'
 import { useLanguage, useSettingsStore } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
+import { sidebarToggleLabel } from './utils/sidebarToggle'
 import { CHATBOX_BUILD_PLATFORM } from './variables'
 
 // The Review row closes nothing on navigate: the sidebar is never a temporary drawer now (phone has the tab bar).
@@ -220,7 +221,7 @@ export default function Sidebar() {
   }, [mode])
 
   // Same wording as the Header toggle: medium opens the peek, wide expands in place.
-  const railToggleLabel = mode === 'wide' ? t('Expand sidebar') : railPeek ? t('Hide sidebar') : t('Show sidebar')
+  const railToggleLabel = sidebarToggleLabel(t, mode, railPeek)
 
   return (
     <>

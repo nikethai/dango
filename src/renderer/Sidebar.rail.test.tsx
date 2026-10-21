@@ -24,7 +24,6 @@ vi.mock('@/hooks/useLayoutMode', async (importOriginal) => {
   return { ...actual, useLayoutMode: () => h.mode }
 })
 vi.mock('./hooks/useScreenChange', () => ({
-  SIDEBAR_ICON_RAIL_WIDTH: 56,
   useSidebarWidth: () => 220,
 }))
 vi.mock('./hooks/useVersion', () => ({ default: () => ({ version: '1.0.0', needCheckUpdate: false }) }))
@@ -92,7 +91,7 @@ beforeEach(() => {
       disconnect() {}
     }
   )
-  uiStore.setState({ railPeek: false, sidebarLayout: 'expanded', showSidebar: true })
+  uiStore.setState({ railPeek: false, sidebarLayout: 'expanded' })
 })
 
 afterEach(() => {

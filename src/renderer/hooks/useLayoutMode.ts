@@ -50,15 +50,13 @@ function readWidth(): number {
 
 let currentMode: LayoutMode = layoutModeForWidth(readWidth())
 let attributeSuppressed = false
-let caughtUp = false
+let sidebarShown = true
 const listeners = new Set<() => void>()
 
 /** Mode changes close transient sidebar states, so nothing is left floating over the new layout. */
-function closeTransientSidebar(mode: LayoutMode) {
+function closeTransientSidebar() {
   const state = uiStore.getState()
   if (state.railPeek) state.setRailPeek(false)
-  // The phone drawer is a temporary one with a scrim; never carry it open into (or out of) a resize.
-  if (mode === 'phone' && state.showSidebar) state.setShowSidebar(false)
 }
 
 function syncLayoutAttribute() {
@@ -75,7 +73,7 @@ function refresh() {
   const next = layoutModeForWidth(readWidth())
   if (next === currentMode) return
   currentMode = next
-  closeTransientSidebar(next)
+  closeTransientSidebar()
   syncLayoutAttribute()
   for (const listener of listeners) listener()
 }
@@ -85,11 +83,6 @@ function subscribe(listener: () => void) {
   listeners.add(listener)
   // Catch up with a resize that happened while nothing was listening.
   refresh()
-  if (!caughtUp) {
-    caughtUp = true
-    // A desktop window opened narrow starts with the phone drawer closed.
-    if (currentMode === 'phone') closeTransientSidebar(currentMode)
-  }
   return () => {
     listeners.delete(listener)
     if (listeners.size === 0) window.removeEventListener('resize', refresh)
@@ -119,16 +112,40 @@ export function setLayoutAttributeSuppressed(suppressed: boolean) {
   syncLayoutAttribute()
 }
 
-/** ⌘\ and the Header toggle: open or close the peek at medium, expand or collapse at wide; nothing at phone. */
+/**
+ * The root says whether this window shows a sidebar or rail now: not on first run, Settings or in Quick Chat (nor at
+ * phone). ⌘\ does nothing while it does not, so the saved layout never changes unseen.
+ */
+export function setSidebarShown(shown: boolean) {
+  if (sidebarShown === shown) return
+  sidebarShown = shown
+  for (const listener of sidebarShownListeners) listener()
+}
+
+const sidebarShownListeners = new Set<() => void>()
+
+function subscribeSidebarShown(listener: () => void) {
+  sidebarShownListeners.add(listener)
+  return () => {
+    sidebarShownListeners.delete(listener)
+  }
+}
+
+const getSidebarShown = () => sidebarShown
+
+/** Whether a sidebar or rail is on screen (see setSidebarShown); page toggles hide when it is not. */
+export function useSidebarShown(): boolean {
+  return useSyncExternalStore(subscribeSidebarShown, getSidebarShown, getSidebarShown)
+}
+
+/**
+ * ⌘\ and the Header toggle: open or close the peek at medium, expand or collapse at wide; nothing at phone or while no
+ * sidebar is shown.
+ */
 export function toggleSidebar(mode: LayoutMode = currentMode) {
+  if (!sidebarShown) return
   const state = uiStore.getState()
-  const next = getSidebarToggleResult({
-    mode,
-    sidebarLayout: state.sidebarLayout,
-    showSidebar: state.showSidebar,
-    railPeek: state.railPeek,
-  })
+  const next = getSidebarToggleResult({ mode, sidebarLayout: state.sidebarLayout, railPeek: state.railPeek })
   state.setSidebarLayout(next.sidebarLayout)
-  state.setShowSidebar(next.showSidebar)
   state.setRailPeek(next.railPeek)
 }

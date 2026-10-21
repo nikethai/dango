@@ -28,7 +28,7 @@ import { motionScrollBehavior } from '@/utils/scrollBehavior'
 //    end up below the visible viewport, but scroll the drawer's own scroller
 //    rather than the document.
 
-export function setupKeyboardHandler() {
+function setupKeyboardHandler() {
   const vv = window.visualViewport
   const root = document.documentElement
   let fullVisualHeight = vv?.height || window.innerHeight

@@ -144,4 +144,33 @@ describe('useFirstRunGate', () => {
     renderHook(() => useFirstRunGate('/session/abc', navigate, '/session/abc?thread=t1#m2'))
     expect(navigate).toHaveBeenCalledWith('/first-run', '/session/abc?thread=t1#m2')
   })
+
+  describe('pending (M1: nothing is painted before the redirect)', () => {
+    it('is pending for a new user while the role is unknown, and while the redirect is in flight', async () => {
+      const { result, rerender } = renderHook(({ path }) => useFirstRunGate(path, vi.fn()), {
+        initialProps: { path: '/' },
+      })
+      expect(result.current).toBe(true)
+      await act(async () => h.resolveRole('jobs'))
+      // navigate was called; the location still says / until the router moves.
+      expect(result.current).toBe(true)
+      rerender({ path: '/first-run' })
+      expect(result.current).toBe(false)
+    })
+
+    it('is not pending once the role resolves to the quick window or another window', async () => {
+      const { result } = renderHook(() => useFirstRunGate('/', vi.fn()))
+      expect(result.current).toBe(true)
+      await act(async () => h.resolveRole('quick'))
+      expect(result.current).toBe(false)
+    })
+
+    it('is never pending for an upgrading user, nor on Settings', () => {
+      h.needEdit = false
+      expect(renderHook(() => useFirstRunGate('/', vi.fn())).result.current).toBe(false)
+      h.needEdit = true
+      h.known = 'jobs'
+      expect(renderHook(() => useFirstRunGate('/settings/provider', vi.fn())).result.current).toBe(false)
+    })
+  })
 })

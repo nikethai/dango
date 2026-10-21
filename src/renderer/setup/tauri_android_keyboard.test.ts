@@ -30,6 +30,10 @@ afterEach(() => {
 })
 
 describe('Tauri Android keyboard flag (hides the phone tab bar)', () => {
+  it('wires itself up on import and exports nothing', async () => {
+    expect(Object.keys(await import('./tauri_android_keyboard'))).toEqual([])
+  })
+
   it('is set while a focused field has the viewport shrunk, and cleared on blur', () => {
     field.focus()
     setHeight(500)

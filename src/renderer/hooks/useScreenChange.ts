@@ -2,10 +2,7 @@ import { useMantineTheme } from '@mantine/core'
 import { useTheme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useUIStore } from '../stores/uiStore'
-import { SIDEBAR_RAIL_WIDTH, sidebarPresentation, useLayoutMode } from './useLayoutMode'
-
-/** Icon-only rail width (px). Expanded width uses useSidebarWidth(). */
-export const SIDEBAR_ICON_RAIL_WIDTH = SIDEBAR_RAIL_WIDTH
+import { sidebarPresentation, useLayoutMode } from './useLayoutMode'
 
 /** Phone layout (< 760 px wide). */
 export function useIsSmallScreen() {

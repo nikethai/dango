@@ -28,12 +28,45 @@ describe('__root layout wiring (RS1, RS2)', () => {
   })
 })
 
+describe('first run without a Review flash (M1)', () => {
+  const root = read('routes/__root.tsx')
+
+  it('paints nothing in place of the page, and no chrome, while the redirect is pending or its route loads', () => {
+    expect(root).toContain('const firstRunPending = useFirstRunGate(location.pathname, goToFirstRun, firstRunFromPath)')
+    expect(root).toContain('useRouterState({ select: (s) => s.matches.some((m) => m.routeId === FIRST_RUN_PATH) })')
+    expect(root).toContain('const holdForFirstRun = firstRunPending || (isFirstRunRoute && !firstRunMatched)')
+    expect(root).toContain('{holdForFirstRun ? null : <Outlet />}')
+    expect(root).toContain('const hideAppChrome = isSettingsRoute || isFirstRunRoute || holdForFirstRun')
+    expect(root).toContain('{!isFirstRunRoute && !holdForFirstRun && <PhoneTabBar />}')
+  })
+
+  it('preloads the first-run route while the redirect is pending', () => {
+    expect(root).toMatch(/if \(firstRunPending\) void router\.preloadRoute\(\{ to: FIRST_RUN_PATH \}\)/)
+  })
+})
+
 describe('sidebar toggles', () => {
+  it('⌘\\ does nothing where no sidebar is shown (first run, Settings, Quick Chat, phone) (M8)', () => {
+    const root = read('routes/__root.tsx')
+    expect(root).toContain('setSidebarShown(!isQuickRoute && !hideAppChrome && !isPhoneLayout)')
+  })
+
+  it('Header, Page and the rail foot share one toggle label (M3)', () => {
+    for (const file of ['components/layout/Header.tsx', 'components/layout/Page.tsx', 'Sidebar.tsx']) {
+      const src = read(file)
+      expect(src, file).toContain('sidebarToggleLabel(t, ')
+      expect(src, file).not.toMatch(/railPeek \? t\('Hide sidebar'\)/)
+    }
+  })
+
   it('Header and Page show the toggle at medium and wide-rail only, never at phone', () => {
     for (const file of ['components/layout/Header.tsx', 'components/layout/Page.tsx']) {
       const src = read(file)
       expect(src, file).toContain("layoutMode === 'medium' || (layoutMode === 'wide' && sidebarLayout === 'rail')")
       expect(src, file).toContain('toggleSidebar(layoutMode)')
+      // Hidden where no sidebar is shown (Settings at medium had a toggle that did nothing).
+      expect(src, file).toContain('const sidebarShown = useSidebarShown()')
+      expect(src, file).toMatch(/sidebarShown &&/)
       expect(src, file).not.toContain('getSidebarToggleResult')
     }
   })
@@ -58,7 +91,7 @@ describe('phone shell (RS3)', () => {
     expect(root).toContain("const isPhoneLayout = layoutMode === 'phone'")
     expect(root).toContain('{!hideAppChrome && !isPhoneLayout && <Sidebar />}')
     const content = root.indexOf('<Box id="main"')
-    const tabBar = root.indexOf('{!isFirstRunRoute && <PhoneTabBar />}')
+    const tabBar = root.indexOf('{!isFirstRunRoute && !holdForFirstRun && <PhoneTabBar />}')
     expect(content).toBeGreaterThan(-1)
     expect(tabBar).toBeGreaterThan(content)
     // Only in the main-window branch: the Quick Chat branch comes first and never gets it.

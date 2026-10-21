@@ -96,6 +96,30 @@ describe('phone shell rules (RS3)', () => {
   })
 })
 
+describe('44 px targets are phone only (M5)', () => {
+  // 44 px by design at every width: the tab bar's tabs (phone only anyway) and first run's choice and trust cards.
+  const ALWAYS_44 = ['.dg-tabbar a', '.dg-first-run__choice', '.dg-first-run__trust-option']
+
+  test('every rule that sets a 44 px size is scoped to :root[data-layout="phone"] or allow-listed', () => {
+    const offenders: string[] = []
+    let count = 0
+    layoutRoot.walkRules((rule: Rule) => {
+      let sets44 = false
+      rule.walkDecls(/^(min-)?(height|width)$/, (decl) => {
+        if (decl.value.trim() === '44px') sets44 = true
+      })
+      if (!sets44) return
+      for (const selector of rule.selectors.map(normalize)) {
+        count++
+        if (!selector.startsWith(':root[data-layout="phone"]') && !ALWAYS_44.includes(selector))
+          offenders.push(selector)
+      }
+    })
+    expect(count).toBeGreaterThan(10)
+    expect(offenders).toEqual([])
+  })
+})
+
 // Declarations (prop → value, with !important kept) of the rules inside @media (prefers-reduced-motion: reduce)
 // whose selector list contains `selector`.
 const reducedMotionDecls = (selector: string): Record<string, string> => {

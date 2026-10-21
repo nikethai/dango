@@ -3,9 +3,10 @@ import { IconMenu2 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import type { FC } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toggleSidebar, useLayoutMode } from '@/hooks/useLayoutMode'
+import { toggleSidebar, useLayoutMode, useSidebarShown } from '@/hooks/useLayoutMode'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
 import { useUIStore } from '@/stores/uiStore'
+import { sidebarToggleLabel } from '@/utils/sidebarToggle'
 import TitleBarRow from './TitleBarRow'
 import WindowControls from './WindowControls'
 
@@ -25,17 +26,19 @@ export const Page: FC<PageProps> = ({ children, title, left, right, className, h
   const sidebarLayout = useUIStore((s) => s.sidebarLayout)
   const railPeek = useUIStore((s) => s.railPeek)
   const layoutMode = useLayoutMode()
+  const sidebarShown = useSidebarShown()
   const isSmallScreen = layoutMode === 'phone'
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
 
   // Medium opens or closes the rail peek; wide collapsed to the rail expands in place; never at phone (R22).
-  const showDefaultToggle = !left && (layoutMode === 'medium' || (layoutMode === 'wide' && sidebarLayout === 'rail'))
+  // Not where no sidebar is shown (Settings, first run): there is nothing to toggle.
+  const showDefaultToggle =
+    sidebarShown && !left && (layoutMode === 'medium' || (layoutMode === 'wide' && sidebarLayout === 'rail'))
   const macTrafficInset = showDefaultToggle && needRoomForMacWindowControls
 
   const handleSidebarToggle = () => toggleSidebar(layoutMode)
 
-  const sidebarToggleLabel =
-    layoutMode === 'wide' ? t('Expand sidebar') : railPeek ? t('Hide sidebar') : t('Show sidebar')
+  const toggleLabel = sidebarToggleLabel(t, layoutMode, railPeek)
 
   return (
     <div className={clsx('flex flex-col h-full min-h-0 bg-[var(--chatbox-background-primary)]', className)}>
@@ -55,7 +58,7 @@ export const Page: FC<PageProps> = ({ children, title, left, right, className, h
                 color={isSmallScreen ? 'chatbox-secondary' : 'chatbox-tertiary'}
                 mr="sm"
                 onClick={handleSidebarToggle}
-                aria-label={sidebarToggleLabel}
+                aria-label={toggleLabel}
                 data-sidebar-toggle
               >
                 <IconMenu2 size={isSmallScreen ? 20 : 18} />
