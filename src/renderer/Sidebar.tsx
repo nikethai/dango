@@ -193,6 +193,20 @@ export default function Sidebar() {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [railPeek, setRailPeek])
 
+  // A click outside the peek closes it (the account menu's portal and the sidebar toggles count as inside).
+  useEffect(() => {
+    if (!railPeek) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target
+      if (!(target instanceof Element)) return
+      if (railRef.current?.contains(target)) return
+      if (target.closest('.user-menu-dropdown, [data-sidebar-toggle]')) return
+      setRailPeek(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [railPeek, setRailPeek])
+
   const openPeek = useCallback(() => {
     cancelPeekIntent()
     refocusAfterPeekChange.current = containsFocus(railRef.current)
@@ -227,6 +241,9 @@ export default function Sidebar() {
   // Desktop drawer stays open (rail or expanded); mobile uses temporary open/close.
   const drawerOpen = isSmallScreen ? showSidebar : true
   // Mobile: near-full intentional Chats panel (not a squeezed 75% desktop rail).
+  // Same wording as the Header toggle: medium opens the peek, wide expands in place.
+  const railToggleLabel = mode === 'wide' ? t('Expand sidebar') : railPeek ? t('Hide sidebar') : t('Show sidebar')
+
   const drawerWidth = isSmallScreen ? 'min(100vw - 1.25rem, 22.5rem)' : presentation.drawerWidth
 
   return (
@@ -422,12 +439,13 @@ export default function Sidebar() {
           {/* Account footer — expand sits above user (chrome control, then identity) */}
           <div className={clsx('rail-foot', isIconRail && 'rail-foot--icon')}>
             {isIconRail && (
-              <Tooltip label={t('Expand sidebar')} position="right" withArrow openDelay={300}>
+              <Tooltip label={railToggleLabel} position="right" withArrow openDelay={300}>
                 <button
                   type="button"
                   className="rail-icon-btn rail-expand-btn active:scale-[0.96]"
                   onClick={handleExpandSidebar}
-                  aria-label={t('Expand sidebar')}
+                  aria-label={railToggleLabel}
+                  data-sidebar-toggle
                 >
                   <IconLayoutSidebarLeftExpand size={18} stroke={1.5} aria-hidden />
                 </button>

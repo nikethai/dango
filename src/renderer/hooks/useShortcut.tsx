@@ -41,7 +41,6 @@ export default function useShortcut() {
     // e.key alt、 option、shift e.key
     const ctrlOrCmd = e.ctrlKey || e.metaKey
     const shift = e.shiftKey
-    const altOrOption = e.altKey
 
     const ctrlKey = getOS() === 'Mac' ? e.metaKey : e.ctrlKey
 
@@ -105,8 +104,9 @@ export default function useShortcut() {
         setOpenSearchDialog(true)
       }
     }
-    // CmdOrCtrl + \ : the sidebar toggle (peek at medium, expand or collapse at wide, nothing at phone).
-    if (e.key === '\\' && ctrlKey && !shift && !altOrOption) {
+    // CmdOrCtrl + \ : the sidebar toggle (peek at medium, expand or collapse at wide, nothing at phone). The physical
+    // Backslash key counts too, and AltGr is allowed, for layouts where \ is not a plain key.
+    if ((e.key === '\\' || e.code === 'Backslash') && ctrlKey && !shift) {
       e.preventDefault()
       if (!hasOpenSheet()) toggleSidebar()
       return

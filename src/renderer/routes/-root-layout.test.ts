@@ -37,7 +37,7 @@ describe('sidebar toggles', () => {
 
   it('⌘\\ toggles the sidebar', () => {
     const src = read('hooks/useShortcut.tsx')
-    expect(src).toContain("e.key === '\\\\' && ctrlKey")
+    expect(src).toContain("(e.key === '\\\\' || e.code === 'Backslash') && ctrlKey")
     expect(src).toContain('toggleSidebar()')
   })
 

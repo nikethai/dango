@@ -56,6 +56,7 @@ export const Page: FC<PageProps> = ({ children, title, left, right, className, h
                 mr="sm"
                 onClick={handleSidebarToggle}
                 aria-label={sidebarToggleLabel}
+                data-sidebar-toggle
               >
                 <IconMenu2 size={isSmallScreen ? 20 : 18} />
               </ActionIcon>

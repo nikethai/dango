@@ -154,6 +154,30 @@ describe('Sidebar rail (RS2)', () => {
     expect(rail.contains(document.activeElement)).toBe(true)
   })
 
+  it('labels the rail-foot toggle like the Header: Show sidebar at medium, Expand sidebar at wide', () => {
+    const view = renderSidebar()
+    expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Expand sidebar' })).toBeNull()
+    view.unmount()
+    h.mode = 'wide'
+    uiStore.setState({ sidebarLayout: 'rail' })
+    renderSidebar()
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeTruthy()
+  })
+
+  it('a click outside closes the peek; a click inside keeps it', () => {
+    const outside = document.createElement('div')
+    document.body.appendChild(outside)
+    renderSidebar()
+    act(() => uiStore.setState({ railPeek: true }))
+    const rail = document.querySelector('.studio-rail') as HTMLElement
+    fireEvent.pointerDown(rail)
+    expect(uiStore.getState().railPeek).toBe(true)
+    fireEvent.pointerDown(outside)
+    expect(uiStore.getState().railPeek).toBe(false)
+    outside.remove()
+  })
+
   it('opens on hover after 300 ms and closes on mouse leave', () => {
     renderSidebar()
     const rail = document.querySelector('.studio-rail') as HTMLElement

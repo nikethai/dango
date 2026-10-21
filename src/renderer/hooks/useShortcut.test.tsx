@@ -45,6 +45,8 @@ vi.mock('@/stores/sessionActions', () => ({
 }))
 vi.mock('@/hooks/dom', () => ({ focusMessageInput: vi.fn() }))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => false }))
+const toggleSidebar = vi.hoisted(() => vi.fn())
+vi.mock('./useLayoutMode', () => ({ toggleSidebar }))
 
 import useShortcut from './useShortcut'
 
@@ -115,5 +117,33 @@ describe('useShortcut ⌘K', () => {
     render(<PermissionSheet />)
     act(() => cmdK())
     expect(isOpen()).toBe(true)
+  })
+})
+
+describe('useShortcut ⌘\\', () => {
+  it('toggles the sidebar by key or by the physical Backslash key (layouts where \\ needs AltGr)', () => {
+    toggleSidebar.mockClear()
+    renderHook(() => useShortcut())
+    act(() => {
+      fireEvent.keyDown(window, { key: '\\', code: 'Backslash', metaKey: true })
+    })
+    expect(toggleSidebar).toHaveBeenCalledTimes(1)
+    act(() => {
+      fireEvent.keyDown(window, { key: '#', code: 'Backslash', metaKey: true })
+    })
+    expect(toggleSidebar).toHaveBeenCalledTimes(2)
+    act(() => {
+      fireEvent.keyDown(window, { key: '\\', code: 'IntlBackslash', metaKey: true, altKey: true })
+    })
+    expect(toggleSidebar).toHaveBeenCalledTimes(3)
+  })
+
+  it('ignores \\ without the command key', () => {
+    toggleSidebar.mockClear()
+    renderHook(() => useShortcut())
+    act(() => {
+      fireEvent.keyDown(window, { key: '\\', code: 'Backslash' })
+    })
+    expect(toggleSidebar).not.toHaveBeenCalled()
   })
 })

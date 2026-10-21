@@ -106,6 +106,7 @@ export default function Header(props: { session: Session }) {
             mr={isSmallScreen ? 'xs' : 'sm'}
             onClick={handleSidebarToggle}
             aria-label={sidebarToggleLabel}
+            data-sidebar-toggle
           >
             <IconMenu2 />
           </ActionIcon>
