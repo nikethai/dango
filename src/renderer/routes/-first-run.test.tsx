@@ -50,6 +50,7 @@ vi.mock('@/components/first-run/ScopeStep', () => ({
     return <div data-testid="scope-step" data-has-draft={String(p.draft !== null)} />
   },
 }))
+vi.mock('@/components/first-run/TrustStep', () => ({ TrustStep: () => <div data-testid="trust-step" /> }))
 vi.mock('@/packages/first-run', async () => {
   const actual = await vi.importActual<typeof import('@/packages/first-run/firstRun')>('@/packages/first-run/firstRun')
   return {
@@ -92,11 +93,24 @@ describe('/first-run', () => {
     expect(step.getAttribute('data-from')).toBe('/session/abc')
   })
 
-  it('shows the resolved step', () => {
+  it('step 4 renders the trust step (and so does a saved step 5 that never completed)', () => {
     h.resolution = { show: true, step: 4, modelOnly: false }
     render(<Page />)
-    expect(screen.getByRole('heading', { level: 1, name: 'How much should it do on its own?' })).toBeTruthy()
-    expect(screen.getByLabelText('Step 4 of 5')).toBeTruthy()
+    expect(screen.getByTestId('trust-step')).toBeTruthy()
+    cleanup()
+    h.resolution = { show: true, step: 5, modelOnly: false }
+    render(<Page />)
+    expect(screen.getByTestId('trust-step')).toBeTruthy()
+  })
+
+  it('finishing step 4 goes to Review, not back to from (FR5 lives on Review)', () => {
+    h.search = { from: '/session/abc' }
+    h.resolution = { show: true, step: 4, modelOnly: false }
+    const { rerender } = render(<Page />)
+    h.resolution = { show: false }
+    rerender(<Page />)
+    expect(h.navigate).toHaveBeenCalledTimes(1)
+    expect(h.navigate).toHaveBeenCalledWith({ href: '/', replace: true })
   })
 
   it('step 2 renders the source step, then the scope step with the picked draft (kept in memory only)', () => {
@@ -162,6 +176,9 @@ describe('__root wiring', () => {
     expect(root).toContain('location.searchStr')
     expect(root).not.toContain("'welcome'")
     expect(root).not.toContain('needEditSetting')
+  })
+  it('registers the first-run setup opener like the other openers', () => {
+    expect(root).toContain('useEffect(() => registerFirstRunOpener(), [])')
   })
   it('hides the sidebar on /first-run', () => {
     expect(root).toContain('const hideAppChrome = isSettingsRoute || isFirstRunRoute')

@@ -1945,5 +1945,18 @@
   "Selected:": "Selected:",
   "Skip for now": "Skip for now",
   "A scope is one project or one client. Everything Dango learns from this source stays inside it.": "A scope is one project or one client. Everything Dango learns from this source stays inside it.",
-  "{{name}} already exists. Continue adds this source to it.": "{{name}} already exists. Continue adds this source to it."
+  "{{name}} already exists. Continue adds this source to it.": "{{name}} already exists. Continue adds this source to it.",
+  "(recommended)": "(recommended)",
+  "Always asks, whatever you choose: sending anything, deleting, editing files, changing a decision, saving knowledge. Change this later under Settings → Memory and privacy.": "Always asks, whatever you choose: sending anything, deleting, editing files, changing a decision, saving knowledge. Change this later under Settings → Memory and privacy.",
+  "Start": "Start",
+  "Reading your folder…": "Reading your folder…",
+  "Reading your Gmail…": "Reading your Gmail…",
+  "Reading your Asana tasks…": "Reading your Asana tasks…",
+  "Reading your Codex threads…": "Reading your Codex threads…",
+  "Reading your documents…": "Reading your documents…",
+  "Items appear here as they are found.": "Items appear here as they are found.",
+  "{{progress}}. Items appear here as they are found.": "{{progress}}. Items appear here as they are found.",
+  "Ask anything meanwhile: {{hotkey}}.": "Ask anything meanwhile: {{hotkey}}.",
+  "Connect a source so Dango has something to read.": "Connect a source so Dango has something to read.",
+  "Skipped during setup": "Skipped during setup"
 }

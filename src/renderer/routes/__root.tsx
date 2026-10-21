@@ -26,6 +26,7 @@ import { useSetAtom } from 'jotai'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { navigateToSettings } from '@/modals/Settings'
 import { FIRST_RUN_PATH, useFirstRunGate } from '@/packages/first-run'
+import { registerFirstRunOpener } from '@/packages/first-run/opener'
 import { initKnowledge } from '@/packages/knowledge'
 import { useMenuBarSync } from '@/packages/menu-bar'
 import { getOS } from '@/packages/navigator'
@@ -69,6 +70,8 @@ function Root() {
   useEffect(() => registerChangeOpener(), [])
   // Needs you rows for a rate-limited chat open it and retry the answer (06b, ER3).
   useEffect(() => registerChatReviewOpener(), [])
+  // The Needs you row a skipped source leaves in first run opens Add a source in its scope (FR4/FR5).
+  useEffect(() => registerFirstRunOpener(), [])
 
   useEffect(() => {
     void platform.getWindowLabel?.().then((label) => {

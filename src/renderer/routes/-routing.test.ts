@@ -6,6 +6,7 @@ import { Route } from '@/routes/index'
 
 // The route module is imported in node; its components pull in storage (localStorage).
 vi.mock('@/components/review/ReviewHome', () => ({ ReviewHome: () => null }))
+vi.mock('@/components/first-run/FirstReadCard', () => ({ FirstReadCard: () => null }))
 vi.mock('@/components/layout/Page', () => ({ default: () => null }))
 vi.mock('@/packages/sources', () => ({ useSources: () => [], useSourcesLoaded: () => false }))
 

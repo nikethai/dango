@@ -1,12 +1,11 @@
 import type { SourceDraft } from '@shared/types/sources'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { FirstRunCard } from '@/components/first-run/FirstRunCard'
+import { useEffect, useRef, useState } from 'react'
 import { ModelStep } from '@/components/first-run/ModelStep'
 import { ScopeStep } from '@/components/first-run/ScopeStep'
 import type { SourceError } from '@/components/first-run/SourceErrorLine'
 import { SourceStep } from '@/components/first-run/SourceStep'
+import { TrustStep } from '@/components/first-run/TrustStep'
 import { type FirstRunStep, firstRunFrom, useFirstRunResolution } from '@/packages/first-run'
 
 export const Route = createFileRoute('/first-run')({
@@ -14,18 +13,7 @@ export const Route = createFileRoute('/first-run')({
   validateSearch: (search: Record<string, unknown>): { from?: string } => ({ from: firstRunFrom(search.from) }),
 })
 
-// Steps 1–3 have their components (Tasks 2–3). Until Task 4 lands, step 4 renders its card with the title only. Step 5 (the first Review) is the card above Review, not a page here; it shows the last step's card until
-// then.
-const STEP_TITLES: Record<FirstRunStep, string> = {
-  1: 'Sign in to a model',
-  2: 'Connect a source',
-  3: 'Name this scope',
-  4: 'How much should it do on its own?',
-  5: 'How much should it do on its own?',
-}
-
 function FirstRunRoute() {
-  const { t } = useTranslation()
   const navigate = useNavigate()
   const { from } = Route.useSearch()
   const resolution = useFirstRunResolution()
@@ -36,10 +24,16 @@ function FirstRunRoute() {
   // Back from step 3: step 2 starts with focus on its list.
   const [returned, setReturned] = useState(false)
 
+  // The last step shown here. Finishing step 4 (Trust) opens Review, where FR5's card is, whatever `from` says.
+  const lastStep = useRef<FirstRunStep | null>(null)
+  if (resolution.show) lastStep.current = resolution.step
+
   // Nothing to show (completed and a model is back, or opened directly): go back where the user was, query and hash
-  // included. The record itself is written by the gate in __root (useFirstRunGate).
+  // included. The record itself is written by the gate in __root (useFirstRunGate) and by the steps.
   useEffect(() => {
-    if (!resolution.show) void navigate({ href: from ?? '/', replace: true })
+    if (resolution.show) return
+    const finishedTrust = lastStep.current !== null && lastStep.current >= 4
+    void navigate({ href: finishedTrust ? '/' : (from ?? '/'), replace: true })
   }, [resolution.show, from, navigate])
 
   if (!resolution.show) return null
@@ -93,11 +87,10 @@ function FirstRunRoute() {
     )
   }
 
+  // Step 4, or a saved step 5 that never completed: Trust. Step 5 itself is FR5's card on Review.
   return (
     <div className="dg-first-run">
-      <FirstRunCard step={resolution.step} title={t(STEP_TITLES[resolution.step])} footer={null}>
-        {null}
-      </FirstRunCard>
+      <TrustStep />
     </div>
   )
 }

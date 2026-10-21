@@ -5,7 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   state: { firstRun: undefined as unknown },
   setSettings: vi.fn(),
+  addReviewEntry: vi.fn(async (e: unknown) => e),
 }))
+
+vi.mock('@/packages/review', () => ({ addReviewEntry: h.addReviewEntry }))
+vi.mock('@/i18n', () => ({ default: { t: (key: string) => key } }))
 
 vi.mock('@/stores/settingsStore', () => ({
   settingsStore: { getState: () => ({ ...h.state, setSettings: h.setSettings }) },
@@ -13,6 +17,7 @@ vi.mock('@/stores/settingsStore', () => ({
 
 import {
   type FirstRunResolution,
+  finishFirstRun,
   firstRunFrom,
   firstRunRedirect,
   resolveFirstRun,
@@ -25,6 +30,7 @@ const show: FirstRunResolution = { show: true, step: 1, modelOnly: false }
 beforeEach(() => {
   h.state.firstRun = undefined
   h.setSettings.mockReset()
+  h.addReviewEntry.mockClear()
 })
 
 describe('resolveFirstRun', () => {
@@ -138,5 +144,62 @@ describe('SettingsSchema firstRun', () => {
   it('keeps the first read source (FR5 follows its sync and review)', () => {
     const firstRun = { step: 4, sourceSkipped: false, scopeId: 's1', firstReadJobId: 'j1', firstReadSourceId: 'src1' }
     expect(SettingsSchema.parse({ ...defaults.settings(), firstRun }).firstRun).toEqual(firstRun)
+  })
+})
+
+describe('finishFirstRun', () => {
+  const NOW = 1_700_000_000_000
+
+  it('with the source skipped, adds the Needs you entry once and sets completedAt', async () => {
+    const record = { step: 4, sourceSkipped: true, scopeId: 'acme' } as const
+    h.state.firstRun = record
+    await finishFirstRun(record, NOW)
+    expect(h.addReviewEntry).toHaveBeenCalledTimes(1)
+    expect(h.addReviewEntry).toHaveBeenCalledWith({
+      kind: 'needs-you',
+      scopeId: 'acme',
+      text: 'Connect a source so Dango has something to read.',
+      sub: 'Skipped during setup',
+      actionLabel: 'Connect a source',
+      ref: { type: 'setup', id: 'first-run:source' },
+      state: 'open',
+      createdAt: NOW,
+    })
+    expect(h.setSettings).toHaveBeenCalledWith({
+      firstRun: { step: 5, sourceSkipped: true, scopeId: 'acme', completedAt: NOW },
+    })
+  })
+
+  it('puts the entry in Everywhere when no scope was named', async () => {
+    await finishFirstRun({ step: 4, sourceSkipped: true }, NOW)
+    expect(h.addReviewEntry).toHaveBeenCalledWith(expect.objectContaining({ scopeId: 'everywhere' }))
+  })
+
+  it('with a connected source, adds no entry and sets completedAt', async () => {
+    const record = {
+      step: 4,
+      sourceSkipped: false,
+      scopeId: 's1',
+      firstReadJobId: 'j1',
+      firstReadSourceId: 'src1',
+    } as const
+    h.state.firstRun = record
+    await finishFirstRun(record, NOW)
+    expect(h.addReviewEntry).not.toHaveBeenCalled()
+    expect(h.setSettings).toHaveBeenCalledWith({ firstRun: { ...record, step: 5, completedAt: NOW } })
+  })
+
+  it('leaves a completed record alone (the upgrade marker), adding nothing', async () => {
+    const record = { step: 5, sourceSkipped: true, completedAt: 42 } as const
+    h.state.firstRun = record
+    await finishFirstRun(record, NOW)
+    expect(h.addReviewEntry).not.toHaveBeenCalled()
+    expect(h.setSettings).not.toHaveBeenCalled()
+  })
+
+  it('still completes when the entry cannot be saved', async () => {
+    h.addReviewEntry.mockRejectedValueOnce(new Error('disk full'))
+    await finishFirstRun({ step: 4, sourceSkipped: true }, NOW)
+    expect(h.setSettings).toHaveBeenCalledWith({ firstRun: { step: 5, sourceSkipped: true, completedAt: NOW } })
   })
 })

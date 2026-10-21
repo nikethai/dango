@@ -1,3 +1,4 @@
+import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { settingsStore } from '@/stores/settingsStore'
 
 export type FirstRunStep = 1 | 2 | 3 | 4 | 5
@@ -75,4 +76,37 @@ export function setFirstRun(patch: Partial<FirstRunRecord>): void {
   const state = settingsStore.getState()
   const base: FirstRunRecord = state.firstRun ?? { step: 1, sourceSkipped: false }
   state.setSettings({ firstRun: { ...base, ...patch } })
+}
+
+/** The Needs you entry a skipped source leaves in Review; its opener is `registerFirstRunOpener`. */
+export const SKIPPED_SOURCE_REF = { type: 'setup', id: 'first-run:source' } as const
+
+/**
+ * Step 4's Start: marks first run completed (step 5, the first Review). When the source was skipped, first adds one
+ * Needs you entry ("Connect a source"); `addReviewEntry` merges a repeat on the same ref. A record already completed
+ * (an upgrade, or a finish in another window) is left as it is, so the upgrade marker is never rewritten.
+ */
+export async function finishFirstRun(record: FirstRunRecord, now: number): Promise<void> {
+  if (record.completedAt !== undefined) return
+  if (record.sourceSkipped) {
+    try {
+      // Loaded lazily: the review store reaches storage, and this module is imported at startup.
+      const [{ addReviewEntry }, { default: i18n }] = await Promise.all([import('@/packages/review'), import('@/i18n')])
+      await addReviewEntry({
+        kind: 'needs-you',
+        scopeId: record.scopeId ?? EVERYWHERE_SCOPE_ID,
+        // Text and sub are stored as shown; the action label is a key the feed translates.
+        text: i18n.t('Connect a source so Dango has something to read.'),
+        sub: i18n.t('Skipped during setup'),
+        actionLabel: 'Connect a source',
+        ref: { ...SKIPPED_SOURCE_REF },
+        state: 'open',
+        createdAt: now,
+      })
+    } catch (error) {
+      // Finishing must not trap the user in step 4; Settings › Sources still connects one.
+      console.warn('[first-run] Could not add the Connect a source entry', error)
+    }
+  }
+  setFirstRun({ ...record, step: 5, completedAt: now })
 }

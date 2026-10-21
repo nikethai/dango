@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
+import { FirstReadCard } from '@/components/first-run/FirstReadCard'
 import Page from '@/components/layout/Page'
 import { ReviewHome } from '@/components/review/ReviewHome'
 import { useSources, useSourcesLoaded } from '@/packages/sources'
@@ -28,6 +29,8 @@ function Index() {
   const loaded = useSourcesLoaded()
   return (
     <Page title={t('Review')}>
+      {/* FR5: the source connected in first run is being read (first sync, then first review). */}
+      <FirstReadCard />
       <ReviewHome sourceCount={loaded ? sources.length : undefined} />
     </Page>
   )

@@ -177,3 +177,95 @@
   gap: var(--dango-space-3);
   color: var(--dango-ink-2);
 }
+
+/* FR4: trust. Radio cards with TR1's lines; the chosen one is outlined in green. */
+
+.dg-first-run__trust {
+  display: grid;
+  gap: var(--dango-space-2);
+}
+
+.dg-first-run__trust-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dango-space-3);
+  min-height: 44px;
+  padding: var(--dango-space-3) var(--dango-space-4);
+  border: 1px solid var(--dango-line);
+  border-radius: var(--dango-radius-md);
+  background: var(--dango-raised);
+  color: var(--dango-ink);
+  cursor: pointer;
+}
+
+.dg-first-run__trust-option.is-checked {
+  border-color: var(--dango-green);
+  background: var(--dango-green-wash);
+}
+
+.dg-first-run__trust-option input {
+  margin: 3px 0 0;
+  accent-color: var(--dango-green);
+}
+
+.dg-first-run__trust-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-1);
+}
+
+.dg-first-run__recommended {
+  font-weight: 400;
+  color: var(--dango-muted);
+}
+
+.dg-first-run__note {
+  margin: 0;
+  color: var(--dango-ink-2);
+}
+
+/* FR5: the first read, above Review. No motion of its own; the mascot holds its pose under reduced motion. */
+
+.dg-first-read {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-2);
+  padding: var(--dango-space-4) var(--dango-space-4) 0;
+}
+
+.dg-first-read__card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dango-space-4);
+  padding: var(--dango-space-4);
+  border: 1px solid var(--dango-line);
+  border-radius: var(--dango-radius-md);
+  background: var(--dango-raised);
+}
+
+.dg-first-read__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-1);
+  min-width: 0;
+}
+
+.dg-first-read__title {
+  margin: 0;
+  color: var(--dango-ink);
+}
+
+.dg-first-read__sub {
+  margin: 0;
+  color: var(--dango-ink-2);
+  overflow-wrap: anywhere;
+}
+
+.dg-first-read__meanwhile {
+  display: flex;
+  align-items: center;
+  gap: var(--dango-space-2);
+  margin: 0;
+  color: var(--dango-muted);
+}
