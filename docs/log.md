@@ -2,6 +2,9 @@
 
 Newest first. Add a line when you create, accept, supersede or move a decision, spec or research note.
 
+## 2026-10-21
+* **Update**: [roadmap](specs/2026-10-17-redesign-roadmap.md) contract register — the existing names slice 9 imports (sources, scopes, shortcuts, window role, Trust, Review, Sheet), and four additive exports it makes in their owners' files (`TRUST_OPTIONS`, `Sheet` `className`, the model tester's basic test, the OAuth model seeding).
+
 ## 2026-10-20
 * **Implementation**: [slice 10 PM pilot sources](specs/2026-10-17-slice-10-pm-pilot-sources.md) built on `feat/redesign-10-pm-pilot-sources`: Gmail and Asana register as slice 7 sources; new client mail is routed to its client scope (or one "Which client is this?" question), judged against that client's email, tasks and approved knowledge, and either drafted into the Gmail thread (Trust Auto, High, under the daily cap), offered as a draft with Apply, or asked as a Needs you chat whose typed or picked answer becomes approved knowledge; a sent reply that changes a fact becomes a proposal; `client_recall` answers client questions in chat. Dango never sends mail (a method-and-path allowlist on the one Gmail client), and a source marked "Keep on this device only" never reaches a cloud model on any chat, summary, naming or knowledge path. Slice 7 gains a quiet sync result and faster polls for Gmail (60 s) and Asana (120 s); TASK-20 is done. Tested against mocks only; the real-account walk is in the PR. Known issues: [redesign known issues](research/2026-10-19-redesign-known-issues.md).
 * **Update**: [roadmap](specs/2026-10-17-redesign-roadmap.md) contract register — the existing names slice 10 imports (`readScopes`, `addKnowledge`, `resolveConflict`, `applyReviewEntry`, `openConfiguration`, `switchCurrentSession` and others), plus two slice 7 additions the maintainer approved for slice 10: a quiet sync result and a shorter poll interval for Gmail and Asana.
