@@ -87,7 +87,9 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
   - Quick Chat keeps its own announcement of the finished answer and gets no "Thinking, N seconds" updates.
   - Errors in chat are announced by the error notice, which may re-announce when the list remounts it on scroll; a Swarm "could not plan" note is not announced.
   - Older colour transitions longer than 150 ms still run under Reduce Motion; everything that moves is stopped.
-  - Seven confirm dialogs (discard edit, compression, imported-source delete, summary delete, knowledge base delete, clear memories) still use the old modal; deleting an imported source asks nothing (TASK-46).
+  - Six confirm dialogs (discard edit, compression, imported-source delete, summary delete, knowledge base delete, clear memories) still use the old modal; deleting an imported source asks nothing (TASK-46).
+  - At phone width the password field's show/hide icon is 44 px inside a 38 px field; it is transparent, so it looks right.
+  - If the desktop window-role lookup never answers, a new user stays on a blank screen instead of first run (no timeout; a failed lookup is handled).
   - The Mantine theme's input focus style is ignored by the styles API (a console warning, pre-existing).
 
 ## Follow-ups filed
