@@ -1070,6 +1070,34 @@ describe('streamText web search on a local-only turn (S13)', () => {
     expect(seen[1].parse_link).toBeDefined()
   })
 
+  it('removes web tools a turn brings itself (plan mode) on a local-only turn; a cloud turn keeps them', async () => {
+    loadPmToolSetMock.mockResolvedValue(null)
+    const { streamText } = await import('./stream-text')
+    const { chat, seen } = toolsSeen()
+    const ownTools = () => ({
+      web_search: { description: 'search', execute: vi.fn() },
+      parse_link: { description: 'link', execute: vi.fn() },
+      google_search: { description: 'grounding', execute: vi.fn() },
+      read_file: { description: 'read', execute: vi.fn() },
+    })
+    const messages = () => [createMessage('user', 'Price?'), localOnlyRecall(), createMessage('user', 'Plan it')]
+    await streamText(createTestModel(chat), {
+      messages: messages(),
+      tools: ownTools() as never,
+      sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'test-model' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(Object.keys(seen[0])).toEqual(['read_file'])
+
+    await streamText(createTestModel(chat), {
+      messages: messages(),
+      tools: ownTools() as never,
+      sessionSettings: { provider: ModelProviderEnum.OpenAI, modelId: 'gpt' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(Object.keys(seen[1])).toEqual(expect.arrayContaining(['web_search', 'parse_link', 'read_file']))
+  })
+
   it('does no prompt-engineered search or native grounding for a local model in a chat holding local-only text', async () => {
     loadPmToolSetMock.mockResolvedValue(null)
     const { streamText } = await import('./stream-text')

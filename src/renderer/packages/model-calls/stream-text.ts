@@ -305,6 +305,9 @@ function filterToolsByAccess(tools: ToolSet, toolAccess?: CopilotToolAccess): To
   }
 }
 
+/** Tools that send what the model writes to a search provider or a site. */
+const WEB_TOOL_NAMES: ReadonlySet<string> = new Set(['web_search', 'parse_link', 'google_search'])
+
 /**
  * (legacy comment removed)
  */
@@ -1056,6 +1059,11 @@ Do not open with repeated web searches when personal memory may apply.
     if (allowedTools && allowedTools.length > 0) {
       const allowedSet = new Set(allowedTools)
       tools = Object.fromEntries(Object.entries(tools).filter(([name]) => allowedSet.has(name)))
+    }
+
+    // S13: a turn's own tools (plan mode) may bring web tools too; none on a turn that may read local-only text.
+    if (turnIsLocalOnly) {
+      tools = Object.fromEntries(Object.entries(tools).filter(([name]) => !WEB_TOOL_NAMES.has(name)))
     }
 
     // Computer UI space lock: strip tools that collide with "find" / leave the desktop app.
