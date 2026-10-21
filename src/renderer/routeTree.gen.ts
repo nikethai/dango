@@ -11,6 +11,7 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
+import { Route as ScopesImport } from './routes/scopes'
 import { Route as QuickImport } from './routes/quick'
 import { Route as NewImport } from './routes/new'
 import { Route as FirstRunImport } from './routes/first-run'
@@ -58,6 +59,12 @@ import { Route as SettingsProviderIndexImport } from './routes/settings/provider
 import { Route as SettingsProviderProviderIdImport } from './routes/settings/provider/$providerId'
 
 // Create/Update Routes
+
+const ScopesRoute = ScopesImport.update({
+  id: '/scopes',
+  path: '/scopes',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const QuickRoute = QuickImport.update({
   id: '/quick',
@@ -389,6 +396,13 @@ declare module '@tanstack/react-router' {
       path: '/quick'
       fullPath: '/quick'
       preLoaderRoute: typeof QuickImport
+      parentRoute: typeof rootRoute
+    }
+    '/scopes': {
+      id: '/scopes'
+      path: '/scopes'
+      fullPath: '/scopes'
+      preLoaderRoute: typeof ScopesImport
       parentRoute: typeof rootRoute
     }
     '/settings/provider': {
@@ -763,6 +777,7 @@ export interface FileRoutesByFullPath {
   '/first-run': typeof FirstRunRoute
   '/new': typeof NewRoute
   '/quick': typeof QuickRoute
+  '/scopes': typeof ScopesRoute
   '/settings/provider': typeof SettingsProviderRouteRouteWithChildren
   '/dev/context-generator': typeof DevContextGeneratorRoute
   '/dev/css-var': typeof DevCssVarRoute
@@ -809,6 +824,7 @@ export interface FileRoutesByTo {
   '/first-run': typeof FirstRunRoute
   '/new': typeof NewRoute
   '/quick': typeof QuickRoute
+  '/scopes': typeof ScopesRoute
   '/dev/context-generator': typeof DevContextGeneratorRoute
   '/dev/css-var': typeof DevCssVarRoute
   '/dev/design-system': typeof DevDesignSystemRoute
@@ -857,6 +873,7 @@ export interface FileRoutesById {
   '/first-run': typeof FirstRunRoute
   '/new': typeof NewRoute
   '/quick': typeof QuickRoute
+  '/scopes': typeof ScopesRoute
   '/settings/provider': typeof SettingsProviderRouteRouteWithChildren
   '/dev/context-generator': typeof DevContextGeneratorRoute
   '/dev/css-var': typeof DevCssVarRoute
@@ -907,6 +924,7 @@ export interface FileRouteTypes {
     | '/first-run'
     | '/new'
     | '/quick'
+    | '/scopes'
     | '/settings/provider'
     | '/dev/context-generator'
     | '/dev/css-var'
@@ -952,6 +970,7 @@ export interface FileRouteTypes {
     | '/first-run'
     | '/new'
     | '/quick'
+    | '/scopes'
     | '/dev/context-generator'
     | '/dev/css-var'
     | '/dev/design-system'
@@ -998,6 +1017,7 @@ export interface FileRouteTypes {
     | '/first-run'
     | '/new'
     | '/quick'
+    | '/scopes'
     | '/settings/provider'
     | '/dev/context-generator'
     | '/dev/css-var'
@@ -1047,6 +1067,7 @@ export interface RootRouteChildren {
   FirstRunRoute: typeof FirstRunRoute
   NewRoute: typeof NewRoute
   QuickRoute: typeof QuickRoute
+  ScopesRoute: typeof ScopesRoute
   ScopeScopeIdRoute: typeof ScopeScopeIdRoute
   SessionSessionIdRoute: typeof SessionSessionIdRoute
   ImageCreatorIndexRoute: typeof ImageCreatorIndexRoute
@@ -1061,6 +1082,7 @@ const rootRouteChildren: RootRouteChildren = {
   FirstRunRoute: FirstRunRoute,
   NewRoute: NewRoute,
   QuickRoute: QuickRoute,
+  ScopesRoute: ScopesRoute,
   ScopeScopeIdRoute: ScopeScopeIdRoute,
   SessionSessionIdRoute: SessionSessionIdRoute,
   ImageCreatorIndexRoute: ImageCreatorIndexRoute,
@@ -1084,6 +1106,7 @@ export const routeTree = rootRoute
         "/first-run",
         "/new",
         "/quick",
+        "/scopes",
         "/scope/$scopeId",
         "/session/$sessionId",
         "/image-creator/"
@@ -1148,6 +1171,9 @@ export const routeTree = rootRoute
     },
     "/quick": {
       "filePath": "quick.tsx"
+    },
+    "/scopes": {
+      "filePath": "scopes.tsx"
     },
     "/settings/provider": {
       "filePath": "settings/provider/route.tsx",

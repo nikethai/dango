@@ -47,3 +47,31 @@ describe('sidebar toggles', () => {
     expect(src).toContain("return useLayoutMode() === 'phone'")
   })
 })
+
+describe('phone shell (RS3)', () => {
+  const root = read('routes/__root.tsx')
+
+  it('drops the sidebar at phone and renders the tab bar after the content box, never on first run', () => {
+    expect(root).toContain("const isPhoneLayout = layoutMode === 'phone'")
+    expect(root).toContain('{!hideAppChrome && !isPhoneLayout && <Sidebar />}')
+    const content = root.indexOf('<Box id="main"')
+    const tabBar = root.indexOf('{!isFirstRunRoute && <PhoneTabBar />}')
+    expect(content).toBeGreaterThan(-1)
+    expect(tabBar).toBeGreaterThan(content)
+    // Only in the main-window branch: the Quick Chat branch comes first and never gets it.
+    expect(root.indexOf('<PhoneTabBar />')).toBeGreaterThan(root.indexOf('isQuickRoute ? ('))
+  })
+
+  it('marks the on-screen keyboard on <html> beside the existing safe-area writes', () => {
+    const capacitor = read('setup/mobile_safe_area.ts')
+    expect(capacitor).toMatch(/keyboardWillShow[\s\S]{0,200}document\.documentElement\.dataset\.keyboard = 'open'/)
+    expect(capacitor).toMatch(/keyboardWillHide[\s\S]{0,120}delete document\.documentElement\.dataset\.keyboard/)
+    const android = read('setup/tauri_android_keyboard.ts')
+    expect(android).toMatch(
+      /setProperty\('--mobile-safe-area-inset-bottom-layout', '0px'\)\s*root\.dataset\.keyboard = 'open'/
+    )
+    expect(android).toMatch(
+      /removeProperty\('--mobile-safe-area-inset-bottom-layout'\)\s*delete root\.dataset\.keyboard/
+    )
+  })
+})

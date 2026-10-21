@@ -3,6 +3,7 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
 import { MemoryMigrationSheet } from '@/components/knowledge/MemoryMigrationSheet'
 import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
+import { PhoneTabBar } from '@/components/layout/PhoneTabBar'
 import { ToolPermissionHost } from '@/components/permission/ToolPermissionHost'
 import { registerChangeOpener } from '@/components/review/changeOpener'
 import { registerDefaultQuestionOpener } from '@/components/review/questionOpener'
@@ -110,7 +111,9 @@ function Root() {
   }, [setOpenAboutDialog, setRemoteConfig])
 
   // Wide, medium or phone; also keeps data-layout on <html> (RS1–RS3).
-  useLayoutMode()
+  const layoutMode = useLayoutMode()
+  // Phone is one pane: no sidebar; the tab bar under the content navigates (RS3).
+  const isPhoneLayout = layoutMode === 'phone'
   const sidebarWidth = useSidebarEffectiveWidth()
   const isSettingsRoute = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
   const isFirstRunRoute = location.pathname === FIRST_RUN_PATH
@@ -209,8 +212,12 @@ function Root() {
           </Box>
         </ErrorBoundary>
       ) : (
-        <Grid container className="h-full" sx={{ minHeight: 0 }}>
-          {!hideAppChrome && <Sidebar />}
+        <Grid
+          container
+          className="h-full"
+          sx={{ minHeight: 0, ...(isPhoneLayout ? { flexDirection: 'column', flexWrap: 'nowrap' } : {}) }}
+        >
+          {!hideAppChrome && !isPhoneLayout && <Sidebar />}
           <Box
             className="h-full w-full min-h-0"
             sx={{
@@ -236,6 +243,8 @@ function Root() {
               </Box>
             </ErrorBoundary>
           </Box>
+          {/* Phone tabs (renders only at phone); first run is a full-window page without them */}
+          {!isFirstRunRoute && <PhoneTabBar />}
         </Grid>
       )}
       {/* Session settings */}

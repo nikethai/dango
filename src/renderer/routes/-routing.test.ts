@@ -70,6 +70,9 @@ describe('/new wiring', () => {
   it('route tree has /first-run', () => {
     expect(src('routeTree.gen.ts')).toContain("path: '/first-run'")
   })
+  it('route tree has /scopes', () => {
+    expect(src('routeTree.gen.ts')).toContain("path: '/scopes'")
+  })
   it('sidebar and shortcut use startNewChat', () => {
     for (const f of ['Sidebar.tsx', 'hooks/useShortcut.tsx']) {
       const t = src(f)

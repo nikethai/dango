@@ -59,6 +59,8 @@ type Props = {
   onShowArchivedChange?(show: boolean): void
   /** Mobile collapses Projects empty promo and prioritizes Recents. */
   density?: 'desktop' | 'mobile'
+  /** Start with the Scopes section open (the phone Scopes tab); by default mobile density starts it collapsed. */
+  scopesOpen?: boolean
 }
 
 type FolderGroup = {
@@ -211,6 +213,7 @@ export default function SessionList({
   onShowArchivedChange,
   onCreateProject,
   density = 'desktop',
+  scopesOpen,
 }: Props) {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
@@ -227,7 +230,7 @@ export default function SessionList({
   const [folderPhase, setFolderPhase] = useState<Record<string, CollapsiblePhase>>({})
   const folderPhaseTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   // Mobile: Projects collapsed by default so Recents own the first screen.
-  const projectsSection = useCollapsibleSection(!isMobileDensity)
+  const projectsSection = useCollapsibleSection(scopesOpen ?? !isMobileDensity)
   const recentsSection = useCollapsibleSection(true)
 
   const sensors = useSensors(

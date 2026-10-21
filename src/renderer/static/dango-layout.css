@@ -277,6 +277,88 @@
   outline: none;
 }
 
+/* Phone (RS3): one pane, bottom tabs (PhoneTabBar), 44 px targets. */
+
+/* The tab bar carries the safe-area bottom at phone, so .App (index.css) stops padding it. */
+:root[data-layout="phone"] .App {
+  padding-bottom: 0;
+}
+
+.dg-tabbar {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  background: var(--dango-raised);
+  border-top: 1px solid var(--dango-hairline);
+  padding-bottom: var(
+    --mobile-safe-area-inset-bottom-layout,
+    var(--mobile-safe-area-inset-bottom, env(safe-area-inset-bottom))
+  );
+}
+
+/* The on-screen keyboard is up (setup/mobile_safe_area.ts, setup/tauri_android_keyboard.ts): give the room to it. */
+:root[data-keyboard="open"] .dg-tabbar {
+  display: none;
+}
+
+.dg-tabbar a {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--dango-space-1) 0;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Class plus element: index.css colours every link under html[data-theme]. */
+.dg-tabbar a.dg-tabbar__tab {
+  color: var(--dango-muted);
+}
+
+.dg-tabbar a.dg-tabbar__tab[aria-current="page"] {
+  color: var(--dango-green-text);
+}
+
+.dg-tabbar a:focus-visible {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: -2px;
+}
+
+.dg-tabbar__icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.dg-tabbar__icon .dg-badge {
+  position: absolute;
+  top: -6px;
+  left: calc(100% - 6px);
+}
+
+/* Phone targets: buttons, rows and icon buttons at least 44 px (icon buttons also 44 px wide). */
+:root[data-layout="phone"] .dg-btn,
+:root[data-layout="phone"] .dg-btn--icon,
+:root[data-layout="phone"] .rail-icon-btn,
+:root[data-layout="phone"] .dg-side__row,
+:root[data-layout="phone"] .rail-nav-item,
+:root[data-layout="phone"] .studio-rail-row,
+:root[data-layout="phone"] .project-folder-row,
+:root[data-layout="phone"] .mantine-ActionIcon-root {
+  min-height: 44px;
+}
+
+:root[data-layout="phone"] .dg-btn--icon,
+:root[data-layout="phone"] .rail-icon-btn,
+:root[data-layout="phone"] .mantine-ActionIcon-root {
+  min-width: 44px;
+}
+
 /* Inspector (InspectorFrame): docked at wide, a right sheet at medium, a bottom sheet at phone. */
 
 .dango-inspector {

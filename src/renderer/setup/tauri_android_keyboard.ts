@@ -70,9 +70,11 @@ function setupKeyboardHandler() {
     const nowVisible = kbHeight > 0
     if (nowVisible && !kbVisible) {
       root.style.setProperty('--mobile-safe-area-inset-bottom-layout', '0px')
+      root.dataset.keyboard = 'open'
       kbVisible = true
     } else if (!nowVisible && kbVisible) {
       root.style.removeProperty('--mobile-safe-area-inset-bottom-layout')
+      delete root.dataset.keyboard
       kbVisible = false
     }
 

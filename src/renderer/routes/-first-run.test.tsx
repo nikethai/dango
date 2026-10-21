@@ -182,6 +182,6 @@ describe('__root wiring', () => {
   })
   it('hides the sidebar on /first-run', () => {
     expect(root).toContain('const hideAppChrome = isSettingsRoute || isFirstRunRoute')
-    expect(root).toContain('{!hideAppChrome && <Sidebar />}')
+    expect(root).toContain('{!hideAppChrome && !isPhoneLayout && <Sidebar />}')
   })
 })
