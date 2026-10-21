@@ -2,7 +2,13 @@ import type { Message } from '@shared/types'
 import i18next from 'i18next'
 import { beforeAll, describe, expect, it } from 'vitest'
 import en from '@/i18n/locales/en/translation.json'
-import { type AnnouncerState, initialAnnouncerState, nextAnnouncement, plainTextForSpeech } from './turnAnnouncement'
+import {
+  type AnnouncerState,
+  initialAnnouncerState,
+  nextAnnouncement,
+  plainTextForSpeech,
+  resumedAnnouncerState,
+} from './turnAnnouncement'
 
 beforeAll(async () => {
   await i18next.init({ lng: 'en', resources: { en: { translation: en } }, interpolation: { escapeValue: false } })
@@ -105,12 +111,58 @@ describe('nextAnnouncement', () => {
     expect(state.final).toBe(true)
   })
 
-  it('a turn that ended in an error with no text speaks the error first line, never "Stopped before answering."', () => {
+  it('a turn that ended in an error ends silent: ModelErrorNotice (role="alert") already says it in plain words', () => {
+    const final = { lastSpokenAt: T0, final: true }
     const failed = msg([], { generating: false, error: 'Rate limit reached\nRetry-After: 30', errorCode: 429 })
-    expect(run([[failed, T0]]).spoken).toEqual(['Rate limit reached'])
+    expect(nextAnnouncement(failed, fresh, T0)).toEqual({ text: '', state: final })
+    const partial = msg([{ type: 'text', text: 'Half an answer' }], { generating: false, error: 'socket hang up' })
+    expect(nextAnnouncement(partial, fresh, T0)).toEqual({ text: '', state: final })
     // An error code with no message: final, with nothing to say.
     const codeOnly = msg([], { generating: false, errorCode: 10001 })
-    expect(nextAnnouncement(codeOnly, fresh, T0)).toEqual({ text: '', state: { lastSpokenAt: T0, final: true } })
+    expect(nextAnnouncement(codeOnly, fresh, T0)).toEqual({ text: '', state: final })
+  })
+
+  it('Swarm plan and task turns end silent; only the captain answer is spoken', () => {
+    const final = { lastSpokenAt: T0, final: true }
+    const swarm = { runId: 'r1' }
+    const task = msg([{ type: 'text', text: 'Task output nobody sees' }], {
+      generating: false,
+      roomRole: 'do',
+      swarm,
+    })
+    expect(nextAnnouncement(task, fresh, T0)).toEqual({ text: '', state: final })
+    // Swarm Stop: the plan turn ends empty, but the captain still answers, so it is not "Stopped before answering.".
+    const stoppedPlan = msg([{ type: 'reasoning', text: 'splitting the work', startTime: T0 }], {
+      generating: false,
+      roomRole: 'plan',
+      swarm: { runId: 'r1', stoppedEarly: true },
+    })
+    expect(nextAnnouncement(stoppedPlan, fresh, T0)).toEqual({ text: '', state: final })
+    const deliver = msg([{ type: 'text', text: 'The **answer**' }], { generating: false, roomRole: 'deliver', swarm })
+    expect(nextAnnouncement(deliver, fresh, T0)?.text).toBe('The answer')
+  })
+
+  it('a resumed run counts from its live start and is not "Writing" until new answer text arrives', () => {
+    const old = T0 - 30 * 60_000
+    const resumed = msg([
+      { type: 'reasoning', text: 'old plan thinking', startTime: old },
+      { type: 'text', text: 'Step 1 done' },
+    ])
+    resumed.timestamp = old
+    const start = resumedAnnouncerState(resumed, T0 - 1_000)
+    expect(nextAnnouncement(resumed, start, T0)?.text).toBe('Thinking, 1 second')
+    const grown = msg([
+      { type: 'reasoning', text: 'old plan thinking', startTime: old },
+      { type: 'text', text: 'Step 1 done' },
+      { type: 'reasoning', text: 'checking step 2', startTime: T0 + 1_000 },
+    ])
+    expect(nextAnnouncement(grown, start, T0 + 5_000)?.text).toBe('Thinking, 6 seconds, checking step 2')
+    const writing = msg([
+      { type: 'reasoning', text: 'old plan thinking', startTime: old },
+      { type: 'text', text: 'Step 1 done' },
+      { type: 'text', text: 'Step 2' },
+    ])
+    expect(nextAnnouncement(writing, start, T0 + 5_000)?.text).toBe('Writing the answer, 6 seconds')
   })
 
   it('a message already finished when first seen starts final and says nothing (opening a chat)', () => {
