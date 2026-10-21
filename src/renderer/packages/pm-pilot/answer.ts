@@ -533,7 +533,8 @@ async function saveFact(
   const proposal = await proposeKnowledge({ scopeId, kind: 'fact', text: fact, sources, origin: 'user' })
   if (!proposal) {
     const known = await approvedItem(scopeId, fact)
-    return knowledgeEvidence(known ?? (await addKnowledge({ scopeId, kind: 'fact', text: fact })))
+    // The same sources as the proposal: an option's records may be local-only (ADR 0003).
+    return knowledgeEvidence(known ?? (await addKnowledge({ scopeId, kind: 'fact', text: fact, sources })))
   }
   try {
     return knowledgeEvidence(await approveProposal(proposal.id, { text: fact }))

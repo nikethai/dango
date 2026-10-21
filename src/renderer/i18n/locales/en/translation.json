@@ -1410,6 +1410,8 @@
   "Save as knowledge": "Save as knowledge",
   "Already saved": "Already saved",
   "Nothing to save": "Nothing to save",
+  "This answer used email or tasks kept on this device, so it can't be saved as knowledge.": "This answer used email or tasks kept on this device, so it can't be saved as knowledge.",
+  "Chat answer": "Chat answer",
   "Save to {{scope}}?": "Save to {{scope}}?",
   "{{n}} more in Review": "{{n}} more in Review",
   "Not now": "Not now",

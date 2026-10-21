@@ -1015,3 +1015,85 @@ describe('streamText legacy memory in chats that hold local-only text (B3)', () 
     }
   })
 })
+
+describe('streamText web search on a local-only turn (S13)', () => {
+  const localOnlyRecall = (): Message => ({
+    ...createMessage('assistant', ''),
+    contentParts: [
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'c1',
+        toolName: 'client_recall',
+        args: { query: 'price' },
+        result: { ok: true, records: [{ text: 'The price is 4,200 USD' }], gaps: [], localOnly: true },
+      },
+      { type: 'text', text: 'Jo said the price is 4,200 USD.' },
+    ],
+  })
+  const toolsSeen = () => {
+    const seen: Record<string, unknown>[] = []
+    const chat = vi.fn((_messages, options) => {
+      seen.push({ ...(options.tools ?? {}) })
+      return Promise.resolve({ contentParts: [], text: 'done' } as StreamTextResult)
+    })
+    return { chat, seen }
+  }
+
+  beforeEach(() => {
+    loadPmToolSetMock
+      .mockReset()
+      .mockResolvedValue({ description: 'CLIENT RECALL TOOLS', tools: { client_recall: { execute: vi.fn() } } })
+  })
+
+  it('offers no web search or link reading to a local turn offered client recall; a cloud turn keeps them', async () => {
+    const { streamText } = await import('./stream-text')
+    const { chat, seen } = toolsSeen()
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'What did Jo say?')],
+      webBrowsing: true,
+      sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'test-model' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(seen[0].client_recall).toBeDefined()
+    expect(seen[0].web_search).toBeUndefined()
+    expect(seen[0].parse_link).toBeUndefined()
+    expect(injectModelSystemPromptMock.mock.calls.at(-1)?.[2]).not.toContain('web_search')
+
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'What did Jo say?')],
+      webBrowsing: true,
+      sessionSettings: { provider: ModelProviderEnum.OpenAI, modelId: 'gpt' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(seen[1].web_search).toBeDefined()
+    expect(seen[1].parse_link).toBeDefined()
+  })
+
+  it('does no prompt-engineered search or native grounding for a local model in a chat holding local-only text', async () => {
+    loadPmToolSetMock.mockResolvedValue(null)
+    const { streamText } = await import('./stream-text')
+    const tools = await import('./tools')
+    vi.mocked(tools.searchByPromptEngineering).mockClear()
+    const { chat, seen } = toolsSeen()
+    const messages = () => [createMessage('user', 'Price?'), localOnlyRecall(), createMessage('user', 'And now?')]
+    await streamText(createTestModel(chat, false), {
+      messages: messages(),
+      webBrowsing: true,
+      sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'test-model' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(tools.searchByPromptEngineering).not.toHaveBeenCalled()
+    expect(chat).toHaveBeenCalledTimes(1)
+
+    await streamText(createTestModel(chat), {
+      messages: messages(),
+      webBrowsing: true,
+      nativeWebSearch: 'gemini-grounding',
+      sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'test-model' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(seen[1].google_search).toBeUndefined()
+    expect(seen[1].web_search).toBeUndefined()
+  })
+})

@@ -282,6 +282,16 @@ describe('addKnowledge', () => {
     expect(lastUndo().message).toBe('Added "We ship on Tuesdays" to Acme')
   })
 
+  it('addKnowledge files the given sources in place of the user', async () => {
+    const item = await addKnowledge({
+      scopeId: 'acme',
+      kind: 'fact',
+      text: 'The price is 4,200 USD',
+      sources: [{ kind: 'chat', label: 'Chat answer', sourceId: 'g1' }],
+    })
+    expect(item.sources).toEqual([expect.objectContaining({ kind: 'chat', label: 'Chat answer', sourceId: 'g1' })])
+  })
+
   it('undo of add leaves no item and no open proposal', async () => {
     const item = await addKnowledge({ scopeId: 'acme', kind: 'fact', text: 'Launch is 13 Nov' })
     vi.mocked(setReviewEntryState).mockClear()

@@ -445,7 +445,14 @@ describe('client_answer: which-answer', () => {
     vi.mocked(proposeKnowledge).mockResolvedValueOnce(null)
     let sessionId = await chatWith(whichAnswer(), 'It is 9,100 now')
     await answerClientQuestion({ sessionId, answer: '9,100', fact: 'The quote is 9,100.', choice: '2' })
-    expect(addKnowledge).toHaveBeenCalledWith({ scopeId: 'acme', kind: 'fact', text: '9,100' })
+    // The option's record sources go with it, as they do on the proposal (a local-only one keeps it off cloud).
+    expect(addKnowledge).toHaveBeenCalledWith({
+      scopeId: 'acme',
+      kind: 'fact',
+      text: '9,100',
+      sources: vi.mocked(proposeKnowledge).mock.calls[0][0].sources,
+    })
+    expect(vi.mocked(addKnowledge).mock.calls[0][0].sources?.some((s) => s.sourceId)).toBe(true)
 
     vi.mocked(approveProposal).mockRejectedValueOnce(new h.KnowledgeConflictError({ id: 'c1' }))
     sessionId = await chatWith(whichAnswer({ id: 'q5', threadId: 't1' }), 'It is 9,100 now')

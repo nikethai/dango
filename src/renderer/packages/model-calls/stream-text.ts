@@ -418,7 +418,6 @@ export async function streamText(
   const videoUrlExtension = settingsStore.getState().extension?.videoUrl
   const needVideoUrlToolSet = !customTools && videoUrlExtension?.enabled !== false && model.isSupportToolUse()
   const kbNotSupported = knowledgeBase && !model.isSupportToolUse('knowledge-base')
-  const webNotSupported = webBrowsing && !model.isSupportToolUse('web-browsing')
   const workspaceFileToolSet = needWorkspaceCodingTools
     ? createWorkspaceFileToolSet({
         capabilityId,
@@ -534,6 +533,10 @@ export async function streamText(
   }
   // B3: legacy memory saves and reflects nothing in a chat that holds local-only text, or on a turn that may read it.
   const turnIsLocalOnly = localOnlyTurn({ holdsLocalOnly, cloudModel, clientRecallOffered: pmToolSet !== null })
+  // S13: no web search, link reading or grounding on a turn that may read local-only text: a query or URL the model
+  // writes would carry that text to the search provider or the site.
+  const searchWeb = Boolean(webBrowsing) && !turnIsLocalOnly
+  const webNotSupported = searchWeb && !model.isSupportToolUse('web-browsing')
   const mcpTools = wrapToolsWithApproval(sessionId, mcpController.getAvailableTools(), { scopeId })
   // Task tools must be decided before grounding: Gemini forbids mixing provider tools
   // (google.tools.googleSearch) with function tools. Counting tasks too late caused
@@ -604,7 +607,7 @@ export async function streamText(
     memoryToolsAvailable ||
     needGenerateImageTool
   // Native Gemini grounding only when there are no function tools at all.
-  const useGeminiGrounding = nativeWebSearch === 'gemini-grounding' && webBrowsing && !hasFunctionTools
+  const useGeminiGrounding = nativeWebSearch === 'gemini-grounding' && searchWeb && !hasFunctionTools
 
   if (taskToolsAvailable && sessionId) {
     await taskStore.getState().hydrateSessionTasks(sessionId)
@@ -700,7 +703,7 @@ Do not open with repeated web searches when personal memory may apply.
     }
   }
 
-  if (webBrowsing && !webNotSupported && !useGeminiGrounding) {
+  if (searchWeb && !webNotSupported && !useGeminiGrounding) {
     toolSetInstructions += websearchToolSet.description
   }
 
@@ -936,7 +939,7 @@ Do not open with repeated web searches when personal memory may apply.
           mode: 'MODE_DYNAMIC',
           dynamicThreshold: 0.3,
         })
-      } else if (webBrowsing) {
+      } else if (searchWeb) {
         tools.web_search = webSearchTool
         tools.parse_link = parseLinkTool
       }

@@ -51,6 +51,11 @@ export type ClientRecallResult =
       gaps: string[]
       /** Set when a record may not reach a cloud model (local-only or unknown source; only on a local model). */
       localOnly?: true
+      /**
+       * With `localOnly`: the local-only sources of the returned records, so text saved from the answer keeps their
+       * rule. Left out when a returned record's source is unknown (removed, or not named).
+       */
+      localOnlySourceIds?: string[]
     }
   | { ok: false; code: ClientResolveErrorCode; candidates: ClientCandidate[] }
 
@@ -235,6 +240,8 @@ export async function recallClient(input: {
   const records: RecalledRecord[] = []
   let total = 0
   let localOnly = false
+  const localOnlySourceIds = new Set<string>()
+  let unknownSource = false
   for (const { r } of ranked) {
     if (records.length >= limit) break
     const out = toRecalled(r)
@@ -242,7 +249,11 @@ export async function recallClient(input: {
     if (total + size > RECALL_TOTAL_CHARS) break
     total += size
     records.push(out)
-    if (mayNotLeave(r)) localOnly = true
+    if (mayNotLeave(r)) {
+      localOnly = true
+      if (r.sourceId && byId.has(r.sourceId)) localOnlySourceIds.add(r.sourceId)
+      else unknownSource = true
+    }
   }
 
   return {
@@ -251,5 +262,6 @@ export async function recallClient(input: {
     records,
     gaps: [...new Set(gaps)],
     ...(localOnly ? { localOnly: true as const } : {}),
+    ...(localOnly && !unknownSource ? { localOnlySourceIds: [...localOnlySourceIds] } : {}),
   }
 }

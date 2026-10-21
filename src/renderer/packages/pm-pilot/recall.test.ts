@@ -314,6 +314,33 @@ describe('recallClient', () => {
     expect(cloud.ok && 'localOnly' in cloud).toBe(false)
   })
 
+  it('names the local-only sources it returned, unless a record has no known source', async () => {
+    state.sources = [
+      source({ id: 'g1', scopeId: 'acme', localOnly: true }),
+      source({ id: 'a-acme', scopeId: 'acme', kind: 'asana', label: 'Asana' }),
+    ]
+    getRecords.mockResolvedValue([
+      rec({ externalId: 'm1', sourceId: 'g1', text: 'Private launch mail' }),
+      rec({ externalId: 'm2', sourceId: 'g1', text: 'Launch moved' }),
+      rec({ externalId: 'task', sourceKind: 'asana', sourceId: 'a-acme', text: 'Launch' }),
+    ])
+    const local = await recallClient({ query: 'launch', sessionScopeId: 'acme', cloudModel: false })
+    expect(local).toMatchObject({ ok: true, localOnly: true, localOnlySourceIds: ['g1'] })
+
+    getRecords.mockResolvedValue([
+      rec({ externalId: 'm1', sourceId: 'g1', text: 'Private launch mail' }),
+      rec({ externalId: 'orphan', sourceId: null, text: 'Launch' }),
+    ])
+    const unknown = await recallClient({ query: 'launch', sessionScopeId: 'acme', cloudModel: false })
+    expect(unknown).toMatchObject({ ok: true, localOnly: true })
+    expect(unknown.ok && 'localOnlySourceIds' in unknown).toBe(false)
+
+    getRecords.mockResolvedValue([rec({ externalId: 'gone', sourceId: 'g-removed', text: 'Launch' })])
+    const removed = await recallClient({ query: 'launch', sessionScopeId: 'acme', cloudModel: false })
+    expect(removed).toMatchObject({ ok: true, localOnly: true })
+    expect(removed.ok && 'localOnlySourceIds' in removed).toBe(false)
+  })
+
   it('does not fail on a record with an out-of-range date', async () => {
     getRecords.mockResolvedValue([rec({ externalId: 'bad', occurredAt: 9e15 })])
     const out = await recallClient({ query: 'launch', sessionScopeId: 'acme', cloudModel: false })

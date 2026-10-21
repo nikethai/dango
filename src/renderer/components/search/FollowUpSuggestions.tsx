@@ -5,8 +5,10 @@ import { useEffect, useRef, useState } from 'react'
 import { createModelDependencies } from '@/adapters'
 import { languageNameMap } from '@/i18n/locales'
 import { generateText } from '@/packages/model-calls'
+import { chatHoldsLocalOnly, holdsLocalOnlyRecall } from '@/packages/model-calls/toolsets/pm-pilot-history'
+import { isLocalModelIn } from '@/packages/sources/model-check'
 import platform from '@/platform'
-import { getSessionSettings, updateMessage } from '@/stores/chatStore'
+import { getSession, getSessionSettings, updateMessage } from '@/stores/chatStore'
 import { submitNewUserMessage } from '@/stores/session/messages'
 import { settingsStore } from '@/stores/settingsStore'
 import { sequenceMessages } from '@/utils/message'
@@ -156,15 +158,23 @@ function normalizeSuggestions(items: unknown[]): string[] {
 /**
  * Ask the currently selected session model to generate follow-up suggestions.
  * Lightweight auxiliary call — no tool use / web browsing.
+ * ADR 0003: an answer built from email or tasks kept on this device (`localOnly`), or any answer in a chat that holds
+ * such text (a local model may repeat it), goes to no cloud model: no suggestions then.
  */
-async function generateFollowUpSuggestions(input: {
+export async function generateFollowUpSuggestions(input: {
   sessionId: string
   searchQuery?: string
   citations?: SearchCitation[]
   answer?: string
+  localOnly?: boolean
 }): Promise<string[]> {
   const globalSettings = settingsStore.getState().getSettings()
   const settings = await getSessionSettings(input.sessionId)
+  if (!isLocalModelIn(globalSettings, settings)) {
+    if (input.localOnly) return []
+    const session = await getSession(input.sessionId)
+    if (chatHoldsLocalOnly(session?.messages ?? [])) return []
+  }
   const languageName = languageNameMap[globalSettings.language] ?? 'English'
 
   const dependencies = await createModelDependencies()
@@ -211,6 +221,8 @@ type FollowUpContext = {
   searchQuery?: string
   citations?: SearchCitation[]
   answer?: string
+  /** The answer used email or tasks kept on this device, or opens a Needs you chat (quotes client mail). */
+  localOnly?: boolean
 }
 
 /**
@@ -285,6 +297,7 @@ export default function FollowUpSuggestions({
       searchQuery: message.searchQuery,
       citations: message.citations,
       answer: getMessageText(message),
+      localOnly: holdsLocalOnlyRecall(message) || !!message.pmQuestionId,
     }
   }
 

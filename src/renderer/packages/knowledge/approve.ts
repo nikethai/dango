@@ -5,6 +5,7 @@ import type {
   KnowledgeKind,
   KnowledgeProposal,
   KnowledgeRevision,
+  KnowledgeSourceInput,
   KnowledgeState,
 } from '@shared/types/knowledge'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
@@ -230,6 +231,8 @@ export async function addKnowledge(input: {
   scopeId: string
   kind: KnowledgeKind
   text: string
+  /** Where the text came from; the user by default. A local-only source id keeps the item off cloud models. */
+  sources?: KnowledgeSourceInput[]
 }): Promise<KnowledgeItem> {
   if (!input.text.trim()) throw new Error('empty')
   const filed = await fileProposal(
@@ -237,7 +240,7 @@ export async function addKnowledge(input: {
       scopeId: input.scopeId,
       kind: input.kind,
       text: input.text.trim(),
-      sources: [{ kind: 'user', label: 'You' }],
+      sources: input.sources ?? [{ kind: 'user', label: 'You' }],
       origin: 'user',
     },
     { skipDontSuggest: true }
