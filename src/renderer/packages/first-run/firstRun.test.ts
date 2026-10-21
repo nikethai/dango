@@ -86,10 +86,25 @@ describe('firstRunFrom', () => {
     expect(firstRunFrom('/session/abc')).toBe('/session/abc')
     expect(firstRunFrom('/')).toBe('/')
     expect(firstRunFrom('//evil.example')).toBeUndefined()
+    expect(firstRunFrom('//evil.com')).toBeUndefined()
+    expect(firstRunFrom('/\\evil.com')).toBeUndefined()
+    expect(firstRunFrom('/a\\b')).toBeUndefined()
+    expect(firstRunFrom('/first-run?from=/x')).toBeUndefined()
     expect(firstRunFrom('https://evil.example')).toBeUndefined()
     expect(firstRunFrom('/first-run')).toBeUndefined()
     expect(firstRunFrom(undefined)).toBeUndefined()
     expect(firstRunFrom(42)).toBeUndefined()
+  })
+
+  it('keeps the query and hash', () => {
+    expect(firstRunFrom('/session/abc?thread=t1#m2')).toBe('/session/abc?thread=t1#m2')
+    expect(firstRunFrom('/settings/provider?x=1')).toBe('/settings/provider?x=1')
+  })
+
+  it('after an upgrade marked completed, removing every model shows only step 1', () => {
+    const upgraded = { step: 5, sourceSkipped: false, completedAt: 1 } as const
+    expect(resolveFirstRun(upgraded, true)).toEqual({ show: false })
+    expect(resolveFirstRun(upgraded, false)).toEqual({ show: true, step: 1, modelOnly: true })
   })
 })
 

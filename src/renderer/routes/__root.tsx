@@ -81,7 +81,8 @@ function Root() {
   const goToFirstRun = useCallback((to: typeof FIRST_RUN_PATH, from: string) => {
     void router.navigate({ to, search: { from }, replace: true })
   }, [])
-  useFirstRunGate(location.pathname, goToFirstRun)
+  const firstRunFromPath = `${location.pathname}${location.searchStr}${location.hash ? `#${location.hash}` : ''}`
+  useFirstRunGate(location.pathname, goToFirstRun, firstRunFromPath)
 
   useEffect(() => {
     if (initialized.current) {

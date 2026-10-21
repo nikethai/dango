@@ -24,7 +24,10 @@ export function FirstRunCard({
   return (
     <section className="dg dg-first-run__card" aria-labelledby={titleId}>
       <div className="dg-first-run__header">
-        <Mascot state="idle" size={40} />
+        {/* Decorative: the idle mascot would otherwise read "Assistant, idle" before the heading. */}
+        <span className="dg-first-run__mascot" aria-hidden="true">
+          <Mascot state="idle" size={40} />
+        </span>
         <div className="dg-first-run__dots" role="img" aria-label={t('Step {{n}} of 5', { n: step })}>
           {STEPS.map((s) => (
             <span key={s} className={s <= step ? 'dg-first-run__dot is-done' : 'dg-first-run__dot'} />

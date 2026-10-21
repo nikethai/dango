@@ -49,10 +49,23 @@ export function firstRunRedirect(
   return FIRST_RUN_PATH
 }
 
-/** The `from` search value of `/first-run`: an in-app path to return to, or undefined. */
+/**
+ * The `from` search value of `/first-run`: an in-app path (with its query and hash) to return to, or undefined.
+ * Only a same-origin path starting with a single `/` passes; backslashes are rejected (`/\\host` resolves off-origin).
+ */
 export function firstRunFrom(value: unknown): string | undefined {
-  if (typeof value !== 'string' || !/^\/(?!\/)/.test(value)) return undefined
-  return isUnder(value.split(/[?#]/)[0], FIRST_RUN_PATH) ? undefined : value
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) {
+    return undefined
+  }
+  const base = 'http://first-run.invalid'
+  let url: URL
+  try {
+    url = new URL(value, base)
+  } catch {
+    return undefined
+  }
+  if (url.origin !== base) return undefined
+  return isUnder(url.pathname, FIRST_RUN_PATH) ? undefined : value
 }
 
 /** Merges `patch` into the saved record (starting one at step 1) and writes settings. */

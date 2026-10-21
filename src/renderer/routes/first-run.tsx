@@ -2,8 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FirstRunCard } from '@/components/first-run/FirstRunCard'
-import { type FirstRunStep, firstRunFrom, setFirstRun, useFirstRunResolution } from '@/packages/first-run'
-import { useSettingsStore } from '@/stores/settingsStore'
+import { type FirstRunStep, firstRunFrom, useFirstRunResolution } from '@/packages/first-run'
 
 export const Route = createFileRoute('/first-run')({
   component: FirstRunRoute,
@@ -24,18 +23,12 @@ function FirstRunRoute() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { from } = Route.useSearch()
-  const record = useSettingsStore((s) => s.firstRun)
   const resolution = useFirstRunResolution()
 
-  // Save that first run has started, so a model added from Settings › Models and keys resumes at step 2 rather than
-  // reading as an upgrade (no record and a model) and skipping first run.
+  // Nothing to show (completed and a model is back, or opened directly): go back where the user was, query and hash
+  // included. The record itself is written by the gate in __root (useFirstRunGate).
   useEffect(() => {
-    if (resolution.show && !record) setFirstRun({ step: 1 })
-  }, [resolution.show, record])
-
-  // Nothing to show (completed and a model is back, or opened directly): go back where the user was.
-  useEffect(() => {
-    if (!resolution.show) void navigate({ to: from ?? '/', replace: true })
+    if (!resolution.show) void navigate({ href: from ?? '/', replace: true })
   }, [resolution.show, from, navigate])
 
   if (!resolution.show) return null

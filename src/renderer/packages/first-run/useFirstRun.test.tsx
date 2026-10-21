@@ -15,6 +15,7 @@ const h = vi.hoisted(() => {
     resolveRole: (role: 'jobs' | 'quick' | 'other') => resolveRole(role),
     needEdit: true,
     state: { firstRun: undefined as unknown, providers: {} },
+    setSettings: vi.fn(),
   }
 })
 
@@ -25,7 +26,7 @@ vi.mock('@/platform/windowRole', () => ({
 vi.mock('@/stores/settingActions', () => ({ needEditSetting: () => h.needEdit }))
 vi.mock('@/stores/settingsStore', () => ({
   useSettingsStore: (selector: (s: typeof h.state) => unknown) => selector(h.state),
-  settingsStore: { getState: () => h.state },
+  settingsStore: { getState: () => ({ ...h.state, setSettings: h.setSettings }) },
 }))
 
 import { useFirstRunGate, useFirstRunResolution } from './useFirstRun'
@@ -35,6 +36,8 @@ beforeEach(() => {
   h.needEdit = true
   h.state.firstRun = undefined
   h.getWindowRole.mockClear()
+  h.setSettings.mockReset()
+  h.setSettings.mockImplementation((patch: Partial<typeof h.state>) => Object.assign(h.state, patch))
 })
 afterEach(cleanup)
 
@@ -90,11 +93,55 @@ describe('useFirstRunGate', () => {
     expect(navigate).toHaveBeenCalledWith('/first-run', '/')
   })
 
-  it('never redirects an upgrading user who has a model', () => {
+  it('marks an upgrading user with a model completed and never redirects', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1234)
     h.known = 'jobs'
     h.needEdit = false
     const navigate = vi.fn()
-    renderHook(() => useFirstRunGate('/', navigate))
+    const { rerender } = renderHook(() => useFirstRunGate('/', navigate))
+    rerender()
     expect(navigate).not.toHaveBeenCalled()
+    expect(h.setSettings).toHaveBeenCalledTimes(1)
+    expect(h.setSettings).toHaveBeenCalledWith({ firstRun: { step: 5, sourceSkipped: false, completedAt: 1234 } })
+    vi.restoreAllMocks()
+  })
+
+  it('after that marker, removing every model shows only step 1 and redirects', () => {
+    h.known = 'jobs'
+    h.needEdit = false
+    const navigate = vi.fn()
+    const { rerender } = renderHook(() => useFirstRunGate('/session/abc', navigate))
+    h.needEdit = true
+    rerender()
+    expect(renderHook(() => useFirstRunResolution()).result.current).toEqual({ show: true, step: 1, modelOnly: true })
+    expect(navigate).toHaveBeenCalledWith('/first-run', '/session/abc')
+    expect(h.setSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('records a new user without a model at step 1, once', () => {
+    h.known = 'jobs'
+    const navigate = vi.fn()
+    const { rerender } = renderHook(() => useFirstRunGate('/', navigate))
+    rerender()
+    expect(h.setSettings).toHaveBeenCalledTimes(1)
+    expect(h.setSettings).toHaveBeenCalledWith({ firstRun: { step: 1, sourceSkipped: false } })
+  })
+
+  it('writes nothing in the quick window, another window, or while the role is pending', async () => {
+    h.needEdit = false
+    renderHook(() => useFirstRunGate('/', vi.fn()))
+    expect(h.setSettings).not.toHaveBeenCalled()
+    await act(async () => h.resolveRole('quick'))
+    expect(h.setSettings).not.toHaveBeenCalled()
+    renderHook(() => useFirstRunGate('/', vi.fn()))
+    await act(async () => h.resolveRole('other'))
+    expect(h.setSettings).not.toHaveBeenCalled()
+  })
+
+  it('passes from with its query and hash', () => {
+    h.known = 'jobs'
+    const navigate = vi.fn()
+    renderHook(() => useFirstRunGate('/session/abc', navigate, '/session/abc?thread=t1#m2'))
+    expect(navigate).toHaveBeenCalledWith('/first-run', '/session/abc?thread=t1#m2')
   })
 })

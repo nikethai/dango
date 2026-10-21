@@ -45,6 +45,7 @@ describe('FirstRunCard', () => {
     const mascot = screen.getByTestId('mascot')
     expect(mascot.getAttribute('data-state')).toBe('idle')
     expect(mascot.getAttribute('width')).toBe('40')
+    expect(mascot.closest('[aria-hidden="true"]')).toBeTruthy()
     const progress = screen.getByLabelText('Step 3 of 5')
     const dots = progress.querySelectorAll('.dg-first-run__dot')
     expect(dots).toHaveLength(5)
