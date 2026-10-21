@@ -359,3 +359,45 @@ describe('cleanToolCalls', () => {
     })
   })
 })
+
+describe('cleanToolCalls keeps the local-only mark (ADR 0003, B3)', () => {
+  const recall = (result: unknown) => ({
+    type: 'tool-call' as const,
+    state: 'result' as const,
+    toolCallId: 'r1',
+    toolName: 'client_recall',
+    args: { query: 'quote' },
+    result,
+  })
+  const chat = (answer: Message): Message[] => [
+    createMessage(MessageRoleEnum.User, [createTextPart('quote?')]),
+    answer,
+    createMessage(MessageRoleEnum.User, [createTextPart('a')]),
+    createMessage(MessageRoleEnum.Assistant, [createTextPart('b')]),
+    createMessage(MessageRoleEnum.User, [createTextPart('c')]),
+    createMessage(MessageRoleEnum.Assistant, [createTextPart('d')]),
+  ]
+
+  it('marks a cleaned answer that used a local-only recall or client_answer', () => {
+    for (const toolName of ['client_recall', 'client_answer']) {
+      const answer = createMessage(MessageRoleEnum.Assistant, [
+        { ...recall({ localOnly: true }), toolName },
+        createTextPart('Jo wrote 8,400.'),
+      ])
+      const out = cleanToolCalls(chat(answer), 2)
+      expect(out[1].contentParts.some((p) => p.type === 'tool-call')).toBe(false)
+      expect(out[1].pmLocalOnly).toBe(true)
+      expect(answer.pmLocalOnly).toBeUndefined()
+    }
+  })
+
+  it('leaves other answers unmarked and keeps existing marks', () => {
+    const shareable = createMessage(MessageRoleEnum.Assistant, [recall({ localOnly: false }), createTextPart('ok')])
+    expect(cleanToolCalls(chat(shareable), 2)[1].pmLocalOnly).toBeUndefined()
+    const asked: Message = {
+      ...createMessage(MessageRoleEnum.Assistant, [createTextPart('Jo asks')]),
+      pmQuestionId: 'q1',
+    }
+    expect(cleanToolCalls(chat(asked), 2)[1]).toMatchObject({ pmQuestionId: 'q1' })
+  })
+})

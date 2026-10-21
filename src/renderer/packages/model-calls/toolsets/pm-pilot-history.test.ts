@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const localOnlyQuestions = vi.hoisted(() => vi.fn(async (_ids: string[]): Promise<Set<string>> => new Set()))
 vi.mock('./pm-pilot', () => ({ loadLocalOnlyQuestionIds: (ids: string[]) => localOnlyQuestions(ids) }))
 
+import { buildContextForAI } from '@/packages/context-management/context-builder'
 import {
   ch6QuestionIds,
   chatHoldsLocalOnly,
@@ -210,5 +211,47 @@ describe('legacy memory in chats that hold local-only text (B3)', () => {
     expect(localOnlyTurn({ holdsLocalOnly: true, cloudModel: false, clientRecallOffered: false })).toBe(true)
     expect(localOnlyTurn({ holdsLocalOnly: true, cloudModel: true, clientRecallOffered: true })).toBe(false)
     expect(localOnlyTurn({ holdsLocalOnly: false, cloudModel: false, clientRecallOffered: false })).toBe(false)
+  })
+})
+
+describe('after a compaction point, with the local-only recall more than 2 rounds old (review I1)', () => {
+  it('a cloud turn gets the placeholder and the chat still holds local-only text', async () => {
+    const summary: Message = { ...createMessage('assistant', 'Earlier: greetings.'), isSummary: true }
+    const boundary = createMessage('assistant', 'hello')
+    const answer: Message = {
+      ...createMessage('assistant', ''),
+      contentParts: [
+        {
+          type: 'tool-call',
+          state: 'result',
+          toolCallId: 'r1',
+          toolName: 'client_recall',
+          args: { query: 'quote' },
+          result: { localOnly: true },
+        },
+        { type: 'text', text: 'Jo wrote 8,400.' },
+      ],
+    }
+    const messages = [
+      createMessage('user', 'hi'),
+      boundary,
+      summary,
+      createMessage('user', 'What did Jo quote?'),
+      answer,
+      createMessage('user', 'a'),
+      createMessage('assistant', 'b'),
+      createMessage('user', 'c'),
+      createMessage('assistant', 'd'),
+    ]
+    // generation.ts genMessageContext: the context after the compaction point, old tool calls cleaned.
+    const context = buildContextForAI({
+      messages,
+      compactionPoints: [{ summaryMessageId: summary.id, boundaryMessageId: boundary.id, createdAt: 1 }],
+    })
+    expect(context.some((m) => m.contentParts.some((p) => p.type === 'tool-call'))).toBe(false)
+    expect(chatHoldsLocalOnly(context)).toBe(true)
+    const sent = await cloudSafeMessages(context, { provider: 'openai', modelId: 'gpt-5' }, undefined)
+    expect(JSON.stringify(sent)).not.toContain('8,400')
+    expect(sent.map(text)).toContain(LOCAL_ONLY_ANSWER_PLACEHOLDER)
   })
 })
