@@ -587,7 +587,14 @@
  * the sidebar drawer (expanded, rail and peek widths) and the content inset that follows it, every sheet (the
  * inspector sheet included; it appears in place instead of rising or sliding), the tab bar, the thinking line and the
  * pending dots. The mascot holds its idle pose and writes its state (Mascot.tsx; dango-foundations.css). The docked
- * inspector's own rule is in globals.css (.workspace-panel). !important beats the inline and sx transitions.
+ * inspector's own rule is in globals.css (.workspace-panel). Also vaul's phone drawers and pickers, the chat's
+ * infinite pulses and follow-up entry, and Tailwind spinners and pulses (they stop turning but stay visible). Mantine's
+ * own transitions are off through respectReducedMotion (theme/mantineTheme.ts). !important beats the inline and sx
+ * transitions.
+ *
+ * Deliberately no catch-all (*) rule: the splash is removed on animationend (index.tsx) and Mantine Collapse waits
+ * for transitionend when it animates. With respectReducedMotion, Collapse never animates under reduced motion, so the
+ * descendant rules below (.studio-rail *, .dg-think *) cannot stall one either. vaul closes on timers.
  */
 @media (prefers-reduced-motion: reduce) {
   .assistant-pending-dots i,
@@ -602,7 +609,14 @@
   .dg-sheet,
   .dango-sheet--right,
   .dango-inspector-sheet,
-  .dg-sheet-scrim {
+  .dg-sheet-scrim,
+  [data-vaul-drawer],
+  [data-vaul-overlay],
+  .todo-app-glyph.is-progress,
+  .agent-status-dot.is-muted,
+  .msg-followups,
+  .animate-spin,
+  .animate-pulse {
     animation: none !important;
     transition: none !important;
   }

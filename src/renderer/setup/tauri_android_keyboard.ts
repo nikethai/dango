@@ -1,4 +1,5 @@
 import { messageInputID } from '@/hooks/dom'
+import { motionScrollBehavior } from '@/utils/scrollBehavior'
 
 // Tauri Android keyboard handling.
 //
@@ -126,7 +127,7 @@ export function setupKeyboardHandler() {
                 return
               }
             }
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            el.scrollIntoView({ behavior: motionScrollBehavior(), block: 'center' })
           }
         }
       })
@@ -173,7 +174,7 @@ export function setupKeyboardHandler() {
         const visualHeight = vv?.height || window.innerHeight
         const visibleBottom = Math.min(visualHeight, window.innerHeight)
         if (rect.bottom > visibleBottom - 16) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          el.scrollIntoView({ behavior: motionScrollBehavior(), block: 'center' })
         }
         onViewportChange()
       }, 350)

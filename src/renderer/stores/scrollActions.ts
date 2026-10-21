@@ -1,3 +1,4 @@
+import { motionScrollBehavior } from '@/utils/scrollBehavior'
 import { getSession } from './chatStore'
 import { getAllMessageList } from './sessionHelpers'
 import { uiStore } from './uiStore'
@@ -31,7 +32,7 @@ export function scrollToIndex(
   behavior: 'auto' | 'smooth' = 'auto' // 'auto' ，'smooth'
 ) {
   const virtuoso = uiStore.getState().messageScrolling
-  virtuoso?.current?.scrollToIndex({ index, align, behavior })
+  virtuoso?.current?.scrollToIndex({ index, align, behavior: motionScrollBehavior(behavior) })
 }
 
 export function scrollToTop(behavior: 'auto' | 'smooth' = 'auto') {
@@ -68,7 +69,7 @@ export function scrollToBottom(behavior: 'auto' | 'smooth' = 'auto') {
   }
   const virtuoso = uiStore.getState().messageScrolling
   // One scroll only. Dual rAF pins fought Virtuoso followOutput and made the bar thrash.
-  virtuoso?.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior })
+  virtuoso?.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: motionScrollBehavior(behavior) })
 }
 
 let autoScrollTask: {

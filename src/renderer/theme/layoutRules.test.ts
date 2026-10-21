@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import postcss, { type AtRule, type Rule } from 'postcss'
 import { describe, expect, test } from 'vitest'
+import { createDangoMantineTheme } from './mantineTheme'
 
 const layoutRoot = postcss.parse(readFileSync(resolve(process.cwd(), 'src/renderer/static/dango-layout.css'), 'utf8'))
 
@@ -100,11 +101,36 @@ describe('reduced motion (A11Y1 rule 2)', () => {
       '.dango-sheet--right',
       '.dango-inspector-sheet',
       '.dg-sheet-scrim',
+      // Phone drawers and pickers (vaul: slideFromBottom, 500 ms) and their overlay fade.
+      '[data-vaul-drawer]',
+      '[data-vaul-overlay]',
+      // Infinite pulses and entries in chat and the agent panel (globals.css).
+      '.todo-app-glyph.is-progress',
+      '.agent-status-dot.is-muted',
+      '.msg-followups',
+      // Spinners stop turning but stay visible; pulses hold full opacity.
+      '.animate-spin',
+      '.animate-pulse',
     ]) {
       const decls = reducedMotionDecls(selector)
       expect({ selector, animation: decls.animation }).toEqual({ selector, animation: 'none !important' })
       expect({ selector, transition: decls.transition }).toEqual({ selector, transition: 'none !important' })
     }
+  })
+
+  test('nothing waits on an end event: no catch-all rule, and the splash keeps its fade (index.tsx animationend)', () => {
+    layoutRoot.walkAtRules('media', (media: AtRule) => {
+      if (!/prefers-reduced-motion:\s*reduce/.test(media.params)) return
+      media.walkRules((rule: Rule) => {
+        for (const selector of rule.selectors.map(normalize)) {
+          expect(selector).not.toMatch(/^(\*|html|body|:root)$|splash/)
+        }
+      })
+    })
+  })
+
+  test('Mantine respects reduced motion (Modal, Menu, Popover, Tooltip and Collapse skip their transitions)', () => {
+    expect(createDangoMantineTheme().respectReducedMotion).toBe(true)
   })
 
   test('rail buttons do not shrink when pressed', () => {

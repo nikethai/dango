@@ -89,27 +89,42 @@ const RAW_OVERLAY_ALLOWED = [
 /** The wrappers themselves: Overlay re-exports Mantine's Modal and Drawer; AdaptiveModal is allow-listed above. */
 const RAW_OVERLAY_OWNERS = ['components/layout/Overlay.tsx', 'components/common/AdaptiveModal.tsx']
 
-/** Local names a file imports for `name` from one of `sources` (import { Modal } / import { Modal as M }). */
+/**
+ * Local names under which a file can render `name` from one of `sources`: named imports (`{ Modal }`,
+ * `{ Modal as M }`, also after a default import), and namespace imports (`* as M` gives `M.Modal`). Either quote.
+ */
 function importedAs(src: string, name: string, sources: RegExp): string[] {
   const names: string[] = []
-  for (const m of src.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+'([^']+)'/g)) {
+  const named = /import\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g
+  for (const m of src.matchAll(named)) {
     if (!sources.test(m[2])) continue
     for (const part of m[1].split(',')) {
-      const [imported, local] = part.trim().split(/\s+as\s+/)
+      const [imported, local] = part
+        .trim()
+        .replace(/^type\s+/, '')
+        .split(/\s+as\s+/)
       if (imported === name) names.push(local ?? imported)
     }
   }
+  const namespace = /import\s+(?:[\w$]+\s*,\s*)?\*\s+as\s+([\w$]+)\s+from\s*['"]([^'"]+)['"]/g
+  for (const m of src.matchAll(namespace)) {
+    if (sources.test(m[2])) names.push(`${m[1]}.${name}`)
+  }
   return names
 }
+
+const escapeTag = (local: string) => local.replace(/[.$]/g, '\\$&')
 
 const MANTINE_OR_OVERLAY = /^@mantine\/core$|(^|\/)layout\/Overlay$/
 
 /** Renders a Mantine Modal or Drawer (directly or via Overlay), or a vaul Drawer.Root / Drawer.NestedRoot. */
 function rendersRawOverlay(src: string): boolean {
   const tags = [...importedAs(src, 'Modal', MANTINE_OR_OVERLAY), ...importedAs(src, 'Drawer', MANTINE_OR_OVERLAY)].map(
-    (local) => new RegExp(`<${local}(\\.Root)?[\\s>]`)
+    (local) => new RegExp(`<${escapeTag(local)}(\\.Root)?[\\s>]`)
   )
-  for (const local of importedAs(src, 'Drawer', /^vaul$/)) tags.push(new RegExp(`<${local}\\.(Nested)?Root[\\s>]`))
+  for (const local of importedAs(src, 'Drawer', /^vaul$/)) {
+    tags.push(new RegExp(`<${escapeTag(local)}\\.(Nested)?Root[\\s>]`))
+  }
   return tags.some((re) => re.test(src))
 }
 
@@ -165,6 +180,11 @@ describe('sheet inventory', () => {
     expect(rendersRawOverlay("import { Modal } from '../layout/Overlay'\n<Modal opened")).toBe(true)
     expect(rendersRawOverlay("import { Drawer } from 'vaul'\n<Drawer.Root open>")).toBe(true)
     expect(rendersRawOverlay("import { Drawer } from 'vaul'\n<Drawer.NestedRoot open>")).toBe(true)
+    expect(rendersRawOverlay("import X, { Modal } from '@mantine/core'\n<Modal opened")).toBe(true)
+    expect(rendersRawOverlay('import { Modal } from "@mantine/core"\n<Modal opened')).toBe(true)
+    expect(rendersRawOverlay("import * as Mantine from '@mantine/core'\n<Mantine.Modal opened")).toBe(true)
+    expect(rendersRawOverlay("import * as Vaul from 'vaul'\n<Vaul.Drawer.Root open>")).toBe(true)
+    expect(rendersRawOverlay("import type { ModalProps } from '@mantine/core'\n<Modal opened")).toBe(false)
     // MUI's Drawer (the sidebar) and a vaul Drawer without a root are not raw overlays.
     expect(rendersRawOverlay("import Drawer from '@mui/material/Drawer'\n<Drawer open>")).toBe(false)
     expect(rendersRawOverlay("import { Sheet } from '@/components/ui/Sheet'\n<Sheet opened>")).toBe(false)

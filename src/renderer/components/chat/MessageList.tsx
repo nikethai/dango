@@ -52,8 +52,8 @@ import { getAllMessageList, getCurrentThreadHistoryHash } from '@/stores/session
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import { isThreadVisuallyEmpty } from '@/utils/chat-starters'
+import { motionScrollBehavior } from '@/utils/scrollBehavior'
 import ActionMenu from '../ActionMenu'
-
 import { ErrorBoundary } from '../common/ErrorBoundary'
 import { ScalableIcon } from '../common/ScalableIcon'
 import { BlockCodeCollapsedStateProvider } from '../Markdown'
@@ -227,7 +227,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const composerHasDraft = useUIStore((s) => s.composerHasDraft)
 
   const handleJumpToLatest = useCallback(() => {
-    virtuoso.current?.scrollTo({ top: Infinity, behavior: 'smooth' })
+    virtuoso.current?.scrollTo({ top: Infinity, behavior: motionScrollBehavior() })
   }, [])
 
   const setPrefillText = useSetAtom(atoms.inputBoxPrefillTextFamily(currentSession.id))

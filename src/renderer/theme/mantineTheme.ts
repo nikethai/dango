@@ -95,6 +95,9 @@ export const createDangoMantineTheme = (scale = 1) =>
   createTheme({
     /** Dango shell — system UI font, tight radii, green brand; all colours/fonts via CSS tokens */
     scale,
+    // A11Y1 rule 2: with prefers-reduced-motion, Modal, Menu, Popover, Tooltip and Collapse skip their transitions
+    // (duration 0; Collapse then renders without waiting for transitionend).
+    respectReducedMotion: true,
     fontFamily: 'var(--chatbox-font-ui)',
     fontFamilyMonospace: 'var(--chatbox-font-mono)',
     primaryColor: 'chatbox-brand',
