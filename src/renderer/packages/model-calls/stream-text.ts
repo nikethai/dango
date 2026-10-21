@@ -937,7 +937,10 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (needAttachmentFileToolSet) {
-        const wrappedAttachmentTools = wrapToolsWithApproval(sessionId, attachmentFileToolSet.tools, { scopeId })
+        const wrappedAttachmentTools = wrapToolsWithApproval(sessionId, attachmentFileToolSet.tools, {
+          scopeId,
+          builtin: true,
+        })
         tools = {
           ...tools,
           ...wrappedAttachmentTools,
@@ -945,7 +948,10 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (workspaceFileToolSet) {
-        const wrappedWorkspaceTools = wrapToolsWithApproval(sessionId, workspaceFileToolSet.tools, { scopeId })
+        const wrappedWorkspaceTools = wrapToolsWithApproval(sessionId, workspaceFileToolSet.tools, {
+          scopeId,
+          builtin: true,
+        })
         tools = {
           ...tools,
           ...wrappedWorkspaceTools,
@@ -953,7 +959,10 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (needVideoToolSet) {
-        const wrappedVideoTools = wrapToolsWithApproval(sessionId, videoToolSet.tools as ToolSet, { scopeId })
+        const wrappedVideoTools = wrapToolsWithApproval(sessionId, videoToolSet.tools as ToolSet, {
+          scopeId,
+          builtin: true,
+        })
         tools = {
           ...tools,
           ...wrappedVideoTools,
@@ -961,7 +970,10 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (needVideoUrlToolSet) {
-        const wrappedVideoUrlTools = wrapToolsWithApproval(sessionId, videoUrlToolSet.tools as ToolSet, { scopeId })
+        const wrappedVideoUrlTools = wrapToolsWithApproval(sessionId, videoUrlToolSet.tools as ToolSet, {
+          scopeId,
+          builtin: true,
+        })
         tools = {
           ...tools,
           ...wrappedVideoUrlTools,
@@ -981,7 +993,7 @@ Do not open with repeated web searches when personal memory may apply.
               comfyuiAgentMode: Boolean(agentImageFlowInstructions),
             }),
           },
-          { scopeId }
+          { scopeId, builtin: true }
         )
         tools = {
           ...tools,
@@ -990,7 +1002,7 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (browserToolSet) {
-        const wrappedBrowserTools = wrapToolsWithApproval(sessionId, browserToolSet.tools, { scopeId })
+        const wrappedBrowserTools = wrapToolsWithApproval(sessionId, browserToolSet.tools, { scopeId, builtin: true })
         tools = {
           ...tools,
           ...wrappedBrowserTools,
@@ -998,7 +1010,7 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (computerToolSet) {
-        const wrappedComputerTools = wrapToolsWithApproval(sessionId, computerToolSet.tools, { scopeId })
+        const wrappedComputerTools = wrapToolsWithApproval(sessionId, computerToolSet.tools, { scopeId, builtin: true })
         tools = {
           ...tools,
           ...wrappedComputerTools,

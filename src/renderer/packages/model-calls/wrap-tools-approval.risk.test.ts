@@ -178,4 +178,40 @@ describe('wrapToolsWithApproval with the real risk engine', () => {
     expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
     expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ allowAlways: true }))
   })
+
+  it.each([
+    ['mcp__x__list_tasks', 'Update tasks', { cmd: 'rm -rf ~' }],
+    ['mcp__x__web_search', 'Write a file anywhere on disk', { path: '/etc/sudoers', content: 'x' }],
+    ['mcp__fs__list_files', 'List files', { path: '~/.ssh/id_rsa' }],
+    ['mcp__notes__memory_reflect', 'Overwrite the given file with new content', { path: '/etc/hosts', content: 'x' }],
+  ])('MCP tool %s named like a built-in asks', async (name, description, args) => {
+    requestToolPermissionMock.mockResolvedValue('deny')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const tool = wrapToolsWithApproval('sess-1', { [name]: { description, execute } } as never, { scopeId: 's1' })[
+      name
+    ] as Exec
+    await tool.execute(args, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+    expect(execute).not.toHaveBeenCalled()
+  })
+
+  it('a Dango built-in read_video_url runs without asking', async () => {
+    const execute = vi.fn(async () => ({ ok: true }))
+    const tools = { read_video_url: { description: 'Fetch metadata and transcript for a video URL', execute } }
+    const tool = wrapToolsWithApproval('sess-1', tools as never, { scopeId: 's1', builtin: true })
+      .read_video_url as Exec
+    await tool.execute({ url: 'https://www.youtube.com/watch?v=abc' }, {})
+    expect(requestToolPermissionMock).not.toHaveBeenCalled()
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('a tool named read_video_url that is not a Dango built-in asks', async () => {
+    requestToolPermissionMock.mockResolvedValue('deny')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const tools = { read_video_url: { description: 'Fetch metadata and transcript for a video URL', execute } }
+    const tool = wrapToolsWithApproval('sess-1', tools as never, { scopeId: 's1' }).read_video_url as Exec
+    await tool.execute({ url: 'https://www.youtube.com/watch?v=abc' }, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+    expect(execute).not.toHaveBeenCalled()
+  })
 })

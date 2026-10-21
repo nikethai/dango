@@ -97,16 +97,18 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 export function wrapToolsWithApproval(
   sessionId: string | undefined,
   tools: ToolSet,
-  opts: { scopeId?: string } = {}
+  opts: { scopeId?: string; builtin?: boolean } = {}
 ): ToolSet {
   if (!sessionId) {
     return tools
   }
   const scopeId = opts.scopeId || undefined
+  // Only Dango's own toolsets pass `builtin: true`; MCP tools never do, whatever they are named.
+  const riskOpts = { builtin: opts.builtin === true }
 
   return Object.fromEntries(
     Object.entries(tools).map(([toolName, definition]) => {
-      const wrapTier = getToolRiskTier(toolName, definition?.description)
+      const wrapTier = getToolRiskTier(toolName, definition?.description, undefined, riskOpts)
       const description = definition?.description
       const asksEveryTime = alwaysAsks(toolName, description)
       // Only a local shell tool may skip the sheet for a read-only command; code, SQL, remote, send, delete and
@@ -119,7 +121,7 @@ export function wrapToolsWithApproval(
           ...definition,
           execute: async (args: unknown, context) => {
             // Args can raise the tier (`rm -rf ~/`, `~/.ssh/id_rsa`): classify this call, never below the wrap tier.
-            const riskTier = maxTier(wrapTier, getToolRiskTier(toolName, description, args))
+            const riskTier = maxTier(wrapTier, getToolRiskTier(toolName, description, args, riskOpts))
             // R9: never Always, and never a grant, for tools that always ask or CRITICAL calls.
             const grantable =
               canAlways(toolName, riskTier, description) && riskTier !== ToolRiskTier.CRITICAL && !asksEveryTime

@@ -20,7 +20,7 @@ describe('risk-engine', () => {
       expect(getToolRiskTier('computer_screenshot')).toBe(ToolRiskTier.MEDIUM)
       expect(getToolRiskTier('computer_click')).toBe(ToolRiskTier.CRITICAL)
       expect(getToolRiskTier('computer_type')).toBe(ToolRiskTier.CRITICAL)
-      expect(getToolRiskTier('computer_ax_query')).toBe(ToolRiskTier.LOW)
+      expect(getToolRiskTier('computer_ax_query')).toBe(ToolRiskTier.MEDIUM)
       expect(getToolRiskTier('computer_focus_search')).toBe(ToolRiskTier.HIGH)
       expect(getToolRiskTier('computer_ax_press')).toBe(ToolRiskTier.CRITICAL)
     })
@@ -33,10 +33,36 @@ describe('risk-engine', () => {
     })
 
     it('returns LOW for built-in web/video read tools', () => {
-      expect(getToolRiskTier('read_video_url', 'Fetches metadata + transcript for a video URL')).toBe(ToolRiskTier.LOW)
-      expect(getToolRiskTier('web_search', 'Search the web')).toBe(ToolRiskTier.LOW)
-      expect(getToolRiskTier('parse_link', 'Parse a URL')).toBe(ToolRiskTier.LOW)
-      expect(getToolRiskTier('read_video', 'Extract frames from video')).toBe(ToolRiskTier.LOW)
+      const L = { builtin: true }
+      expect(getToolRiskTier('read_video_url', 'Fetches metadata + transcript for a video URL', undefined, L)).toBe(
+        ToolRiskTier.LOW
+      )
+      expect(getToolRiskTier('web_search', 'Search the web', undefined, L)).toBe(ToolRiskTier.LOW)
+      expect(getToolRiskTier('parse_link', 'Parse a URL', undefined, L)).toBe(ToolRiskTier.LOW)
+      expect(getToolRiskTier('read_video', 'Extract frames from video', undefined, L)).toBe(ToolRiskTier.LOW)
+    })
+
+    describe('built-in identity', () => {
+      it('gives the LOW shortcut only to Dango built-ins, never by name', () => {
+        const L = { builtin: true }
+        expect(getToolRiskTier('mcp__x__list_tasks', 'Update tasks', { cmd: 'rm -rf ~' })).toBe(ToolRiskTier.CRITICAL)
+        expect(
+          getToolRiskTier('mcp__x__web_search', 'Write a file anywhere on disk', { path: '/etc/sudoers', content: 'x' })
+        ).toBe(ToolRiskTier.CRITICAL)
+        expect(getToolRiskTier('mcp__fs__list_files', 'List files', { path: '~/.ssh/id_rsa' })).toBe(
+          ToolRiskTier.CRITICAL
+        )
+        expect(
+          getToolRiskTier('mcp__notes__memory_reflect', 'Overwrite the given file with new content', {
+            path: '/etc/hosts',
+            content: 'x',
+          })
+        ).toBe(ToolRiskTier.HIGH)
+        expect(getToolRiskTier('mcp__x__parse_link', 'Parse a URL', undefined, L)).toBe(ToolRiskTier.MEDIUM) // mcp__ is never built-in
+        expect(getToolRiskTier('read_video', 'Extract frames', { path: 'a.mp4' }, L)).toBe(ToolRiskTier.LOW)
+        expect(getToolRiskTier('read_video', 'Extract frames', { path: '/etc/shadow' }, L)).toBe(ToolRiskTier.CRITICAL) // CRITICAL args still count
+        expect(getToolRiskTier('computer_ax_query', undefined, undefined, L)).toBe(ToolRiskTier.MEDIUM)
+      })
     })
 
     it('returns HIGH for write/execute/delete tools', () => {

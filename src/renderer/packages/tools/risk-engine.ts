@@ -56,6 +56,8 @@ const MEDIUM_INTENT_PATTERNS = [
   /\bbrowser_(tabs|screenshot)\b/,
   /\bcomputer_screenshot\b/,
   /\bcomputer_wait\b/,
+  // Reads on-screen text, which may show secrets
+  /\bcomputer_ax_query\b/,
 ]
 
 const LOW_INTENT_PATTERNS = [
@@ -441,8 +443,9 @@ export type RiskSignal = {
  * plus a list of the individual signals that contributed.
  */
 /**
- * Built-in read-only tools that only call public HTTP APIs / local storage.
- * Force LOW so they don't trip MEDIUM network-intent patterns (fetch/url).
+ * Dango's own read-only tools that only call public HTTP APIs / local storage. They rate LOW so they don't trip
+ * MEDIUM network-intent patterns (fetch/url), but only when the caller says the tool is a Dango built-in
+ * (`opts.builtin`): a name alone never earns LOW, since an MCP server, plugin or skill can name a tool anything.
  */
 const BUILTIN_LOW_RISK_TOOLS = new Set([
   'web_search',
@@ -457,16 +460,35 @@ const BUILTIN_LOW_RISK_TOOLS = new Set([
   'memory_recall',
   'memory_list',
   'memory_reflect',
-  'computer_ax_query',
   'computer_frontmost',
 ])
 
-export function classifyToolRisk(toolName: string, description?: string, args?: unknown): RiskClassification {
-  const baseName = toolName.split(/[:/]|__/).at(-1) || toolName
-  if (BUILTIN_LOW_RISK_TOOLS.has(baseName) || BUILTIN_LOW_RISK_TOOLS.has(toolName)) {
+export type ToolRiskOptions = {
+  /** True only for tools from a Dango toolset (never MCP, plugin, skill or hook tools). */
+  builtin?: boolean
+}
+
+export function classifyToolRisk(
+  toolName: string,
+  description?: string,
+  args?: unknown,
+  opts?: ToolRiskOptions
+): RiskClassification {
+  if (opts?.builtin === true && !toolName.startsWith('mcp__') && BUILTIN_LOW_RISK_TOOLS.has(toolName)) {
+    // CRITICAL arguments (`/etc/shadow`, `rm -rf ~`) still count, even for a built-in.
+    const argSignals: RiskSignal[] = []
+    const texts = argTexts(args)
+    if (texts.length > 0) {
+      classifyPaths(texts, argSignals)
+      classifyArgs(texts, argSignals)
+    }
+    const critical = argSignals.filter((s) => s.tier === ToolRiskTier.CRITICAL)
+    if (critical.length > 0) {
+      return { tier: ToolRiskTier.CRITICAL, signals: critical }
+    }
     return {
       tier: ToolRiskTier.LOW,
-      signals: [{ source: 'intent', tier: ToolRiskTier.LOW, matched: baseName }],
+      signals: [{ source: 'intent', tier: ToolRiskTier.LOW, matched: toolName }],
     }
   }
 
@@ -496,8 +518,13 @@ export function classifyToolRisk(toolName: string, description?: string, args?: 
  * Drop-in replacement for the legacy `getToolRiskTier()` function.
  * Returns just the tier enum value.
  */
-export function getToolRiskTier(toolName: string, description?: string, args?: unknown): ToolRiskTier {
-  return classifyToolRisk(toolName, description, args).tier
+export function getToolRiskTier(
+  toolName: string,
+  description?: string,
+  args?: unknown,
+  opts?: ToolRiskOptions
+): ToolRiskTier {
+  return classifyToolRisk(toolName, description, args, opts).tier
 }
 
 // ---------------------------------------------------------------------------
