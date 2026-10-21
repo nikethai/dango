@@ -175,7 +175,7 @@ function source(over: Partial<ConnectedSource> = {}): ConnectedSource {
     kind: 'gmail',
     scopeId: 'acme',
     label: OWN,
-    backgroundReview: false,
+    backgroundReview: true,
     localOnly: false,
     config: { accountId: 'acc1', matchers: ['@acme.com'] },
     connectedAt: CONNECTED,
@@ -609,6 +609,76 @@ describe('runGmailPipeline', () => {
       // The run's decision, not one of its own (M4).
       { model: CLOUD, localOnlySourceIds: new Set() }
     )
+  })
+})
+
+describe('runGmailPipeline with Background review off (B6)', () => {
+  it('stores new and sent mail and makes no model call', async () => {
+    h.sources = [source({ backgroundReview: false })]
+    syncReturns([mail(), mail({ sentByMe: true, author: OWN })])
+    const out = await runGmailPipeline(h.sources[0], ctx())
+    expect(h.records).toHaveLength(2)
+    expect(h.records.every((r) => r.scopeId === 'acme' && r.sourceId === 'g1')).toBe(true)
+    expect(pmStore.setCursor).toHaveBeenCalled()
+    expect(resolveBackgroundModel).not.toHaveBeenCalled()
+    expect(retrieveEvidence).not.toHaveBeenCalled()
+    expect(judgeThread).not.toHaveBeenCalled()
+    expect(actOnThread).not.toHaveBeenCalled()
+    expect(readBackSent).not.toHaveBeenCalled()
+    expect(pmStore.markProcessed).not.toHaveBeenCalled()
+    expect(out).toEqual({ summary: 'Checked 2 new emails', quiet: true })
+  })
+
+  it('asks for no model when none is set up', async () => {
+    h.sources = [source({ backgroundReview: false })]
+    h.model = null
+    syncReturns([mail()])
+    await expect(runGmailPipeline(h.sources[0], ctx())).resolves.toMatchObject({ quiet: true })
+    expect(h.questions).toEqual([])
+  })
+
+  it('a local-only source on a cloud model gets no choose-model Needs you', async () => {
+    h.sources = [source({ backgroundReview: false, localOnly: true })]
+    syncReturns([mail()])
+    await runGmailPipeline(h.sources[0], ctx())
+    expect(h.questions).toEqual([])
+    expect(addReviewEntry).not.toHaveBeenCalled()
+  })
+
+  it('closes a choose-model Needs you left open from when the switch was on', async () => {
+    h.sources = [source({ localOnly: true })]
+    syncReturns([mail()])
+    await runGmailPipeline(h.sources[0], ctx())
+    expect(h.questions).toEqual([expect.objectContaining({ kind: 'choose-model', state: 'open' })])
+    h.sources = [source({ localOnly: true, backgroundReview: false })]
+    syncReturns([])
+    await runGmailPipeline(h.sources[0], ctx())
+    expect(h.questions[0].state).toBe('answered')
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'question', id: h.questions[0].id } }, 'done')
+    expect(judgeThread).not.toHaveBeenCalled()
+  })
+
+  it('a second source on the same account with review on still gets its new mail judged', async () => {
+    h.sources = [
+      source({ backgroundReview: false }),
+      source({ id: 'g2', scopeId: 'globex', config: { accountId: 'acc1', matchers: ['@globex.com'] } }),
+    ]
+    const acme = mail()
+    const acmeSent = mail({ sentByMe: true, author: OWN })
+    const globex = mail({ author: 'li@globex.com', participants: ['li@globex.com', OWN] })
+    const globexSent = mail({ sentByMe: true, author: OWN, participants: [OWN, 'li@globex.com'] })
+    syncReturns([acme, acmeSent, globex, globexSent])
+    const [a, b] = await Promise.all([runGmailPipeline(h.sources[0], ctx()), runGmailPipeline(h.sources[1], ctx())])
+    expect(h.records).toHaveLength(4)
+    expect(judgeThread).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(judgeThread).mock.calls[0][0].inbound).toMatchObject({ externalId: globex.externalId })
+    expect(actOnThread).toHaveBeenCalledTimes(1)
+    // Only the reviewed source's records are read back: none of the review-off source's mail reaches the model.
+    expect(readBackSent).toHaveBeenCalledTimes(1)
+    const readBackIds = vi.mocked(readBackSent).mock.calls[0][0].map((r) => r.externalId)
+    expect(readBackIds.sort()).toEqual([globex.externalId, globexSent.externalId].sort())
+    expect(a).toEqual({ summary: 'Checked 2 new emails', quiet: true })
+    expect(b.summary).toBe('Checked 2 new emails')
   })
 })
 

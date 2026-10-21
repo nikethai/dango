@@ -130,6 +130,8 @@ import { SourceKindPicker } from './SourceKindPicker'
 const BACKGROUND_LINE =
   'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.'
 
+const GMAIL_OFF_LINE = "Off: Dango keeps new mail for search but doesn't read it with a model or write drafts."
+
 const pick = vi.mocked(pickSource)
 const connect = vi.mocked(connectSource)
 const discard = vi.mocked(discardSourceDraft)
@@ -234,6 +236,24 @@ describe('AddSourceSheet', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('false')
     const hint = screen.getByText(BACKGROUND_LINE)
     expect(hint.className).toBe('dg-sheet__hint')
+  })
+
+  it('Gmail says under the switch what off means; other kinds do not (B6)', async () => {
+    await toConnectStep(gmailDraft, 'Gmail')
+    const caption = screen.getByText(GMAIL_OFF_LINE)
+    expect(caption.className).toBe('dg-type-caption')
+    expect(screen.getByRole('switch', { name: 'Background review' }).compareDocumentPosition(caption)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    )
+    cleanup()
+    document.body.innerHTML = ''
+    await toConnectStep({ kind: 'asana', label: 'me@example.com', config: { accountId: 'a2' } }, 'Asana')
+    expect(screen.getByRole('switch', { name: 'Background review' })).toBeTruthy()
+    expect(screen.queryByText(GMAIL_OFF_LINE)).toBeNull()
+    cleanup()
+    document.body.innerHTML = ''
+    await toConnectStep(folderDraft, 'Folder', { scopeId: 'dango' })
+    expect(screen.queryByText(GMAIL_OFF_LINE)).toBeNull()
   })
 
   it('documents has no background review', async () => {

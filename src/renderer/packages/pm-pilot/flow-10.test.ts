@@ -219,7 +219,8 @@ beforeEach(async () => {
       kind: 'gmail',
       scopeId: 'acme',
       label: OWN,
-      backgroundReview: false,
+      // The flow judges and drafts, which needs Background review on (B6).
+      backgroundReview: true,
       localOnly: false,
       config: { accountId: 'acc1', matchers: ['@acme.example'] },
       connectedAt: CONNECTED,

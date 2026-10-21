@@ -59,6 +59,8 @@ import { getFreshToken } from './tokens'
  * - Cloud or local is decided once per run, and the same model and local-only set go to retrieval, judge and draft.
  *   A local-only source on a cloud model gets one "choose a local model" Needs you, and no model call.
  * - Mail is only ever proposed to knowledge (slice 4), never approved here.
+ * - A source with Background review off (B6) is synced and stored only: no model is resolved for it, and none of its
+ *   mail is read back, judged or drafted for. Its "Which client is this?" questions and backfills (no model) stay.
  * - Logs carry fixed text and error class names, never mail text.
  */
 
@@ -259,13 +261,6 @@ async function runAccount(ctx: RunContext): Promise<void> {
   await pmStore.upsertRecords(stored)
   for (const r of stored) if (r.sourceId) statsFor(ctx, r.sourceId).threads.add(r.threadOrTaskId)
 
-  // Decided once per run and passed to every model step (read-back, retrieve, judge, draft).
-  ctx.model = await resolveBackgroundModel()
-  ctx.localOnly = new Set(
-    listSources()
-      .filter((s) => s.localOnly)
-      .map((s) => s.id)
-  )
   ctx.processed = await pmStore.processedIds(accountId)
 
   // Questions about unknown threads before the cursor moves: those threads are not stored, so a failure after the
@@ -274,8 +269,24 @@ async function runAccount(ctx: RunContext): Promise<void> {
   // The whole cursor, own address included, only now: `setCursor` flushes the records above first.
   await pmStore.setCursor(result.cursor)
 
-  await readBack(ctx, stored)
-  await actOnNewMail(ctx, sources)
+  // Background review off (B6): the source's mail is only synced and stored. No model is resolved for it, and its
+  // mail is not read back, judged or drafted for; a "choose a local model" question left from when it was on closes.
+  const reviewing = sources.filter((s) => s.backgroundReview)
+  for (const s of sources) if (!s.backgroundReview) await closeLocalModelQuestion(s)
+  if (reviewing.length === 0) return
+  const reviewingIds = new Set(reviewing.map((s) => s.id))
+
+  // Decided once per run and passed to every model step (read-back, retrieve, judge, draft).
+  ctx.model = await resolveBackgroundModel()
+  ctx.localOnly = new Set(
+    listSources()
+      .filter((s) => s.localOnly)
+      .map((s) => s.id)
+  )
+
+  const reviewed = stored.filter((r) => r.sourceId && reviewingIds.has(r.sourceId))
+  await readBack(ctx, reviewed)
+  await actOnNewMail(ctx, reviewing)
 }
 
 /** The sent-reply read-back (flow 10 step 5), with Review and knowledge loaded so its notes land. Never fails a run. */

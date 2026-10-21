@@ -65,7 +65,7 @@ import { pmStore } from './store'
  * - External text in the opening (sender, subject, summary, values, labels, names) is an inert interpolation value,
  *   with Markdown made literal, in plain message text.
  * - Nothing sends: the reply is drafted only through `actOnThread` and the draft applier; Trust and the daily cap
- *   apply as for any draft.
+ *   apply as for any draft. A source with Background review off (B6) gets no draft: the answer is only saved.
  * - Mail records change only in the jobs window: a "Which client is this?" answer stores its backfill on the question,
  *   which the jobs window's Gmail run performs (`pipeline.ts`); this module only starts that run when it is there.
  */
@@ -632,7 +632,11 @@ async function answerWhich(
     return refuse('failed', 'The answer could not be saved. Ask the user to try again.', mark)
   }
   await closeEntry(q)
-  const drafted = await draftReply(q, scope, evidence)
+  // Background review off (B6): the source's mail is stored only, so no model writes a reply to it.
+  const reviewOff = listSources().some((s) => s.id === q.sourceId && !s.backgroundReview)
+  const drafted = reviewOff
+    ? 'The reply was not drafted: Background review is off for this source.'
+    : await draftReply(q, scope, evidence)
   // The saved text is not echoed: it may come from client mail, and this result goes back to the model.
   return { ok: true, message: `Saved the answer for ${scope.name}. ${drafted}`, ...mark }
 }
