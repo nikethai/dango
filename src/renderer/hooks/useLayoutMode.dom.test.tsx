@@ -143,6 +143,19 @@ describe('toggleSidebar', () => {
   })
 })
 
+describe('setSidebarShown', () => {
+  it('closes the rail peek when the sidebar unmounts, so it does not reopen over the page on return (R3)', () => {
+    render(<Probe />)
+    setWidth(960)
+    toggleSidebar()
+    expect(ui.railPeek).toBe(true)
+    setSidebarShown(false)
+    expect(ui.railPeek).toBe(false)
+    setSidebarShown(true)
+    expect(ui.railPeek).toBe(false)
+  })
+})
+
 describe('useSidebarShown', () => {
   it('follows what the root reports, so page toggles hide where there is no sidebar', () => {
     const { result } = renderHook(() => useSidebarShown())

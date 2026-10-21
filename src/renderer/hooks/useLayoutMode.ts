@@ -117,6 +117,8 @@ export function setLayoutAttributeSuppressed(suppressed: boolean) {
  * phone). ⌘\ does nothing while it does not, so the saved layout never changes unseen.
  */
 export function setSidebarShown(shown: boolean) {
+  // The peek is transient: it must not reopen over the page when the sidebar comes back (Settings, first run).
+  if (!shown) closeTransientSidebar()
   if (sidebarShown === shown) return
   sidebarShown = shown
   for (const listener of sidebarShownListeners) listener()
