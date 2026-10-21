@@ -5,14 +5,71 @@ import { ModelProviderEnum } from '@shared/types/provider'
 
 type ChatModel = { provider: string; modelId: string }
 
-/** Providers that run on this device: the only ones a local-only source's text may reach (ADR 0003). */
+/** The providers whose models can run on this device (ADR 0003). Only one part of `isLocalModel`. */
 export const LOCAL_PROVIDERS: ReadonlySet<string> = new Set<string>([
   ModelProviderEnum.Ollama,
   ModelProviderEnum.LMStudio,
 ])
 
-export function isLocalModelProvider(provider: string | undefined | null): boolean {
-  return !!provider && LOCAL_PROVIDERS.has(provider)
+/** Loopback names only: a LAN address (10.x, 192.168.x) or another machine is not this device. */
+const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+
+/** Ollama's cloud models (`gpt-oss:120b-cloud`, `deepseek:cloud`) run on ollama.com, not here. */
+const CLOUD_MODEL_ID = /(?:^|[-:])cloud$/i
+
+export type ModelRef = { provider?: string | null; modelId?: string | null }
+export type ProviderHostSettings = Pick<Settings, 'providers' | 'customProviders'>
+
+function hostnameOf(host: string): string | null {
+  const trimmed = host.trim()
+  if (!trimmed) return null
+  // `localhost:11434` would otherwise parse as the scheme `localhost:`.
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
+  try {
+    return new URL(withScheme).hostname
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Local means all three: the provider is Ollama or LM Studio, the host the request goes to is loopback, and the model
+ * is not one of Ollama's cloud models. Anything else (including an OpenAI-compatible provider on localhost) is cloud:
+ * the only models a local-only source's text may reach (ADR 0003).
+ */
+export function isLocalModel(input: {
+  providerId?: string | null
+  host?: string | null
+  modelId?: string | null
+}): boolean {
+  if (!input.providerId || !LOCAL_PROVIDERS.has(input.providerId)) return false
+  const modelId = input.modelId?.trim()
+  if (!modelId || CLOUD_MODEL_ID.test(modelId)) return false
+  const hostname = input.host ? hostnameOf(input.host) : null
+  return !!hostname && LOOPBACK_HOSTNAMES.has(hostname)
+}
+
+/**
+ * The host a provider's requests go to, as `getProviderSettings` resolves it (an emptied host field means the
+ * provider's default), without throwing: `''` when the provider is unknown.
+ */
+export function providerHost(settings: ProviderHostSettings | undefined, providerId: string): string {
+  const saved = settings?.providers?.[providerId]?.apiHost
+  const base = [...getSystemProviders(), ...(settings?.customProviders ?? [])].find((p) => p.id === providerId)
+  return (saved || base?.defaultSettings?.apiHost || '').trim()
+}
+
+/** `isLocalModel` for the model a call actually uses, with the host from `settings` (global settings). */
+export function isLocalModelIn(
+  settings: ProviderHostSettings | undefined,
+  model: ModelRef | null | undefined
+): boolean {
+  if (!model?.provider) return false
+  return isLocalModel({
+    providerId: model.provider,
+    host: providerHost(settings, model.provider),
+    modelId: model.modelId,
+  })
 }
 
 /** The model background work uses: the default chat model, else the last model used in chat. */

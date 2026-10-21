@@ -199,13 +199,18 @@ describe('proposeFromChatTurn and the PM pilot (ADR 0003)', () => {
       recallAnswer,
       { id: 'a2', role: 'assistant', contentParts: [{ type: 'text', text: 'So 4,620 with tax.' }] },
     ] as Message[]
-    for (let i = 0; i < 6; i++) await turn({ sessionId: 's2', messages: chat, sessionSettings: { provider: 'ollama' } })
+    for (let i = 0; i < 6; i++)
+      await turn({ sessionId: 's2', messages: chat, sessionSettings: { provider: 'ollama', modelId: 'llama3' } })
     expect(transcriptFromMessages).not.toHaveBeenCalled()
     expect(extractFactsFromTranscript).not.toHaveBeenCalled()
 
     const summary = { id: 'm1', role: 'user', pmLocalOnly: true, contentParts: [{ type: 'text', text: 'S: 4,200' }] }
     for (let i = 0; i < 6; i++) {
-      await turn({ sessionId: 's3', messages: [summary] as Message[], sessionSettings: { provider: 'lm-studio' } })
+      await turn({
+        sessionId: 's3',
+        messages: [summary] as Message[],
+        sessionSettings: { provider: 'lm-studio', modelId: 'qwen3' },
+      })
     }
     expect(extractFactsFromTranscript).not.toHaveBeenCalled()
   })

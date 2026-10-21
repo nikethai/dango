@@ -90,7 +90,7 @@ describe('cloudSafeMessages', () => {
   })
 
   it('hides local-only CH6 text and recall answers for a cloud model', async () => {
-    const out = JSON.stringify(await cloudSafeMessages(chat(), 'openai'))
+    const out = JSON.stringify(await cloudSafeMessages(chat(), { provider: 'openai', modelId: 'gpt-x' }, {}))
     expect(out).not.toContain('8,400')
     expect(out).not.toContain('4,200')
     expect(out).toContain('Which is newer?')
@@ -99,13 +99,22 @@ describe('cloudSafeMessages', () => {
 
   it('treats an unknown provider as cloud, and an unreadable question as local-only', async () => {
     localOnlyQuestions.mockRejectedValue(new Error('storage down'))
-    expect(JSON.stringify(await cloudSafeMessages(chat(), undefined))).not.toContain('8,400')
+    expect(JSON.stringify(await cloudSafeMessages(chat(), undefined, {}))).not.toContain('8,400')
   })
 
   it('leaves everything for a local model', async () => {
     const messages = chat()
-    expect(await cloudSafeMessages(messages, 'ollama')).toBe(messages)
+    expect(await cloudSafeMessages(messages, { provider: 'ollama', modelId: 'm' }, {})).toBe(messages)
     expect(localOnlyQuestions).not.toHaveBeenCalled()
+  })
+
+  it('treats Ollama on another machine, or running a cloud model, as cloud', async () => {
+    const lan = { providers: { ollama: { apiHost: 'http://10.0.0.5:11434' } } }
+    const out = await cloudSafeMessages(chat(), { provider: 'ollama', modelId: 'm' }, lan)
+    expect(out.map(text)).toContain(LOCAL_ONLY_ANSWER_PLACEHOLDER)
+    expect(JSON.stringify(out)).not.toContain('4,200')
+    const cloudModel = await cloudSafeMessages(chat(), { provider: 'ollama', modelId: 'gpt-oss:120b-cloud' }, {})
+    expect(JSON.stringify(cloudModel)).not.toContain('4,200')
   })
 
   it('hides a message that carries a local-only question (a summary of that chat), whatever its role', async () => {
@@ -113,7 +122,11 @@ describe('cloudSafeMessages', () => {
       ...createMessage('user', 'Previous conversation summary: Jo quoted 8,400'),
       pmQuestionId: 'q1',
     }
-    const out = await cloudSafeMessages([summary, createMessage('user', 'go on')], 'openai')
+    const out = await cloudSafeMessages(
+      [summary, createMessage('user', 'go on')],
+      { provider: 'openai', modelId: 'gpt-x' },
+      {}
+    )
     expect(JSON.stringify(out)).not.toContain('8,400')
     expect(text(out[1])).toBe('go on')
   })
@@ -150,7 +163,7 @@ describe('after a local-only recall (final review I2)', () => {
   })
 
   it('a cloud turn after a switch from a local model gets none of it', async () => {
-    const out = JSON.stringify(await cloudSafeMessages(chat(), 'openai'))
+    const out = JSON.stringify(await cloudSafeMessages(chat(), { provider: 'openai', modelId: 'gpt-x' }, {}))
     expect(out).not.toContain('4,200')
     expect(out).not.toContain('4,620')
   })

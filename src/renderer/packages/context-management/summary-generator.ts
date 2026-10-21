@@ -43,7 +43,7 @@ export async function generateSummary(options: SummaryGeneratorOptions): Promise
     const model = getModel(settings, globalSettings, configs, dependencies)
 
     // ADR 0003: the summarising model (which may differ from the chat's) gets no local-only mail or tasks.
-    const safeMessages = await cloudSafeMessages(messages, settings.provider)
+    const safeMessages = await cloudSafeMessages(messages, settings, globalSettings)
     const promptMessages = promptFormat.summarizeConversation(safeMessages, languageName)
     const result = await generateText(model, promptMessages)
 
@@ -146,7 +146,7 @@ export async function generateSummaryWithStream(options: StreamingSummaryOptions
     const model = getModel(settings, globalSettings, configs, dependencies)
 
     // ADR 0003: the summarising model (which may differ from the chat's) gets no local-only mail or tasks.
-    const safeMessages = await cloudSafeMessages(messages, settings.provider)
+    const safeMessages = await cloudSafeMessages(messages, settings, globalSettings)
     const promptMessages = promptFormat.summarizeConversation(safeMessages, languageName)
     const coreMessages = await convertToModelMessages(promptMessages, { modelSupportVision: model.isSupportVision() })
 

@@ -191,18 +191,20 @@ export async function checkAgainstLayers(input: {
   let settings: Settings | undefined
   let reachable = layer
   if (hasSourceId(input.sources) || layer.some((i) => hasSourceId(i.sources))) {
-    const [{ isLocalModelProvider }, { knowledgeMayReachCloud }] = await Promise.all([
+    const [{ isLocalModelIn }, { knowledgeMayReachCloud }] = await Promise.all([
       import('@/packages/sources/model-check'),
       import('@/packages/model-calls/toolsets/pm-pilot-history'),
     ])
-    let provider: string | undefined
+    let local = false
     try {
-      settings = (await resolveCheckerSettings(input.sessionId)).settings
-      provider = (settings as { provider?: string }).provider
+      const resolved = await resolveCheckerSettings(input.sessionId)
+      settings = resolved.settings
+      // The checker calls `settings`' provider and model, at the host the global settings give that provider.
+      local = isLocalModelIn(resolved.global, settings as { provider?: string; modelId?: string })
     } catch (error) {
       log.log('warn', 'Knowledge contradiction check: no model settings:', errorName(error))
     }
-    if (!isLocalModelProvider(provider)) {
+    if (!local) {
       const localOnly = await readLocalOnlySourceIds()
       if (
         !knowledgeMayReachCloud({ id: 'new', sources: (input.sources ?? []) as KnowledgeItem['sources'] }, localOnly)

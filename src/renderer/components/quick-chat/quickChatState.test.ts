@@ -1,7 +1,13 @@
 import type { ProviderInfo } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import type { ModelReadiness } from '@/utils/modelReadiness'
-import { isLocalModel, quickChatName, quickErrorSummary, resolveQuickScope, resolveQuickView } from './quickChatState'
+import {
+  quickChatName,
+  quickErrorSummary,
+  reachableOffline,
+  resolveQuickScope,
+  resolveQuickView,
+} from './quickChatState'
 
 describe('resolveQuickScope', () => {
   it('keeps a scope that still exists and drops one that is gone', () => {
@@ -37,7 +43,7 @@ describe('quickChatName', () => {
   })
 })
 
-describe('isLocalModel', () => {
+describe('reachableOffline', () => {
   const providers = [
     { id: 'ollama', name: 'Ollama', apiHost: 'http://127.0.0.1:11434' },
     { id: 'openai', name: 'OpenAI', apiHost: 'https://api.openai.com' },
@@ -45,21 +51,21 @@ describe('isLocalModel', () => {
   ] as unknown as ProviderInfo[]
 
   it('is true for a local host and false for a remote one', () => {
-    expect(isLocalModel({ provider: 'ollama', modelId: 'm' }, providers)).toBe(true)
-    expect(isLocalModel({ provider: 'openai', modelId: 'm' }, providers)).toBe(false)
-    expect(isLocalModel({ provider: 'lmstudio', modelId: 'm' }, providers)).toBe(true)
+    expect(reachableOffline({ provider: 'ollama', modelId: 'm' }, providers)).toBe(true)
+    expect(reachableOffline({ provider: 'openai', modelId: 'm' }, providers)).toBe(false)
+    expect(reachableOffline({ provider: 'lmstudio', modelId: 'm' }, providers)).toBe(true)
   })
 
   it('falls back to the default host when the host was emptied', () => {
     const emptied = [
       { id: 'ollama', name: 'Ollama', apiHost: '', defaultSettings: { apiHost: 'http://127.0.0.1:11434' } },
     ] as unknown as ProviderInfo[]
-    expect(isLocalModel({ provider: 'ollama', modelId: 'm' }, emptied)).toBe(true)
+    expect(reachableOffline({ provider: 'ollama', modelId: 'm' }, emptied)).toBe(true)
   })
 
   it('is false without a model or provider', () => {
-    expect(isLocalModel(undefined, providers)).toBe(false)
-    expect(isLocalModel({ provider: 'nope', modelId: 'm' }, providers)).toBe(false)
+    expect(reachableOffline(undefined, providers)).toBe(false)
+    expect(reachableOffline({ provider: 'nope', modelId: 'm' }, providers)).toBe(false)
   })
 })
 

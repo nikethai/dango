@@ -6,7 +6,7 @@ import { type JobHandler, NeedsUserError } from '@/packages/background'
 import { proposeKnowledge } from '@/packages/knowledge'
 import { getSourceKind } from './kinds'
 import { throwIfAborted } from './kinds/common'
-import { backgroundModelChoice, hasUsableModel, isLocalModelProvider } from './model-check'
+import { backgroundModelChoice, hasUsableModel, isLocalModelIn } from './model-check'
 import { _resetReviewStateForTests, forgetReviewState, reviewProgressFor } from './review-state'
 import { getSource, loadSources, SourcesUnreadableError, sourcesStore, updateSource } from './store'
 
@@ -177,8 +177,7 @@ async function checkModel(source: ConnectedSource): Promise<void> {
   const settings = settingsStore.getState().getSettings()
   const lastUsed = lastUsedModelStore.getState().chat
   if (!hasUsableModel(settings, lastUsed)) throw new NeedsUserError(NO_MODEL_REASON, chooseModel())
-  const provider = backgroundModelChoice(settings, lastUsed)?.provider
-  if (source.localOnly && !isLocalModelProvider(provider)) {
+  if (source.localOnly && !isLocalModelIn(settings, backgroundModelChoice(settings, lastUsed))) {
     throw new NeedsUserError(LOCAL_ONLY_REASON, chooseModel())
   }
 }

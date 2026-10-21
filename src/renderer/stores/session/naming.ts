@@ -57,7 +57,8 @@ async function _generateName(sessionId: string, modifyName: (sessionId: string, 
     // The naming model may be a cloud model while the chat ran on a local one (ADR 0003): as for every chat model call.
     const messages = await cloudSafeMessages(
       session.messages.filter((m) => m.role !== 'system'),
-      settings.provider
+      settings,
+      globalSettings
     )
     const result = await generateText(
       model,

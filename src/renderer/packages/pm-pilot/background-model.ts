@@ -1,4 +1,4 @@
-import { backgroundModelChoice, hasUsableModel, isLocalModelProvider, listSources, loadSources } from './bridge'
+import { backgroundModelChoice, hasUsableModel, isLocalModelIn, listSources, loadSources } from './bridge'
 
 /*
  * The model every pipeline call uses: slice 7's background model (preflight R8). Dango never switches models: the
@@ -7,7 +7,7 @@ import { backgroundModelChoice, hasUsableModel, isLocalModelProvider, listSource
  */
 
 export type BackgroundModel = {
-  /** True unless the provider runs on this device (ADR 0003: local-only sources may not reach it). */
+  /** True unless the model runs on this device (`isLocalModelIn`; ADR 0003: local-only sources may not reach it). */
   cloud: boolean
   /** One call; the reply's text parts joined. Throws when the call fails. */
   generate(system: string, user: string): Promise<string>
@@ -24,7 +24,7 @@ export async function resolveBackgroundModel(): Promise<BackgroundModel | null> 
   const choice = backgroundModelChoice(global, lastUsed)
   if (!choice || !hasUsableModel(global, lastUsed)) return null
   return {
-    cloud: !isLocalModelProvider(choice.provider),
+    cloud: !isLocalModelIn(global, choice),
     async generate(system, user) {
       const [{ getModel }, { createModelDependencies }, { generateText }, { default: platform }, { createMessage }] =
         await Promise.all([

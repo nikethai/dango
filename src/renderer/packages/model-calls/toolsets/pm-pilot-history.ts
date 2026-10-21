@@ -2,7 +2,7 @@ import { type Evidence, mayReachCloud } from '@shared/pm-pilot'
 import type { Message } from '@shared/types'
 import type { KnowledgeItem } from '@shared/types/knowledge'
 import { t } from 'i18next'
-import { isLocalModelProvider } from '@/packages/sources/model-check'
+import { isLocalModelIn, type ModelRef, type ProviderHostSettings } from '@/packages/sources/model-check'
 
 /*
  * What a cloud model may be sent from the PM pilot (ADR 0003: a local-only source's text never reaches a cloud
@@ -101,12 +101,16 @@ export function hideLocalOnlyRecalls(
 }
 
 /**
- * The messages as `provider`'s model may receive them: unchanged for a local model (Ollama, LM Studio); for any other
- * provider, or none given, `hideLocalOnlyRecalls` with the CH6 questions that are local-only now (all of them when
- * that cannot be read).
+ * The messages as `model` may receive them: unchanged for a local model (`isLocalModelIn`: Ollama or LM Studio on a
+ * loopback host, not a cloud model); for any other model, or none given, `hideLocalOnlyRecalls` with the CH6
+ * questions that are local-only now (all of them when that cannot be read). `settings`: global settings (the hosts).
  */
-export async function cloudSafeMessages(messages: Message[], provider: string | undefined | null): Promise<Message[]> {
-  if (isLocalModelProvider(provider)) return messages
+export async function cloudSafeMessages(
+  messages: Message[],
+  model: ModelRef | null | undefined,
+  settings: ProviderHostSettings | undefined
+): Promise<Message[]> {
+  if (isLocalModelIn(settings, model)) return messages
   const questionIds = ch6QuestionIds(messages)
   let localOnly: Set<string> | null = new Set()
   if (questionIds.length > 0) {

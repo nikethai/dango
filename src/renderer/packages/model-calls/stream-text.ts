@@ -23,7 +23,7 @@ import { ensureKnowledgeLoaded } from '@/packages/knowledge/store'
 import { hostPreSearchMemories } from '@/packages/memory/host-presearch'
 import { isSessionMemoryToolRetainAllowed } from '@/packages/memory/session-policy'
 import { getMemoryToolSet, MEMORY_TOOL_NAMES } from '@/packages/memory/tools'
-import { isLocalModelProvider } from '@/packages/sources/model-check'
+import { isLocalModelIn } from '@/packages/sources/model-check'
 import { commandToolInstructions } from '@/packages/tool-permission'
 import platform from '@/platform'
 import { ensureMemoryStoreInit, memoryStore } from '@/stores/memoryStore'
@@ -366,11 +366,12 @@ export async function streamText(
     scopeId,
   } = params
   const globalSettings = settingsStore.getState().getSettings()
-  // ADR 0003: whether this turn's model is cloud (the chat's own provider). A cloud turn never carries an earlier
-  // answer built from local-only mail or tasks.
-  const cloudModel = !isLocalModelProvider(sessionSettings?.provider)
+  // ADR 0003: whether this turn's model is cloud (the chat's provider and its host, and the model id this call sends).
+  // A cloud turn never carries an earlier answer built from local-only mail or tasks.
+  const calledModel = { provider: sessionSettings?.provider, modelId: model.modelId || sessionSettings?.modelId }
+  const cloudModel = !isLocalModelIn(globalSettings, calledModel)
   // Local-only mail and tasks (recall answers, Needs you chats) are replaced by a placeholder for a cloud model.
-  params.messages = await cloudSafeMessages(params.messages, sessionSettings?.provider)
+  params.messages = await cloudSafeMessages(params.messages, calledModel, globalSettings)
   const hasDocumentFileOrLink = params.messages.some(
     (m) => m.links?.length || m.files?.some((f) => f.mediaKind !== 'video')
   )

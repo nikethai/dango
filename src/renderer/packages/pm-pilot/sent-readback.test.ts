@@ -14,10 +14,12 @@ const state = vi.hoisted(() => ({
   entries: [] as Array<{ id: string; ref: { type: string; id: string }; state: string }>,
 }))
 
-vi.mock('./bridge', () => ({
+vi.mock('./bridge', async () => ({
   backgroundModelChoice: () => state.choice,
   hasUsableModel: () => state.usable,
-  isLocalModelProvider: (p: string) => p === 'ollama' || p === 'lm-studio',
+  isLocalModelIn: (
+    await vi.importActual<typeof import('@/packages/sources/model-check')>('@/packages/sources/model-check')
+  ).isLocalModelIn,
   loadSources: vi.fn(async () => undefined),
   listSources: (filter?: { scopeId?: string; kind?: string }) =>
     state.sources.filter(

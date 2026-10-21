@@ -2,5 +2,5 @@
 export { initPmReview } from './act-call'
 export { registerPmAdapters } from './adapters'
 export { initPmQuestions } from './answer'
-export { isLocalModelProvider } from './bridge'
+export { isLocalModel, isLocalModelIn } from './bridge'
 export { getSourceHealth, type SourceHealth } from './pipeline'

@@ -664,6 +664,31 @@ describe('streamText client_recall', () => {
     })
   })
 
+  it('counts Ollama on another machine, or a cloud model on Ollama, as a cloud model', async () => {
+    const { streamText } = await import('./stream-text')
+    const chat = vi.fn(async () => ({ contentParts: [], text: 'done' }) as StreamTextResult)
+    settingsState.providers[ModelProviderEnum.Ollama] = { apiHost: 'http://10.0.0.5:11434' }
+    try {
+      await streamText(createTestModel(chat), {
+        messages: [createMessage('user', 'hello')],
+        sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'llama3' },
+        onResultChangeWithCancel: vi.fn(),
+      })
+      expect(loadPmToolSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ cloudModel: true }))
+    } finally {
+      delete settingsState.providers[ModelProviderEnum.Ollama]
+    }
+    await streamText(
+      { ...createTestModel(chat), modelId: 'gpt-oss:120b-cloud' },
+      {
+        messages: [createMessage('user', 'hello')],
+        sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'gpt-oss:120b-cloud' },
+        onResultChangeWithCancel: vi.fn(),
+      }
+    )
+    expect(loadPmToolSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ cloudModel: true }))
+  })
+
   it('is not loaded for a turn with its own tools or a model without tool use', async () => {
     const { streamText } = await import('./stream-text')
     const chat = vi.fn((_messages, options) => {

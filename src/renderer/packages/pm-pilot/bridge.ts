@@ -52,7 +52,8 @@ export {
 export {
   backgroundModelChoice,
   hasUsableModel,
-  isLocalModelProvider,
+  isLocalModel,
+  isLocalModelIn,
   LOCAL_PROVIDERS,
 } from '@/packages/sources/model-check'
 export { pushUndo } from '@/packages/undo'

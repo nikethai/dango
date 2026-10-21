@@ -22,7 +22,11 @@ export function quickChatName(question: string): string {
   return `${points.slice(0, NAME_MAX_CODE_POINTS).join('').trimEnd()}…`
 }
 
-export function isLocalModel(model: SelectedModel | undefined, providers: ProviderInfo[]): boolean {
+/**
+ * Whether the model answers without internet (a host on this device or the LAN). Not a privacy check: a LAN host is
+ * another machine; local-only text goes through `isLocalModelIn` (`packages/sources/model-check`).
+ */
+export function reachableOffline(model: SelectedModel | undefined, providers: ProviderInfo[]): boolean {
   if (!model) return false
   const provider = providers.find((candidate) => candidate.id === model.provider)
   // An emptied host field means the default host, as when the provider sends.
