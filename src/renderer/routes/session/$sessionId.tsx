@@ -18,6 +18,7 @@ import Header from '@/components/layout/Header'
 import { ProjectContextPanel } from '@/components/project/ProjectContextPanel'
 import ThreadHistoryDrawer from '@/components/session/ThreadHistoryDrawer'
 import WorkspacePanel, { useWorkspaceChromeActive } from '@/components/workspace/WorkspacePanel'
+import { useLayoutMode } from '@/hooks/useLayoutMode'
 import { useProjectWorkspace } from '@/hooks/useProjectWorkspace'
 import { useProviders } from '@/hooks/useProviders'
 import platform from '@/platform'
@@ -251,6 +252,8 @@ function RouteComponent() {
   const isOpenClawProvider = currentSession?.settings?.provider === ModelProviderEnum.OpenClaw
   const [showSessionPanel, setShowSessionPanel] = useState(false)
   const workspaceChromeActive = useWorkspaceChromeActive()
+  // Only the docked inspector (wide) takes room from the chat; below 1200 px it is a sheet over it.
+  const layoutMode = useLayoutMode()
   const workspaceExpanded = useUIStore((s) => s.workspaceExpanded)
   const setWorkspacePanel = useUIStore((s) => s.setWorkspacePanel)
 
@@ -281,7 +284,7 @@ function RouteComponent() {
 
   return currentSession ? (
     <div
-      className={`session-shell ${workspaceChromeActive ? 'has-workspace' : ''}${workspaceExpanded ? ' has-workspace-expanded' : ''}`}
+      className={`session-shell ${layoutMode === 'wide' && workspaceChromeActive ? 'has-workspace' : ''}${layoutMode === 'wide' && workspaceExpanded ? ' has-workspace-expanded' : ''}`}
     >
       <Header session={currentSession} />
 
