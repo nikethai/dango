@@ -6,9 +6,11 @@ vi.mock('./pm-pilot', () => ({ loadLocalOnlyQuestionIds: (ids: string[]) => loca
 
 import {
   ch6QuestionIds,
+  chatHoldsLocalOnly,
   cloudSafeMessages,
   hideLocalOnlyRecalls,
   LOCAL_ONLY_ANSWER_PLACEHOLDER,
+  localOnlyTurn,
   summaryLocalOnlyMarks,
 } from './pm-pilot-history'
 
@@ -184,5 +186,29 @@ describe('after a local-only recall (final review I2)', () => {
     expect(summaryLocalOnlyMarks([opening('q1'), recall()])).toEqual({ pmQuestionId: 'q1', pmLocalOnly: true })
     expect(summaryLocalOnlyMarks([opening('q1')])).toEqual({ pmQuestionId: 'q1' })
     expect(summaryLocalOnlyMarks([createMessage('user', 'hi')])).toEqual({})
+  })
+})
+
+describe('legacy memory in chats that hold local-only text (B3)', () => {
+  const recallAnswer = (result: unknown): Message => ({
+    ...createMessage('assistant', 'Jo wrote 8,400.'),
+    contentParts: [
+      { type: 'tool-call', state: 'result', toolCallId: 'r1', toolName: 'client_recall', args: {}, result },
+      { type: 'text', text: 'Jo wrote 8,400.' },
+    ],
+  })
+
+  it('knows a chat holds local-only text by a local-only recall, a pmLocalOnly summary or a Needs you opening', () => {
+    expect(chatHoldsLocalOnly([recallAnswer({ localOnly: true })])).toBe(true)
+    expect(chatHoldsLocalOnly([{ ...createMessage('assistant', 's'), pmLocalOnly: true }])).toBe(true)
+    expect(chatHoldsLocalOnly([{ ...createMessage('assistant', 'q'), pmQuestionId: 'q1' }])).toBe(true)
+    expect(chatHoldsLocalOnly([createMessage('user', 'hi'), recallAnswer({})])).toBe(false)
+  })
+
+  it('treats a local turn as local-only when the chat holds local-only text or client recall is offered', () => {
+    expect(localOnlyTurn({ holdsLocalOnly: false, cloudModel: false, clientRecallOffered: true })).toBe(true)
+    expect(localOnlyTurn({ holdsLocalOnly: true, cloudModel: false, clientRecallOffered: false })).toBe(true)
+    expect(localOnlyTurn({ holdsLocalOnly: true, cloudModel: true, clientRecallOffered: true })).toBe(false)
+    expect(localOnlyTurn({ holdsLocalOnly: false, cloudModel: false, clientRecallOffered: false })).toBe(false)
   })
 })

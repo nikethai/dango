@@ -1,6 +1,6 @@
 import type { ModelInterface } from '@shared/models/types'
 import { createMessage, type Message, ModelProviderEnum, type StreamTextResult } from '@shared/types'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   createAndGenerateMock,
@@ -92,18 +92,32 @@ vi.mock('@/stores/settingsStore', () => ({
   },
 }))
 
+const memorySettingsState = vi.hoisted(() => ({ enabled: false, autoSave: false, autoConsolidate: false }))
+const rebuildProfileSpy = vi.hoisted(() => vi.fn(async () => {}))
+const getMemoryToolSetSpy = vi.hoisted(() => vi.fn())
+vi.mock('@/packages/memory/tools', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/packages/memory/tools')>()
+  return {
+    ...actual,
+    getMemoryToolSet: (ctx: Parameters<typeof actual.getMemoryToolSet>[0]) => {
+      getMemoryToolSetSpy(ctx)
+      return actual.getMemoryToolSet(ctx)
+    },
+  }
+})
+
 vi.mock('@/stores/memoryStore', () => ({
   ensureMemoryStoreInit: vi.fn(async () => {}),
   memoryStore: {
     getState: () => ({
       ready: true,
-      settings: { enabled: false, autoSave: false },
+      settings: memorySettingsState,
       globalBank: { scope: 'global', entries: [], profileSummary: '', version: 1 },
       agentBanks: {},
       ensureAgentBank: vi.fn(async () => ({ scope: 'agent', entries: [], profileSummary: '', version: 1 })),
       replaceGlobalBank: vi.fn(),
       replaceAgentBank: vi.fn(),
-      rebuildProfile: vi.fn(),
+      rebuildProfile: rebuildProfileSpy,
     }),
   },
 }))
@@ -900,5 +914,104 @@ describe('streamText local-only client data on a cloud turn', () => {
     })
     expect(loadPmToolSetMock).toHaveBeenCalledTimes(1)
     expect(instructions()).toContain('CLIENT RECALL TOOLS')
+  })
+})
+
+describe('streamText legacy memory in chats that hold local-only text (B3)', () => {
+  const recallAnswer = (): Message => ({
+    ...createMessage('assistant', 'Jo wrote 8,400.'),
+    contentParts: [
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'r1',
+        toolName: 'client_recall',
+        args: {},
+        result: { localOnly: true },
+      },
+      { type: 'text', text: 'Jo wrote 8,400.' },
+    ],
+  })
+  const toolsOffered = vi.fn()
+  const chat = () =>
+    vi.fn((_messages, options) => {
+      toolsOffered(Object.keys(options.tools ?? {}))
+      return Promise.resolve({ contentParts: [], text: 'done' } as StreamTextResult)
+    })
+  const lastCtx = () => getMemoryToolSetSpy.mock.calls.at(-1)?.[0]
+  const memoryToolsOffered = () =>
+    (toolsOffered.mock.calls.at(-1)?.[0] as string[]).filter((n) => n.startsWith('memory_'))
+
+  beforeEach(() => {
+    memorySettingsState.enabled = true
+    getMemoryToolSetSpy.mockClear()
+    toolsOffered.mockClear()
+    loadPmToolSetMock.mockReset().mockResolvedValue(null)
+  })
+  afterEach(() => {
+    memorySettingsState.enabled = false
+  })
+
+  const ollama = { provider: ModelProviderEnum.Ollama, modelId: 'llama3' }
+  const openai = { provider: ModelProviderEnum.OpenAI, modelId: 'gpt-4o' }
+
+  it('turns off saving and reflecting in a chat that holds a local-only recall, local or cloud', async () => {
+    const { streamText } = await import('./stream-text')
+    for (const sessionSettings of [ollama, openai]) {
+      await streamText(createTestModel(chat()), {
+        messages: [createMessage('user', 'quote?'), recallAnswer(), createMessage('user', 'remember that')],
+        sessionSettings,
+        onResultChangeWithCancel: vi.fn(),
+      })
+      expect(lastCtx()).toMatchObject({ localOnlyChat: true, sessionSettings })
+      expect(memoryToolsOffered()).toEqual(['memory_recall', 'memory_list', 'memory_forget'])
+    }
+  })
+
+  it('turns them off in a Needs you chat, and on a local turn offered client recall', async () => {
+    const { streamText } = await import('./stream-text')
+    await streamText(createTestModel(chat()), {
+      messages: [{ ...createMessage('assistant', 'Client asks'), pmQuestionId: 'q1' }, createMessage('user', 'ok')],
+      sessionSettings: openai,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(lastCtx()).toMatchObject({ localOnlyChat: true })
+
+    loadPmToolSetMock.mockResolvedValue({ description: 'CLIENT RECALL TOOLS', tools: { client_recall: {} } })
+    await streamText(createTestModel(chat()), {
+      messages: [createMessage('user', 'When is the Acme launch?')],
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(lastCtx()).toMatchObject({ localOnlyChat: true })
+    expect(memoryToolsOffered()).not.toContain('memory_retain')
+
+    // A cloud turn offered client recall gets no local-only records, so memory stays as it is.
+    await streamText(createTestModel(chat()), {
+      messages: [createMessage('user', 'When is the Acme launch?')],
+      sessionSettings: openai,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(lastCtx()).toMatchObject({ localOnlyChat: false })
+  })
+
+  it('keeps every memory tool in an ordinary chat and consolidates with the chat model', async () => {
+    const { streamText } = await import('./stream-text')
+    await streamText(createTestModel(chat()), {
+      messages: [createMessage('user', 'I like tea')],
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(lastCtx()).toMatchObject({ localOnlyChat: false, sessionSettings: ollama })
+    expect(memoryToolsOffered()).toContain('memory_retain')
+    expect(memoryToolsOffered()).toContain('memory_reflect')
+
+    memorySettingsState.autoConsolidate = true
+    try {
+      lastCtx().scheduleConsolidate('global')
+      expect(rebuildProfileSpy).toHaveBeenLastCalledWith('global', undefined, true, { sessionSettings: ollama })
+    } finally {
+      memorySettingsState.autoConsolidate = false
+    }
   })
 })

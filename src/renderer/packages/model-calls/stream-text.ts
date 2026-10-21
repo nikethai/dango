@@ -86,7 +86,13 @@ import generateImageToolSet, {
 } from './toolsets/generate-image'
 import { getToolSet } from './toolsets/knowledge-base'
 import { loadLocalOnlySourceIds, loadPmToolSet } from './toolsets/pm-pilot'
-import { CLIENT_RECALL_TOOL, cloudSafeMessages, knowledgeMayReachCloud } from './toolsets/pm-pilot-history'
+import {
+  CLIENT_RECALL_TOOL,
+  chatHoldsLocalOnly,
+  cloudSafeMessages,
+  knowledgeMayReachCloud,
+  localOnlyTurn,
+} from './toolsets/pm-pilot-history'
 import taskTrackingToolSet from './toolsets/task-tracking'
 import videoToolSet, { initVideoToolBudget, resetVideoToolBudget } from './toolsets/video'
 import videoUrlToolSet from './toolsets/video-url'
@@ -370,6 +376,8 @@ export async function streamText(
   // A cloud turn never carries an earlier answer built from local-only mail or tasks.
   const calledModel = { provider: sessionSettings?.provider, modelId: model.modelId || sessionSettings?.modelId }
   const cloudModel = !isLocalModelIn(globalSettings, calledModel)
+  // B3: taken before cloudSafeMessages, whose placeholder drops the tool parts that mark it.
+  const holdsLocalOnly = chatHoldsLocalOnly(params.messages)
   // Local-only mail and tasks (recall answers, Needs you chats) are replaced by a placeholder for a cloud model.
   params.messages = await cloudSafeMessages(params.messages, calledModel, globalSettings)
   const hasDocumentFileOrLink = params.messages.some(
@@ -523,6 +531,8 @@ export async function streamText(
       console.error('Failed to load client email and tasks toolset:', err)
     }
   }
+  // B3: legacy memory saves and reflects nothing in a chat that holds local-only text, or on a turn that may read it.
+  const turnIsLocalOnly = localOnlyTurn({ holdsLocalOnly, cloudModel, clientRecallOffered: pmToolSet !== null })
   const mcpTools = wrapToolsWithApproval(sessionId, mcpController.getAvailableTools(), { scopeId })
   // Task tools must be decided before grounding: Gemini forbids mixing provider tools
   // (google.tools.googleSearch) with function tools. Counting tasks too late caused
@@ -661,11 +671,13 @@ ${!capabilityId ? '- No native Project folder is bound. Ask the user to Open Fol
       agentName: memoryContext?.agentName,
       sessionId,
       allowRetain: isSessionMemoryToolRetainAllowed(memorySettings, sessionSettings),
+      localOnlyChat: holdsLocalOnly || turnIsLocalOnly,
+      sessionSettings,
       scheduleConsolidate: (scope) => {
         if (!memorySettings.autoConsolidate) return
         void memoryStore
           .getState()
-          .rebuildProfile(scope, scope === 'agent' ? memoryContext?.agentId : undefined, true)
+          .rebuildProfile(scope, scope === 'agent' ? memoryContext?.agentId : undefined, true, { sessionSettings })
           .catch(() => {})
       },
     })

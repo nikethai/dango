@@ -45,6 +45,29 @@ export function holdsLocalOnlyRecall(message: Pick<Message, 'contentParts' | 'pm
 }
 
 /**
+ * True when the chat holds text a local model read from local-only mail or tasks: a local-only recall, a summary
+ * built from one, or a Needs you chat (whose opening quotes client mail). Legacy memory saves nothing from such a chat.
+ * Take it from the messages before `cloudSafeMessages`, whose placeholder drops the tool parts.
+ */
+export function chatHoldsLocalOnly(
+  messages: Pick<Message, 'contentParts' | 'pmLocalOnly' | 'pmQuestionId'>[]
+): boolean {
+  return messages.some((m) => holdsLocalOnlyRecall(m) || !!m.pmQuestionId)
+}
+
+/**
+ * True when a turn may read local-only text: a local model in a chat that holds it, or that is offered client recall
+ * (which may answer from local-only records). A cloud model gets placeholders and recall without local-only records.
+ */
+export function localOnlyTurn(i: {
+  holdsLocalOnly: boolean
+  cloudModel: boolean
+  clientRecallOffered: boolean
+}): boolean {
+  return !i.cloudModel && (i.holdsLocalOnly || i.clientRecallOffered)
+}
+
+/**
  * The marks a summary of these messages carries (compaction, New chat with summary), so a cloud turn holds it back
  * like the messages it was built from: the Needs you question, and `pmLocalOnly` after a local-only recall.
  */
