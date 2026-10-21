@@ -390,7 +390,7 @@ export function createComputerToolSet(opts: ComputerToolOptions): { description:
 
   const computer_ax_query = tool({
     description:
-      'List macOS Accessibility controls in the target/frontmost app (search fields, text fields, buttons). Use before computer_focus_search or computer_ax_press. If fallback=vision, the tree is empty — use the screenshot. LOW risk. Does not change focus.',
+      'List macOS Accessibility controls in the target/frontmost app (search fields, text fields, buttons). Use before focusing a search field or pressing a control. If fallback=vision, the tree is empty — use the screenshot. LOW risk. Does not change focus.',
     inputSchema: z.object({
       role: z
         .enum(['search', 'text_field', 'button', 'any'])
@@ -428,7 +428,7 @@ export function createComputerToolSet(opts: ComputerToolOptions): { description:
 
   const computer_wait = tool({
     description:
-      'Wait for UI to settle (0.3–2 seconds), then auto-capture a verification screenshot. Use after open_app or animations. LOW risk.',
+      'Wait for UI to settle (0.3–2 seconds), then auto-capture a verification screenshot. Use after opening an app or animations. LOW risk.',
     inputSchema: z.object({
       seconds: z.number().optional().describe('Seconds to wait (clamped 0.3–2). Default 0.5.'),
     }),
