@@ -1977,5 +1977,9 @@
   "Thinking, {{count}} seconds, {{summary}}_one": "Thinking, {{count}} second, {{summary}}",
   "Thinking, {{count}} seconds, {{summary}}_other": "Thinking, {{count}} seconds, {{summary}}",
   "Writing the answer, {{count}} seconds_one": "Writing the answer, {{count}} second",
-  "Writing the answer, {{count}} seconds_other": "Writing the answer, {{count}} seconds"
+  "Writing the answer, {{count}} seconds_other": "Writing the answer, {{count}} seconds",
+  "Delete “{{filename}}”?": "Delete “{{filename}}”?",
+  "Delete import": "Delete import",
+  "This removes {{count}} imported conversations from Dango and can't be undone. Chats you continued from them stay._one": "This removes {{count}} imported conversation from Dango and can't be undone. Chats you continued from them stay.",
+  "This removes {{count}} imported conversations from Dango and can't be undone. Chats you continued from them stay._other": "This removes {{count}} imported conversations from Dango and can't be undone. Chats you continued from them stay."
 }
