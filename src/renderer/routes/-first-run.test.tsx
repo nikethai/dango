@@ -29,17 +29,19 @@ const steps = vi.hoisted(() => ({
   source: null as null | {
     onNext: (draft: unknown, backgroundReview: boolean) => void
     error?: { text: string }
+    returned?: boolean
   },
   scope: null as null | {
     draft: unknown
     backgroundReview: boolean
     onDraftLost?: (error: { text: string }) => void
+    onBack?: () => void
   },
 }))
 vi.mock('@/components/first-run/SourceStep', () => ({
   SourceStep: (p: NonNullable<typeof steps.source>) => {
     steps.source = p
-    return <div data-testid="source-step" data-error={p.error?.text ?? ''} />
+    return <div data-testid="source-step" data-error={p.error?.text ?? ''} data-returned={String(!!p.returned)} />
   },
 }))
 vi.mock('@/components/first-run/ScopeStep', () => ({
@@ -114,6 +116,18 @@ describe('/first-run', () => {
     act(() => steps.source?.onNext({ kind: 'folder', label: 'dango', config: {} }, true))
     act(() => steps.scope?.onDraftLost?.({ text: 'This folder already belongs to Acme.' }))
     expect(screen.getByTestId('source-step').getAttribute('data-error')).toBe('This folder already belongs to Acme.')
+    expect(screen.getByTestId('source-step').getAttribute('data-returned')).toBe('true')
+  })
+
+  it('"Change" in step 3 goes back to the source step', () => {
+    h.resolution = { show: true, step: 2, modelOnly: false }
+    render(<Page />)
+    expect(screen.getByTestId('source-step').getAttribute('data-returned')).toBe('false')
+    act(() => steps.source?.onNext({ kind: 'folder', label: 'dango', config: {} }, true))
+    act(() => steps.scope?.onBack?.())
+    const source = screen.getByTestId('source-step')
+    expect(source.getAttribute('data-error')).toBe('')
+    expect(source.getAttribute('data-returned')).toBe('true')
   })
 
   it('step 3 (source skipped, or a relaunch) renders the scope step without a draft', () => {

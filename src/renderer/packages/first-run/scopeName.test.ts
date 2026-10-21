@@ -19,12 +19,30 @@ describe('suggestScopeName', () => {
     expect(suggestScopeName({ kind: 'gmail', label: 'pm@mail.acme.co.uk', ref: 'pm@mail.acme.co.uk' })).toBe('Acme')
   })
 
+  it('gives nothing for a public mail domain', () => {
+    for (const domain of ['gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'yahoo.com', 'icloud.com']) {
+      expect(suggestScopeName({ kind: 'gmail', label: `pm@${domain}`, ref: `pm@${domain}` })).toBe('')
+    }
+    expect(suggestScopeName({ kind: 'gmail', label: 'PM@Gmail.com', ref: 'PM@Gmail.com' })).toBe('')
+  })
+
+  it('gives nothing for a drive or file system root', () => {
+    expect(suggestScopeName({ kind: 'folder', label: 'C:\\', ref: 'C:\\' })).toBe('')
+    expect(suggestScopeName({ kind: 'folder', label: 'D:', ref: 'D:' })).toBe('')
+    expect(suggestScopeName({ kind: 'folder', label: '/', ref: '/' })).toBe('')
+  })
+
   it('gives nothing for gmail without an address', () => {
     expect(suggestScopeName({ kind: 'gmail', label: 'Gmail' })).toBe('')
   })
 
   it('uses the label for asana', () => {
     expect(suggestScopeName({ kind: 'asana', label: 'Acme workspace', ref: 'pm@acme.com' })).toBe('Acme workspace')
+  })
+
+  it('uses the domain name for an asana label that is an address', () => {
+    expect(suggestScopeName({ kind: 'asana', label: 'pm@acme.com', ref: 'pm@acme.com' })).toBe('Acme')
+    expect(suggestScopeName({ kind: 'asana', label: 'pm@gmail.com', ref: 'pm@gmail.com' })).toBe('')
   })
 
   it('gives nothing for codex threads', () => {

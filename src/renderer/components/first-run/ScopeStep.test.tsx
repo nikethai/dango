@@ -66,9 +66,12 @@ const FOLDER: SourceDraft = { kind: 'folder', label: 'dango', ref: '/Users/x/Pro
 const GMAIL: SourceDraft = { kind: 'gmail', label: 'pm@acme.com', ref: 'pm@acme.com', config: { accountId: 'a1' } }
 
 function renderStep(
-  props: { draft: SourceDraft | null; backgroundReview?: boolean; onDraftLost?: (e: { text: string }) => void } = {
-    draft: FOLDER,
-  }
+  props: {
+    draft: SourceDraft | null
+    backgroundReview?: boolean
+    onDraftLost?: (e: { text: string }) => void
+    onBack?: () => void
+  } = { draft: FOLDER }
 ) {
   return render(
     <MantineProvider theme={createDangoMantineTheme()}>
@@ -76,9 +79,27 @@ function renderStep(
         draft={props.draft}
         backgroundReview={props.backgroundReview ?? true}
         onDraftLost={props.onDraftLost}
+        onBack={props.onBack}
       />
     </MantineProvider>
   )
+}
+
+function deferred<T>() {
+  let resolveFn!: (v: T) => void
+  let rejectFn!: (e: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolveFn = res
+    rejectFn = rej
+  })
+  return { promise, resolve: resolveFn, reject: rejectFn }
+}
+
+async function flush() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
 }
 
 function nameField() {
@@ -254,5 +275,73 @@ describe('ScopeStep (FR3)', () => {
       await Promise.resolve()
     })
     expect(h.discardSourceDraft).not.toHaveBeenCalled()
+  })
+
+  it('unmounting while connecting never discards the draft being attached', async () => {
+    const pending = deferred<{ sourceId: string; jobId?: string }>()
+    h.connectSource.mockReturnValueOnce(pending.promise)
+    const { unmount } = renderStep({ draft: FOLDER })
+    await clickContinue()
+    unmount()
+    await flush()
+    expect(h.discardSourceDraft).not.toHaveBeenCalled()
+    await act(async () => pending.resolve({ sourceId: 'src-1', jobId: 'job-1' }))
+    await flush()
+    expect(h.discardSourceDraft).not.toHaveBeenCalled()
+  })
+
+  it('a connect that fails after the step went away discards the draft it kept', async () => {
+    const pending = deferred<{ sourceId: string; jobId?: string }>()
+    h.connectSource.mockReturnValueOnce(pending.promise)
+    const { unmount } = renderStep({ draft: FOLDER })
+    await clickContinue()
+    unmount()
+    await flush()
+    await act(async () => pending.reject(new Error('Could not read the folder.')))
+    await flush()
+    expect(h.discardSourceDraft).toHaveBeenCalledWith(FOLDER)
+  })
+
+  it('a reused scope shows its own kind and the choice is disabled', () => {
+    h.scopes = [{ id: 'scope-dango', name: 'Dango', kind: 'client', order: 0 } as Scope]
+    renderStep({ draft: FOLDER })
+    expect(checkedKind()).toBe('client')
+    expect((screen.getByLabelText('Project') as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByLabelText('Client') as HTMLInputElement).disabled).toBe(true)
+    // A new name brings the choice back, at the suggested kind.
+    fireEvent.change(nameField(), { target: { value: 'Other' } })
+    expect(checkedKind()).toBe('project')
+    expect((screen.getByLabelText('Client') as HTMLInputElement).disabled).toBe(false)
+  })
+
+  it('"Change" (ghost) discards the draft and goes back to step 2', async () => {
+    const onBack = vi.fn()
+    const { unmount } = renderStep({ draft: FOLDER, onBack })
+    const change = screen.getByRole('button', { name: 'Change' })
+    expect(change.className).toContain('dg-btn--ghost')
+    fireEvent.click(change)
+    expect(h.discardSourceDraft).toHaveBeenCalledWith(FOLDER)
+    expect(onBack).toHaveBeenCalled()
+    expect(h.addScope).not.toHaveBeenCalled()
+    unmount()
+    await flush()
+    // Not discarded a second time on the way out.
+    expect(h.discardSourceDraft).toHaveBeenCalledTimes(1)
+  })
+
+  it('"Change" stays available after a failed connect; the scope created stays', async () => {
+    h.connectSource.mockRejectedValueOnce(new Error('Could not read the folder.'))
+    const onBack = vi.fn()
+    renderStep({ draft: FOLDER, onBack })
+    await clickContinue()
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }))
+    expect(onBack).toHaveBeenCalled()
+    expect(h.discardSourceDraft).toHaveBeenCalledWith(FOLDER)
+    expect(h.addScope).toHaveBeenCalledTimes(1)
+  })
+
+  it('has no "Change" without a draft', () => {
+    renderStep({ draft: null, onBack: vi.fn() })
+    expect(screen.queryByRole('button', { name: 'Change' })).toBeNull()
   })
 })

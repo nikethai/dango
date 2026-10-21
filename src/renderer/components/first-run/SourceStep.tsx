@@ -20,6 +20,8 @@ export type SourceStepProps = {
   onNext: (draft: SourceDraft | null, backgroundReview: boolean) => void
   /** An error handed back from step 3 (its connect failed and the draft is gone). */
   error?: SourceError
+  /** Back from step 3 ("Change", or the draft was lost): focus starts on the kind list. */
+  returned?: boolean
 }
 
 function discard(draft: SourceDraft) {
@@ -31,7 +33,7 @@ function discard(draft: SourceDraft) {
  * not hand the draft on (Change, Skip, leaving the page) removes what the pick set up, and an open picker or browser
  * sign-in is aborted, so cancelling leaves nothing connected.
  */
-export function SourceStep({ onNext, error: initialError }: SourceStepProps) {
+export function SourceStep({ onNext, error: initialError, returned = false }: SourceStepProps) {
   const { t } = useTranslation()
   const switchLabelId = useId()
   const switchLineId = useId()
@@ -42,6 +44,21 @@ export function SourceStep({ onNext, error: initialError }: SourceStepProps) {
   const pickController = useRef<AbortController | null>(null)
   // The draft this step still owns: discarded on unmount unless it was handed to step 3.
   const ownedDraft = useRef<SourceDraft | null>(null)
+  const continueRef = useRef<HTMLButtonElement>(null)
+  const skipRef = useRef<HTMLButtonElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  // When the content swaps (a pick lands, Change, back from step 3) the focused control is gone: move focus to
+  // Continue when it is enabled, else the first enabled kind row (Skip when none is), never the body.
+  const [focusRequest, setFocusRequest] = useState(returned ? 1 : 0)
+  useEffect(() => {
+    if (!focusRequest) return
+    const target =
+      (continueRef.current && !continueRef.current.disabled ? continueRef.current : null) ??
+      listRef.current?.querySelector<HTMLButtonElement>('button:not([disabled])') ??
+      skipRef.current
+    target?.focus()
+  }, [focusRequest])
+  const requestFocus = () => setFocusRequest((n) => n + 1)
 
   // Checked a tick later, so a StrictMode remount (cleanup, then setup again at once) keeps the pick and the draft.
   const mounted = useRef(false)
@@ -83,6 +100,7 @@ export function SourceStep({ onNext, error: initialError }: SourceStepProps) {
       if (!picked) return
       ownedDraft.current = picked
       setDraft(picked)
+      requestFocus()
       // On for this first source (FR2), unlike the Add a source sheet.
       setBackgroundReview(true)
     } catch (e) {
@@ -98,6 +116,7 @@ export function SourceStep({ onNext, error: initialError }: SourceStepProps) {
     if (ownedDraft.current) discard(ownedDraft.current)
     ownedDraft.current = null
     setDraft(null)
+    requestFocus()
   }
 
   const skip = () => {
@@ -132,10 +151,10 @@ export function SourceStep({ onNext, error: initialError }: SourceStepProps) {
       lead={t('A source is where Dango reads from. Pick one to start; add more later in Settings.')}
       footer={
         <>
-          <button type="button" className="dg-btn dg-btn--ghost" onClick={skip}>
+          <button ref={skipRef} type="button" className="dg-btn dg-btn--ghost" onClick={skip}>
             {t('Skip for now')}
           </button>
-          <button type="button" className="dg-btn dg-btn--primary" disabled={!draft} onClick={next}>
+          <button ref={continueRef} type="button" className="dg-btn dg-btn--primary" disabled={!draft} onClick={next}>
             {t('Continue')}
           </button>
         </>
@@ -176,14 +195,16 @@ export function SourceStep({ onNext, error: initialError }: SourceStepProps) {
           </>
         ) : (
           <>
-            <SourceKindPicker
-              onPick={(kind, choice) => void startPick(kind, choice)}
-              onMcp={() =>
-                void openConfiguration(MCP_SOURCE_OPTION.to).catch((e) =>
-                  console.error('[first-run] Could not open', e)
-                )
-              }
-            />
+            <div ref={listRef}>
+              <SourceKindPicker
+                onPick={(kind, choice) => void startPick(kind, choice)}
+                onMcp={() =>
+                  void openConfiguration(MCP_SOURCE_OPTION.to).catch((e) =>
+                    console.error('[first-run] Could not open', e)
+                  )
+                }
+              />
+            </div>
             {waitingText ? (
               <div className="dg-first-run__waiting">
                 <span className="dg-type-body">{waitingText}</span>

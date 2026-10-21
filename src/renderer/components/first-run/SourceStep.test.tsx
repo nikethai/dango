@@ -301,4 +301,28 @@ describe('SourceStep (FR2)', () => {
     const source = readFileSync(resolve(__dirname, 'SourceStep.tsx'), 'utf8')
     expect(source).not.toMatch(/connectSource|addScope/)
   })
+
+  it('after a pick, focus goes to Continue', async () => {
+    render(<SourceStep onNext={vi.fn()} />)
+    screen.getByText('pick folder').focus()
+    await pickFolder()
+    expect(document.activeElement).toBe(continueButton())
+  })
+
+  it('after "Change", focus goes to the first enabled kind row', async () => {
+    render(<SourceStep onNext={vi.fn()} />)
+    await pickFolder()
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }))
+    expect(document.activeElement).toBe(screen.getByText('pick folder'))
+  })
+
+  it('coming back from step 3, focus goes to the first enabled kind row', () => {
+    render(<SourceStep onNext={vi.fn()} returned error={{ text: 'This folder already belongs to Acme.' }} />)
+    expect(document.activeElement).toBe(screen.getByText('pick folder'))
+  })
+
+  it('a first visit does not move focus', () => {
+    render(<SourceStep onNext={vi.fn()} />)
+    expect(document.activeElement).toBe(document.body)
+  })
 })

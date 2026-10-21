@@ -33,6 +33,8 @@ function FirstRunRoute() {
   // (the saved step), and leaving the page discards it (SourceStep and ScopeStep remove what the pick set up).
   const [picked, setPicked] = useState<{ draft: SourceDraft; backgroundReview: boolean } | null>(null)
   const [sourceError, setSourceError] = useState<SourceError | undefined>()
+  // Back from step 3: step 2 starts with focus on its list.
+  const [returned, setReturned] = useState(false)
 
   // Nothing to show (completed and a model is back, or opened directly): go back where the user was, query and hash
   // included. The record itself is written by the gate in __root (useFirstRunGate).
@@ -60,11 +62,18 @@ function FirstRunRoute() {
             onDraftLost={(error) => {
               setPicked(null)
               setSourceError(error)
+              setReturned(true)
+            }}
+            onBack={() => {
+              setPicked(null)
+              setSourceError(undefined)
+              setReturned(true)
             }}
           />
         ) : (
           <SourceStep
             error={sourceError}
+            returned={returned}
             onNext={(draft, backgroundReview) => {
               setSourceError(undefined)
               // Skipping saves step 3 (SourceStep), which renders the scope step without a draft.

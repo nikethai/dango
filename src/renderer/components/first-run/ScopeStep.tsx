@@ -18,13 +18,19 @@ export type ScopeStepProps = {
   backgroundReview: boolean
   /** Connecting failed and discarded the draft (a scope rule error): step 2 shows `error` and picks again. */
   onDraftLost?: (error: SourceError) => void
+  /** "Change": the draft is discarded and step 2 picks again. Shown only with a draft. */
+  onBack?: () => void
+}
+
+function discard(draft: SourceDraft) {
+  void discardSourceDraft(draft).catch((e) => console.warn('[first-run] Could not discard the draft', e))
 }
 
 /**
  * FR3: names the scope the first source goes into, creates it (or reuses one with the same name), then connects the
  * draft and moves to step 4. A scope created before a failed connect stays.
  */
-export function ScopeStep({ draft, backgroundReview, onDraftLost }: ScopeStepProps) {
+export function ScopeStep({ draft, backgroundReview, onDraftLost, onBack }: ScopeStepProps) {
   const { t } = useTranslation()
   const { scopes, addScope } = useScopes()
   const kindLabelId = useId()
@@ -32,7 +38,7 @@ export function ScopeStep({ draft, backgroundReview, onDraftLost }: ScopeStepPro
   const [kind, setKind] = useState<ScopeKind>(() => (draft ? defaultScopeKind(draft.kind) : 'project'))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<SourceError | undefined>()
-  // Connected, or discarded by connectSource: nothing left to undo.
+  // Not this step's to discard: being connected, connected, or already discarded.
   const settled = useRef(false)
   const draftRef = useRef(draft)
   draftRef.current = draft
@@ -45,7 +51,7 @@ export function ScopeStep({ draft, backgroundReview, onDraftLost }: ScopeStepPro
       mounted.current = false
       queueMicrotask(() => {
         if (mounted.current || settled.current || !draftRef.current) return
-        void discardSourceDraft(draftRef.current).catch((e) => console.warn('[first-run] Could not discard', e))
+        discard(draftRef.current)
       })
     }
   }, [])
@@ -54,6 +60,8 @@ export function ScopeStep({ draft, backgroundReview, onDraftLost }: ScopeStepPro
   const problem = validateScopeName(name)
   const lower = trimmed.toLowerCase()
   const existing = problem ? undefined : scopes.find((scope) => scope.name.trim().toLowerCase() === lower)
+  // A reused scope keeps its kind: show it, and the choice does not apply.
+  const shownKind = existing?.kind ?? kind
 
   const submit = async () => {
     if (problem || busy) return
@@ -64,21 +72,36 @@ export function ScopeStep({ draft, backgroundReview, onDraftLost }: ScopeStepPro
       setFirstRun({ step: 4, scopeId })
       return
     }
+    // While connecting, the draft is being attached: leaving now must not discard it.
+    settled.current = true
     try {
       const { sourceId, jobId } = await connectSource(draft, { scopeId, backgroundReview })
-      settled.current = true
       setFirstRun({ step: 4, scopeId, firstReadJobId: jobId, firstReadSourceId: sourceId })
     } catch (e) {
       const line = sourceErrorLine(e)
-      setBusy(false)
-      if (draftWasDiscarded(e) && onDraftLost) {
-        settled.current = true
-        onDraftLost(line)
+      if (draftWasDiscarded(e)) {
+        setBusy(false)
+        if (onDraftLost) onDraftLost(line)
+        else setError(line)
         return
       }
+      // The draft is still alive: the step owns it again, or discards it when the step is already gone.
+      settled.current = false
+      if (!mounted.current) {
+        discard(draft)
+        return
+      }
+      setBusy(false)
       // The scope stays: it is still useful, and Continue reuses it by name.
       setError(line)
     }
+  }
+
+  const back = () => {
+    if (busy || !draft || !onBack) return
+    settled.current = true
+    discard(draft)
+    onBack()
   }
 
   return (
@@ -87,15 +110,22 @@ export function ScopeStep({ draft, backgroundReview, onDraftLost }: ScopeStepPro
       title={t('Name this scope')}
       lead={t('A scope is one project or one client. Everything Dango learns from this source stays inside it.')}
       footer={
-        <button
-          type="button"
-          className="dg-btn dg-btn--primary"
-          disabled={Boolean(problem) || busy}
-          aria-busy={busy || undefined}
-          onClick={() => void submit()}
-        >
-          {t('Continue')}
-        </button>
+        <>
+          {draft && onBack ? (
+            <button type="button" className="dg-btn dg-btn--ghost" disabled={busy} onClick={back}>
+              {t('Change')}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="dg-btn dg-btn--primary"
+            disabled={Boolean(problem) || busy}
+            aria-busy={busy || undefined}
+            onClick={() => void submit()}
+          >
+            {t('Continue')}
+          </button>
+        </>
       }
     >
       <div className="dg-first-run__panel">
@@ -124,7 +154,8 @@ export function ScopeStep({ draft, backgroundReview, onDraftLost }: ScopeStepPro
           </span>
           <SegmentedControl
             aria-labelledby={kindLabelId}
-            value={kind}
+            value={shownKind}
+            disabled={Boolean(existing)}
             onChange={(value) => setKind(value as ScopeKind)}
             data={[
               { label: t('Project'), value: 'project' },
