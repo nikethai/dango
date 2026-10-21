@@ -1,27 +1,31 @@
+import type { LayoutMode } from '@/hooks/useLayoutMode'
+
 export type SidebarLayout = 'expanded' | 'rail'
 
 export type SidebarToggleState = {
-  isSmallScreen: boolean
+  mode: LayoutMode
   sidebarLayout: SidebarLayout
   showSidebar: boolean
+  railPeek: boolean
 }
 
-export type SidebarToggleResult = Pick<SidebarToggleState, 'sidebarLayout' | 'showSidebar'>
+export type SidebarToggleResult = Pick<SidebarToggleState, 'sidebarLayout' | 'showSidebar' | 'railPeek'>
 
+/**
+ * The sidebar toggle (Header, Page, ⌘\): medium opens or closes the rail peek and never writes the saved layout; wide
+ * flips between expanded and rail and clears any peek; phone has no sidebar to toggle.
+ */
 export function getSidebarToggleResult({
-  isSmallScreen,
+  mode,
   sidebarLayout,
   showSidebar,
+  railPeek,
 }: SidebarToggleState): SidebarToggleResult {
-  if (!isSmallScreen && sidebarLayout === 'rail') {
-    return {
-      sidebarLayout: 'expanded',
-      showSidebar: true,
-    }
+  if (mode === 'medium') {
+    return { sidebarLayout, showSidebar, railPeek: !railPeek }
   }
-
-  return {
-    sidebarLayout,
-    showSidebar: !showSidebar,
+  if (mode === 'wide') {
+    return { sidebarLayout: sidebarLayout === 'rail' ? 'expanded' : 'rail', showSidebar: true, railPeek: false }
   }
+  return { sidebarLayout, showSidebar, railPeek }
 }

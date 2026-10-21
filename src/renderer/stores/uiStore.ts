@@ -59,6 +59,8 @@ export const uiStore = createStore(
         showSidebar: platform.formFactor !== 'mobile',
         /** Desktop only: expanded tree vs icon-only rail (never fully hidden). */
         sidebarLayout: 'expanded' as 'expanded' | 'rail',
+        /** The rail's expanded sidebar laid over the content (medium, wide-rail); UI-only, never persisted. */
+        railPeek: false,
         sidebarMode: 'chat' as 'chat' | 'task',
         openSearchDialog: false,
         openAboutDialog: false, // (legacy)
@@ -125,6 +127,10 @@ export const uiStore = createStore(
 
         setSidebarLayout: (sidebarLayout: 'expanded' | 'rail') => {
           set((state) => (state.sidebarLayout === sidebarLayout ? state : { sidebarLayout }))
+        },
+
+        setRailPeek: (railPeek: boolean) => {
+          set((state) => (state.railPeek === railPeek ? state : { railPeek }))
         },
 
         setSidebarMode: (sidebarMode: 'chat' | 'task') => {

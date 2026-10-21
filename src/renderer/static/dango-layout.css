@@ -269,3 +269,10 @@
   margin: 0;
   color: var(--dango-muted);
 }
+
+/* Window sizes (RS1, RS2): wide, medium and phone come from data-layout on <html> (useLayoutMode). */
+
+/* #main takes focus only programmatically (a sheet's opener is gone); it is not a control, so no ring. */
+.dg-main:focus {
+  outline: none;
+}

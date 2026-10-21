@@ -11,8 +11,9 @@ import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
 import { useDesktopShell } from '@/hooks/useDesktopShell'
 import { useI18nEffect } from '@/hooks/useI18nEffect'
+import { setLayoutAttributeSuppressed, useLayoutMode } from '@/hooks/useLayoutMode'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
-import { useIsSmallScreen, useSidebarEffectiveWidth } from '@/hooks/useScreenChange'
+import { useSidebarEffectiveWidth } from '@/hooks/useScreenChange'
 import useShortcut from '@/hooks/useShortcut'
 import '@/modals'
 import NiceModal from '@ebay/nice-modal-react'
@@ -23,7 +24,7 @@ import Grid from '@mui/material/Grid'
 import { ThemeProvider } from '@mui/material/styles'
 import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
 import { useSetAtom } from 'jotai'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { navigateToSettings } from '@/modals/Settings'
 import { FIRST_RUN_PATH, useFirstRunGate } from '@/packages/first-run'
 import { registerFirstRunOpener } from '@/packages/first-run/opener'
@@ -108,14 +109,15 @@ function Root() {
     return () => clearTimeout(tid)
   }, [setOpenAboutDialog, setRemoteConfig])
 
-  const showSidebar = useUIStore((s) => s.showSidebar)
+  // Wide, medium or phone; also keeps data-layout on <html> (RS1–RS3).
+  useLayoutMode()
   const sidebarWidth = useSidebarEffectiveWidth()
-  const isSmallScreen = useIsSmallScreen()
   const isSettingsRoute = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
   const isFirstRunRoute = location.pathname === FIRST_RUN_PATH
   // Settings owns its own navigation, and first run is a full-window page; keep the app chrome out of both.
   const hideAppChrome = isSettingsRoute || isFirstRunRoute
-  const offsetMainForSidebar = !hideAppChrome && (isSmallScreen ? showSidebar : true)
+  // The docked sidebar or rail; 0 at phone, where the drawer lays over the content.
+  const offsetMainForSidebar = !hideAppChrome && sidebarWidth > 0
 
   // Legacy deep links used ?settings=/settings/...; rewrite to full-page /settings/* routes
   useEffect(() => {
@@ -180,6 +182,11 @@ function Root() {
   }, [needRoomForMacWindowControls])
 
   const isQuickRoute = isQuickWindow || location.pathname === '/quick'
+  // No data-layout in the Quick Chat window (its label resolves late) or on the full-window first run.
+  const suppressLayoutAttribute = isQuickRoute || isFirstRunRoute
+  useLayoutEffect(() => {
+    setLayoutAttributeSuppressed(suppressLayoutAttribute)
+  }, [suppressLayoutAttribute])
 
   return (
     <Box
@@ -213,17 +220,18 @@ function Root() {
               flexDirection: 'column',
               backgroundColor: 'var(--chatbox-background-primary)',
               ...(offsetMainForSidebar
-                ? language === 'ar'
-                  ? {
-                      paddingRight: { sm: `${sidebarWidth}px` },
-                      transition: 'padding 220ms cubic-bezier(0.2, 0, 0, 1)',
-                    }
-                  : { paddingLeft: { sm: `${sidebarWidth}px` }, transition: 'padding 220ms cubic-bezier(0.2, 0, 0, 1)' }
+                ? {
+                    [language === 'ar' ? 'paddingRight' : 'paddingLeft']: `${sidebarWidth}px`,
+                    transition: 'padding 150ms cubic-bezier(0.2, 0, 0, 1)',
+                    '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+                  }
                 : {}),
             }}
           >
             <ErrorBoundary name="main">
-              <Box className="h-full min-h-0 flex flex-col flex-1">
+              {/* #main: where focus lands when a sheet's opener is gone (1b useSheetFocus) */}
+              {/* biome-ignore lint/nursery/useUniqueElementIds: the app shell renders once per window */}
+              <Box id="main" tabIndex={-1} className="dg-main h-full min-h-0 flex flex-col flex-1">
                 <Outlet />
               </Box>
             </ErrorBoundary>

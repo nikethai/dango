@@ -3,9 +3,8 @@ import { IconMenu2 } from '@tabler/icons-react'
 import clsx from 'clsx'
 import type { FC } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toggleSidebar, useLayoutMode } from '@/hooks/useLayoutMode'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
-import { useIsSmallScreen } from '@/hooks/useScreenChange'
-import { getSidebarToggleResult } from '@/utils/sidebarToggle'
 import { useUIStore } from '@/stores/uiStore'
 import TitleBarRow from './TitleBarRow'
 import WindowControls from './WindowControls'
@@ -23,29 +22,20 @@ export type PageProps = {
 
 export const Page: FC<PageProps> = ({ children, title, left, right, className, headerClassName }) => {
   const { t } = useTranslation()
-  const showSidebar = useUIStore((s) => s.showSidebar)
-  const setShowSidebar = useUIStore((s) => s.setShowSidebar)
   const sidebarLayout = useUIStore((s) => s.sidebarLayout)
-  const setSidebarLayout = useUIStore((s) => s.setSidebarLayout)
-  const isSmallScreen = useIsSmallScreen()
+  const railPeek = useUIStore((s) => s.railPeek)
+  const layoutMode = useLayoutMode()
+  const isSmallScreen = layoutMode === 'phone'
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
 
-  // Mobile toggles the temporary drawer; the desktop rail hamburger expands it in place.
-  const showDefaultToggle = !left && (isSmallScreen || sidebarLayout === 'rail')
+  // Medium opens or closes the rail peek; wide collapsed to the rail expands in place; never at phone (R22).
+  const showDefaultToggle = !left && (layoutMode === 'medium' || (layoutMode === 'wide' && sidebarLayout === 'rail'))
   const macTrafficInset = showDefaultToggle && needRoomForMacWindowControls
 
-  const handleSidebarToggle = () => {
-    const next = getSidebarToggleResult({ isSmallScreen, sidebarLayout, showSidebar })
-    setSidebarLayout(next.sidebarLayout)
-    setShowSidebar(next.showSidebar)
-  }
+  const handleSidebarToggle = () => toggleSidebar(layoutMode)
 
   const sidebarToggleLabel =
-    !isSmallScreen && sidebarLayout === 'rail'
-      ? t('Expand sidebar')
-      : showSidebar
-        ? t('Hide sidebar')
-        : t('Show sidebar')
+    layoutMode === 'wide' ? t('Expand sidebar') : railPeek ? t('Hide sidebar') : t('Show sidebar')
 
   return (
     <div className={clsx('flex flex-col h-full min-h-0 bg-[var(--chatbox-background-primary)]', className)}>

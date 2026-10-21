@@ -4,13 +4,12 @@ import { IconCheck, IconMenu2, IconPencil, IconX } from '@tabler/icons-react'
 import clsx from 'clsx'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toggleSidebar, useLayoutMode } from '@/hooks/useLayoutMode'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
-import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { updateSession } from '@/stores/chatStore'
 import { scheduleGenerateNameAndThreadName, scheduleGenerateThreadName } from '@/stores/sessionActions'
 import * as settingActions from '@/stores/settingActions'
 import { useUIStore } from '@/stores/uiStore'
-import { getSidebarToggleResult } from '@/utils/sidebarToggle'
 import { ScalableIcon } from '../common/ScalableIcon'
 import { WorkspaceHeaderControls } from '../project/WorkspaceHeaderControls'
 import TitleBarRow from './TitleBarRow'
@@ -19,11 +18,10 @@ import WindowControls from './WindowControls'
 
 export default function Header(props: { session: Session }) {
   const { t } = useTranslation()
-  const showSidebar = useUIStore((s) => s.showSidebar)
-  const setShowSidebar = useUIStore((s) => s.setShowSidebar)
   const sidebarLayout = useUIStore((s) => s.sidebarLayout)
-  const setSidebarLayout = useUIStore((s) => s.setSidebarLayout)
-  const isSmallScreen = useIsSmallScreen()
+  const railPeek = useUIStore((s) => s.railPeek)
+  const layoutMode = useLayoutMode()
+  const isSmallScreen = layoutMode === 'phone'
   const { needRoomForMacWindowControls } = useNeedRoomForWinControls()
 
   const { session: currentSession } = props
@@ -82,22 +80,14 @@ export default function Header(props: { session: Session }) {
     setRenaming(false)
   }
 
-  // Mobile toggles the temporary drawer; the desktop rail hamburger expands it in place.
-  const showSidebarToggle = isSmallScreen || sidebarLayout === 'rail'
+  // Medium opens or closes the rail peek; wide collapsed to the rail expands in place; never at phone.
+  const showSidebarToggle = layoutMode === 'medium' || (layoutMode === 'wide' && sidebarLayout === 'rail')
   const macTrafficInset = showSidebarToggle && needRoomForMacWindowControls
 
-  const handleSidebarToggle = () => {
-    const next = getSidebarToggleResult({ isSmallScreen, sidebarLayout, showSidebar })
-    setSidebarLayout(next.sidebarLayout)
-    setShowSidebar(next.showSidebar)
-  }
+  const handleSidebarToggle = () => toggleSidebar(layoutMode)
 
   const sidebarToggleLabel =
-    !isSmallScreen && sidebarLayout === 'rail'
-      ? t('Expand sidebar')
-      : showSidebar
-        ? t('Hide sidebar')
-        : t('Show sidebar')
+    layoutMode === 'wide' ? t('Expand sidebar') : railPeek ? t('Hide sidebar') : t('Show sidebar')
 
   return (
     <TitleBarRow

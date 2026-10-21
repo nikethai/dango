@@ -11,6 +11,7 @@ import platform from '../platform'
 import { currentSessionIdAtom } from '../stores/atoms'
 import { startNewThread, switchToIndex, switchToNext } from '../stores/sessionActions'
 import * as dom from './dom'
+import { toggleSidebar } from './useLayoutMode'
 import { useIsSmallScreen } from './useScreenChange'
 
 export default function useShortcut() {
@@ -103,6 +104,12 @@ export default function useShortcut() {
         // A sheet (e.g. a permission request) is modal: the overlay must not cover it.
         setOpenSearchDialog(true)
       }
+    }
+    // CmdOrCtrl + \ : the sidebar toggle (peek at medium, expand or collapse at wide, nothing at phone).
+    if (e.key === '\\' && ctrlKey && !shift && !altOrOption) {
+      e.preventDefault()
+      if (!hasOpenSheet()) toggleSidebar()
+      return
     }
     if (e.key === ',' && ctrlKey) {
       e.preventDefault()
