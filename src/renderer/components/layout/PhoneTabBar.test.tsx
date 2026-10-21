@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   mode: 'phone' as 'wide' | 'medium' | 'phone',
   pathname: '/',
-  sessionId: null as string | null,
+  sessions: undefined as Array<{ id: string }> | undefined,
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -42,17 +42,14 @@ vi.mock('@/hooks/useLayoutMode', async (importOriginal) => {
   return { ...actual, useLayoutMode: () => h.mode }
 })
 vi.mock('@/packages/review/hooks', () => ({ useReviewWaitingCount: () => 2 }))
-vi.mock('jotai', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('jotai')>()
-  return { ...actual, useAtomValue: () => h.sessionId }
-})
+vi.mock('@/stores/chatStore', () => ({ useSessionList: () => ({ sessionMetaList: h.sessions }) }))
 
 import { PHONE_TABS, PhoneTabBar } from './PhoneTabBar'
 
 beforeEach(() => {
   h.mode = 'phone'
   h.pathname = '/'
-  h.sessionId = null
+  h.sessions = undefined
 })
 afterEach(cleanup)
 
@@ -99,13 +96,53 @@ describe('PhoneTabBar (RS3)', () => {
     expect(container.innerHTML).toBe('')
   })
 
-  it('Chat goes to the last session, or to /new without one', () => {
-    const { unmount } = render(<PhoneTabBar />)
-    expect(link('Chat').getAttribute('href')).toBe('/new')
-    unmount()
-    h.sessionId = 'abc'
-    render(<PhoneTabBar />)
-    expect(link('Chat').getAttribute('href')).toBe('/session/abc')
+  describe('Chat target', () => {
+    // The last chat is module state seeded once from storage; each case loads a fresh module.
+    const freshBar = async () => {
+      vi.resetModules()
+      return (await import('./PhoneTabBar')).PhoneTabBar
+    }
+    afterEach(() => localStorage.clear())
+
+    it('is /new with no chat yet, then the chat this window last showed', async () => {
+      const Bar = await freshBar()
+      const { rerender } = render(<Bar />)
+      expect(link('Chat').getAttribute('href')).toBe('/new')
+      h.pathname = '/session/abc'
+      rerender(<Bar />)
+      h.pathname = '/'
+      rerender(<Bar />)
+      expect(link('Chat').getAttribute('href')).toBe('/session/abc')
+    })
+
+    it('starts from the stored chat (what the window reopens with)', async () => {
+      localStorage.setItem('_currentSessionIdCachedAtom', JSON.stringify('stored1'))
+      const Bar = await freshBar()
+      render(<Bar />)
+      expect(link('Chat').getAttribute('href')).toBe('/session/stored1')
+    })
+
+    it('ignores a Quick Chat session written later from the quick window', async () => {
+      const Bar = await freshBar()
+      h.pathname = '/session/abc'
+      const { rerender } = render(<Bar />)
+      // The quick window writes the shared atom's storage key.
+      localStorage.setItem('_currentSessionIdCachedAtom', JSON.stringify('quick1'))
+      window.dispatchEvent(new StorageEvent('storage', { key: '_currentSessionIdCachedAtom' }))
+      h.pathname = '/'
+      rerender(<Bar />)
+      expect(link('Chat').getAttribute('href')).toBe('/session/abc')
+    })
+
+    it('falls back to /new once the last chat is deleted', async () => {
+      const Bar = await freshBar()
+      h.pathname = '/session/abc'
+      const { rerender } = render(<Bar />)
+      h.pathname = '/'
+      h.sessions = [{ id: 'other' }]
+      rerender(<Bar />)
+      expect(link('Chat').getAttribute('href')).toBe('/new')
+    })
   })
 
   it('PHONE_TABS match their paths', () => {

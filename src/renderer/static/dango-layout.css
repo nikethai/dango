@@ -341,6 +341,21 @@
   left: calc(100% - 6px);
 }
 
+/* Scopes tab header: About shows a dot when an Android update is waiting (as the old drawer's About row did). */
+.dg-scopes__about {
+  position: relative;
+}
+
+.dg-scopes__update-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dango-green);
+}
+
 /* Phone targets: buttons, rows and icon buttons at least 44 px (icon buttons also 44 px wide). */
 :root[data-layout="phone"] .dg-btn,
 :root[data-layout="phone"] .dg-btn--icon,

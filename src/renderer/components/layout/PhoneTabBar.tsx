@@ -1,10 +1,10 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { useAtomValue } from 'jotai'
 import { Inbox, Layers, type LucideIcon, MessageCircle, Settings } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLayoutMode } from '@/hooks/useLayoutMode'
 import { useReviewWaitingCount } from '@/packages/review/hooks'
-import { currentSessionIdAtom } from '@/stores/atoms/sessionAtoms'
+import { useSessionList } from '@/stores/chatStore'
 
 export type PhoneTabId = 'review' | 'chat' | 'scopes' | 'settings'
 
@@ -31,13 +31,44 @@ const ICONS: Record<PhoneTabId, LucideIcon> = {
   settings: Settings,
 }
 
+// The chat this window showed last. Quick Chat also writes the shared currentSessionIdAtom (localStorage, synced across
+// windows), so the Chat tab follows this window's own /session/ visits instead. It is seeded once, at startup, from the
+// stored id (what the window reopens with), read the same way __root's startup redirect reads it.
+let lastChatId: string | null | undefined
+
+function seedLastChatId(): string | null {
+  if (lastChatId === undefined) {
+    try {
+      const stored = JSON.parse(localStorage.getItem('_currentSessionIdCachedAtom') || 'null') as unknown
+      lastChatId = typeof stored === 'string' && stored ? stored : null
+    } catch {
+      lastChatId = null
+    }
+  }
+  return lastChatId
+}
+
+const SESSION_PATH = /^\/session\/([^/]+)/
+
 /** Bottom tabs at phone width (< 760 px); renders nothing at medium and wide, where the sidebar or rail navigates. */
 export function PhoneTabBar() {
   const { t } = useTranslation()
   const mode = useLayoutMode()
   const pathname = useLocation({ select: (l) => l.pathname })
   const waiting = useReviewWaitingCount()
-  const lastSessionId = useAtomValue(currentSessionIdAtom)
+  const [chatId, setChatId] = useState(seedLastChatId)
+  const { sessionMetaList } = useSessionList()
+
+  useEffect(() => {
+    const id = SESSION_PATH.exec(pathname)?.[1]
+    if (id) {
+      lastChatId = id
+      setChatId(id)
+    }
+  }, [pathname])
+
+  // A deleted chat falls back to /new (the list is unknown until loaded).
+  const lastSessionId = chatId && (!sessionMetaList || sessionMetaList.some((m) => m.id === chatId)) ? chatId : null
 
   if (mode !== 'phone') return null
 

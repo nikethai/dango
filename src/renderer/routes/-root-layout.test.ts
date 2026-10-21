@@ -66,12 +66,20 @@ describe('phone shell (RS3)', () => {
     const capacitor = read('setup/mobile_safe_area.ts')
     expect(capacitor).toMatch(/keyboardWillShow[\s\S]{0,200}document\.documentElement\.dataset\.keyboard = 'open'/)
     expect(capacitor).toMatch(/keyboardWillHide[\s\S]{0,120}delete document\.documentElement\.dataset\.keyboard/)
+    // Behaviour (focus only, baseline reset on rotation, cleared on blur) is in setup/tauri_android_keyboard.test.ts.
     const android = read('setup/tauri_android_keyboard.ts')
-    expect(android).toMatch(
-      /setProperty\('--mobile-safe-area-inset-bottom-layout', '0px'\)\s*root\.dataset\.keyboard = 'open'/
-    )
-    expect(android).toMatch(
-      /removeProperty\('--mobile-safe-area-inset-bottom-layout'\)\s*delete root\.dataset\.keyboard/
-    )
+    expect(android).toContain("root.dataset.keyboard = 'open'")
+    expect(android).toContain('delete root.dataset.keyboard')
+  })
+})
+
+describe('Sidebar is medium and wide only (RS3)', () => {
+  it('keeps no phone drawer: never temporary, no swipe drawer, no phone-only header', () => {
+    const src = read('Sidebar.tsx')
+    expect(src).not.toContain('SwipeableDrawer')
+    expect(src).not.toContain("'temporary'")
+    expect(src).not.toContain('closeSidebarIfMobile')
+    expect(src).not.toContain('rail-mobile-title')
+    expect(src).toContain('variant="persistent"')
   })
 })

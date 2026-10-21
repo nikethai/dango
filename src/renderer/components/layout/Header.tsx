@@ -215,7 +215,7 @@ export default function Header(props: { session: Session }) {
         )}
       </Flex>
 
-      {/* Search lives in the sidebar only; session options live in the single ⋯ menu. */}
+      {/* Search is in the sidebar (and ⌘K), or the Scopes tab's header at phone; session options live in the ⋯ menu. */}
       <Toolbar session={currentSession} onRename={startRename} />
 
       <WindowControls className="-mr-3 ml-2" />

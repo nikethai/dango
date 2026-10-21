@@ -27,7 +27,7 @@ import { messageInputID } from '@/hooks/dom'
 //    end up below the visible viewport, but scroll the drawer's own scroller
 //    rather than the document.
 
-function setupKeyboardHandler() {
+export function setupKeyboardHandler() {
   const vv = window.visualViewport
   const root = document.documentElement
   let fullVisualHeight = vv?.height || window.innerHeight
@@ -38,7 +38,29 @@ function setupKeyboardHandler() {
   // transitions (avoid spamming the style on every viewport tick).
   let kbVisible = false
 
+  // Forget the remembered full heights: rotating, split-screen or a window resize with nothing focused is not the IME.
+  function resetBaseline() {
+    fullVisualHeight = vv?.height || window.innerHeight
+    fullWindowHeight = window.innerHeight
+  }
+
+  // data-keyboard="open" hides the phone tab bar (dango-layout.css). Only a focused field with a shrunk viewport counts,
+  // so a landscape or split-screen window never loses its navigation.
+  function syncKeyboardFlag() {
+    if (kbVisible && isEditable(document.activeElement as HTMLElement | null)) {
+      root.dataset.keyboard = 'open'
+    } else {
+      delete root.dataset.keyboard
+    }
+  }
+
   function getKeyboardHeight(): number {
+    // The IME only opens for a focused field; without one, any shrink is a new window size.
+    if (!isEditable(document.activeElement as HTMLElement | null)) {
+      resetBaseline()
+      return 0
+    }
+
     if (vv && vv.height > fullVisualHeight) {
       fullVisualHeight = vv.height
     }
@@ -70,13 +92,12 @@ function setupKeyboardHandler() {
     const nowVisible = kbHeight > 0
     if (nowVisible && !kbVisible) {
       root.style.setProperty('--mobile-safe-area-inset-bottom-layout', '0px')
-      root.dataset.keyboard = 'open'
       kbVisible = true
     } else if (!nowVisible && kbVisible) {
       root.style.removeProperty('--mobile-safe-area-inset-bottom-layout')
-      delete root.dataset.keyboard
       kbVisible = false
     }
+    syncKeyboardFlag()
 
     // Chat input offset:
     // AndroidManifest uses adjustResize, so the OS already moves in-flow
@@ -118,6 +139,14 @@ function setupKeyboardHandler() {
   }
   window.addEventListener('resize', onViewportChange)
 
+  // A rotation changes the full height; measure again from the new size.
+  const onOrientationChange = () => {
+    resetBaseline()
+    onViewportChange()
+  }
+  screen.orientation?.addEventListener?.('change', onOrientationChange)
+  window.addEventListener('orientationchange', onOrientationChange)
+
   // When an input gains focus, wait for keyboard animation then recompute.
   // Use a single delayed measurement instead of a polling interval to avoid
   // re-running viewport math (and any side effects) every 120ms while the
@@ -127,6 +156,8 @@ function setupKeyboardHandler() {
     (e) => {
       const el = e.target as HTMLElement | null
       if (!el || !isEditable(el)) return
+      // Moving between fields with the IME still up: keep the tab bar hidden (blur cleared the flag just before).
+      syncKeyboardFlag()
 
       if (focusStabilizer) {
         clearInterval(focusStabilizer)
@@ -157,6 +188,8 @@ function setupKeyboardHandler() {
         clearInterval(focusStabilizer)
         focusStabilizer = null
       }
+      // Nothing is being typed into any more: never leave the tab bar hidden.
+      delete root.dataset.keyboard
     },
     true
   )
@@ -187,7 +220,8 @@ function setupKeyboardHandler() {
   root.style.setProperty('--input-box-keyboard-offset', '0px')
 }
 
-function isEditable(el: HTMLElement): boolean {
+function isEditable(el: HTMLElement | null): boolean {
+  if (!el) return false
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable
 }
 
