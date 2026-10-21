@@ -1926,5 +1926,8 @@
   "{{source}} stays on this device, so it was not searched": "{{source}} stays on this device, so it was not searched",
   "Some email or tasks from a removed source were not searched": "Some email or tasks from a removed source were not searched",
   "No email or tasks synced yet": "No email or tasks synced yet",
-  "(This answer used email or tasks kept on this device, so it is not shared with this model.)": "(This answer used email or tasks kept on this device, so it is not shared with this model.)"
+  "(This answer used email or tasks kept on this device, so it is not shared with this model.)": "(This answer used email or tasks kept on this device, so it is not shared with this model.)",
+  "Step {{n}} of 5": "Step {{n}} of 5",
+  "Name this scope": "Name this scope",
+  "How much should it do on its own?": "How much should it do on its own?"
 }

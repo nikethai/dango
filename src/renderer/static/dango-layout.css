@@ -1,0 +1,86 @@
+/*
+ * Dango layout (slice 9): first run, window sizes, phone shell. Tokens only (--dango-*); dango-components.css stays a
+ * verbatim copy of the design system. Imported last in index.tsx so equal-specificity overrides win.
+ */
+
+/* First run: a full-window page with one centred card (FR1–FR4). */
+:root {
+  --dango-type-first-run-title-size: 20px;
+  --dango-type-first-run-title-line: 26px;
+}
+
+.dg-first-run {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--dango-space-6) 0;
+  background: var(--dango-ground);
+}
+
+.dg-first-run__card {
+  box-sizing: border-box;
+  width: 520px;
+  max-width: 92%;
+  margin: auto;
+  padding: var(--dango-space-7);
+  background: var(--dango-raised);
+  border-radius: var(--dango-radius-sheet);
+  box-shadow: var(--dango-shadow-sheet);
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-4);
+}
+
+.dg-first-run__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dango-space-3);
+}
+
+.dg-first-run__dots {
+  display: flex;
+  align-items: center;
+  gap: var(--dango-space-2);
+}
+
+.dg-first-run__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dango-hairline);
+}
+
+.dg-first-run__dot.is-done {
+  background: var(--dango-green);
+}
+
+.dg-first-run__title {
+  margin: 0;
+  font-size: var(--dango-type-first-run-title-size);
+  line-height: var(--dango-type-first-run-title-line);
+  font-weight: 600;
+  color: var(--dango-ink);
+}
+
+.dg-first-run__lead {
+  margin: 0;
+  color: var(--dango-ink-2);
+}
+
+.dg-first-run__body:empty {
+  display: none;
+}
+
+.dg-first-run__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--dango-space-2);
+}
+
+.dg-first-run__footer:empty {
+  display: none;
+}

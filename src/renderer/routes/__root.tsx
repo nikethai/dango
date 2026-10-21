@@ -23,8 +23,9 @@ import Grid from '@mui/material/Grid'
 import { ThemeProvider } from '@mui/material/styles'
 import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
 import { useSetAtom } from 'jotai'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { navigateToSettings } from '@/modals/Settings'
+import { FIRST_RUN_PATH, useFirstRunGate } from '@/packages/first-run'
 import { initKnowledge } from '@/packages/knowledge'
 import { useMenuBarSync } from '@/packages/menu-bar'
 import { getOS } from '@/packages/navigator'
@@ -37,7 +38,6 @@ import { router } from '@/router'
 import Sidebar from '@/Sidebar'
 import * as atoms from '@/stores/atoms'
 import { registerChatReviewOpener } from '@/stores/session/rate-limit-retry'
-import * as settingActions from '@/stores/settingActions'
 import { settingsStore, useLanguage, useSettingsStore, useTheme } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import { createDangoMantineTheme, dangoCssVariablesResolver } from '@/theme/mantineTheme'
@@ -76,6 +76,13 @@ function Root() {
     })
   }, [])
 
+  // First run replaces the old welcome dialog: settings are hydrated before render (index.tsx), so it runs on every path
+  // change without the startup delay, once the window role is known (never in the quick window).
+  const goToFirstRun = useCallback((to: typeof FIRST_RUN_PATH, from: string) => {
+    void router.navigate({ to, search: { from }, replace: true })
+  }, [])
+  useFirstRunGate(location.pathname, goToFirstRun)
+
   useEffect(() => {
     if (initialized.current) {
       return
@@ -85,14 +92,7 @@ function Root() {
       // biome-ignore lint/nursery/noFloatingPromises: inline call
       ;(async () => {
         setRemoteConfig((conf) => ({ ...conf }))
-        // (legacy comment removed)
         initialized.current = true
-        if (settingActions.needEditSetting() && location.pathname !== '/settings/mcp') {
-          await NiceModal.show('welcome')
-          return
-        }
-        // (legacy comment removed)
-        // (legacy comment removed)
         const shouldShowAboutDialogWhenStartUp = await platform.shouldShowAboutDialogWhenStartUp()
         if (shouldShowAboutDialogWhenStartUp) {
           setOpenAboutDialog(true)
@@ -102,14 +102,16 @@ function Root() {
     }, 2000)
 
     return () => clearTimeout(tid)
-  }, [setOpenAboutDialog, setRemoteConfig, location.pathname])
+  }, [setOpenAboutDialog, setRemoteConfig])
 
   const showSidebar = useUIStore((s) => s.showSidebar)
   const sidebarWidth = useSidebarEffectiveWidth()
   const isSmallScreen = useIsSmallScreen()
   const isSettingsRoute = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
-  // Settings owns its own navigation; keep the global chat sidebar out of this page.
-  const offsetMainForSidebar = !isSettingsRoute && (isSmallScreen ? showSidebar : true)
+  const isFirstRunRoute = location.pathname === FIRST_RUN_PATH
+  // Settings owns its own navigation, and first run is a full-window page; keep the app chrome out of both.
+  const hideAppChrome = isSettingsRoute || isFirstRunRoute
+  const offsetMainForSidebar = !hideAppChrome && (isSmallScreen ? showSidebar : true)
 
   // Legacy deep links used ?settings=/settings/...; rewrite to full-page /settings/* routes
   useEffect(() => {
@@ -197,7 +199,7 @@ function Root() {
         </ErrorBoundary>
       ) : (
         <Grid container className="h-full" sx={{ minHeight: 0 }}>
-          {!isSettingsRoute && <Sidebar />}
+          {!hideAppChrome && <Sidebar />}
           <Box
             className="h-full w-full min-h-0"
             sx={{
@@ -252,8 +254,6 @@ function Root() {
       <ToolPermissionHost />
       {/* One-time move of old memory into knowledge (not in Quick Chat) */}
       {isQuickRoute ? null : <MemoryMigrationSheet />}
-      {/* Welcome when no model configured */}
-      {/* <WelcomeDialog /> */}
       <Toasts /> {/* mui */}
       <UndoToast />
     </Box>

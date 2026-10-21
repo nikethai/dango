@@ -602,6 +602,20 @@ export const SettingsSchema = GlobalSessionSettingsSchema.extend({
   quickWindowAlwaysOnTop: z.boolean().default(true).catch(true),
   /** First-run toast for close-to-tray has been shown */
   trayIntroSeen: z.boolean().default(false).catch(false),
+  /**
+   * First run (slice 9): the saved step, so a quit mid-way resumes. Absent for users who never saw first run
+   * (an upgrade with a model configured skips it). Readers use `@/packages/first-run`.
+   */
+  firstRun: z
+    .object({
+      step: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+      sourceSkipped: z.boolean().default(false),
+      scopeId: z.string().optional(),
+      firstReadJobId: z.string().optional(),
+      completedAt: z.number().optional(),
+    })
+    .optional()
+    .catch(undefined),
 
   /**
    * Trust: 'auto' applies safe actions that are not knowledge (e.g. a Gmail label, an unsent draft) and shows
