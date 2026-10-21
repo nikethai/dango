@@ -10,7 +10,7 @@ Status: **proposal**, written from the maintainer's instructions of 2026-10-20 (
 
 ## Context
 
-Slice 06c added the permission sheet with "Always in this scope". A grant applies only at the exact risk tier it was given at, and the risk engine rates each call from its arguments, so a grant never covers a call the engine rates higher.
+Slice 06c added the permission sheet with "Always in this scope". A grant applies only at the exact risk tier it was given at, and the risk engine rates each call from its arguments, so a grant never covers a call the engine rates higher. Since the blockers fix (2026-10-21), no grant ever covers a call that names a secret file, whatever its tier.
 
 The engine finds dangerous commands by pattern. Its reviews ran about 100 destructive commands against it and closed every gap they found: recursive deletes in any flag order, spawn-style `{command, args}`, disk writes, `sudo` and more. But a list of patterns can never be complete. Command substitution (`rm -r $(echo ~)`), brace expansion and interpreter one-liners can still rate HIGH. A HIGH "Always" grant on a shell tool would then run them without asking.
 
@@ -28,7 +28,8 @@ Simple read-only commands are the exception and run without asking. A call count
 - it is a single command from a short allowlist (`ls`, `pwd`, `df`, `du`, `ps`, `cat`, `head`, `tail`, `wc`, `grep`, `find`, `git status`/`log`/`diff`/`show`…) with only allowed flags;
 - the text uses plain characters only, so no quotes, `$`, `%`, `~`, wildcards, brackets, chaining, pipes or redirects;
 - every argument key is a known one (`command`, `args`, `cwd`, `reason`…), so a decoy field can't hide the real request;
-- it reads only inside the working folder (no absolute, `..` or drive paths) and no secret files (`.env`, `.ssh`, `.aws`, shell history…);
+- `ls`, `du`, `cat`, `head`, `tail`, `wc`, `stat`, `grep` and `find` take only flags and numbers: a command that names a file or folder asks, because Dango doesn't know the server's working folder;
+- it names no secret file (`.env`, `.ssh`, `.aws`, `.kube`, shell profiles, history…), and no absolute, `..` or drive path;
 - the arguments on their own rate no higher than MEDIUM.
 
 An allowlist fails safe: anything it doesn't recognise asks. `cat "my file"` asks because of the quotes.
@@ -41,7 +42,7 @@ The risk engine keeps rating command calls. Its tier still decides how the sheet
 
 - Every command outside the read-only allowlist costs one click per call. Adding a command to the allowlist is a code change with tests, never a grant.
 - Detection by name and description can miss a command tool that hides its purpose. Such a tool still asks for anything the engine rates CRITICAL.
-- The read-only shortcut uses the server's own working folder when a call gives none; if that folder is home, plain reads there run without asking (secret files still ask).
+- Commands that name a file or folder ask, because Dango does not know the server's working folder; secret files never take a grant, for any tool. `ls -la`, `df -h` and `git status` still run without asking, and `git show`/`git diff`/`git log` can still print files tracked in the repository.
 - `git status`, `git diff` and `git log` can run programs set in the repository's own git config (fsmonitor, textconv, an external diff or pager). Changing that config needs a command that asks, so this is accepted.
 - Read-only tools whose names mention commands (for example `list_commands`) keep "Always" unless their description says they run something.
 

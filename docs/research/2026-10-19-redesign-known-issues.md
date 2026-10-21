@@ -16,17 +16,32 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
 
 ### Fix now: the [blockers plan](../specs/2026-10-21-redesign-blockers.md)
 
-- B1: MCP tools named like a Dango built-in (`list_tasks`, `web_search`, `memory_*`…) skip the permission sheet, whatever they do. New card.
-- S1: an Always grant at a raised tier covers other secret files, and many secret paths rate only MEDIUM. New card.
-- S2: the read-only command shortcut reads secrets through relative paths (`cat .zshrc` in an MCP shell running in `~`). New card, with S1.
-- S3: the permission audit log is never trimmed, and a full store silently stops grant and revoke writes, so a revoked grant can come back. New card.
-- B2: "local" is decided by provider id only, so remote Ollama or LM Studio hosts and Ollama `-cloud` models get raw local-only content. TASK-42.
-- B3: legacy memory sends local-only content to the global model. New card, or folded into TASK-45.
-- S13: the rest of TASK-45 (follow-up suggestions, web search next to `client_recall`, PostToolUse hooks, chats in export, "Save as knowledge" on a recall answer). TASK-45.
-- B4: knowledge goes out in settings export and comes back approved on import; an unreadable key can't recover. TASK-13.
-- B5: deleting an imported source asks nothing. TASK-46.
-- B6: Gmail ignores "Background review off". New card; the plan uses the recommended default (see decisions).
-- S11: a source removal in its undo window is lost on quit, so a removed Gmail source comes back and keeps drafting. TASK-22.
+- B1: MCP tools named like a Dango built-in (`list_tasks`, `web_search`, `memory_*`…) skip the permission sheet, whatever they do. New card. **Fixed** (#PR). Low risk now comes from Dango's own toolset, never from the name.
+- S1: an Always grant at a raised tier covers other secret files, and many secret paths rate only MEDIUM. New card. **Fixed** (#PR). A secret path always rates at least HIGH and never takes a grant, for built-ins too.
+- S2: the read-only command shortcut reads secrets through relative paths (`cat .zshrc` in an MCP shell running in `~`). New card, with S1. **Fixed** (#PR). Read-only commands with a file or folder operand now ask.
+- S3: the permission audit log is never trimmed, and a full store silently stops grant and revoke writes, so a revoked grant can come back. New card. **Fixed** (#PR). The log keeps the newest 500; a failed grant or revoke write says so, and a failed Always is rolled back.
+- B2: "local" is decided by provider id only, so remote Ollama or LM Studio hosts and Ollama `-cloud` models get raw local-only content. TASK-42. **Fixed** (#PR). Local now means Ollama or LM Studio on a loopback host and not a `-cloud` model, at every gate.
+- B3: legacy memory sends local-only content to the global model. New card, or folded into TASK-45. **Fixed** (#PR). Saving, updating and reflecting are off in chats that hold local-only text.
+- S13: the rest of TASK-45 (follow-up suggestions, web search next to `client_recall`, PostToolUse hooks, chats in export, "Save as knowledge" on a recall answer). TASK-45. **Fixed** (#PR). Follow-ups, web search and link reading, PostToolUse hooks and Save as knowledge keep local-only text out; chats in export stay TASK-13's decision.
+- B4: knowledge goes out in settings export and comes back approved on import; an unreadable key can't recover. TASK-13. **Fixed** (#PR). Knowledge, its migration record and sources stay out of settings export and import; an unreadable store offers Start over.
+- B5: deleting an imported source asks nothing. TASK-46. **Fixed** (#PR). It asks first; TASK-46 keeps the other confirm dialogs.
+- B6: Gmail ignores "Background review off". New card; the plan uses the recommended default (see decisions). **Fixed** (#PR). Review off means Gmail only syncs and stores mail; a running review stops when the switch goes off. The maintainer may still choose to hide the switch for Gmail.
+- S11: a source removal in its undo window is lost on quit, so a removed Gmail source comes back and keeps drafting. TASK-22. **Fixed** (#PR). The removal is stored and finishes at the next launch before any sync.
+
+### Left open by the blockers PR
+
+- **MCP read tools run without asking.** An MCP tool whose name or description reads like a read (`list_issues`, `read_email`, `search_code`) rates LOW and runs unasked; 13 of 19 realistic read tools did in a probe. A MEDIUM floor for every MCP tool would make about 2 in 3 of them ask. Maintainer decision, possibly ADR 0016, together with the next item.
+- **Other tools on a local-only turn.** MCP tools, `read_video_url`, the browser agent, computer use and `generate_image` are still offered when a chat holds local-only text, and their arguments could carry it. MCP write tools (memory-style servers included) too. Maintainer decision.
+- **Hooks.** PreToolUse hooks see every tool's arguments, PostToolUse sees tools other than `client_recall`/`client_answer`, and PostTurn sees the whole answer (shell hooks are off for it).
+- **Knowledge filed from a local-only source.** On a local model it sits in the prompt without making the turn local-only, so web and MCP stay available beside it; once its source is removed or stops being local-only, it reaches cloud models (the existing knowledge rule).
+- **Text the user carries over.** A follow-up suggestion a local model wrote from local-only mail, once clicked, and a user message that quotes local-only text are the user's own words to later turns and to Save as knowledge.
+- **Settings export (TASK-13).** Chats that quote mail, `integrations`, `imported-history` and `review-entries` (both can hold mail or chat text), `background-jobs` and `source-cursor:*` are still exported; importing a cursor without its source makes it sync again from earlier.
+- **Secret paths.** `~/.gitconfig` asks but can take Always; `cat 5` reads a file named `5`; `grep -fFILE` reads a pattern file without printing it; a path split across more than 64 values is only partly checked; `git log -p` can print secrets committed to the repository.
+- **Grants.** A revoke that failed to save can come back early if another window saves; a failed audit-entry write is silent.
+- **Gmail.** With review off, an old draft is never marked sent; turning review back on drafts replies for unanswered mail stored meanwhile, which can be weeks old (maintainer: act only on mail after the switch?).
+- **Source removal.** A removal whose revoke keeps failing stays hidden and silent, and blocks adding a folder to that scope ("This scope already has a folder." with none listed); a failed Undo write is only logged.
+- **Knowledge store.** A failed Start over is only logged; desktop settings export fails when any IndexedDB value is corrupt (pre-existing); a desktop file-backed key reads as "nothing stored" (knowledge is in IndexedDB, so not affected).
+- **Smaller.** Web search turns off silently on a local-only turn; Needs you chats are refused for saving even if no longer local-only (fails closed); a failed imported-source delete shows nothing (TASK-46); the phone drawer of AdaptiveModal never takes focus on open (TASK-46); `memory_reflect` now runs on the chat's model in every chat; a lowered message limit can drop the recall message while later answers that repeat it stay unmarked; the writing assistant sends only text the user typed and has no local-only gate.
 
 ### Should fix next
 
@@ -117,6 +132,9 @@ CI runs `pnpm test` on pull requests and on main (`.github/workflows/ci.yml`); l
 
 ## Trade-offs accepted on purpose
 
+- **Read-only commands name no file (blockers PR).** `ls`, `cat`, `grep`, `find`, `du`, `head`, `tail`, `wc` and `stat` run without asking only with flags and numbers, because Dango doesn't know the MCP server's working folder. `cat README.md` asks.
+- **No trusted host (blockers PR).** Ollama or LM Studio on another machine counts as cloud for local-only sources, which get the "choose a local model" fix. A trusted-host setting can come later if wanted.
+- **Exports (blockers PR).** Settings export of chats that quote mail stays TASK-13's decision; Review entries and background jobs are still exported.
 - **Pre-existing errors.** Main has 37 `pnpm check` errors, and 9 `pnpm lint` errors plus 1,076 warnings (CI's "~400" is Biome's diagnostic cap). Each slice adds none but fixes none.
 - **Flaky tests.** Some timing-dependent tests fail about one full run in several: `stream-text`, `format-chat-sensitive`, `approve.test` (TASK-17). Not reproduced in one full run on 2026-10-21 (4,994 passed); TASK-17 stays open.
 - **Codex threads (07).**
@@ -126,7 +144,7 @@ CI runs `pnpm test` on pull requests and on main (`.github/workflows/ci.yml`); l
   - A job waiting in Needs you blocks new runs of that source until you press its fix. Worse than noted: dismissing the entry leaves the job blocking, so the source silently stops (S10).
   - After you press Stop, the source waits a full interval before it runs again.
   - Both are deliberate, so a failing source doesn't add a Needs you entry every 15 minutes.
-- **First sync (07).** Every source that has never synced gets one sync at launch, even with Background review off. That is fine for folders and Codex, which then only list names. Gmail runs its full model pipeline (B6).
+- **First sync (07).** Every source that has never synced gets one sync at launch, even with Background review off. That is fine for folders and Codex, which then only list names. Gmail runs its full model pipeline (B6). Fixed (#PR): with review off Gmail only stores mail.
 - **Folder review (07).** It rotates through files instead of tracking each file's revision. In a very large folder, a changed file can wait weeks to be read (TASK-19).
 - **Review empty state (07 corrects 05).** EM2, "no sources yet", shows only when there are no sources and nothing visible in Review.
 - **Quick window (07, 08).** Any desktop window other than main sends setup to the main window and runs no jobs. This follows the maintainer's rule that anything to configure opens the big window.
@@ -140,10 +158,10 @@ CI runs `pnpm test` on pull requests and on main (`.github/workflows/ci.yml`); l
 - **Permissions (06c).**
   - "Always" grants are per scope (per chat when a chat has no scope) and apply only at the exact risk tier they were given at. Send, delete, pay, file-change and critical calls never offer Always.
   - In scoped chats, older per-chat approvals are no longer read, so those chats ask once more and offer "Always in this scope".
-  - A grant given when a call's arguments raised its tier (for example MEDIUM to HIGH for a read of `~/.aws`) is stored at that tier and then covers other calls of the same tool at that tier. Worse than noted: one Always on `~/.aws/credentials` then read `~/.env` and `~/.netrc` unasked, and many secret paths rate only MEDIUM (S1).
-  - Built-in low-risk tools skip the argument checks. The old "session and knowledge data only" was wrong: the list includes network tools and `computer_ax_query`, which reads screen text, and any MCP tool with the same name skips the sheet (B1).
-  - Each window keeps its own permission queue; grants and revokes sync across windows, the audit log is last-writer-wins. The audit log is never trimmed (S3).
-  - No list of dangerous commands is complete, so simple read-only commands (`ls`, `df`, `git status`…) run without asking and every other shell command or code run asks every time with no Always grant ([ADR 0015](../adr/0015-command-tools-always-ask.md)). A command tool that hides its purpose in its name and description is only caught for CRITICAL calls. The read-only shortcut also reads secrets through relative paths when the shell runs in `~` (S2).
+  - A grant given when a call's arguments raised its tier (for example MEDIUM to HIGH for a read of `~/.aws`) is stored at that tier and then covers other calls of the same tool at that tier. Worse than noted: one Always on `~/.aws/credentials` then read `~/.env` and `~/.netrc` unasked, and many secret paths rate only MEDIUM (S1). Fixed (#PR): a secret path never takes a grant.
+  - Built-in low-risk tools skip the argument checks. The old "session and knowledge data only" was wrong: the list includes network tools and `computer_ax_query`, which reads screen text, and any MCP tool with the same name skips the sheet (B1). Fixed (#PR): only Dango's own toolsets get low risk, `computer_ax_query` is MEDIUM, and dangerous or secret arguments still ask.
+  - Each window keeps its own permission queue; grants and revokes sync across windows, the audit log is last-writer-wins. The audit log is never trimmed (S3). Fixed (#PR): it keeps the newest 500.
+  - No list of dangerous commands is complete, so simple read-only commands (`ls`, `df`, `git status`…) run without asking and every other shell command or code run asks every time with no Always grant ([ADR 0015](../adr/0015-command-tools-always-ask.md)). A command tool that hides its purpose in its name and description is only caught for CRITICAL calls. The read-only shortcut also reads secrets through relative paths when the shell runs in `~` (S2). Fixed (#PR): commands that name a file or folder ask.
   - `chmod`/`chown` of a path one level below a system directory (`chmod 644 /etc/hosts`) asks every time.
   - Read-only tools with a payment word in their name (`get_payment_intent`) ask every time; reading `/dev/urandom` or `/dev/zero` and `chmod -rwx ~` ask every time (TASK-41).
 - **Swarm (06c).**
@@ -173,14 +191,14 @@ CI runs `pnpm test` on pull requests and on main (`.github/workflows/ci.yml`); l
   - Quick Chat keeps its own announcement of the finished answer and gets no "Thinking, N seconds" updates.
   - Errors in chat are announced by the error notice, which may re-announce when the list remounts it on scroll; a Swarm "could not plan" note is not announced.
   - Older colour transitions longer than 150 ms still run under Reduce Motion; everything that moves is stopped.
-  - Six confirm dialogs (discard edit, compression, imported-source delete, summary delete, knowledge base delete, clear memories) still use the old modal; deleting an imported source asks nothing (TASK-46). Worse than noted: one click deletes the whole import and rewrites every chat made from it, with no undo, and it is reachable from ⌘K (B5).
+  - Six confirm dialogs (discard edit, compression, imported-source delete, summary delete, knowledge base delete, clear memories) still use the old modal; deleting an imported source asks nothing (TASK-46). Worse than noted: one click deletes the whole import and rewrites every chat made from it, with no undo, and it is reachable from ⌘K (B5). Fixed (#PR): it asks first.
   - At phone width the password field's show/hide icon is 44 px inside a 38 px field; it is transparent, so it looks right.
   - A blank screen when the desktop window-role lookup never answers was not reproduced: the label is read synchronously. Minor: `getWindowLabel`'s catch returns `'main'`, not "other" as documented.
   - The Mantine theme's input focus style is ignored by the styles API (a console warning, pre-existing).
 
 ## Follow-ups filed
 
-- TASK-13: the knowledge store can't recover from an unreadable `knowledge` key, and knowledge leaks into settings export and import. Worse than noted: import overwrites this device's knowledge and brings it in approved, so it governs answers without the user approving it (B4).
+- TASK-13: the knowledge store can't recover from an unreadable `knowledge` key, and knowledge leaks into settings export and import. Worse than noted: import overwrites this device's knowledge and brings it in approved, so it governs answers without the user approving it (B4). Fixed (#PR): knowledge stays out of export and import, and an unreadable store offers Start over.
 - TASK-14: the knowledge search tool. The plan is merged; nobody has been asked to build it yet.
 - TASK-15: in the web build, `#root` is `aria-hidden` because a hidden MUI dialog stays mounted.
 - TASK-16: the plan-mode control (taken by slice 06b).
@@ -189,7 +207,7 @@ CI runs `pnpm test` on pull requests and on main (`.github/workflows/ci.yml`); l
 - TASK-19: folder review should read size-changed files first.
 - TASK-20: the "Choose a model" fix should honour `localOnly`, once slice 10 sets it.
 - TASK-21: replace Tailwind numeric spacing with `--dango-space` tokens.
-- TASK-22: a source removal still in its 5 s undo window is lost when you quit. A removed Gmail source comes back and keeps drafting (S11).
+- TASK-22: a source removal still in its 5 s undo window is lost when you quit. A removed Gmail source comes back and keeps drafting (S11). Fixed (#PR).
 - TASK-23: design pass on the folder drop target and the scope select.
 - TASK-24: Redo with another model should size the context for the picked model.
 - TASK-25: locale-aware durations, numbers and currency.
@@ -209,8 +227,8 @@ CI runs `pnpm test` on pull requests and on main (`.github/workflows/ci.yml`); l
 
 Never sending mail, never approving a fact the user didn't give, and keeping local-only mail off cloud models are enforced in code and tested. The first two hold (see Core promises); the third has gaps (B2, B3). What is left:
 
-- **Local model check (TASK-42).** "Local" means the provider is Ollama or LM Studio, so one running on another machine, or an Ollama cloud model, counts as local. Worse than noted: the same check gates recall, chat history, the background model, reviews and knowledge, so such a host gets raw local-only records (B2).
-- **Local-only gaps outside chat (TASK-45).** Follow-up suggestions after a model switch, legacy memory tools, a local model's web search query, PostToolUse hooks and settings export or history sync of chats that quote mail. Worse than noted: legacy memory, on by default, sends local-only content to the global model and saves it into every later cloud chat's prompt (B3); "Save as knowledge" on a recall answer saves it as ordinary knowledge, which goes to cloud models (S13).
+- **Local model check (TASK-42).** "Local" means the provider is Ollama or LM Studio, so one running on another machine, or an Ollama cloud model, counts as local. Worse than noted: the same check gates recall, chat history, the background model, reviews and knowledge, so such a host gets raw local-only records (B2). Fixed (#PR): local means a loopback host, and Ollama on another machine counts as cloud.
+- **Local-only gaps outside chat (TASK-45).** Follow-up suggestions after a model switch, legacy memory tools, a local model's web search query, PostToolUse hooks and settings export or history sync of chats that quote mail. Worse than noted: legacy memory, on by default, sends local-only content to the global model and saves it into every later cloud chat's prompt (B3); "Save as knowledge" on a recall answer saves it as ordinary knowledge, which goes to cloud models (S13). Fixed (#PR), except chats in settings export (TASK-13) and the items under "Left open by the blockers PR".
 - **Side effects on ordinary chats (TASK-44).**
   - Gemini's built-in Google search is off in nearly every desktop chat. The PM pilot isn't the real cause: the image tool and the video-URL tool already turn it off. This is an older, separate problem.
   - After a local-only recall, cloud turns in that chat lose all later answers, not only the recalled part.
