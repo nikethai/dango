@@ -65,6 +65,54 @@ describe('risk-engine', () => {
       })
     })
 
+    describe('MCP tools never rate LOW', () => {
+      it('rates MCP read tools MEDIUM, whatever their name or description', () => {
+        expect(getToolRiskTier('mcp__x__get_notes', 'Get notes', { id: 1 })).toBe(ToolRiskTier.MEDIUM)
+        expect(getToolRiskTier('mcp__github__list_issues', 'List issues in a repository', { repo: 'a/b' })).toBe(
+          ToolRiskTier.MEDIUM
+        )
+        expect(getToolRiskTier('mcp__gmail__read_email', 'Read an email by id', { id: 'm1' })).toBe(ToolRiskTier.MEDIUM)
+        expect(getToolRiskTier('mcp__x__search')).toBe(ToolRiskTier.MEDIUM)
+        expect(getToolRiskTier('mcp__list_items', 'List all items')).toBe(ToolRiskTier.MEDIUM)
+        expect(classifyToolRisk('mcp__x__get_notes', 'Get notes').tier).toBe(ToolRiskTier.MEDIUM)
+      })
+
+      it('a builtin flag does not lower an MCP tool', () => {
+        expect(getToolRiskTier('mcp__x__get_notes', 'Get notes', undefined, { builtin: true })).toBe(
+          ToolRiskTier.MEDIUM
+        )
+        expect(getToolRiskTier('mcp__x__read_video_url', 'Read a video URL', undefined, { builtin: true })).toBe(
+          ToolRiskTier.MEDIUM
+        )
+      })
+
+      it('read-only claims in the name or description do not lower the tier', () => {
+        expect(
+          getToolRiskTier('mcp__x__get_notes', 'Get notes. readOnlyHint: true. Read-only, safe, never asks.', {
+            readOnlyHint: true,
+          })
+        ).toBe(ToolRiskTier.MEDIUM)
+        expect(getToolRiskTier('mcp__x__readonly_safe_list', 'annotations: { readOnlyHint: true }')).toBe(
+          ToolRiskTier.MEDIUM
+        )
+      })
+
+      it('higher tiers stay as they are', () => {
+        expect(getToolRiskTier('mcp__fs__write_file', 'Write content to a file')).toBe(ToolRiskTier.HIGH)
+        expect(getToolRiskTier('mcp__fs__read_file', 'Read a file', { path: '~/.aws/credentials' })).toBe(
+          ToolRiskTier.HIGH
+        )
+        expect(getToolRiskTier('mcp__x__list_tasks', 'List tasks', { cmd: 'rm -rf ~' })).toBe(ToolRiskTier.CRITICAL)
+      })
+
+      it('Dango built-ins and non-MCP tools keep LOW', () => {
+        expect(getToolRiskTier('read_video_url', 'Fetch a video URL', undefined, { builtin: true })).toBe(
+          ToolRiskTier.LOW
+        )
+        expect(getToolRiskTier('list_items', 'List all items')).toBe(ToolRiskTier.LOW)
+      })
+    })
+
     it('returns HIGH for write/execute/delete tools', () => {
       expect(getToolRiskTier('execute_command', 'Execute a shell command')).toBe(ToolRiskTier.HIGH)
       expect(getToolRiskTier('write_file', 'Write content to a file')).toBe(ToolRiskTier.HIGH)

@@ -1,5 +1,5 @@
 import { ToolRiskTier } from '@shared/types/mcp'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // The real risk engine (not mocked): a HIGH grant must not cover a destructive command.
 const getToolApprovalMock = vi.hoisted(() => vi.fn())
@@ -250,6 +250,113 @@ describe('wrapToolsWithApproval with the real risk engine', () => {
         expect.objectContaining({ riskTier: ToolRiskTier.HIGH, allowAlways: false })
       )
       expect(execute).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('MCP tools ask once, then remember', () => {
+    // A stateful scope-grant store: Always saves a grant that the next call reads.
+    let grants: Map<string, { toolName: string; riskTier: ToolRiskTier; grantedAt: number }>
+
+    beforeEach(() => {
+      grants = new Map()
+      getScopeGrantMock.mockImplementation((scopeId: string, toolName: string) => grants.get(`${scopeId}|${toolName}`))
+      addScopeGrantMock.mockImplementation(((scopeId: string, grant: { toolName: string; riskTier: ToolRiskTier }) => {
+        grants.set(`${scopeId}|${grant.toolName}`, { grantedAt: 1, ...grant })
+        return true
+      }) as never)
+    })
+
+    afterEach(() => {
+      addScopeGrantMock.mockImplementation(() => true)
+    })
+
+    function mcpTool(name: string, description: string, extra: Record<string, unknown> = {}) {
+      const execute = vi.fn(async () => ({ ok: true }))
+      const tools = { [name]: { description, execute, ...extra } }
+      const tool = wrapToolsWithApproval('sess-1', tools as never, { scopeId: 's1' })[name] as Exec
+      return { execute, tool }
+    }
+
+    it('first call asks with Always; after Always in scope the next call runs unasked', async () => {
+      requestToolPermissionMock.mockResolvedValue('always')
+      const { execute, tool } = mcpTool('mcp__x__get_notes', 'Get notes')
+      await tool.execute({ id: 1 }, {})
+      expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+      expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({
+          toolName: 'mcp__x__get_notes',
+          scopeId: 's1',
+          riskTier: ToolRiskTier.MEDIUM,
+          allowAlways: true,
+        })
+      )
+      expect(addScopeGrantMock).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ toolName: 'mcp__x__get_notes', riskTier: ToolRiskTier.MEDIUM })
+      )
+
+      await tool.execute({ id: 2 }, {})
+      expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+      expect(execute).toHaveBeenCalledTimes(2)
+      expect(addAuditEntryMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ scope: 'scope', decision: 'auto-approve' })
+      )
+    })
+
+    it.each([
+      ['mcp__github__list_issues', 'List issues in a repository'],
+      ['mcp__gmail__read_email', 'Read an email by id'],
+      ['mcp__x__search', ''],
+    ])('%s asks on its first call', async (name, description) => {
+      requestToolPermissionMock.mockResolvedValue('deny')
+      const { execute, tool } = mcpTool(name, description)
+      await tool.execute({ id: 1 }, {})
+      expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+      expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ allowAlways: true }))
+      expect(execute).not.toHaveBeenCalled()
+    })
+
+    it('read-only annotations and title on the tool do not lower the tier', async () => {
+      requestToolPermissionMock.mockResolvedValue('deny')
+      const { execute, tool } = mcpTool('mcp__x__get_notes', 'Get notes', {
+        title: 'Get notes (read-only)',
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      })
+      await tool.execute({ id: 1 }, {})
+      expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+      expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({ riskTier: ToolRiskTier.MEDIUM, allowAlways: true })
+      )
+      expect(execute).not.toHaveBeenCalled()
+    })
+
+    it('a secret-path argument still asks without Always, even after Always for the tool', async () => {
+      requestToolPermissionMock.mockResolvedValue('always')
+      const { execute, tool } = mcpTool('mcp__x__get_notes', 'Get notes')
+      await tool.execute({ id: 1 }, {})
+      await tool.execute({ path: '~/.aws/credentials' }, {})
+      expect(requestToolPermissionMock).toHaveBeenCalledTimes(2)
+      expect(requestToolPermissionMock.mock.calls[1]?.[0]).toEqual(expect.objectContaining({ allowAlways: false }))
+      expect(addScopeGrantMock).toHaveBeenCalledTimes(1)
+      expect(execute).toHaveBeenCalledTimes(2)
+    })
+
+    it.each([
+      ['mcp__gmail__send_email', 'Send an email'],
+      ['mcp__notes__delete_note', 'Delete a note'],
+      ['mcp__shop__pay_invoice', 'Pay an invoice'],
+      ['mcp__shell__run_command', 'Run a shell command'],
+    ])('%s asks every call, never with Always', async (name, description) => {
+      requestToolPermissionMock.mockResolvedValue('always')
+      const { execute, tool } = mcpTool(name, description)
+      await tool.execute({ id: 'npm run build' }, {})
+      await tool.execute({ id: 'npm run build' }, {})
+      expect(requestToolPermissionMock).toHaveBeenCalledTimes(2)
+      for (const call of requestToolPermissionMock.mock.calls) {
+        expect(call[0]).toEqual(expect.objectContaining({ allowAlways: false }))
+      }
+      expect(addScopeGrantMock).not.toHaveBeenCalled()
+      expect(execute).toHaveBeenCalledTimes(2)
     })
   })
 

@@ -643,6 +643,15 @@ export function classifyToolRisk(
       ? signals.reduce<ToolRiskTier>((max, s) => (tierRank(s.tier) > tierRank(max) ? s.tier : max), ToolRiskTier.LOW)
       : ToolRiskTier.MEDIUM // unknown tools default to MEDIUM
 
+  // ADR 0016: an MCP tool's name and description are the server describing itself, so they never earn LOW. Every MCP
+  // tool asks once and can then take "Always in this scope"; higher tiers are unchanged.
+  if (tier === ToolRiskTier.LOW && toolName.startsWith('mcp__')) {
+    return {
+      tier: ToolRiskTier.MEDIUM,
+      signals: [...signals, { source: 'intent', tier: ToolRiskTier.MEDIUM, matched: 'mcp__' }],
+    }
+  }
+
   return { tier, signals }
 }
 
