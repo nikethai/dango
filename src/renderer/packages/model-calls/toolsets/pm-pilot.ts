@@ -143,8 +143,9 @@ export async function loadLocalOnlyQuestionIds(questionIds: string[]): Promise<S
 export async function loadLocalOnlySourceIds(): Promise<Set<string>> {
   const { listSources, loadSources } = await import('@/packages/sources')
   await loadSources()
+  // Pending removal included (S11): until it is gone, an Undo can bring it back.
   return new Set(
-    listSources()
+    listSources({ includePending: true })
       .filter((s) => s.localOnly)
       .map((s) => s.id)
   )

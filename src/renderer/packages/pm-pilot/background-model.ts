@@ -49,8 +49,9 @@ export async function resolveBackgroundModel(): Promise<BackgroundModel | null> 
 export async function localOnlySourceIds(given?: Set<string>): Promise<Set<string>> {
   if (given) return given
   await loadSources()
+  // Pending removal included (S11): until it is gone, an Undo can bring it back.
   return new Set(
-    listSources()
+    listSources({ includePending: true })
       .filter((s) => s.localOnly)
       .map((s) => s.id)
   )

@@ -601,6 +601,58 @@ describe('due jobs', () => {
   })
 })
 
+describe('due jobs of a source pending removal (S11)', () => {
+  const now = 1_000_000_000
+
+  it('dueSyncs and dueReviews leave out a source with removalPendingAt', () => {
+    registerSourceAdapter('gmail', { pollMs: 60_000, sync: async () => ({ summary: '' }) })
+    const due = sourceOf({ kind: 'folder', backgroundReview: true, lastSyncAt: now - 2 * REVIEW_INTERVAL_MS })
+    const neverSynced = sourceOf({ id: 's2', kind: 'gmail' })
+    expect(dueReviews([due], [], now)).toEqual(['s1'])
+    expect(dueSyncs([neverSynced], [], now)).toEqual(['s2'])
+    expect(dueReviews([{ ...due, removalPendingAt: now - 1 }], [], now)).toEqual([])
+    expect(dueSyncs([{ ...neverSynced, removalPendingAt: now - 1 }], [], now)).toEqual([])
+  })
+})
+
+describe('jobs of a source pending removal (S11)', () => {
+  const REMOVED = { summary: 'This source was removed.', addDoneEntry: false }
+  const twoBatches = () => [
+    { ref: 't1', label: 'Thread one', text: 'x'.repeat(7_000) },
+    { ref: 't2', label: 'Thread two', text: 'secret-two '.repeat(600) },
+  ]
+
+  it('a review resumed for a pending source reads nothing and asks no model', async () => {
+    storeSources(sourceOf({ removalPendingAt: 1 }))
+    read.mockResolvedValue({ items: twoBatches(), cursor: 'c2' })
+    await expect(reviewJobHandler(ctxOf())).resolves.toEqual(REMOVED)
+    expect(read).not.toHaveBeenCalled()
+    expect(generateText).not.toHaveBeenCalled()
+  })
+
+  it('a sync resumed for a pending source does not sync', async () => {
+    const sync = vi.fn(async () => ({ summary: 'Found 3 threads' }))
+    registerSourceAdapter('codex-threads', { sync })
+    storeSources(sourceOf({ removalPendingAt: 1 }))
+    await expect(syncJobHandler(ctxOf(jobOf({ kind: 'sync' })))).resolves.toEqual(REMOVED)
+    expect(sync).not.toHaveBeenCalled()
+  })
+
+  it('removed between batches: stops before the next model call and keeps the cursor', async () => {
+    storeSources(sourceOf())
+    h.memory.set('source-cursor:s1', 'c1')
+    read.mockResolvedValue({ items: twoBatches(), cursor: 'c2' })
+    vi.mocked(generateText).mockImplementationOnce(async () => {
+      await updateSource('s1', { removalPendingAt: Date.now() })
+      return { contentParts: [{ type: 'text', text: JSON.stringify({ proposals: [] }) }] } as never
+    })
+    await expect(reviewJobHandler(ctxOf())).resolves.toEqual(REMOVED)
+    expect(generateText).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(vi.mocked(generateText).mock.calls)).not.toContain('secret-two')
+    expect(h.memory.get('source-cursor:s1')).toBe('c1')
+  })
+})
+
 describe('dueCheckIntervalMs', () => {
   it('is the default when no kind polls', () => {
     expect(dueCheckIntervalMs(15 * 60_000)).toBe(15 * 60_000)
@@ -683,6 +735,34 @@ describe('initBackgroundJobs', () => {
       sourceId: 's1',
       label: 'Background review of Codex threads',
     })
+  })
+
+  it('a removal pending at quit finishes at launch before any due job of that source starts (S11)', async () => {
+    // s1 was removed less than 5 s before the last quit; s2 is an ordinary source due a review.
+    storeSources(
+      sourceOf({ kind: 'folder', lastSyncAt: 5, removalPendingAt: Date.now() - 60_000 }),
+      sourceOf({ id: 's2', kind: 'folder', lastSyncAt: 5 })
+    )
+    const { markSourceRemoved } = await import('@/packages/knowledge')
+    vi.mocked(markSourceRemoved).mockImplementationOnce((id: string) => {
+      h.order.push(`removed:${id}`)
+      return Promise.resolve(0)
+    })
+    await initBackgroundJobs()
+    await vi.waitFor(() => expect(startJob).toHaveBeenCalled())
+    expect(h.order.indexOf('removed:s1')).toBeGreaterThanOrEqual(0)
+    expect(h.order.indexOf('removed:s1')).toBeLessThan(h.order.indexOf('start:review'))
+    expect(vi.mocked(startJob).mock.calls.map((c) => c[0].sourceId)).toEqual(['s2'])
+    expect((h.memory.get('sources') as ConnectedSource[]).map((s) => s.id)).toEqual(['s2'])
+  })
+
+  it('a removal pending less than 5 s at launch waits, and its source starts nothing meanwhile', async () => {
+    storeSources(sourceOf({ kind: 'folder', lastSyncAt: 5, removalPendingAt: Date.now() }))
+    await initBackgroundJobs()
+    const { markSourceRemoved } = await import('@/packages/knowledge')
+    expect(markSourceRemoved).not.toHaveBeenCalled()
+    expect(startJob).not.toHaveBeenCalled()
+    expect((h.memory.get('sources') as ConnectedSource[]).map((s) => s.id)).toEqual(['s1'])
   })
 
   it('starts nothing until a failed resume succeeds', async () => {

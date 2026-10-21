@@ -21,7 +21,9 @@ const { state, getRecords, reloadRecords, getSourceHealth, getWindowRole, calls 
 vi.mock('./bridge', () => ({
   listClientScopes: async () => state.scopes.filter((s) => s.kind === 'client'),
   loadSources: async () => undefined,
-  listSources: () => state.sources,
+  isRemovalPending: (s: { removalPendingAt?: number }) => s.removalPendingAt !== undefined,
+  listSources: (filter?: { includePending?: boolean }) =>
+    state.sources.filter((s) => filter?.includePending || s.removalPendingAt === undefined),
 }))
 vi.mock('./store', () => ({
   pmStore: {
@@ -224,6 +226,23 @@ describe('recallClient', () => {
     )
     const other = await recallClient({ query: 'launch', sessionScopeId: 'acme', cloudModel: true })
     expect(other.ok && other.gaps).toEqual([])
+  })
+
+  it('leaves out the records of a source pending removal on every model (S11)', async () => {
+    state.sources = [
+      source({ id: 'g-acme', scopeId: 'acme' }),
+      source({ id: 'g-old', scopeId: 'acme', removalPendingAt: 1 }),
+    ]
+    getRecords.mockResolvedValue([
+      rec({ externalId: 'kept', text: 'Launch mail' }),
+      rec({ externalId: 'pending', sourceId: 'g-old', text: 'Launch mail of a source being removed' }),
+    ])
+    for (const cloudModel of [true, false]) {
+      const out = await recallClient({ query: 'launch', sessionScopeId: 'acme', cloudModel })
+      if (!out.ok) throw new Error('expected ok')
+      expect(out.records.map((r) => r.text)).toEqual(['Launch mail'])
+      expect(out.gaps).toEqual([])
+    }
   })
 
   it('skips local-only records on a cloud model and says so', async () => {

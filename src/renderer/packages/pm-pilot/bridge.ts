@@ -42,6 +42,7 @@ export {
   updateReviewEntry,
 } from '@/packages/review'
 export {
+  isRemovalPending,
   listSources,
   loadSources,
   registerSourceAdapter,

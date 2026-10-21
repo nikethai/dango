@@ -1,6 +1,13 @@
 import { inertValues, type SourceRecord } from '@shared/pm-pilot'
 import i18n from '@/i18n'
-import { type ConnectedSource, listClientScopes, listSources, loadSources, type Scope } from './bridge'
+import {
+  type ConnectedSource,
+  isRemovalPending,
+  listClientScopes,
+  listSources,
+  loadSources,
+  type Scope,
+} from './bridge'
 import { getSourceHealth } from './pipeline'
 import { overlap, tokens } from './retrieve'
 import { pmStore } from './store'
@@ -182,11 +189,19 @@ export async function recallClient(input: {
 
   await loadSources()
   const sources = listSources()
+  // Records of a source pending removal (S11) are left out on every model, as if it were gone.
+  const pending = new Set(
+    listSources({ includePending: true })
+      .filter(isRemovalPending)
+      .map((s) => s.id)
+  )
   const byId = new Map(sources.map((s) => [s.id, s]))
   const scopeSources = sources.filter((s) => s.scopeId === scope.id && (s.kind === 'gmail' || s.kind === 'asana'))
 
   await freshenRecords()
-  const stored = (await pmStore.getRecords(scope.id)).filter((r) => r.scopeId === scope.id)
+  const stored = (await pmStore.getRecords(scope.id)).filter(
+    (r) => r.scopeId === scope.id && !(r.sourceId && pending.has(r.sourceId))
+  )
 
   const gaps: string[] = []
   for (const s of scopeSources) {

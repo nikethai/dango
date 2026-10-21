@@ -15,6 +15,11 @@ export const ConnectedSourceSchema = z.object({
   connectedAt: z.number(),
   lastSyncAt: z.number().optional(),
   lastReviewAt: z.number().optional(),
+  /**
+   * When the user removed the source (S11). Set during the 5 s undo window and kept if the app quits meanwhile, so the
+   * next launch finishes the removal. A pending source is hidden from lists and no job of it runs.
+   */
+  removalPendingAt: z.number().optional(),
 })
 export type ConnectedSource = z.infer<typeof ConnectedSourceSchema>
 

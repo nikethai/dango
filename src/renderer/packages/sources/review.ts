@@ -120,7 +120,7 @@ function uniqueByRef(items: SourceItem[]): SourceItem[] {
 }
 
 /**
- * The job's source, or undefined when it was removed (its jobs then end quietly). Sources that could not be read are
+ * The job's source, or undefined when it was removed or its removal is pending (its jobs then end quietly, S11). Sources that could not be read are
  * not "removed": that throws, so the runner retries the job.
  */
 async function sourceFor(sourceId: string | undefined): Promise<ConnectedSource | undefined> {
@@ -165,7 +165,7 @@ async function askModel(source: ConnectedSource, batch: SourceItem[]): Promise<s
   const global = settingsStore.getState().getSettings()
   const choice = backgroundModelChoice(global, lastUsedModelStore.getState().chat)
   // Per batch: the background model (or the source's "Keep on this device only") can change while a long review runs.
-  const localOnly = source.localOnly || !!getSource(source.id)?.localOnly
+  const localOnly = source.localOnly || !!getSource(source.id, { includePending: true })?.localOnly
   if (localOnly && !isLocalModelIn(global, choice)) throw new NeedsUserError(LOCAL_ONLY_REASON, chooseModel())
   const settings = { ...global, ...(choice ? { provider: choice.provider, modelId: choice.modelId } : {}) }
   const model = getModel(settings, global, await platform.getConfig(), await createModelDependencies())
@@ -222,8 +222,11 @@ export const reviewJobHandler: JobHandler = async ({ job, signal, progress }) =>
   let done = items.length - pending.length
   for (const batch of toBatches(pending)) {
     throwIfAborted(signal)
-    // Turned off mid-run: stop before the next model call. Proposals filed so far stay; the cursor is not saved.
-    if (getSource(source.id)?.backgroundReview === false) return switchedOffOutcome()
+    // Turned off or removed (S11) mid-run: stop before the next model call. Proposals filed so far stay; the cursor is
+    // not saved, so an Undo or a switch-on resumes.
+    const now = getSource(source.id)
+    if (!now) return removedOutcome()
+    if (now.backgroundReview === false) return switchedOffOutcome()
     progress(i18n.t('Reviewed {{done}} of {{count}} items', { done, count: items.length }))
     const drafts = parseProposalDraft(await askModel(source, batch), new Set(batch.map((item) => item.ref)))
     const byRef = new Map(batch.map((item) => [item.ref, item]))

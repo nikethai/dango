@@ -266,9 +266,10 @@ export function initPmQuestions(): () => void {
 // ---------------------------------------------------------------------------------------------------------------------
 // Local-only
 
+/** Every source, pending removal included (S11): a source the user may still Undo stays local-only. */
 async function freshSources(): Promise<ConnectedSource[] | null> {
   await loadSources()
-  return sourcesStore.getState().loaded ? listSources() : null
+  return sourcesStore.getState().loaded ? listSources({ includePending: true }) : null
 }
 
 /** Whether the question's chat holds text from a source kept on this device; unreadable sources count as local. */
@@ -632,11 +633,15 @@ async function answerWhich(
     return refuse('failed', 'The answer could not be saved. Ask the user to try again.', mark)
   }
   await closeEntry(q)
-  // Background review off (B6): the source's mail is stored only, so no model writes a reply to it.
-  const reviewOff = listSources().some((s) => s.id === q.sourceId && !s.backgroundReview)
-  const drafted = reviewOff
-    ? 'The reply was not drafted: Background review is off for this source.'
-    : await draftReply(q, scope, evidence)
+  // Background review off (B6): the source's mail is stored only, so no model writes a reply to it. A source that was
+  // removed, or whose removal is pending (S11), gets no reply either.
+  const source = q.sourceId ? listSources().find((s) => s.id === q.sourceId) : undefined
+  const drafted =
+    q.sourceId && !source
+      ? 'The reply was not drafted: this source was removed.'
+      : source && !source.backgroundReview
+        ? 'The reply was not drafted: Background review is off for this source.'
+        : await draftReply(q, scope, evidence)
   // The saved text is not echoed: it may come from client mail, and this result goes back to the model.
   return { ok: true, message: `Saved the answer for ${scope.name}. ${drafted}`, ...mark }
 }

@@ -41,7 +41,11 @@ vi.mock('./bridge', async () => {
     addReviewEntry: vi.fn(async (input: Record<string, unknown>) => ({ ...input, state: 'open' })),
     setReviewEntryState: vi.fn(async () => undefined),
     getScope: vi.fn(async (id: string) => scopes[id]),
-    listSources: (filter?: { kind?: string }) => h.sources.filter((s) => !filter?.kind || s.kind === filter.kind),
+    isRemovalPending: (s: { removalPendingAt?: number }) => s.removalPendingAt !== undefined,
+    listSources: (filter?: { kind?: string; includePending?: boolean }) =>
+      h.sources.filter(
+        (s) => (!filter?.kind || s.kind === filter.kind) && (filter?.includePending || s.removalPendingAt === undefined)
+      ),
     loadSources: vi.fn(async () => undefined),
     sourcesStore: { getState: () => ({ loaded: h.loaded, sources: h.sources }) },
     reviewStore: { getState: () => ({ loaded: true }) },
@@ -693,6 +697,87 @@ describe('runGmailPipeline with Background review off (B6)', () => {
     expect(readBackIds.sort()).toEqual([globex.externalId, globexSent.externalId].sort())
     expect(a).toEqual({ summary: 'Checked 2 new emails', quiet: true })
     expect(b.summary).toBe('Checked 2 new emails')
+  })
+})
+
+describe('runGmailPipeline with a source pending removal (S11)', () => {
+  const pending = () =>
+    source({
+      id: 'g2',
+      scopeId: 'globex',
+      removalPendingAt: NOW,
+      config: { accountId: 'acc1', matchers: ['@globex.com'] },
+    })
+
+  it("keeps the pending source's records and files its new mail under it, but never judges or drafts for it", async () => {
+    h.sources = [source(), pending()]
+    h.records = [{ ...mail({ externalId: 'old' }), scopeId: 'globex', sourceId: 'g2' }]
+    const globex = mail({ author: 'li@globex.com', participants: ['li@globex.com', OWN] })
+    syncReturns([mail(), globex])
+    await runGmailPipeline(h.sources[0], ctx())
+    // Not pruned, and stored (not asked about): an Undo loses nothing.
+    expect(
+      h.records
+        .filter((r) => r.sourceId === 'g2')
+        .map((r) => r.externalId)
+        .sort()
+    ).toEqual(['old', globex.externalId].sort())
+    expect(h.questions.filter((q) => q.kind === 'which-client')).toEqual([])
+    expect(judgeThread).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(judgeThread).mock.calls[0][0].inbound.externalId).not.toBe(globex.externalId)
+    expect(
+      vi
+        .mocked(readBackSent)
+        .mock.calls.flatMap((c) => c[0])
+        .every((r) => r.sourceId === 'g1')
+    ).toBe(true)
+    // Its mail is no one's evidence while pending.
+    expect(vi.mocked(retrieveEvidence).mock.calls[0][0]).toMatchObject({ excludeSourceIds: new Set(['g2']) })
+  })
+
+  it('a pending local-only source still counts as local-only', async () => {
+    h.sources = [source(), { ...pending(), localOnly: true }]
+    syncReturns([mail()])
+    await runGmailPipeline(h.sources[0], ctx())
+    expect(vi.mocked(judgeThread).mock.calls[0][0]).toMatchObject({ localOnlySourceIds: new Set(['g2']) })
+  })
+
+  it('a source removed while its run is under way gets no more model calls', async () => {
+    h.sources = [source()]
+    syncReturns([mail(), mail()])
+    vi.mocked(judgeThread).mockImplementationOnce(() => {
+      h.sources = [{ ...source(), removalPendingAt: NOW }]
+      return Promise.resolve({ judgement: question })
+    })
+    await runGmailPipeline(source(), ctx())
+    expect(judgeThread).toHaveBeenCalledTimes(1)
+    expect(actOnThread).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps a pending source's backfill for an Undo instead of dropping it", async () => {
+    h.sources = [source(), pending()]
+    const backfill = { sourceId: 'g2', matcher: '@newco.com' }
+    h.questions = [
+      {
+        id: 'q2',
+        kind: 'which-client',
+        scopeId: null,
+        accountId: 'acc1',
+        threadId: 't9',
+        subject: 'Hello',
+        from: 'ann@newco.com',
+        summary: '',
+        candidates: [],
+        state: 'answered',
+        createdAt: 1,
+        backfill,
+      },
+    ]
+    syncReturns([])
+    await runGmailPipeline(source(), ctx())
+    expect(h.questions[0].backfill).toEqual(backfill)
+    // Only the poll ran: no backfill read for the pending source.
+    expect(syncGmailMailbox).toHaveBeenCalledTimes(1)
   })
 })
 

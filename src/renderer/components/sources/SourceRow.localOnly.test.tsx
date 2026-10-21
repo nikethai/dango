@@ -32,6 +32,9 @@ vi.mock('@/packages/sources', () => {
     getSourceKind: (k: string) => kinds.find((d) => d.kind === k),
     updateSource: vi.fn(async () => undefined),
     revokeSource: vi.fn(async () => undefined),
+    markRemovalPending: vi.fn(async () => undefined),
+    cancelRemovalPending: vi.fn(async () => undefined),
+    REMOVE_DELAY_MS: 5_000,
     syncJobLabel: (k: string) => `${k} sync`,
     BACKGROUND_REVIEW_LINE: 'Background review line',
   }

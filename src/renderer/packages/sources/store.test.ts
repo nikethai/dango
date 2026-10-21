@@ -424,6 +424,18 @@ describe('sources store', () => {
     expect(calls).toEqual([])
   })
 
+  it('registerSourcesResolver: a source pending removal cannot open and keeps its label (S11)', async () => {
+    vi.mocked(setJobSourceResolver).mockClear()
+    registerSourcesResolver()
+    const resolver = vi.mocked(setJobSourceResolver).mock.calls.at(-1)?.[0]
+    const s = await addSource(input({ label: 'me@work' }))
+    await updateSource(s.id, { removalPendingAt: 1 })
+    expect(resolver?.exists(s.id)).toBe(false)
+    expect(resolver?.label(s.id)).toBe('me@work')
+    await updateSource(s.id, { removalPendingAt: undefined })
+    expect(resolver?.exists(s.id)).toBe(true)
+  })
+
   it('registerSourcesResolver: removed sources cannot open, labels come from the store', async () => {
     vi.mocked(setJobSourceResolver).mockClear()
     registerSourcesResolver()
@@ -501,6 +513,14 @@ describe('adoptExistingFolderBindings', () => {
     restore().mockImplementation(async (id: string) => descriptor(id, 'ready'))
     expect(await adoptExistingFolderBindings(['acme'])).toBe(0)
     expect(restore()).not.toHaveBeenCalled()
+  })
+
+  it('does not adopt the binding of a folder source pending removal (S11)', async () => {
+    const folder = await addSource(input({ kind: 'folder', label: 'site' }))
+    await updateSource(folder.id, { removalPendingAt: 1 })
+    restore().mockImplementation(async (id: string) => descriptor(id, 'ready'))
+    expect(await adoptExistingFolderBindings(['acme'])).toBe(0)
+    expect(listSources({ includePending: true }).map((s) => s.id)).toEqual([folder.id])
   })
 
   it('does nothing when the platform has no folder bindings', async () => {

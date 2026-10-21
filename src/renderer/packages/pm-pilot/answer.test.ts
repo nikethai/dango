@@ -42,7 +42,11 @@ vi.mock('./bridge', () => {
     NEVER_SEND_EMAIL: { id: 'builtin:never-send-email' },
     KnowledgeConflictError: h.KnowledgeConflictError,
     getScope: vi.fn(async (id: string) => scopes[id]),
-    listSources: (filter?: { kind?: string }) => h.sources.filter((s) => !filter?.kind || s.kind === filter.kind),
+    isRemovalPending: (s: { removalPendingAt?: number }) => s.removalPendingAt !== undefined,
+    listSources: (filter?: { kind?: string; includePending?: boolean }) =>
+      h.sources.filter(
+        (s) => (!filter?.kind || s.kind === filter.kind) && (filter?.includePending || s.removalPendingAt === undefined)
+      ),
     loadSources: vi.fn(async () => undefined),
     sourcesStore: { getState: () => ({ loaded: true }) },
     updateSource: vi.fn((id: string, patch: Partial<ConnectedSource>) => {
@@ -562,6 +566,25 @@ describe('client_answer: which-answer', () => {
       'Saved the answer for Acme Co. The reply was not drafted: Background review is off for this source.'
     )
     expect((await pmStore.getQuestion('q1'))?.state).toBe('answered')
+  })
+
+  it.each([
+    ['pending removal', (s: ConnectedSource) => [{ ...s, removalPendingAt: 1 }]],
+    ['removed', () => []],
+  ] as const)('saves the answer but drafts nothing when the source is %s (S11, T9 M4)', async (_name, change) => {
+    h.sources = h.sources.flatMap((s) => (s.id === 'g1' ? change(s) : [s]))
+    const sessionId = await chatWith(whichAnswer(), 'It is 9,100 now')
+    const result = await answerClientQuestion({ sessionId, answer: '9,100', fact: 'The quote is 9,100.', choice: '2' })
+    expect(result.ok).toBe(true)
+    expect(actOnThread).not.toHaveBeenCalled()
+    expect(result.message).toBe('Saved the answer for Acme Co. The reply was not drafted: this source was removed.')
+  })
+
+  it('a question of a local-only source pending removal stays local-only (S11)', async () => {
+    h.sources = h.sources.map((s) => (s.id === 'g1' ? { ...s, localOnly: true, removalPendingAt: 1 } : s))
+    const sessionId = await chatWith(whichAnswer(), 'It is 9,100 now')
+    const result = await answerClientQuestion({ sessionId, answer: '9,100', fact: 'The quote is 9,100.', choice: '2' })
+    expect(result).toMatchObject({ ok: true, localOnly: true })
   })
 
   it('keeps the saved answer when drafting fails, and says the draft was not written', async () => {
