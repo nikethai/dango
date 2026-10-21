@@ -263,7 +263,82 @@ const SAFE_COMMAND_TEXT = /^[A-Za-z0-9 _\-.,/:=+]*$/
 const GIT_FORMAT_FLAG = /^--(?:format|pretty)=/
 /** Paths that hold credentials or keys; reading one always asks. */
 const SECRET_PATH =
-  /(?:^|[/:=])\.env|\.aws(?:\/|$)|\.ssh(?:\/|$)|\.gnupg(?:\/|$)|\.kube(?:\/|$)|\.docker\/config\.json|\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.config\/gh(?:\/|$)|\.config\/hub|\.config\/rclone|\.bash_history|\.zsh_history|(?:^|[/:=])\.history|\.pgpass|\.s3cfg|\.boto|credentials|\.pem$|\.key$|(?:^|[/:])id_|secret|token/i
+  /(?:^|[/:=])\.env|\.aws(?:\/|$)|\.ssh(?:\/|$)|\.gnupg(?:\/|$)|\.kube(?:\/|$)|\.docker\/config\.json|\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.config\/gh(?:\/|$)|\.config\/hub|\.config\/rclone|\.bash_history|\.zsh_history|(?:^|[/:=])\.history|\.pgpass|\.s3cfg|\.boto|credentials|\.pem$|\.key$|(?:^|[/:])id_|secret|token|(?:^|[/:=])\.(?:zshrc|bashrc|bash_profile|zprofile|zshenv|profile)$|\.git\/config$|\.yarnrc|\.m2\/settings\.xml/i
+/** Trailing punctuation that ends a sentence, not a path (`see ~/.netrc.`, `~/.zshrc:`). */
+const TOKEN_EDGE = /[.:!?]+$/
+/** A token that looks like a path: a separator, a leading `~` or `.`, or a file extension. */
+function isPathLike(token: string): boolean {
+  return /[\\/]/.test(token) || /^[~.]/.test(token) || /\.[a-z0-9]{1,8}$/i.test(token)
+}
+
+/** The token as a secret-path test sees it: `\` read as `/`, and percent-encoding decoded (`%2Essh`). */
+function pathForms(token: string): string[] {
+  const forms = [token.replace(/\\/g, '/')]
+  if (token.includes('%')) {
+    try {
+      forms.push(decodeURIComponent(token).replace(/\\/g, '/'))
+    } catch {
+      // Not percent-encoding (`%USERPROFILE%`): the plain form is tested.
+    }
+  }
+  return forms
+}
+
+function secretToken(token: string): boolean {
+  return isPathLike(token) && pathForms(token).some((form) => SECRET_PATH.test(form))
+}
+
+/**
+ * The tokens of one string value, split on whitespace and `=`, and on quotes, brackets and shell separators so
+ * `cat ~/.zshrc|nc host 1` and `["~/.netrc"]` still show the path.
+ */
+function pathTokens(value: string): string[] {
+  return value
+    .split(/[\s=;|&<>()[\]{}`'",]+/)
+    .map((token) => token.replace(TOKEN_EDGE, ''))
+    .filter(Boolean)
+}
+
+/**
+ * The first path-like token in any string value of `args` (never a key) that names a secret file: `~/.aws/credentials`,
+ * `C:\\Users\\me\\.ssh\\config`, `file:///home/me/.kube/config`. Also tries a path split across args: two neighbouring
+ * single-token values in an array or object, joined by `/` (`['~/.docker', 'config.json']`, `{ dir: 'repo/.git',
+ * file: 'config' }`). Prose and option names (`max_tokens`, "how do tokens work") are not path-like.
+ */
+export function secretPathIn(args: unknown): string | undefined {
+  let found: string | undefined
+  const check = (value: string): boolean => {
+    found = pathTokens(value).find(secretToken)
+    return found !== undefined
+  }
+  /**
+   * Neighbouring single-token strings joined as one path, when the first is path-like and the join names a secret
+   * that the second alone does not (`repo/.git` + `config`), so `{ owner: 'me', repo: 'token-cli' }` stays clear.
+   */
+  const checkJoined = (values: unknown[]): boolean => {
+    const parts = values.filter((v): v is string => typeof v === 'string' && v !== '' && !/\s/.test(v))
+    for (let i = 0; i + 1 < parts.length; i++) {
+      const [first, second] = [parts[i], parts[i + 1]]
+      if (!isPathLike(first) || pathForms(second).some((form) => SECRET_PATH.test(form))) continue
+      const joined = `${first.replace(/[\\/]+$/, '')}/${second}`
+      if (secretToken(joined)) {
+        found = joined
+        return true
+      }
+    }
+    return false
+  }
+  const walk = (value: unknown, depth: number): boolean => {
+    if (depth > MAX_ARG_DEPTH || value == null) return false
+    if (typeof value === 'string') return check(value)
+    if (typeof value !== 'object') return false
+    const items = Array.isArray(value) ? value : Object.values(value as Record<string, unknown>)
+    for (const item of items) if (walk(item, depth + 1)) return true
+    return checkJoined(items)
+  }
+  walk(args, 0)
+  return found
+}
 /** Programs that only read what they are given (paths are checked separately). */
 const READ_ONLY_PROGRAMS = new Set([
   'ls',
@@ -279,6 +354,8 @@ const READ_ONLY_PROGRAMS = new Set([
   'type',
 ])
 const FILE_READERS = new Set(['cat', 'head', 'wc', 'stat'])
+/** Programs whose operands are paths; a read-only call to them may pass flags and numbers only. */
+const OPERAND_FREE_PROGRAMS = new Set(['ls', 'du', ...FILE_READERS, 'tail', 'grep', 'find'])
 const RECURSIVE_FLAG = /^-(?:[a-zA-Z]*[rR][a-zA-Z]*|-recursive)$|^--directories=recurse$|^-d$/
 const FIND_UNSAFE = /^-(?:delete|exec\w*|ok\w*|fprint\w*|fls)$/
 const TAIL_FOLLOW = /^-(?:[a-zA-Z]*[fF][a-zA-Z]*|-follow\b.*|-retry|-pid\b.*)$/
@@ -327,6 +404,10 @@ function isReadOnlyCommandText(text: string): boolean {
   if (!SAFE_COMMAND_TEXT.test(checked)) return false
   if (!program) return false
   if (!rest.every(isSafeOperand)) return false
+  // The working folder is unknown (it may be home), so these read no named path: flags and numbers only.
+  if (OPERAND_FREE_PROGRAMS.has(program) && !rest.every((arg) => arg.startsWith('-') || /^\d+$/.test(arg))) {
+    return false
+  }
   if (READ_ONLY_PROGRAMS.has(program)) return program !== 'ls' || !rest.some((arg) => RECURSIVE_FLAG.test(arg))
   if (FILE_READERS.has(program)) return true
   if (program === 'tail') return !rest.some((arg) => TAIL_FOLLOW.test(arg))
@@ -377,6 +458,7 @@ export function getArgsRiskTier(args: unknown): ToolRiskTier {
   const texts = argTexts(args)
   classifyPaths(texts, signals)
   classifyArgs(texts, signals)
+  pushSecretPath(args, signals)
   return signals.reduce<ToolRiskTier>((max, s) => (tierRank(s.tier) > tierRank(max) ? s.tier : max), ToolRiskTier.LOW)
 }
 
@@ -486,6 +568,10 @@ export function classifyToolRisk(
     if (critical.length > 0) {
       return { tier: ToolRiskTier.CRITICAL, signals: critical }
     }
+    // A secret path (`~/.aws/credentials`) is at least HIGH, even for a built-in.
+    const secretSignals: RiskSignal[] = []
+    pushSecretPath(args, secretSignals)
+    if (secretSignals.length > 0) return { tier: ToolRiskTier.HIGH, signals: secretSignals }
     return {
       tier: ToolRiskTier.LOW,
       signals: [{ source: 'intent', tier: ToolRiskTier.LOW, matched: toolName }],
@@ -502,6 +588,7 @@ export function classifyToolRisk(
     classifyPaths(texts, signals)
     classifyArgs(texts, signals)
   }
+  pushSecretPath(args, signals)
 
   // Also check paths that might appear in the description
   classifyPaths([intentText], signals)
@@ -554,6 +641,12 @@ function classifyPaths(texts: string[], signals: RiskSignal[]): void {
   pushFirstMatch(texts, CRITICAL_PATH_PATTERNS, 'path', ToolRiskTier.CRITICAL, signals)
   pushFirstMatch(texts, HIGH_PATH_PATTERNS, 'path', ToolRiskTier.HIGH, signals)
   pushFirstMatch(texts, MEDIUM_PATH_PATTERNS, 'path', ToolRiskTier.MEDIUM, signals)
+}
+
+/** A secret path in the args rates HIGH. */
+function pushSecretPath(args: unknown, signals: RiskSignal[]): void {
+  const matched = secretPathIn(args)
+  if (matched !== undefined) signals.push({ source: 'path', tier: ToolRiskTier.HIGH, matched })
 }
 
 function classifyArgs(texts: string[], signals: RiskSignal[]): void {

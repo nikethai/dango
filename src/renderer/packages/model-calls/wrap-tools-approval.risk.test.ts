@@ -88,8 +88,6 @@ describe('wrapToolsWithApproval with the real risk engine', () => {
     { command: 'git status' },
     { command: 'git log --oneline -5' },
     { command: 'git log --format=%h' },
-    { command: 'cat README.md' },
-    { command: 'grep -n foo src/app.ts' },
     { command: 'ls', args: ['-la'], cwd: '.' },
   ])('a read-only command %j runs without a sheet', async (args) => {
     getScopeGrantMock.mockReturnValue(undefined)
@@ -125,6 +123,10 @@ describe('wrapToolsWithApproval with the real risk engine', () => {
     { command: 'echo $OPENAI_API_KEY' },
     { command: 'cat /etc/passwd' },
     { command: 'tail -f log.txt' },
+    { command: 'cat README.md' },
+    { command: 'grep -n foo src/app.ts' },
+    { command: 'cat .zshrc' },
+    { command: 'ls -la .ssh' },
     { command: 'cat C:/Users/me/.bash_history' },
     { command: 'ls C:/' },
     { command: 'ls', cwd: 'C:/' },
@@ -193,6 +195,61 @@ describe('wrapToolsWithApproval with the real risk engine', () => {
     await tool.execute(args, {})
     expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
     expect(execute).not.toHaveBeenCalled()
+  })
+
+  describe('secret paths never take a grant', () => {
+    function readFile() {
+      const execute = vi.fn(async () => ({ ok: true }))
+      const tools = { mcp__fs__read_file: { description: 'Read a file', execute } }
+      const tool = wrapToolsWithApproval('sess-1', tools as never, { scopeId: 's1' }).mcp__fs__read_file as Exec
+      return { execute, tool }
+    }
+
+    beforeEach(() => {
+      getScopeGrantMock.mockImplementation((scopeId: string, toolName: string) =>
+        scopeId === 's1' && toolName === 'mcp__fs__read_file'
+          ? { toolName, riskTier: ToolRiskTier.HIGH, grantedAt: 1 }
+          : undefined
+      )
+    })
+
+    it.each(['~/.aws/credentials', '~/.env', '~/.netrc', '~/.npmrc', '~/.kube/config'])(
+      'a HIGH scope grant does not cover %s: it asks without Always',
+      async (path) => {
+        requestToolPermissionMock.mockResolvedValue('always')
+        const { execute, tool } = readFile()
+        await tool.execute({ path }, {})
+        expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+        expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(
+          expect.objectContaining({ toolName: 'mcp__fs__read_file', riskTier: ToolRiskTier.HIGH, allowAlways: false })
+        )
+        expect(execute).toHaveBeenCalledTimes(1)
+        expect(addScopeGrantMock).not.toHaveBeenCalled()
+      }
+    )
+
+    it('/etc/hosts (HIGH, not secret) still runs under the grant', async () => {
+      const { execute, tool } = readFile()
+      await tool.execute({ path: '/etc/hosts' }, {})
+      expect(requestToolPermissionMock).not.toHaveBeenCalled()
+      expect(execute).toHaveBeenCalledTimes(1)
+      expect(addAuditEntryMock).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: 'scope', decision: 'auto-approve' })
+      )
+    })
+
+    it('a built-in read_video of ~/.aws/credentials asks, without Always', async () => {
+      requestToolPermissionMock.mockResolvedValue('deny')
+      const execute = vi.fn(async () => ({ ok: true }))
+      const tools = { read_video: { description: 'Extract frames from video', execute } }
+      const tool = wrapToolsWithApproval('sess-1', tools as never, { scopeId: 's1', builtin: true }).read_video as Exec
+      await tool.execute({ path: '~/.aws/credentials' }, {})
+      expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+      expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({ riskTier: ToolRiskTier.HIGH, allowAlways: false })
+      )
+      expect(execute).not.toHaveBeenCalled()
+    })
   })
 
   it('a Dango built-in read_video_url runs without asking', async () => {

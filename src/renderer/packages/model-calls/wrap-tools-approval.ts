@@ -19,7 +19,7 @@ import {
   type ToolApprovalAuditEntry,
   toolApprovalStore,
 } from '@/stores/toolApprovalStore'
-import { getToolRiskTier, isReadOnlyCommand } from '../tools/risk-engine'
+import { getToolRiskTier, isReadOnlyCommand, secretPathIn } from '../tools/risk-engine'
 
 const TOOL_EXECUTE_TIMEOUT_MS = 90_000
 
@@ -122,9 +122,12 @@ export function wrapToolsWithApproval(
           execute: async (args: unknown, context) => {
             // Args can raise the tier (`rm -rf ~/`, `~/.ssh/id_rsa`): classify this call, never below the wrap tier.
             const riskTier = maxTier(wrapTier, getToolRiskTier(toolName, description, args, riskOpts))
-            // R9: never Always, and never a grant, for tools that always ask or CRITICAL calls.
+            // R9: never Always, and never a grant, for tools that always ask, CRITICAL calls or secret paths.
             const grantable =
-              canAlways(toolName, riskTier, description) && riskTier !== ToolRiskTier.CRITICAL && !asksEveryTime
+              canAlways(toolName, riskTier, description) &&
+              riskTier !== ToolRiskTier.CRITICAL &&
+              !asksEveryTime &&
+              !secretPathIn(args)
             const fingerprint = workspaceApprovalFingerprint(toolName, args) ?? undefined
             const audit = (scope: ToolApprovalAuditEntry['scope'], decision: ToolApprovalAuditEntry['decision']) =>
               toolApprovalStore.getState().addAuditEntry({
