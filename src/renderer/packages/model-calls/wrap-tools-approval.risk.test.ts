@@ -127,6 +127,7 @@ describe('wrapToolsWithApproval with the real risk engine', () => {
     { command: 'grep -n foo src/app.ts' },
     { command: 'cat .zshrc' },
     { command: 'ls -la .ssh' },
+    { command: 'wc --files0-from=.terraformrc' },
     { command: 'cat C:/Users/me/.bash_history' },
     { command: 'ls C:/' },
     { command: 'ls', cwd: 'C:/' },

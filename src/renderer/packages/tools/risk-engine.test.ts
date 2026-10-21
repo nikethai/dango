@@ -475,6 +475,81 @@ describe('secret paths', () => {
   })
 })
 
+describe('secret paths: fix round', () => {
+  const deep = (inner: unknown, levels: number): unknown => (levels === 0 ? inner : { a: deep(inner, levels - 1) })
+
+  it.each([8, 9])('a path nested %i deep fails safe', (levels) => {
+    for (const path of ['~/.kube/config', '~/.aws/credentials']) {
+      const args = deep({ path }, levels)
+      expect(secretPathIn(args)).toBeDefined()
+      expect(getToolRiskTier('mcp__fs__read_file', 'Read a file', args)).toBe(ToolRiskTier.HIGH)
+      expect(getToolRiskTier('read_video', 'Extract frames', args, { builtin: true })).toBe(ToolRiskTier.HIGH)
+    }
+  })
+
+  it.each([
+    'src/renderer/packages/token-estimation/index.ts',
+    'https://example.com/blog/secret-santa-ideas',
+    'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens',
+    'https://platform.openai.com/tokenizer',
+  ])('%s is not a secret path', (value) => {
+    expect(secretPathIn({ value })).toBeUndefined()
+  })
+
+  it('a built-in parse_link of a web page about secrets stays LOW', () => {
+    expect(
+      getToolRiskTier(
+        'parse_link',
+        'Parse a URL',
+        { url: 'https://example.com/blog/secret-santa-ideas' },
+        { builtin: true }
+      )
+    ).toBe(ToolRiskTier.LOW)
+  })
+
+  it.each([
+    '/run/secrets/db_password',
+    '/var/run/secrets/kubernetes.io/serviceaccount/token',
+    '~/.config/gcloud/credentials.db',
+    'http://localhost:8080/files/.aws/credentials',
+    'http://localhost/files/secret',
+    'http://127.0.0.1/tokens/',
+    'https://example.com/.env',
+    '~/.git-credentials',
+    '~/.vault-token',
+    '~/.terraformrc',
+    '~/.password-store/email.gpg',
+    '~/Library/Keychains/login.keychain-db',
+    '~/.azure/azureProfile.json',
+    '%USERPROFILE%\\.%73sh\\config',
+  ])('%s is still a secret path', (value) => {
+    expect(secretPathIn({ value })).toBeDefined()
+  })
+
+  it('joins split paths in any order', () => {
+    expect(secretPathIn({ file: 'config.json', dir: '~/.docker' })).toBeDefined()
+    expect(secretPathIn({ dir: '~/.docker', enc: 'utf8', file: 'config.json' })).toBeDefined()
+    expect(secretPathIn({ owner: 'me', repo: 'token-cli' })).toBeUndefined()
+    expect(secretPathIn({ dir: 'src', file: 'app.ts' })).toBeUndefined()
+  })
+
+  it.each([
+    'wc --files0-from=notes.txt',
+    'wc --files0=notes.txt',
+    'wc --files0-from=.terraformrc',
+    'du --files0-from=notes.txt',
+    'du --files0=x',
+    'du --exclude-from=x',
+    'grep -f.gitconfig',
+  ])('%s asks: a flag may not carry a file name', (command) => {
+    expect(isReadOnlyCommand({ command })).toBe(false)
+  })
+
+  it.each(['du --max-depth=1', 'head --lines=5', 'head -c 100', 'ls -la', 'du -sh'])('%s is read-only', (command) => {
+    expect(isReadOnlyCommand({ command })).toBe(true)
+  })
+})
+
 describe('isReadOnlyCommand', () => {
   it.each([
     'ls',

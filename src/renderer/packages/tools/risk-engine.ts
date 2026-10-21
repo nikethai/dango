@@ -263,7 +263,33 @@ const SAFE_COMMAND_TEXT = /^[A-Za-z0-9 _\-.,/:=+]*$/
 const GIT_FORMAT_FLAG = /^--(?:format|pretty)=/
 /** Paths that hold credentials or keys; reading one always asks. */
 const SECRET_PATH =
-  /(?:^|[/:=])\.env|\.aws(?:\/|$)|\.ssh(?:\/|$)|\.gnupg(?:\/|$)|\.kube(?:\/|$)|\.docker\/config\.json|\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.config\/gh(?:\/|$)|\.config\/hub|\.config\/rclone|\.bash_history|\.zsh_history|(?:^|[/:=])\.history|\.pgpass|\.s3cfg|\.boto|credentials|\.pem$|\.key$|(?:^|[/:])id_|secret|token|(?:^|[/:=])\.(?:zshrc|bashrc|bash_profile|zprofile|zshenv|profile)$|\.git\/config$|\.yarnrc|\.m2\/settings\.xml/i
+  /(?:^|[/:=])\.env|\.aws(?:\/|$)|\.ssh(?:\/|$)|\.gnupg(?:\/|$)|\.kube(?:\/|$)|\.docker\/config\.json|\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.config\/gh(?:\/|$)|\.config\/hub|\.config\/rclone|\.bash_history|\.zsh_history|(?:^|[/:=])\.history|\.pgpass|\.s3cfg|\.boto|\.pem$|\.key$|(?:^|[/:])id_|(?:^|[/:=])\.(?:zshrc|bashrc|bash_profile|zprofile|zshenv|profile)$|\.git\/config$|\.yarnrc|\.m2\/settings\.xml|\.terraformrc$|\.password-store(?:\/|$)|(?:^|\/)library\/keychains(?:\/|$)|\.azure(?:\/|$)/i
+/** Words that mark a secret file, tested only on a path's last segment (`~/.vault-token`, `credentials.db`). */
+const SECRET_WORD = /secret|token|credentials/i
+/** A whole directory segment that holds secrets (`/run/secrets/db_password`). */
+const SECRET_DIR = /^\.?(?:secrets?|tokens?|credentials?)$/i
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
+
+/** An `http(s)://` URL whose host is not this machine: a web page, never a local secret file. */
+function isRemoteWebUrl(form: string): boolean {
+  const match = /^https?:\/\/([^/?#]*)/i.exec(form)
+  if (!match) return false
+  const authority = match[1].replace(/^.*@/, '').toLowerCase()
+  const host = authority.startsWith('[') ? authority.slice(0, authority.indexOf(']') + 1) : authority.split(':')[0]
+  return !LOOPBACK_HOSTS.has(host)
+}
+
+/**
+ * True when a path (with `/` separators) names a secret: any `SECRET_PATH` pattern, or, except on a remote web URL,
+ * a secret word in its last segment or a directory segment named `secrets`, `tokens` or `credentials`.
+ */
+function isSecretForm(form: string): boolean {
+  if (SECRET_PATH.test(form)) return true
+  if (isRemoteWebUrl(form)) return false
+  const segments = form.split('/').filter(Boolean)
+  const last = segments.pop() ?? ''
+  return SECRET_WORD.test(last) || segments.some((segment) => SECRET_DIR.test(segment))
+}
 /** Trailing punctuation that ends a sentence, not a path (`see ~/.netrc.`, `~/.zshrc:`). */
 const TOKEN_EDGE = /[.:!?]+$/
 /** A token that looks like a path: a separator, a leading `~` or `.`, or a file extension. */
@@ -274,18 +300,14 @@ function isPathLike(token: string): boolean {
 /** The token as a secret-path test sees it: `\` read as `/`, and percent-encoding decoded (`%2Essh`). */
 function pathForms(token: string): string[] {
   const forms = [token.replace(/\\/g, '/')]
-  if (token.includes('%')) {
-    try {
-      forms.push(decodeURIComponent(token).replace(/\\/g, '/'))
-    } catch {
-      // Not percent-encoding (`%USERPROFILE%`): the plain form is tested.
-    }
-  }
+  // One escape at a time, so a stray `%` (`%USERPROFILE%\.%73sh`) does not stop the rest from decoding.
+  const decoded = token.replace(/%([0-9a-f]{2})/gi, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
+  if (decoded !== token) forms.push(decoded.replace(/\\/g, '/'))
   return forms
 }
 
 function secretToken(token: string): boolean {
-  return isPathLike(token) && pathForms(token).some((form) => SECRET_PATH.test(form))
+  return isPathLike(token) && pathForms(token).some(isSecretForm)
 }
 
 /**
@@ -299,11 +321,17 @@ function pathTokens(value: string): string[] {
     .filter(Boolean)
 }
 
+/** What `secretPathIn` reports for arguments nested deeper than it reads: they ask, like a secret. */
+const TOO_DEEP = '(arguments nested too deep)'
+/** At most this many single-token strings per array or object are joined in pairs. */
+const MAX_JOIN_PARTS = 64
+
 /**
  * The first path-like token in any string value of `args` (never a key) that names a secret file: `~/.aws/credentials`,
- * `C:\\Users\\me\\.ssh\\config`, `file:///home/me/.kube/config`. Also tries a path split across args: two neighbouring
- * single-token values in an array or object, joined by `/` (`['~/.docker', 'config.json']`, `{ dir: 'repo/.git',
- * file: 'config' }`). Prose and option names (`max_tokens`, "how do tokens work") are not path-like.
+ * `C:\\Users\\me\\.ssh\\config`, `file:///home/me/.kube/config`. Also tries a path split across args: two single-token
+ * values of the same array or object, in either order, joined by `/` (`{ file: 'config.json', dir: '~/.docker' }`).
+ * Prose and option names (`max_tokens`, "how do tokens work") are not path-like. Arguments nested deeper than
+ * `MAX_ARG_DEPTH` are not read, so they count as a hit.
  */
 export function secretPathIn(args: unknown): string | undefined {
   let found: string | undefined
@@ -312,24 +340,37 @@ export function secretPathIn(args: unknown): string | undefined {
     return found !== undefined
   }
   /**
-   * Neighbouring single-token strings joined as one path, when the first is path-like and the join names a secret
-   * that the second alone does not (`repo/.git` + `config`), so `{ owner: 'me', repo: 'token-cli' }` stays clear.
+   * Two single-token strings joined as one path, when the first is path-like and the join names a secret that the
+   * second alone does not (`repo/.git` + `config`), so `{ owner: 'me', repo: 'token-cli' }` stays clear.
    */
   const checkJoined = (values: unknown[]): boolean => {
-    const parts = values.filter((v): v is string => typeof v === 'string' && v !== '' && !/\s/.test(v))
-    for (let i = 0; i + 1 < parts.length; i++) {
-      const [first, second] = [parts[i], parts[i + 1]]
-      if (!isPathLike(first) || pathForms(second).some((form) => SECRET_PATH.test(form))) continue
-      const joined = `${first.replace(/[\\/]+$/, '')}/${second}`
-      if (secretToken(joined)) {
-        found = joined
-        return true
+    const parts = values
+      .filter((v): v is string => typeof v === 'string' && v !== '' && !/\s/.test(v))
+      .slice(0, MAX_JOIN_PARTS)
+    const seconds = parts.filter((part) => !pathForms(part).some(isSecretForm))
+    for (const first of parts) {
+      if (!isPathLike(first)) continue
+      for (const second of seconds) {
+        if (second === first) continue
+        const joined = `${first.replace(/[\\/]+$/, '')}/${second}`
+        if (secretToken(joined)) {
+          found = joined
+          return true
+        }
       }
     }
     return false
   }
   const walk = (value: unknown, depth: number): boolean => {
-    if (depth > MAX_ARG_DEPTH || value == null) return false
+    if (value == null) return false
+    if (depth > MAX_ARG_DEPTH) {
+      // Not read, so not known to be safe.
+      if ((typeof value === 'string' && value !== '') || typeof value === 'object') {
+        found = TOO_DEEP
+        return true
+      }
+      return false
+    }
     if (typeof value === 'string') return check(value)
     if (typeof value !== 'object') return false
     const items = Array.isArray(value) ? value : Object.values(value as Record<string, unknown>)
@@ -356,6 +397,8 @@ const READ_ONLY_PROGRAMS = new Set([
 const FILE_READERS = new Set(['cat', 'head', 'wc', 'stat'])
 /** Programs whose operands are paths; a read-only call to them may pass flags and numbers only. */
 const OPERAND_FREE_PROGRAMS = new Set(['ls', 'du', ...FILE_READERS, 'tail', 'grep', 'find'])
+/** A short flag cluster (`-la`), a long flag with at most a numeric value (`--lines=5`), or a bare number. */
+const OPERAND_FREE_ARG = /^(?:-[A-Za-z0-9]+|--[a-z0-9-]+(?:=\d+)?|\d+)$/
 const RECURSIVE_FLAG = /^-(?:[a-zA-Z]*[rR][a-zA-Z]*|-recursive)$|^--directories=recurse$|^-d$/
 const FIND_UNSAFE = /^-(?:delete|exec\w*|ok\w*|fprint\w*|fls)$/
 const TAIL_FOLLOW = /^-(?:[a-zA-Z]*[fF][a-zA-Z]*|-follow\b.*|-retry|-pid\b.*)$/
@@ -382,7 +425,8 @@ function isSafeOperand(token: string): boolean {
     // Absolute (`/etc`), UNC (`//server`), drive-letter (`C:`, `c:/`) and parent (`..`) paths leave the folder.
     if (part.startsWith('/') || /^[A-Za-z]:/.test(part) || part.startsWith('..') || part.includes('/..')) return false
   }
-  return !SECRET_PATH.test(token)
+  // Broader than `secretPathIn`: any secret word anywhere in an operand asks.
+  return !SECRET_PATH.test(token) && !SECRET_WORD.test(token)
 }
 
 function isReadOnlyGit(rest: string[]): boolean {
@@ -405,7 +449,8 @@ function isReadOnlyCommandText(text: string): boolean {
   if (!program) return false
   if (!rest.every(isSafeOperand)) return false
   // The working folder is unknown (it may be home), so these read no named path: flags and numbers only.
-  if (OPERAND_FREE_PROGRAMS.has(program) && !rest.every((arg) => arg.startsWith('-') || /^\d+$/.test(arg))) {
+  // A flag may carry a number (`--max-depth=1`) but never a name: `wc --files0-from=notes.txt` prints the file.
+  if (OPERAND_FREE_PROGRAMS.has(program) && !rest.every((arg) => OPERAND_FREE_ARG.test(arg))) {
     return false
   }
   if (READ_ONLY_PROGRAMS.has(program)) return program !== 'ls' || !rest.some((arg) => RECURSIVE_FLAG.test(arg))
