@@ -20,6 +20,11 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string, v?: Record<string, unknown>) => k.replace('{{n}}', String(v?.n)) }),
 }))
 vi.mock('@/components/brand/Mascot', () => ({ Mascot: () => null }))
+vi.mock('@/components/first-run/ModelStep', () => ({
+  ModelStep: ({ modelOnly, from }: { modelOnly: boolean; from?: string }) => (
+    <div data-testid="model-step" data-model-only={String(modelOnly)} data-from={from ?? ''} />
+  ),
+}))
 vi.mock('@/packages/first-run', async () => {
   const actual = await vi.importActual<typeof import('@/packages/first-run/firstRun')>('@/packages/first-run/firstRun')
   return {
@@ -46,17 +51,27 @@ describe('/first-run', () => {
     expect(validate({ from: 'https://evil.example' })).toEqual({ from: undefined })
   })
 
-  it('shows the step card', () => {
+  it('step 1 renders the model step', () => {
     render(<Page />)
-    expect(screen.getByRole('heading', { level: 1, name: 'Sign in to a model' })).toBeTruthy()
-    expect(screen.getByLabelText('Step 1 of 5')).toBeTruthy()
+    const step = screen.getByTestId('model-step')
+    expect(step.getAttribute('data-model-only')).toBe('false')
     expect(h.navigate).not.toHaveBeenCalled()
+  })
+
+  it('step 1 with modelOnly passes modelOnly and from to the model step', () => {
+    h.search = { from: '/session/abc' }
+    h.resolution = { show: true, step: 1, modelOnly: true }
+    render(<Page />)
+    const step = screen.getByTestId('model-step')
+    expect(step.getAttribute('data-model-only')).toBe('true')
+    expect(step.getAttribute('data-from')).toBe('/session/abc')
   })
 
   it('shows the resolved step', () => {
     h.resolution = { show: true, step: 3, modelOnly: false }
     render(<Page />)
     expect(screen.getByRole('heading', { level: 1, name: 'Name this scope' })).toBeTruthy()
+    expect(screen.getByLabelText('Step 3 of 5')).toBeTruthy()
   })
 
   it('writes no record itself (the gate in __root does)', () => {

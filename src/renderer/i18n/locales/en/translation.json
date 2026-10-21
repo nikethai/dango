@@ -1929,5 +1929,16 @@
   "(This answer used email or tasks kept on this device, so it is not shared with this model.)": "(This answer used email or tasks kept on this device, so it is not shared with this model.)",
   "Step {{n}} of 5": "Step {{n}} of 5",
   "Name this scope": "Name this scope",
-  "How much should it do on its own?": "How much should it do on its own?"
+  "How much should it do on its own?": "How much should it do on its own?",
+  "Dango uses providers you already have. Nothing is sent anywhere until you ask a question.": "Dango uses providers you already have. Nothing is sent anywhere until you ask a question.",
+  "Continue with Google": "Continue with Google",
+  "Gemini. Google receives your questions when you ask them.": "Gemini. Google receives your questions when you ask them.",
+  "Continue with ChatGPT": "Continue with ChatGPT",
+  "Codex models. OpenAI receives your questions when you ask them.": "Codex models. OpenAI receives your questions when you ask them.",
+  "I have a key": "I have a key",
+  "OpenAI, Anthropic, Gemini, OpenRouter, Ollama and more.": "OpenAI, Anthropic, Gemini, OpenRouter, Ollama and more.",
+  "Provider": "Provider",
+  "API key": "API key",
+  "Ollama and other providers": "Ollama and other providers",
+  "Dango could not reach {{provider}}.": "Dango could not reach {{provider}}."
 }

@@ -84,3 +84,62 @@
 .dg-first-run__footer:empty {
   display: none;
 }
+
+/* FR1: sign in to a model. Choices are a radiogroup of buttons; the chosen one's panel renders below. */
+
+.dg-first-run__choices {
+  display: grid;
+  gap: var(--dango-space-2);
+}
+
+.dg-first-run__choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--dango-space-1);
+  min-height: 44px;
+  padding: var(--dango-space-3) var(--dango-space-4);
+  border: 1px solid var(--dango-line);
+  border-radius: var(--dango-radius-md);
+  background: var(--dango-raised);
+  color: var(--dango-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dg-first-run__choice[aria-checked="true"] {
+  border-color: var(--dango-green);
+  background: var(--dango-green-wash);
+}
+
+.dg-first-run__choice-title {
+  font-weight: 600;
+}
+
+.dg-first-run__choice-line {
+  color: var(--dango-muted);
+}
+
+.dg-first-run__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-3);
+}
+
+.dg-first-run__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dango-space-3);
+  color: var(--dango-danger);
+}
+
+.dg-first-run__other {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
