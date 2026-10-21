@@ -26,6 +26,12 @@ export interface Storage {
   getAllStoreValues(): Promise<{ [key: string]: any }>
   getAllStoreKeys(): Promise<string[]>
   setAllStoreValues(data: { [key: string]: any }): Promise<void>
+  /**
+   * The stored text behind `key`, unparsed, or `null` when nothing is stored. Lets a reader tell a key that
+   * holds `null` from one whose text does not parse (both read `null` from `getStoreValue`). Optional: a
+   * platform without it cannot tell, and readers fail closed. Desktop file-backed keys return `null`.
+   */
+  getStoreRaw?(key: string): Promise<string | null>
 }
 
 export interface Platform extends Storage {

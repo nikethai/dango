@@ -9,7 +9,6 @@ import Tabs from '@mui/material/Tabs'
 import Typography from '@mui/material/Typography'
 import { useTheme } from '@mui/material/styles'
 import type { Settings } from '@shared/types'
-import { uniqBy } from 'lodash'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Accordion, AccordionDetails, AccordionSummary } from '@/components/Accordion'
@@ -18,7 +17,7 @@ import { ShortcutConfig } from '@/components/Shortcut'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import platform, { platformCapabilities } from '@/platform'
 import storage, { StorageKey } from '@/storage'
-import { omitDeviceOnlyKeys } from '@/storage/exportFilter'
+import { omitDeviceOnlyKeys, settingsImportMerge } from '@/storage/exportFilter'
 import { migrateOnData } from '@/stores/migration'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 
@@ -160,7 +159,7 @@ function ExportAndImport(props: { onCancel: () => void }) {
   const importInputRef = useRef<HTMLInputElement>(null)
   const [importTips, setImportTips] = useState('')
   const onExport = async () => {
-    // Client mail and pilot records stay on this device.
+    // Client mail, pilot records, knowledge and sources stay on this device.
     const data = omitDeviceOnlyKeys(await storage.getAll())
     delete data[StorageKey.Configs] // uuid
     ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // (legacy)
@@ -223,18 +222,8 @@ function ExportAndImport(props: { onCancel: () => void }) {
           )
 
           const previousData = await storage.getAll()
-          // (legacy comment)
-          await storage.setAll({
-            ...previousData, // importData ，
-            ...omitDeviceOnlyKeys(importData),
-            [StorageKey.ChatSessionsList]: uniqBy(
-              [
-                ...(previousData[StorageKey.ChatSessionsList] || []),
-                ...(importData[StorageKey.ChatSessionsList] || []),
-              ],
-              'id'
-            ),
-          })
+          // Device-only keys (client mail, knowledge, sources) are neither imported nor written back.
+          await storage.setAll(settingsImportMerge(previousData, importData))
           props.onCancel() // ，、
           platform.relaunch() // (legacy)
         } catch (err) {

@@ -16,12 +16,15 @@ type KnowledgeStoreState = {
   migration: KnowledgeMigrationState
   /** Approved items whose content no longer matches their approval; answers leave them out (set by the health check). */
   unverified: Set<string>
+  /** The last read found a stored document that does not read; nothing is saved until it does or the user starts over. */
+  unreadable: boolean
 }
 
 export const knowledgeStore = createStore<KnowledgeStoreState>()(() => ({
   state: emptyKnowledgeState(),
   migration: 'unknown',
   unverified: new Set<string>(),
+  unreadable: false,
 }))
 
 export type CommitResult = {
@@ -41,6 +44,8 @@ export type KnowledgeCommitListener = (
 type KnowledgeStorage = {
   /** The stored value or `null`; never writes a default (see `BaseStorage.readItem`). */
   readItem(key: string): Promise<unknown>
+  /** The stored text, unparsed; `undefined` when the platform cannot tell (see `BaseStorage.readRawItem`). */
+  readRawItem?(key: string): Promise<string | null | undefined>
   getAllKeys(): Promise<string[]>
   setItemNow(key: string, value: unknown): Promise<void>
 }
@@ -63,16 +68,21 @@ async function getStorage(): Promise<KnowledgeStorage> {
 const enqueue = createLockedQueue('dango:knowledge')
 
 /**
- * The stored document, read without a default write. A missing key is an empty document. A value that is not
- * an object, or a listed key that reads `null` (the platform could not parse it), throws
+ * The stored document, read without a default write. A missing key is an empty document, and so is a listed key
+ * whose stored text is `null` or empty (an old settings import wrote `null` there). A value that is not an object,
+ * or a listed key that reads `null` while its text is anything else (or the platform cannot show the text), throws
  * `KnowledgeUnreadableError`: a load then keeps the last state, and a commit (which reads first) writes nothing,
- * so a corrupt document is never replaced by an empty one.
+ * so a corrupt document is never replaced by an empty one unless the user starts over (`startKnowledgeOver`).
  */
 async function readState(storage: KnowledgeStorage): Promise<KnowledgeState> {
   const raw = await storage.readItem(KEY)
   if (raw === null || raw === undefined) {
-    if ((await storage.getAllKeys()).includes(KEY)) throw new KnowledgeUnreadableError('stored value does not parse')
-    return emptyKnowledgeState()
+    if (!(await storage.getAllKeys()).includes(KEY)) return emptyKnowledgeState()
+    const text = await storage.readRawItem?.(KEY)
+    if (text === null || (typeof text === 'string' && (text.trim() === '' || text.trim() === 'null'))) {
+      return emptyKnowledgeState()
+    }
+    throw new KnowledgeUnreadableError('stored value does not parse')
   }
   if (typeof raw !== 'object' || Array.isArray(raw)) throw new KnowledgeUnreadableError('not an object')
   return KnowledgeStateSchema.parse(raw)
@@ -151,6 +161,18 @@ function restoreCollection<C extends Collection>(
 
 // ---- Load, commit, listen ----
 
+/** `readState`, recording in the store whether the stored document reads. */
+async function readStateFlagged(storage: KnowledgeStorage): Promise<KnowledgeState> {
+  try {
+    const state = await readState(storage)
+    if (knowledgeStore.getState().unreadable) knowledgeStore.setState({ unreadable: false })
+    return state
+  } catch (error) {
+    if (error instanceof KnowledgeUnreadableError) knowledgeStore.setState({ unreadable: true })
+    throw error
+  }
+}
+
 let loaded = false
 let loading: Promise<void> | null = null
 const listeners = new Set<KnowledgeCommitListener>()
@@ -164,7 +186,7 @@ export function ensureKnowledgeLoaded(opts?: { fresh?: boolean }): Promise<void>
   if (loading && !opts?.fresh) return loading
   const load = enqueue(async () => {
     const storage = await getStorage()
-    const state = await readState(storage)
+    const state = await readStateFlagged(storage)
     const migration = await readMigration(storage)
     knowledgeStore.setState((s) => ({ state, migration: migration ?? s.migration }))
     loaded = true
@@ -237,7 +259,7 @@ async function runCommit(
 ): Promise<CommitResult> {
   const { pre, after, before } = await enqueue(async () => {
     const storage = await getStorage()
-    const before = await readState(storage)
+    const before = await readStateFlagged(storage)
     // The recipe's return value never reaches immer: `(d) => d.items.push(x)` returns a number, and an
     // async recipe returns a Promise; immer would treat either as a replacement document.
     let returned: unknown
@@ -274,6 +296,29 @@ async function runCommit(
     }
   }
   return result
+}
+
+/**
+ * Replaces a stored document that does not read with an empty one, after the user confirmed. Runs on the
+ * knowledge lock and re-reads first: a document that reads (or a missing one) is never touched, and it resolves
+ * `false`. Resolves `true` when it wrote the empty document.
+ */
+export function startKnowledgeOver(): Promise<boolean> {
+  return enqueue(async () => {
+    const storage = await getStorage()
+    try {
+      await readStateFlagged(storage)
+      return false
+    } catch (error) {
+      if (!(error instanceof KnowledgeUnreadableError)) throw error
+    }
+    const empty = emptyKnowledgeState()
+    await storage.setItemNow(KEY, empty)
+    knowledgeStore.setState({ state: empty, unverified: new Set(), unreadable: false })
+    loaded = true
+    log.info('Unreadable knowledge replaced with an empty document (the user chose Start over)')
+    return true
+  })
 }
 
 /** What the one-time move of old memory stores under `knowledge-migration` when it finishes. */
@@ -316,5 +361,10 @@ export function _resetKnowledgeForTests(): void {
   loaded = false
   loading = null
   listeners.clear()
-  knowledgeStore.setState({ state: emptyKnowledgeState(), migration: 'unknown', unverified: new Set() })
+  knowledgeStore.setState({
+    state: emptyKnowledgeState(),
+    migration: 'unknown',
+    unverified: new Set(),
+    unreadable: false,
+  })
 }

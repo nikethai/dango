@@ -17,3 +17,14 @@ describe('TestPlatform quick window shell', () => {
     expect(platform.quickHidden).toBe(2)
   })
 })
+
+describe('TestPlatform raw store reads', () => {
+  it('returns the stored value as text, a stored null as "null", and null when nothing is stored', async () => {
+    const platform = new TestPlatform()
+    await platform.setStoreValue('knowledge', { version: 1 })
+    await platform.setStoreValue('empty', null)
+    expect(await platform.getStoreRaw('knowledge')).toBe('{"version":1}')
+    expect(await platform.getStoreRaw('empty')).toBe('null')
+    expect(await platform.getStoreRaw('missing')).toBeNull()
+  })
+})

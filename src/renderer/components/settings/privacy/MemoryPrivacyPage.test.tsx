@@ -35,6 +35,10 @@ vi.mock('@/packages/knowledge/proposals', async (orig) => {
     allowSuggestAgain: (id: string) => (h.failAllow ? Promise.reject(new Error('boom')) : real.allowSuggestAgain(id)),
   }
 })
+vi.mock('@/packages/knowledge/store', async (orig) => {
+  const real = await orig<typeof import('@/packages/knowledge/store')>()
+  return { ...real, startKnowledgeOver: vi.fn(real.startKnowledgeOver) }
+})
 vi.mock('@/packages/knowledge/scopes', () => ({
   refreshScopes: () => {
     h.names.acme = 'Acme'
@@ -57,8 +61,9 @@ vi.mock('@/stores/settingsStore', async () => {
   }
 })
 
-import { _resetKnowledgeForTests, commitKnowledge } from '@/packages/knowledge/store'
-import { resetTestStorage } from '@/packages/knowledge/test-storage'
+import { emptyKnowledgeState } from '@shared/types/knowledge'
+import { _resetKnowledgeForTests, commitKnowledge, startKnowledgeOver } from '@/packages/knowledge/store'
+import { getRaw, putRaw, putRawText, resetTestStorage } from '@/packages/knowledge/test-storage'
 import { settingsStore } from '@/stores/settingsStore'
 import { DontSuggestList } from './DontSuggestList'
 import { MemoryPrivacyPage } from './MemoryPrivacyPage'
@@ -93,6 +98,7 @@ beforeEach(() => {
   store.setState({ trustLevel: 'auto' })
   resetTestStorage()
   _resetKnowledgeForTests()
+  vi.mocked(startKnowledgeOver).mockClear()
 })
 
 afterEach(() => {
@@ -205,6 +211,68 @@ describe('MemoryPrivacyPage', () => {
       to: '/scope/$scopeId',
       params: { scopeId: 'everywhere' },
       search: { tab: 'overview' },
+    })
+  })
+
+  it('the Export row says knowledge stays on this device', () => {
+    renderPage()
+    expect(screen.getByText('Back up chats and settings to a file. Knowledge stays on this device.')).toBeTruthy()
+  })
+
+  it('a readable knowledge store shows no Knowledge section', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Nothing here yet.')).toBeTruthy())
+    expect(screen.queryByText("Knowledge can't be read")).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Start over…' })).toBeNull()
+  })
+
+  describe('unreadable knowledge', () => {
+    beforeEach(() => {
+      putRaw('knowledge', null)
+      putRawText('knowledge', '{"items": [')
+    })
+
+    it('shows the row, and Start over… opens the sheet with focus on Cancel', async () => {
+      renderPage()
+      await waitFor(() => expect(screen.getByText("Knowledge can't be read")).toBeTruthy())
+      expect(
+        screen.getByText(
+          "Dango can't read your saved knowledge, so nothing new can be saved. Starting over deletes it."
+        )
+      ).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: 'Start over…' }))
+      const dialog = screen.getByRole('dialog', { name: 'Start over with empty knowledge?' })
+      expect(dialog.textContent).toContain(
+        "Your saved facts, preferences and proposals are deleted. This can't be undone."
+      )
+      const buttons = Array.from(dialog.querySelectorAll('button'))
+      expect(buttons.map((b) => b.textContent)).toEqual(['Cancel', 'Delete and start over'])
+      expect(document.activeElement).toBe(buttons[0])
+      expect(buttons[1].className).toBe('dg-btn dg-btn--danger')
+    })
+
+    it('Esc and Cancel close the sheet without starting over', async () => {
+      renderPage()
+      await waitFor(() => expect(screen.getByText("Knowledge can't be read")).toBeTruthy())
+      fireEvent.click(screen.getByRole('button', { name: 'Start over…' }))
+      fireEvent.keyDown(document, { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      fireEvent.click(screen.getByRole('button', { name: 'Start over…' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      expect(startKnowledgeOver).not.toHaveBeenCalled()
+      expect(getRaw('knowledge')).toBeNull()
+    })
+
+    it('Delete and start over calls startKnowledgeOver and the row goes away', async () => {
+      renderPage()
+      await waitFor(() => expect(screen.getByText("Knowledge can't be read")).toBeTruthy())
+      fireEvent.click(screen.getByRole('button', { name: 'Start over…' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Delete and start over' }))
+      await waitFor(() => expect(screen.queryByText("Knowledge can't be read")).toBeNull())
+      expect(startKnowledgeOver).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(getRaw('knowledge')).toEqual(emptyKnowledgeState())
     })
   })
 

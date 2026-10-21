@@ -19,7 +19,7 @@ import { languageNameMap, languages } from '@/i18n/locales'
 import { DEFAULT_NOTIFICATIONS_CONFIG } from '@/packages/notifications/types'
 import platform, { platformCapabilities } from '@/platform'
 import storage, { StorageKey } from '@/storage'
-import { isDeviceOnlyKey, omitDeviceOnlyKeys } from '@/storage/exportFilter'
+import { omitDeviceOnlyKeys, settingsImportEntries } from '@/storage/exportFilter'
 import { recoverSessionList } from '@/stores/chatStore'
 import { exportHistoryTransferFile, importHistoryTransferFile } from '@/stores/historyTransfer'
 import { importRoomPack } from '@/stores/roomPack'
@@ -504,7 +504,7 @@ const ImportExportDataSection = () => {
   }
 
   const onExport = async () => {
-    // Client mail and pilot records stay on this device.
+    // Client mail, pilot records, knowledge and sources stay on this device.
     const data = omitDeviceOnlyKeys(await storage.getAll())
     delete data[StorageKey.Configs] // uuid
     ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // (legacy)
@@ -587,13 +587,8 @@ const ImportExportDataSection = () => {
             false
           )
 
-          const entriesToImport = Object.entries(importData).filter(
-            ([key]) =>
-              key !== StorageKey.ChatSessionsList &&
-              key !== StorageKey.ConfigVersion &&
-              !key.startsWith('__') &&
-              !isDeviceOnlyKey(key)
-          )
+          // Device-only keys (client mail, knowledge, sources) are never written.
+          const entriesToImport = settingsImportEntries(importData)
 
           const importedChatSessions = Array.isArray(importData[StorageKey.ChatSessionsList])
             ? importData[StorageKey.ChatSessionsList]
