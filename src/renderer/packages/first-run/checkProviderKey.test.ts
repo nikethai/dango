@@ -13,7 +13,7 @@ vi.mock('@/adapters', () => ({ createModelDependencies: vi.fn(async () => ({ dep
 vi.mock('@/platform', () => ({ default: { getConfig: vi.fn(async () => ({ uuid: 'c' })) } }))
 vi.mock('@/stores/settingsStore', () => ({ settingsStore: { getState: () => storeState } }))
 
-import { checkProviderKey, classifyKeyError } from './checkProviderKey'
+import { checkProviderKey, classifyKeyError, firstModelId } from './checkProviderKey'
 
 type Options = { onStateChange?: (s: unknown) => void; settings: Settings; providerId: string; modelId: string }
 
@@ -80,9 +80,33 @@ describe('classifyKeyError', () => {
     ['unauthorised', 'rejected'],
     ['Invalid x-api-key', 'rejected'],
     ['Incorrect API key provided', 'rejected'],
+    [
+      '{\n  "error": {\n    "code": 400,\n    "message": "API key not valid. Please pass a valid API key.",\n    "status": "INVALID_ARGUMENT"\n  }\n}',
+      'rejected',
+    ],
+    ['{\n  "error": {\n    "status": "PERMISSION_DENIED"\n  }\n}', 'rejected'],
+    ['{\n  "error": {\n    "status": "UNAUTHENTICATED"\n  }\n}', 'rejected'],
+    ['{"type":"error","error":{"type":"authentication_error"}}', 'rejected'],
+    ['invalid\n x-api-key', 'rejected'],
+    ['429 RESOURCE_EXHAUSTED', 'unreachable'],
     ['fetch failed', 'unreachable'],
     [undefined, 'unreachable'],
   ])('%s → %s', (error, expected) => {
     expect(classifyKeyError(error)).toBe(expected)
+  })
+})
+
+describe('firstModelId', () => {
+  it('picks the first model whose id has no "preview"', () => {
+    expect(
+      firstModelId('gemini', { models: [{ modelId: 'gemini-3-pro-preview' }, { modelId: 'gemini-2.5-flash' }] })
+    ).toBe('gemini-2.5-flash')
+  })
+  it('falls back to the first model when every id is a preview', () => {
+    expect(firstModelId('gemini', { models: [{ modelId: 'a-preview' }, { modelId: 'b-preview' }] })).toBe('a-preview')
+  })
+  it("uses the definition's defaults when nothing is saved", () => {
+    expect(firstModelId('gemini', undefined)).toBe('gemini-2.5-flash')
+    expect(firstModelId('claude', undefined)).toBe('claude-opus-4-1')
   })
 })

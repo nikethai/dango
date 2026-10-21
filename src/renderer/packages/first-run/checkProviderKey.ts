@@ -7,7 +7,9 @@ import { type ModelTestState, testBasicModelRequest } from '@/utils/model-tester
 
 export type KeyCheck = 'ok' | 'rejected' | 'unreachable'
 
-const REJECTED = /401|403|unauthori[sz]ed|invalid.*key|incorrect api key/i
+// Matches across lines: providers return pretty-printed JSON bodies (Google: "API key not valid", PERMISSION_DENIED).
+const REJECTED =
+  /401|403|unauthori[sz]ed|unauthenticated|permission_denied|invalid[\s\S]{0,40}key|incorrect api key|api key not valid|api_key_invalid|authentication_error/i
 
 /** A failed basic request reads as a rejected key or as an unreachable provider. The error text is never shown. */
 export function classifyKeyError(error: string | undefined): Exclude<KeyCheck, 'ok'> {
@@ -53,9 +55,13 @@ export function providerModels(
   return getProviderDefinition(providerId)?.defaultSettings?.models ?? []
 }
 
-/** The model first run makes the default: the provider's first model. */
+/**
+ * The model first run checks the key with and makes the default: the provider's first model whose id has no
+ * "preview" (preview models are often quota-limited on free keys), else the first model.
+ */
 export function firstModelId(providerId: string, providerSettings: ProviderSettings | undefined): string | undefined {
-  return providerModels(providerId, providerSettings)[0]?.modelId
+  const models = providerModels(providerId, providerSettings)
+  return (models.find((m) => !/preview/i.test(m.modelId)) ?? models[0])?.modelId
 }
 
 /**

@@ -267,6 +267,7 @@ describe('ModelStep', () => {
     expect(screen.getByText('Dango could not reach Anthropic.')).toBeTruthy()
     checkProviderKey.mockResolvedValue('ok')
     await clickAndSettle(() => fireEvent.click(screen.getByRole('button', { name: 'Try again' })))
+    expect(document.activeElement).toBe(continueButton())
     expect(checkProviderKey).toHaveBeenCalledTimes(2)
     expect(setterFor('claude')).toHaveBeenCalledWith({ apiKey: 'sk-ant-test' })
   })
@@ -289,12 +290,91 @@ describe('ModelStep', () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 
-  it('keeps an existing default model', async () => {
+  it('keeps an existing default model whose provider still has credentials', async () => {
     checkProviderKey.mockResolvedValue('ok')
+    h.providers.openai = { apiKey: 'sk-still-there' }
     h.state.defaultChatModel = { provider: 'openai', model: 'gpt-4o' }
     renderStep()
     await enterAnthropicKey()
     expect(h.state.setSettings).not.toHaveBeenCalled()
+  })
+
+  it('with modelOnly, replaces a stale default model whose provider has no credentials', async () => {
+    checkProviderKey.mockResolvedValue('ok')
+    h.state.defaultChatModel = { provider: 'openai', model: 'gpt-5' }
+    renderStep({ modelOnly: true })
+    await enterAnthropicKey()
+    expect(h.state.setSettings).toHaveBeenCalledWith({
+      defaultChatModel: { provider: 'claude', model: 'claude-opus-4-1' },
+    })
+    expect(navigate).toHaveBeenCalledWith({ href: '/', replace: true })
+  })
+
+  it('checks Gemini with its first non-preview model and makes it the default', async () => {
+    checkProviderKey.mockResolvedValue('ok')
+    renderStep()
+    fireEvent.click(radio(/I have a key/))
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'gemini' } })
+    fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'AIza-test' } })
+    await clickAndSettle(() => fireEvent.click(continueButton()))
+    expect(checkProviderKey.mock.calls[0][1]).toBe('gemini-2.5-flash')
+    expect(h.state.setSettings).toHaveBeenCalledWith({
+      defaultChatModel: { provider: 'gemini', model: 'gemini-2.5-flash' },
+    })
+  })
+
+  it('leaving an unfinished ChatGPT or Google choice restores the provider settings it seeded', () => {
+    h.providers.openai = { models: [{ modelId: 'gpt-4o' }] }
+    renderStep()
+    fireEvent.click(radio(/Continue with ChatGPT/))
+    fireEvent.click(radio(/Continue with Google/))
+    expect(setterFor('openai')).toHaveBeenLastCalledWith({ authMode: undefined, models: [{ modelId: 'gpt-4o' }] })
+    fireEvent.click(radio(/I have a key/))
+    expect(setterFor('gemini')).toHaveBeenLastCalledWith({ authMode: undefined, models: undefined })
+  })
+
+  it('unmounting with an unfinished OAuth choice restores the provider, but not after sign-in', () => {
+    const { unmount } = renderStep()
+    fireEvent.click(radio(/Continue with Google/))
+    unmount()
+    expect(setterFor('gemini')).toHaveBeenLastCalledWith({ authMode: undefined, models: undefined })
+
+    cleanup()
+    const second = renderStep()
+    fireEvent.click(radio(/Continue with ChatGPT/))
+    const calls = setterFor('openai').mock.calls.length
+    h.providers.openai = { ...CODEX_PATCH, oauth: { accessToken: 'tok' } }
+    second.unmount()
+    expect(setterFor('openai').mock.calls.length).toBe(calls)
+  })
+
+  it('changing the choice cancels a check in flight', async () => {
+    let resolveCheck: (v: string) => void = () => {}
+    checkProviderKey.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolveCheck = r
+        })
+    )
+    renderStep()
+    await enterAnthropicKey()
+    fireEvent.click(radio(/Continue with ChatGPT/))
+    await clickAndSettle(() => resolveCheck('ok'))
+    expect(setterFor('claude')).not.toHaveBeenCalled()
+    expect(setFirstRun).not.toHaveBeenCalled()
+    expect(h.state.setSettings).not.toHaveBeenCalled()
+  })
+
+  it('Continue keeps focus while the key is checked', async () => {
+    checkProviderKey.mockImplementation(() => new Promise(() => {}))
+    renderStep()
+    fireEvent.click(radio(/I have a key/))
+    fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'sk-1' } })
+    act(() => continueButton().focus())
+    await clickAndSettle(() => fireEvent.click(continueButton()))
+    expect(continueButton().disabled).toBe(false)
+    expect(continueButton().getAttribute('aria-disabled')).toBe('true')
+    expect(document.activeElement).toBe(continueButton())
   })
 
   it('a key for a provider left in OAuth mode switches it back to the API key and its default models', async () => {

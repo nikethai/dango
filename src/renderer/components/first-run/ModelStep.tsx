@@ -1,7 +1,7 @@
 import { NativeSelect, PasswordInput } from '@mantine/core'
 import { hasProviderCredentials } from '@shared/providers/provider-credentials'
 import { ModelProviderEnum, type ProviderSettings } from '@shared/types'
-import { type KeyboardEvent, useRef, useState } from 'react'
+import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FirstRunCard } from '@/components/first-run/FirstRunCard'
 import {
@@ -37,6 +37,20 @@ const KEY_PROVIDERS: { id: string; name: string }[] = [
 
 type KeyStatus = 'idle' | 'checking' | 'rejected' | 'unreachable'
 
+type Seeded = Record<
+  string,
+  { snapshot: Pick<ProviderSettings, 'authMode' | 'models'>; restore: (patch: Partial<ProviderSettings>) => void }
+>
+
+/** Puts back what a ChatGPT or Google seed overwrote, unless that provider has signed in since. */
+function restoreSeed(seeded: Seeded, providerId: string) {
+  const entry = seeded[providerId]
+  if (!entry) return
+  delete seeded[providerId]
+  if (hasProviderCredentials(settingsStore.getState().providers?.[providerId])) return
+  entry.restore(entry.snapshot)
+}
+
 /**
  * FR1, step 1: sign in with Google or ChatGPT, or enter a key. A key is checked on a settings copy (one basic request)
  * and saved only when it works. With `modelOnly` (every model was removed after first run) the step returns to
@@ -49,6 +63,7 @@ export function ModelStep({ modelOnly, from }: { modelOnly: boolean; from?: stri
   const [apiKey, setApiKey] = useState('')
   const [status, setStatus] = useState<KeyStatus>('idle')
   const keyFieldRef = useRef<HTMLInputElement>(null)
+  const continueRef = useRef<HTMLButtonElement>(null)
   const radioRefs = useRef<(HTMLButtonElement | null)[]>([])
   const checkRun = useRef(0)
 
@@ -62,7 +77,11 @@ export function ModelStep({ modelOnly, from }: { modelOnly: boolean; from?: stri
   const finish = (providerId: string, providerSettings: ProviderSettings | undefined) => {
     const state = settingsStore.getState()
     const model = firstModelId(providerId, providerSettings)
-    if (!state.defaultChatModel && model) state.setSettings({ defaultChatModel: { provider: providerId, model } })
+    // Step 1 shows only while no provider has credentials, so a default on another provider is stale (modelOnly).
+    const current = state.defaultChatModel
+    const usable =
+      current && (current.provider === providerId || hasProviderCredentials(state.providers?.[current.provider]))
+    if (!usable && model) state.setSettings({ defaultChatModel: { provider: providerId, model } })
     if (modelOnly) void router.navigate({ href: from ?? '/', replace: true })
     else setFirstRun({ step: stepAfterModel(state.firstRun) })
   }
@@ -77,12 +96,40 @@ export function ModelStep({ modelOnly, from }: { modelOnly: boolean; from?: stri
       }
     }
 
+  // What picking ChatGPT or Google overwrote, so leaving that choice unsigned (another choice, or the step closing)
+  // puts the provider back as it was.
+  const seeded = useRef<Seeded>({})
+
+  useEffect(() => {
+    const pending = seeded.current
+    return () => {
+      for (const providerId of Object.keys(pending)) restoreSeed(pending, providerId)
+    }
+  }, [])
+
+  const seed = (
+    providerId: string,
+    { providerSettings, setProviderSettings }: ReturnType<typeof useProviderSettings>,
+    patch: Partial<ProviderSettings>
+  ) => {
+    seeded.current[providerId] ??= {
+      snapshot: { authMode: providerSettings?.authMode, models: providerSettings?.models },
+      restore: setProviderSettings,
+    }
+    setProviderSettings(patch)
+  }
+
+  const restoreSeeded = (providerId: string) => restoreSeed(seeded.current, providerId)
+
   const select = (next: Choice) => {
     if (next === choice) return
+    checkRun.current++
     setChoice(next)
     setStatus('idle')
-    if (next === 'chatgpt') openai.setProviderSettings(openAICodexOAuthModePatch(openai.providerSettings))
-    if (next === 'google') gemini.setProviderSettings(geminiAntigravityOAuthModePatch())
+    if (choice === 'chatgpt') restoreSeeded(ModelProviderEnum.OpenAI)
+    if (choice === 'google') restoreSeeded(ModelProviderEnum.Gemini)
+    if (next === 'chatgpt') seed(ModelProviderEnum.OpenAI, openai, openAICodexOAuthModePatch(openai.providerSettings))
+    if (next === 'google') seed(ModelProviderEnum.Gemini, gemini, geminiAntigravityOAuthModePatch())
   }
 
   const onRadioKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -129,12 +176,15 @@ export function ModelStep({ modelOnly, from }: { modelOnly: boolean; from?: stri
   }
 
   const onContinue = () => {
+    if (checking) return
     if (choice === 'key') void checkKey()
     else if (choice === 'chatgpt') finish(ModelProviderEnum.OpenAI, openai.providerSettings)
     else if (choice === 'google') finish(ModelProviderEnum.Gemini, gemini.providerSettings)
   }
 
-  const continueDisabled = choice === null || (choice === 'key' ? !apiKey.trim() || status === 'checking' : !signedIn)
+  // While checking, Continue stays focusable (aria-disabled, not disabled) so focus never drops to the body.
+  const checking = status === 'checking'
+  const continueDisabled = choice === null || (choice === 'key' ? !apiKey.trim() : !signedIn)
   const focusIndex = Math.max(
     0,
     CHOICES.findIndex((c) => c.id === choice)
@@ -149,8 +199,10 @@ export function ModelStep({ modelOnly, from }: { modelOnly: boolean; from?: stri
         <button
           type="button"
           className="dg-btn dg-btn--primary"
+          ref={continueRef}
           disabled={continueDisabled}
-          aria-busy={status === 'checking' || undefined}
+          aria-disabled={checking || undefined}
+          aria-busy={checking || undefined}
           onClick={onContinue}
         >
           {t('Continue')}
@@ -236,7 +288,15 @@ export function ModelStep({ modelOnly, from }: { modelOnly: boolean; from?: stri
               <span className="dg-type-body">
                 {t('Dango could not reach {{provider}}.', { provider: providerName })}
               </span>
-              <button type="button" className="dg-btn" onClick={() => void checkKey()}>
+              <button
+                type="button"
+                className="dg-btn"
+                onClick={() => {
+                  // The alert (and this button) goes away while checking; keep focus on Continue.
+                  continueRef.current?.focus()
+                  void checkKey()
+                }}
+              >
                 {t('Try again')}
               </button>
             </div>
