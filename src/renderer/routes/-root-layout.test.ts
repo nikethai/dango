@@ -12,6 +12,8 @@ describe('__root layout wiring (RS1, RS2)', () => {
   })
 
   it('insets the content from the sidebar presentation in at most 150 ms, with no motion when reduced', () => {
+    // dg-content: dango-layout.css stops its transition under reduced motion too (A11Y1 rule 2).
+    expect(root).toContain('className="dg-content h-full w-full min-h-0"')
     expect(root).toContain('useSidebarEffectiveWidth()')
     expect(root).toContain("transition: 'padding 150ms")
     expect(root).toContain("'@media (prefers-reduced-motion: reduce)': { transition: 'none' }")

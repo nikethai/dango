@@ -581,3 +581,34 @@
 .dango-overflow__remember input {
   accent-color: var(--dango-green);
 }
+
+/*
+ * Reduced motion (A11Y1 rule 2): nothing moves. Covers the motion this slice adds and the app's live indicators:
+ * the sidebar drawer (expanded, rail and peek widths) and the content inset that follows it, every sheet (the
+ * inspector sheet included; it appears in place instead of rising or sliding), the tab bar, the thinking line and the
+ * pending dots. The mascot holds its idle pose and writes its state (Mascot.tsx; dango-foundations.css). The docked
+ * inspector's own rule is in globals.css (.workspace-panel). !important beats the inline and sx transitions.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .assistant-pending-dots i,
+  .dg-think,
+  .dg-think *,
+  .dg-tabbar,
+  .dg-tabbar *,
+  .MuiDrawer-paper,
+  .studio-rail *,
+  .dg-content,
+  #main,
+  .dg-sheet,
+  .dango-sheet--right,
+  .dango-inspector-sheet,
+  .dg-sheet-scrim {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Rail buttons shrink a little when pressed (active:scale); keep them still. */
+  .studio-rail button:active {
+    transform: none !important;
+  }
+}

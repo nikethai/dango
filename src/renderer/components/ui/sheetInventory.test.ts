@@ -61,6 +61,58 @@ const ADAPTIVE_MODAL_ALLOWED = [
 
 const rendersAdaptiveModal = (src: string) => /<AdaptiveModal[\s>]/.test(src)
 
+/**
+ * Overlays built directly on Mantine's Modal or Drawer (also through components/layout/Overlay's re-exports) or on
+ * vaul's Drawer.Root / Drawer.NestedRoot, found on 2026-10-21. Most are menus, pickers, viewers or editors. Three
+ * confirm the user's own destructive action (SummaryMessage's delete, KnowledgeBase's delete, MemoryBankWorkspace's
+ * Clear memories) and belong with TASK-46. None is an approval or a permission. A new approval, permission or confirm
+ * goes through Sheet; do not add it here.
+ */
+const RAW_OVERLAY_ALLOWED = [
+  'components/ActionMenu.tsx',
+  'components/AdaptiveSelect.tsx',
+  'components/InputBox/ComposerToolsMenu.tsx',
+  'components/ModelSelector/MobileModelSelector.tsx',
+  'components/chat/SummaryMessage.tsx',
+  'components/knowledge-base/ChunksPreviewModal.tsx',
+  'components/knowledge-base/KnowledgeBase.tsx',
+  'components/knowledge-base/RemoteRetryModal.tsx',
+  'components/settings/integrations/AccountFormModal.tsx',
+  'components/settings/mcp/ConfigModal.tsx',
+  'components/settings/memory/MemoryBankWorkspace.tsx',
+  'modals/ArtifactPreview.tsx',
+  'routes/image-creator/-components/MobileDrawers.tsx',
+  'routes/settings/commands.tsx',
+  'routes/settings/skills.tsx',
+]
+
+/** The wrappers themselves: Overlay re-exports Mantine's Modal and Drawer; AdaptiveModal is allow-listed above. */
+const RAW_OVERLAY_OWNERS = ['components/layout/Overlay.tsx', 'components/common/AdaptiveModal.tsx']
+
+/** Local names a file imports for `name` from one of `sources` (import { Modal } / import { Modal as M }). */
+function importedAs(src: string, name: string, sources: RegExp): string[] {
+  const names: string[] = []
+  for (const m of src.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+'([^']+)'/g)) {
+    if (!sources.test(m[2])) continue
+    for (const part of m[1].split(',')) {
+      const [imported, local] = part.trim().split(/\s+as\s+/)
+      if (imported === name) names.push(local ?? imported)
+    }
+  }
+  return names
+}
+
+const MANTINE_OR_OVERLAY = /^@mantine\/core$|(^|\/)layout\/Overlay$/
+
+/** Renders a Mantine Modal or Drawer (directly or via Overlay), or a vaul Drawer.Root / Drawer.NestedRoot. */
+function rendersRawOverlay(src: string): boolean {
+  const tags = [...importedAs(src, 'Modal', MANTINE_OR_OVERLAY), ...importedAs(src, 'Drawer', MANTINE_OR_OVERLAY)].map(
+    (local) => new RegExp(`<${local}(\\.Root)?[\\s>]`)
+  )
+  for (const local of importedAs(src, 'Drawer', /^vaul$/)) tags.push(new RegExp(`<${local}\\.(Nested)?Root[\\s>]`))
+  return tags.some((re) => re.test(src))
+}
+
 describe('sheet inventory', () => {
   it('scans the renderer', () => {
     expect(files.some((f) => f.path === 'components/ui/Sheet.tsx')).toBe(true)
@@ -88,6 +140,34 @@ describe('sheet inventory', () => {
       return !file || !rendersAdaptiveModal(file.src)
     })
     expect(stale).toEqual([])
+  })
+
+  it('no file outside the allow-list builds an overlay on Mantine Modal/Drawer or vaul Drawer.Root', () => {
+    const offenders = files
+      .filter((f) => !RAW_OVERLAY_OWNERS.includes(f.path) && rendersRawOverlay(f.src))
+      .map((f) => f.path)
+      .filter((p) => !RAW_OVERLAY_ALLOWED.includes(p))
+    expect(offenders).toEqual([])
+  })
+
+  it('every raw-overlay allow-listed file still renders one (remove entries once a file moves off it)', () => {
+    const stale = RAW_OVERLAY_ALLOWED.filter((p) => {
+      const file = files.find((f) => f.path === p)
+      return !file || !rendersRawOverlay(file.src)
+    })
+    expect(stale).toEqual([])
+  })
+
+  it('the raw-overlay check sees each import form', () => {
+    expect(rendersRawOverlay("import { Button, Modal } from '@mantine/core'\n<Modal opened")).toBe(true)
+    expect(rendersRawOverlay("import { Modal as M } from '@mantine/core'\n<M.Root opened>")).toBe(true)
+    expect(rendersRawOverlay("import { Drawer } from '@mantine/core'\n<Drawer\n opened")).toBe(true)
+    expect(rendersRawOverlay("import { Modal } from '../layout/Overlay'\n<Modal opened")).toBe(true)
+    expect(rendersRawOverlay("import { Drawer } from 'vaul'\n<Drawer.Root open>")).toBe(true)
+    expect(rendersRawOverlay("import { Drawer } from 'vaul'\n<Drawer.NestedRoot open>")).toBe(true)
+    // MUI's Drawer (the sidebar) and a vaul Drawer without a root are not raw overlays.
+    expect(rendersRawOverlay("import Drawer from '@mui/material/Drawer'\n<Drawer open>")).toBe(false)
+    expect(rendersRawOverlay("import { Sheet } from '@/components/ui/Sheet'\n<Sheet opened>")).toBe(false)
   })
 
   it('the decision modals (delete chats, context overflow) render Sheet', () => {

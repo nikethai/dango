@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import postcss, { type Rule } from 'postcss'
+import postcss, { type AtRule, type Rule } from 'postcss'
 import { describe, expect, test } from 'vitest'
 
 const layoutRoot = postcss.parse(readFileSync(resolve(process.cwd(), 'src/renderer/static/dango-layout.css'), 'utf8'))
@@ -62,5 +62,52 @@ describe('phone shell rules (RS3)', () => {
     expect(valueFor('.dg-tabbar a.dg-tabbar__tab[aria-current="page"]', 'color')).toBe('var(--dango-green-text)')
     expect(valueFor('.dg-tabbar', 'background')).toBe('var(--dango-raised)')
     expect(valueFor('.dg-tabbar', 'border-top')).toBe('1px solid var(--dango-hairline)')
+  })
+})
+
+// Declarations (prop → value, with !important kept) of the rules inside @media (prefers-reduced-motion: reduce)
+// whose selector list contains `selector`.
+const reducedMotionDecls = (selector: string): Record<string, string> => {
+  const decls: Record<string, string> = {}
+  layoutRoot.walkAtRules('media', (media: AtRule) => {
+    if (!/prefers-reduced-motion:\s*reduce/.test(media.params)) return
+    media.walkRules((rule: Rule) => {
+      if (!rule.selectors.map(normalize).includes(selector)) return
+      rule.walkDecls((decl) => {
+        decls[decl.prop] = `${decl.value}${decl.important ? ' !important' : ''}`
+      })
+    })
+  })
+  return decls
+}
+
+describe('reduced motion (A11Y1 rule 2)', () => {
+  test('nothing animates or transitions: pending dots, thinking line, tab bar, drawer and rail peek, content, sheets', () => {
+    for (const selector of [
+      '.assistant-pending-dots i',
+      '.dg-think',
+      '.dg-think *',
+      '.dg-tabbar',
+      '.dg-tabbar *',
+      // The sidebar drawer: expanded ↔ rail ↔ peek width (Task 5).
+      '.MuiDrawer-paper',
+      '.studio-rail *',
+      // The content inset that follows the sidebar width (Task 5), and the content itself.
+      '.dg-content',
+      '#main',
+      // Every sheet appears in place instead of rising or sliding, including the inspector sheet (Task 7).
+      '.dg-sheet',
+      '.dango-sheet--right',
+      '.dango-inspector-sheet',
+      '.dg-sheet-scrim',
+    ]) {
+      const decls = reducedMotionDecls(selector)
+      expect({ selector, animation: decls.animation }).toEqual({ selector, animation: 'none !important' })
+      expect({ selector, transition: decls.transition }).toEqual({ selector, transition: 'none !important' })
+    }
+  })
+
+  test('rail buttons do not shrink when pressed', () => {
+    expect(reducedMotionDecls('.studio-rail button:active').transform).toBe('none !important')
   })
 })

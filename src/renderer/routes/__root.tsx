@@ -219,7 +219,7 @@ function Root() {
         >
           {!hideAppChrome && !isPhoneLayout && <Sidebar />}
           <Box
-            className="h-full w-full min-h-0"
+            className="dg-content h-full w-full min-h-0"
             sx={{
               flexGrow: 1,
               minHeight: 0,
