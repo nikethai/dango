@@ -11,6 +11,7 @@ import platform from '../platform'
 import { currentSessionIdAtom } from '../stores/atoms'
 import { startNewThread, switchToIndex, switchToNext } from '../stores/sessionActions'
 import * as dom from './dom'
+import { toggleSidebar } from './useLayoutMode'
 import { useIsSmallScreen } from './useScreenChange'
 
 export default function useShortcut() {
@@ -40,7 +41,6 @@ export default function useShortcut() {
     // e.key alt、 option、shift e.key
     const ctrlOrCmd = e.ctrlKey || e.metaKey
     const shift = e.shiftKey
-    const altOrOption = e.altKey
 
     const ctrlKey = getOS() === 'Mac' ? e.metaKey : e.ctrlKey
 
@@ -103,6 +103,15 @@ export default function useShortcut() {
         // A sheet (e.g. a permission request) is modal: the overlay must not cover it.
         setOpenSearchDialog(true)
       }
+    }
+    // CmdOrCtrl + \ : the sidebar toggle (peek at medium, expand or collapse at wide, nothing at phone). The physical
+    // Backslash key counts too, for layouts where \ is not a plain key. Off Mac, AltGr arrives as Ctrl+Alt and is how
+    // many layouts (German, French, Nordic…) type \, so Alt or AltGraph means the user is typing, not toggling.
+    const altGr = getOS() !== 'Mac' && (e.altKey || e.getModifierState?.('AltGraph') === true)
+    if ((e.key === '\\' || e.code === 'Backslash') && ctrlKey && !shift && !altGr) {
+      e.preventDefault()
+      if (!hasOpenSheet()) toggleSidebar()
+      return
     }
     if (e.key === ',' && ctrlKey) {
       e.preventDefault()

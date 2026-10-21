@@ -1,0 +1,836 @@
+/*
+ * Dango layout (slice 9): first run, window sizes, phone shell. Tokens only (--dango-*); dango-components.css stays a
+ * verbatim copy of the design system. Imported last in index.tsx so equal-specificity overrides win.
+ */
+
+/* First run: a full-window page with one centred card (FR1–FR4). */
+
+.dg-first-run {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--dango-space-6) 0;
+  background: var(--dango-ground);
+}
+
+.dg-first-run__card {
+  box-sizing: border-box;
+  width: 520px;
+  max-width: 92%;
+  margin: auto;
+  padding: var(--dango-space-7);
+  background: var(--dango-raised);
+  border-radius: var(--dango-radius-sheet);
+  box-shadow: var(--dango-shadow-sheet);
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-4);
+}
+
+.dg-first-run__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dango-space-3);
+}
+
+.dg-first-run__mascot {
+  display: inline-flex;
+}
+
+.dg-first-run__dots {
+  display: flex;
+  align-items: center;
+  gap: var(--dango-space-2);
+}
+
+.dg-first-run__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dango-hairline);
+}
+
+.dg-first-run__dot.is-done {
+  background: var(--dango-green);
+}
+
+.dg-first-run__title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 600;
+  color: var(--dango-ink);
+}
+
+/* The step title takes focus on each step (so the step is read); it is not a control, so no ring. */
+.dg-first-run__title:focus {
+  outline: none;
+}
+
+.dg-first-run__lead {
+  margin: 0;
+  color: var(--dango-ink-2);
+}
+
+.dg-first-run__body:empty {
+  display: none;
+}
+
+.dg-first-run__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--dango-space-2);
+}
+
+.dg-first-run__footer:empty {
+  display: none;
+}
+
+/* FR1: sign in to a model. Choices are a radiogroup of buttons; the chosen one's panel renders below. */
+
+.dg-first-run__choices {
+  display: grid;
+  gap: var(--dango-space-2);
+}
+
+.dg-first-run__choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--dango-space-1);
+  min-height: 44px;
+  padding: var(--dango-space-3) var(--dango-space-4);
+  border: 1px solid var(--dango-line);
+  border-radius: var(--dango-radius-md);
+  background: var(--dango-raised);
+  color: var(--dango-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dg-first-run__choice[aria-checked="true"] {
+  border-color: var(--dango-green);
+  background: var(--dango-green-wash);
+}
+
+.dg-first-run__choice-title {
+  font-weight: 600;
+}
+
+.dg-first-run__choice-line {
+  color: var(--dango-muted);
+}
+
+.dg-first-run__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-3);
+}
+
+.dg-first-run__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dango-space-3);
+  color: var(--dango-danger);
+}
+
+.dg-first-run__other {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* FR2 and FR3: connect a source, name the scope. */
+
+.dg-first-run__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-1);
+}
+
+.dg-first-run__selected {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dango-space-2);
+}
+
+.dg-first-run__mono {
+  font-family: var(--dango-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.dg-first-run__switch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-1);
+}
+
+.dg-first-run__waiting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dango-space-3);
+  color: var(--dango-ink-2);
+}
+
+/* FR4: trust. Radio cards with TR1's lines; the chosen one is outlined in green. */
+
+.dg-first-run__trust {
+  display: grid;
+  gap: var(--dango-space-2);
+}
+
+.dg-first-run__trust-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dango-space-3);
+  min-height: 44px;
+  padding: var(--dango-space-3) var(--dango-space-4);
+  border: 1px solid var(--dango-line);
+  border-radius: var(--dango-radius-md);
+  background: var(--dango-raised);
+  color: var(--dango-ink);
+  cursor: pointer;
+}
+
+.dg-first-run__trust-option.is-checked {
+  border-color: var(--dango-green);
+  background: var(--dango-green-wash);
+}
+
+.dg-first-run__trust-option input {
+  margin: 3px 0 0;
+  accent-color: var(--dango-green);
+}
+
+.dg-first-run__trust-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-1);
+}
+
+.dg-first-run__recommended {
+  font-weight: 400;
+  color: var(--dango-muted);
+}
+
+.dg-first-run__note {
+  margin: 0;
+  color: var(--dango-ink-2);
+}
+
+/* FR5: the first read, above Review. No motion of its own; the mascot holds its pose under reduced motion. */
+
+.dg-first-read {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-2);
+  padding: var(--dango-space-4) var(--dango-space-4) 0;
+}
+
+.dg-first-read__card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dango-space-4);
+  padding: var(--dango-space-4);
+  border: 1px solid var(--dango-line);
+  border-radius: var(--dango-radius-md);
+  background: var(--dango-raised);
+}
+
+.dg-first-read__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-1);
+  min-width: 0;
+}
+
+.dg-first-read__title {
+  margin: 0;
+  color: var(--dango-ink);
+}
+
+.dg-first-read__sub {
+  margin: 0;
+  color: var(--dango-ink-2);
+  overflow-wrap: anywhere;
+}
+
+.dg-first-read__meanwhile {
+  display: flex;
+  align-items: center;
+  gap: var(--dango-space-2);
+  margin: 0;
+  color: var(--dango-muted);
+}
+
+/* Window sizes (RS1, RS2): wide, medium and phone come from data-layout on <html> (useLayoutMode). */
+
+/* #main takes focus only programmatically (a sheet's opener is gone); it is not a control, so no ring. */
+.dg-main:focus {
+  outline: none;
+}
+
+/* react-virtuoso scrollers (sidebar lists, the chat thread) are Tab stops for keyboard scrolling: show the ring
+   (!important: Virtuoso sets an inline outline: none). */
+[data-virtuoso-scroller]:focus-visible {
+  outline: 2px solid var(--dango-focus) !important;
+  outline-offset: -2px;
+}
+
+/* A knowledge row's text opens its detail. Reset by class (an inline all: unset would also remove the ring). */
+.dango-knowledge-toggle {
+  all: unset;
+  display: block;
+  cursor: pointer;
+}
+
+.dango-knowledge-toggle:focus-visible {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: 2px;
+  border-radius: var(--dango-radius-sm);
+}
+
+/* A shortcut hint inside a primary button: muted text fails contrast on green. */
+.dg-btn--primary .dg-kbd {
+  color: var(--dango-on-green);
+}
+
+/* Phone (RS3): one pane, bottom tabs (PhoneTabBar), 44 px targets. */
+
+/* The tab bar carries the safe-area bottom at phone, so .App (index.css) stops padding it. Only while the bar shows
+   (PhoneTabBar sets data-tabbar): first run has none and keeps .App's padding. */
+:root[data-layout="phone"][data-tabbar] .App {
+  padding-bottom: 0;
+}
+
+.dg-tabbar {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  background: var(--dango-raised);
+  border-top: 1px solid var(--dango-hairline);
+  padding-bottom: var(
+    --mobile-safe-area-inset-bottom-layout,
+    var(--mobile-safe-area-inset-bottom, env(safe-area-inset-bottom))
+  );
+}
+
+/* The on-screen keyboard is up (setup/mobile_safe_area.ts, setup/tauri_android_keyboard.ts): give the room to it. */
+:root[data-keyboard="open"] .dg-tabbar {
+  display: none;
+}
+
+.dg-tabbar a {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--dango-space-1) 0;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Class plus element: index.css colours every link under html[data-theme]. */
+.dg-tabbar a.dg-tabbar__tab {
+  color: var(--dango-muted);
+}
+
+.dg-tabbar a.dg-tabbar__tab[aria-current="page"] {
+  color: var(--dango-green-text);
+}
+
+.dg-tabbar a:focus-visible {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: -2px;
+}
+
+.dg-tabbar__icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.dg-tabbar__icon .dg-badge {
+  position: absolute;
+  top: -6px;
+  left: calc(100% - 6px);
+}
+
+/* Scopes tab header: About shows a dot when an Android update is waiting (as the old drawer's About row did). */
+.dg-scopes__about {
+  position: relative;
+}
+
+.dg-scopes__update-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dango-green);
+}
+
+/* Settings › Agents: the tile is a card whose main button (the agent's name) is stretched over it, so the star,
+   edit and delete buttons are siblings, not buttons inside a button (agents-surfaces.css styles the card). */
+.agent-tile-main {
+  position: static;
+  flex: 1 1 auto;
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-tile-main::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.agent-tile-main:focus-visible {
+  outline: none;
+}
+
+.agent-tile-main:focus-visible::after {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: 2px;
+}
+
+.agent-tile-actions {
+  position: relative;
+  z-index: 1;
+}
+
+/* Hidden until hover; a keyboard user reaching them sees them too. */
+.agent-tile:focus-within .agent-tile-icon-btn:not(.is-starred) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Sidebar section headers (SectionHeader): the toggle's hit area covers the header; New scope, archive and clean up
+   sit above it as siblings (they used to be buttons inside the toggle button). */
+.rail-section {
+  position: relative;
+}
+
+.rail-section-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rail-section-toggle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--dango-radius-sm);
+}
+
+.rail-section-toggle:focus-visible {
+  outline: none;
+}
+
+.rail-section-toggle:focus-visible::after {
+  outline: 2px solid var(--dango-focus);
+  outline-offset: -2px;
+}
+
+.rail-section-trail .mantine-ActionIcon-root {
+  position: relative;
+  z-index: 1;
+}
+
+.rail-section-chevron {
+  pointer-events: none;
+}
+
+/* Sidebar scope rows (FolderItem): above phone the hover actions (New chat, Scope options) overlay the row's end
+   instead of reserving 62 px, so at the default 220 px sidebar a client scope's name is not squeezed to nothing. */
+.project-folder-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+:root:not([data-layout="phone"]) .project-folder-row {
+  position: relative;
+}
+
+:root:not([data-layout="phone"]) .project-folder-actions {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  border-radius: var(--dango-radius-sm);
+}
+
+:root:not([data-layout="phone"]) .project-folder-row:hover .project-folder-actions,
+:root:not([data-layout="phone"]) .project-folder-actions.is-shown {
+  background: inherit;
+}
+
+/* Reduced motion, Task 12 walk: message actions slide in on hover, the chat column and the docked inspector change
+   width (the aside's inline width transition), the artifact card fades its hover. Kept before the rules for the same
+   elements below (lint: no descending specificity); !important wins anyway. */
+@media (prefers-reduced-motion: reduce) {
+  .msg-actions,
+  .session-main-col,
+  .workspace-panel,
+  .artifact-card {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Phone targets: buttons, rows and icon buttons at least 44 px (icon buttons also 44 px wide). */
+:root[data-layout="phone"] .dg-btn,
+:root[data-layout="phone"] .dg-btn--icon,
+:root[data-layout="phone"] .rail-icon-btn,
+:root[data-layout="phone"] .dg-side__row,
+:root[data-layout="phone"] .rail-nav-item,
+:root[data-layout="phone"] .studio-rail-row,
+:root[data-layout="phone"] .project-folder-row,
+:root[data-layout="phone"] .mantine-ActionIcon-root {
+  min-height: 44px;
+}
+
+:root[data-layout="phone"] .dg-btn--icon,
+:root[data-layout="phone"] .rail-icon-btn,
+:root[data-layout="phone"] .mantine-ActionIcon-root {
+  min-width: 44px;
+}
+
+/* Phone targets inside sheets: Clean up's slider (its chips and actions are dg-btn), the inspector sheet's tabs and
+   header buttons (Mantine ActionIcons, also covered above). */
+:root[data-layout="phone"] .dango-cleanup__range input,
+:root[data-layout="phone"] .dango-inspector-sheet .workspace-tab,
+:root[data-layout="phone"] .dango-inspector-sheet .workspace-action-btn {
+  min-height: 44px;
+}
+
+:root[data-layout="phone"] .dango-inspector-sheet .workspace-action-btn {
+  min-width: 44px;
+}
+
+/* More phone targets found in the Task 12 walk: Mantine buttons and tabs (settings, sheets), the scope page's tabs,
+   the artifact card in a reply. */
+:root[data-layout="phone"] .mantine-Button-root,
+:root[data-layout="phone"] .mantine-Tabs-tab,
+:root[data-layout="phone"] [role="tab"],
+:root[data-layout="phone"] .artifact-card {
+  min-height: 44px;
+}
+
+/* First run at phone: the key and scope name fields and the "Ollama and other providers" link (its text stays put,
+   the button grows around it). Buttons are covered above. */
+:root[data-layout="phone"] .dg-first-run .mantine-Input-input,
+:root[data-layout="phone"] .dg-first-run__other {
+  min-height: 44px;
+}
+
+/* Settings section switchers (Privacy · Memory · Sync): links, centred in their 44 px. */
+:root[data-layout="phone"] .settings-tabs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* Compact controls keep their size and get a 44 px hit area: chips used as buttons (suggestions, filters, search
+   scopes) and the composer status line. Settings' back and close already extend theirs to 40 px; 44 at phone. */
+:root[data-layout="phone"] button.dg-chip,
+:root[data-layout="phone"] .session-statusline-action {
+  position: relative;
+}
+
+:root[data-layout="phone"] button.dg-chip::after,
+:root[data-layout="phone"] .session-statusline-action::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 44px;
+  transform: translateY(-50%);
+}
+
+:root[data-layout="phone"] .settings-chrome-btn::after {
+  inset: -6px;
+}
+
+/* Inspector (InspectorFrame): docked at wide, a right sheet at medium, a bottom sheet at phone. */
+
+.dango-inspector {
+  flex: none;
+  width: clamp(380px, 36vw, 460px);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--dango-raised);
+  border-left: 1px solid var(--dango-line);
+}
+
+/*
+ * The docked workspace inspector always fits in the row: at the narrow end of wide (1200 px with the project
+ * explorer, or a custom sidebar up to 500 px) the chat column and the explorer give way first. The row is at least
+ * 700 px at wide, so the chat keeps min(420px, row - 380px) and never less than 320 px; the explorer may collapse.
+ */
+.session-shell.has-workspace:not(.has-workspace-expanded) .session-main-col {
+  min-width: min(420px, max(320px, 100% - 380px));
+}
+
+.session-shell.has-workspace:not(.has-workspace-expanded) .project-explorer {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.dango-inspector-sheet {
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+.dango-inspector-sheet > .dg-sheet__actions:empty {
+  display: none;
+}
+
+/* The workspace body fills the sheet below its heading; the sheet draws the surface. */
+.dango-inspector-sheet .workspace-panel-inner {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* Phone: full height minus the safe-area top, edge to edge, clear of the home indicator. */
+:root[data-layout="phone"] .dango-inspector-sheet {
+  top: var(--mobile-safe-area-inset-top, env(safe-area-inset-top, 0px));
+  bottom: 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: none;
+  padding-bottom: calc(var(--dango-space-4) + var(--mobile-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+}
+
+/* Clean up chats sheet (ClearSessionList, moved onto Sheet in slice 9 Task 6). */
+
+.dango-cleanup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-3);
+  min-width: 0;
+}
+
+.dango-cleanup__text,
+.dango-cleanup__summary-title,
+.dango-overflow__warning {
+  margin: 0;
+}
+
+.dango-cleanup__count {
+  margin: 0;
+  color: var(--dango-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.dango-cleanup__keep {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-2);
+}
+
+.dango-cleanup__keep-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--dango-space-3);
+}
+
+.dango-cleanup__keep-label,
+.dango-cleanup__summary-title {
+  font-weight: 600;
+}
+
+.dango-cleanup__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dango-space-2);
+}
+
+.dango-cleanup__chip[aria-pressed="true"] {
+  border-color: var(--dango-green);
+  background: var(--dango-green-wash);
+  color: var(--dango-green-text);
+  font-weight: 600;
+}
+
+.dango-cleanup__range input {
+  width: 100%;
+  accent-color: var(--dango-green);
+}
+
+.dango-cleanup__marks {
+  display: flex;
+  justify-content: space-between;
+  color: var(--dango-muted);
+}
+
+.dango-cleanup__summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-1);
+  padding: var(--dango-space-3) var(--dango-space-4);
+  border: 1px solid var(--dango-line);
+  border-radius: var(--dango-radius-md);
+  background: var(--dango-surface);
+}
+
+.dango-cleanup__summary.is-destructive {
+  border-color: var(--dango-danger);
+}
+
+/* Context window nearly full sheet (ContextOverflow, moved onto Sheet in slice 9 Task 6). */
+
+.dango-overflow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-4);
+  min-width: 0;
+}
+
+.dango-overflow__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dango-space-2);
+  padding: var(--dango-space-3);
+  border-radius: var(--dango-radius-md);
+  background: var(--dango-amber-wash);
+  color: var(--dango-amber-text);
+}
+
+.dango-overflow__icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.dango-overflow__usage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dango-space-2);
+}
+
+.dango-overflow__usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dango-space-3);
+}
+
+.dango-overflow__usage-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--dango-amber-text);
+}
+
+.dango-overflow__usage-value.is-high {
+  color: var(--dango-danger);
+}
+
+.dango-overflow__meter {
+  height: 6px;
+  border-radius: var(--dango-radius-pill);
+  background: var(--dango-surface);
+  overflow: hidden;
+}
+
+.dango-overflow__meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--dango-amber-text);
+}
+
+.dango-overflow__meter.is-high > span {
+  background: var(--dango-danger);
+}
+
+.dango-overflow__remember {
+  display: flex;
+  align-items: center;
+  gap: var(--dango-space-2);
+  cursor: pointer;
+}
+
+.dango-overflow__remember input {
+  accent-color: var(--dango-green);
+}
+
+/*
+ * Reduced motion (A11Y1 rule 2): nothing moves. Covers the motion this slice adds and the app's live indicators:
+ * the sidebar drawer (expanded, rail and peek widths) and the content inset that follows it, every sheet (the
+ * inspector sheet included; it appears in place instead of rising or sliding), the tab bar, the thinking line and the
+ * pending dots. The mascot holds its idle pose and writes its state (Mascot.tsx; dango-foundations.css). The docked
+ * inspector's own rule is in globals.css (.workspace-panel). Also vaul's phone drawers and pickers, the chat's
+ * infinite pulses and follow-up entry, and Tailwind spinners and pulses (they stop turning but stay visible). Mantine's
+ * own transitions are off through respectReducedMotion (theme/mantineTheme.ts). !important beats the inline and sx
+ * transitions.
+ *
+ * Deliberately no catch-all (*) rule: the splash is removed on animationend (index.tsx) and Mantine Collapse waits
+ * for transitionend when it animates. With respectReducedMotion, Collapse never animates under reduced motion, so the
+ * descendant rules below (.studio-rail *, .dg-think *) cannot stall one either. vaul closes on timers.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .assistant-pending-dots i,
+  .dg-think,
+  .dg-think *,
+  .dg-tabbar,
+  .dg-tabbar *,
+  .MuiDrawer-paper,
+  .studio-rail *,
+  .dg-content,
+  #main,
+  .dg-sheet,
+  .dango-sheet--right,
+  .dango-inspector-sheet,
+  .dg-sheet-scrim,
+  [data-vaul-drawer],
+  [data-vaul-overlay],
+  .todo-app-glyph.is-progress,
+  .agent-status-dot.is-muted,
+  .msg-followups,
+  .animate-spin,
+  .animate-pulse {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Rail buttons shrink a little when pressed (active:scale); keep them still. */
+  .studio-rail button:active {
+    transform: none !important;
+  }
+}

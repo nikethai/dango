@@ -93,6 +93,16 @@ describe('AgentsSettings', () => {
   })
 })
 
+describe('agent tiles (A11Y1, Task 12 walk)', () => {
+  it('no button inside a button: the tile opens a chat and its star, edit and delete are siblings', () => {
+    state.agents = [{ id: 'a', name: 'Researcher', prompt: 'p', starred: false, usedCount: 0 }]
+    const { container } = renderIt()
+    expect(container.querySelectorAll('button button')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'Researcher' })).toBeTruthy()
+    for (const name of ['star', 'edit', 'delete']) expect(screen.getByRole('button', { name })).toBeTruthy()
+  })
+})
+
 describe('Copilots is only a redirect', () => {
   it('route files', () => {
     const c = src('routes/copilots.tsx')

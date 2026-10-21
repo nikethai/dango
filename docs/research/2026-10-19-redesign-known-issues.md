@@ -25,6 +25,8 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
 | 10 | Gmail and Asana have only been tested against mocks (msw). Nobody has signed in, received mail, or seen a draft land in a real mailbox. | The manual walk in the slice 10 PR (macOS, Trust Auto and Ask). |
 | 10 | Asana's CORS was checked with curl from this container, not from the desktop webview. Whether a new comment updates a task's `modified_at` (the 90-day comment window relies on it) is unconfirmed. | Same walk: connect Asana in the desktop app, comment on an old task. |
 | 10 | The CH6 chat opened from the Quick Chat window and the draft edit sheet's real modal path were not seen in a window. | Same walk. |
+| 09 | First run with a real source (the "Reading your folder…" card), desktop sign-in with ChatGPT or Google, and the folder picker were not walked: on web every source kind needs the desktop app. | The slice 09 PR's desktop walk. |
+| 09 | The three window sizes, the rail and the inspector were walked headless on web only. A real desktop resize, iOS (swipe, safe areas), Android (keyboard flag, rotation), tablets at 760 px or wider, VoiceOver/NVDA and macOS Reduce Motion were not run. | Same walk, plus one phone and one screen reader. |
 | all | No CI runs the tests. The local gates are the only check. | — |
 
 ## Trade-offs accepted on purpose
@@ -68,6 +70,28 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
   - A scoped search shows no Everywhere knowledge unless the Everywhere chip is chosen. Folder search returns at most 8 hits across all scopes.
   - TASK-15 (`#root` aria-hidden on web) is fixed: the ⌘K overlay renders nothing while closed.
 
+- **First run (09).**
+  - Users whom the model check misses (for example OpenClaw-only, no token) are now held in first run on every page except Settings; they used to get a dismissable Welcome dialog.
+  - Importing settings replaces the first-run record, so an old export without keys sends an experienced user through all five steps.
+  - The FR3 lead ("Everything Dango learns from this source stays inside it.") still shows after Skip, when there is no source.
+  - A Gmail or Asana account created during step 2 is kept if the app quits during step 3 (reused on the next pick, not duplicated).
+  - The "Connect a source" item from a skipped step stays open after a source is connected some other way; dismiss it.
+  - A source job stuck "running" (background work paused) keeps the "Reading…" card up until Stop.
+- **Window sizes (09).**
+  - At 390 px the composer's model name still truncates to one letter and the thinking-level chevron overlaps its label; the scope pill and model chips are under 44 px (TASK-33 stays open; its sidebar-on-load part is fixed).
+  - With a 500 px custom sidebar and the project explorer at 1200 px, the explorer shrinks to nothing so the inspector fits.
+  - Opening an old chat no longer opens its artifact by itself; the card's Open button does.
+  - ⌘\ opens the rail peek without moving focus into it.
+  - Scope row actions overlay the client chip while hovered, and stay reachable by keyboard only through the row menu.
+- **Accessibility (09).**
+  - Quick Chat keeps its own announcement of the finished answer and gets no "Thinking, N seconds" updates.
+  - Errors in chat are announced by the error notice, which may re-announce when the list remounts it on scroll; a Swarm "could not plan" note is not announced.
+  - Older colour transitions longer than 150 ms still run under Reduce Motion; everything that moves is stopped.
+  - Six confirm dialogs (discard edit, compression, imported-source delete, summary delete, knowledge base delete, clear memories) still use the old modal; deleting an imported source asks nothing (TASK-46).
+  - At phone width the password field's show/hide icon is 44 px inside a 38 px field; it is transparent, so it looks right.
+  - If the desktop window-role lookup never answers, a new user stays on a blank screen instead of first run (no timeout; a failed lookup is handled).
+  - The Mantine theme's input focus style is ignored by the styles API (a console warning, pre-existing).
+
 ## Follow-ups filed
 
 - TASK-13: the knowledge store can't recover from an unreadable `knowledge` key, and knowledge leaks into settings export and import.
@@ -91,6 +115,7 @@ Cards marked `TASK-n` live on the Backlog.md board (`backlog task view TASK-n`).
 - TASK-31: multi-agent rooms have gaps in the ability, cost and plan-mode checks.
 - TASK-32: decide whether Redo on a tool-capable model turns tools back on after "Answer without tools".
 - TASK-34 to TASK-41: from slice 06c — search more source kinds, remove the unreachable Team room discuss/work code, name the requester on the permission sheet, hidden Quick Chat permission requests, per-chat live Swarm status, grant cleanup on scope delete and timeout wording, failed Swarm tasks on the card, risk-engine false positives.
+- TASK-46: from slice 09 — move the last confirm dialogs onto Sheet.
 - TASK-42 to TASK-45: from slice 10 — remote local-model hosts, Gmail on Everywhere, PM pilot side effects on ordinary chats, local-only gaps outside the chat path.
 - TASK-33: phone-width polish (action row behind the composer, model name truncation, sidebar opening on load) and unused translation keys.
 

@@ -33,7 +33,8 @@ vi.mock('@/lib/startNewChat', () => ({ startNewChat: vi.fn() }))
 vi.mock('@/modals/Settings', () => ({ navigateToSettings: vi.fn() }))
 vi.mock('@/projects/scope-navigation', () => ({ newChatScopeId: vi.fn() }))
 vi.mock('@/router', () => ({ router: { state: { location: { pathname: '/', search: {} } }, navigate: vi.fn() } }))
-vi.mock('@/packages/navigator', () => ({ getOS: () => 'Mac' }))
+const os = vi.hoisted(() => ({ value: 'Mac' }))
+vi.mock('@/packages/navigator', () => ({ getOS: () => os.value }))
 vi.mock('@/platform', () => ({
   default: { onWindowFocused: () => () => {}, onWindowShow: () => () => {} },
 }))
@@ -45,6 +46,8 @@ vi.mock('@/stores/sessionActions', () => ({
 }))
 vi.mock('@/hooks/dom', () => ({ focusMessageInput: vi.fn() }))
 vi.mock('@/hooks/useScreenChange', () => ({ useIsSmallScreen: () => false }))
+const toggleSidebar = vi.hoisted(() => vi.fn())
+vi.mock('./useLayoutMode', () => ({ toggleSidebar }))
 
 import useShortcut from './useShortcut'
 
@@ -79,6 +82,7 @@ function PermissionSheet() {
 }
 
 afterEach(() => {
+  os.value = 'Mac'
   cleanup()
   act(() => mockStore.getState().setOpenSearchDialog(false))
   document.body.innerHTML = ''
@@ -115,5 +119,89 @@ describe('useShortcut ⌘K', () => {
     render(<PermissionSheet />)
     act(() => cmdK())
     expect(isOpen()).toBe(true)
+  })
+})
+
+describe('useShortcut ⌘\\', () => {
+  it('toggles the sidebar by key or by the physical Backslash key (layouts where \\ needs AltGr)', () => {
+    toggleSidebar.mockClear()
+    renderHook(() => useShortcut())
+    act(() => {
+      fireEvent.keyDown(window, { key: '\\', code: 'Backslash', metaKey: true })
+    })
+    expect(toggleSidebar).toHaveBeenCalledTimes(1)
+    act(() => {
+      fireEvent.keyDown(window, { key: '#', code: 'Backslash', metaKey: true })
+    })
+    expect(toggleSidebar).toHaveBeenCalledTimes(2)
+    act(() => {
+      fireEvent.keyDown(window, { key: '\\', code: 'IntlBackslash', metaKey: true, altKey: true })
+    })
+    expect(toggleSidebar).toHaveBeenCalledTimes(3)
+  })
+
+  it('ignores \\ without the command key', () => {
+    toggleSidebar.mockClear()
+    renderHook(() => useShortcut())
+    act(() => {
+      fireEvent.keyDown(window, { key: '\\', code: 'Backslash' })
+    })
+    expect(toggleSidebar).not.toHaveBeenCalled()
+  })
+
+  it('off Mac, leaves AltGr (Ctrl+Alt) alone so it types a backslash', () => {
+    os.value = 'Windows'
+    toggleSidebar.mockClear()
+    renderHook(() => useShortcut())
+    // German layout: AltGr+ß reports key '\\' with Ctrl and Alt held.
+    const altGr = new KeyboardEvent('keydown', {
+      key: '\\',
+      code: 'Minus',
+      ctrlKey: true,
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    act(() => {
+      window.dispatchEvent(altGr)
+    })
+    expect(altGr.defaultPrevented).toBe(false)
+    expect(toggleSidebar).not.toHaveBeenCalled()
+    // AltGraph reported without altKey (some browsers) is ignored too.
+    const altGraph = new KeyboardEvent('keydown', {
+      key: '\\',
+      code: 'Minus',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    Object.defineProperty(altGraph, 'getModifierState', { value: (k: string) => k === 'AltGraph' })
+    act(() => {
+      window.dispatchEvent(altGraph)
+    })
+    expect(altGraph.defaultPrevented).toBe(false)
+    expect(toggleSidebar).not.toHaveBeenCalled()
+  })
+
+  it('off Mac, Ctrl+\\ and Ctrl plus the physical Backslash key still toggle', () => {
+    os.value = 'Windows'
+    toggleSidebar.mockClear()
+    renderHook(() => useShortcut())
+    const plain = new KeyboardEvent('keydown', {
+      key: '\\',
+      code: 'Backslash',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    act(() => {
+      window.dispatchEvent(plain)
+    })
+    expect(plain.defaultPrevented).toBe(true)
+    expect(toggleSidebar).toHaveBeenCalledTimes(1)
+    act(() => {
+      fireEvent.keyDown(window, { key: '#', code: 'Backslash', ctrlKey: true })
+    })
+    expect(toggleSidebar).toHaveBeenCalledTimes(2)
   })
 })

@@ -1,5 +1,5 @@
-import { ActionIcon, Box, Flex, Image, Menu, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
-import SwipeableDrawer from '@mui/material/SwipeableDrawer'
+import { Box, Flex, Image, Menu, Stack, Tooltip, UnstyledButton } from '@mantine/core'
+import Drawer from '@mui/material/Drawer'
 import {
   IconChevronUp,
   IconCode,
@@ -7,11 +7,12 @@ import {
   IconInfoCircle,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
+  IconMessages,
   IconSearch,
   IconSettings,
-  IconX,
+  IconStack2,
 } from '@tabler/icons-react'
-import { useNavigate } from '@tanstack/react-router'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import clsx from 'clsx'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -22,14 +23,11 @@ import TitleBarRow from './components/layout/TitleBarRow'
 import { SidebarReviewRow } from './components/review/SidebarReviewRow'
 import { NewScopeSheet } from './components/scope'
 import SessionList from './components/session/SessionList'
+import { hasOpenSheet } from './components/ui/useSheetFocus'
 import { FORCE_ENABLE_DEV_PAGES } from './dev/devToolsConfig'
+import { sidebarPresentation, toggleSidebar, useLayoutMode } from './hooks/useLayoutMode'
 import { useScopes } from './hooks/useScopes'
-import {
-  SIDEBAR_ICON_RAIL_WIDTH,
-  useIsSmallScreen,
-  useSidebarEffectiveWidth,
-  useSidebarWidth,
-} from './hooks/useScreenChange'
+import { useSidebarWidth } from './hooks/useScreenChange'
 import useVersion from './hooks/useVersion'
 import { startNewChat } from './lib/startNewChat'
 import { navigateToSettings } from './modals/Settings'
@@ -37,7 +35,15 @@ import { trackingEvent } from './packages/event'
 import appIcon from './static/icon.png'
 import { useLanguage, useSettingsStore } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
+import { sidebarToggleLabel } from './utils/sidebarToggle'
 import { CHATBOX_BUILD_PLATFORM } from './variables'
+
+// The Review row closes nothing on navigate: the sidebar is never a temporary drawer now (phone has the tab bar).
+const noNavigateEffect = () => {}
+
+function containsFocus(el: HTMLElement | null): boolean {
+  return !!el?.contains(document.activeElement)
+}
 
 export default function Sidebar() {
   const { t } = useTranslation()
@@ -46,19 +52,26 @@ export default function Sidebar() {
   const navigate = useNavigate()
   const { addScope } = useScopes()
   const userAvatarKey = useSettingsStore((s) => s.userAvatarKey)
-  const showSidebar = useUIStore((s) => s.showSidebar)
-  const setShowSidebar = useUIStore((s) => s.setShowSidebar)
   const sidebarLayout = useUIStore((s) => s.sidebarLayout)
   const setSidebarLayout = useUIStore((s) => s.setSidebarLayout)
   const setSidebarWidth = useUIStore((s) => s.setSidebarWidth)
   const setOpenSearchDialog = useUIStore((s) => s.setOpenSearchDialog)
+  const railPeek = useUIStore((s) => s.railPeek)
+  const setRailPeek = useUIStore((s) => s.setRailPeek)
+  const pathname = useLocation({ select: (l) => l.pathname })
 
   const sessionListViewportRef = useRef<HTMLDivElement>(null)
 
+  const mode = useLayoutMode()
   const expandedSidebarWidth = useSidebarWidth()
-  const effectiveSidebarWidth = useSidebarEffectiveWidth()
-  const isSmallScreen = useIsSmallScreen()
-  const isIconRail = !isSmallScreen && sidebarLayout === 'rail'
+  const presentation = sidebarPresentation({ mode, sidebarLayout, railPeek, expandedWidth: expandedSidebarWidth })
+  const isIconRail = presentation.show === 'rail'
+  // The rail's expanded sidebar laid over the content (medium, or wide collapsed to the rail).
+  const isPeek = presentation.show === 'overlay'
+  const peekIntentTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const railRef = useRef<HTMLDivElement>(null)
+  // Opening or closing the peek swaps the rail's buttons for the expanded nav (and back); keep keyboard focus inside.
+  const refocusAfterPeekChange = useRef(false)
 
   const [isResizing, setIsResizing] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
@@ -77,12 +90,6 @@ export default function Sidebar() {
     }
   }, [])
 
-  const closeSidebarIfMobile = useCallback(() => {
-    if (isSmallScreen) {
-      setShowSidebar(false)
-    }
-  }, [isSmallScreen, setShowSidebar])
-
   const displayName = useMemo(() => {
     // Local-first CE — no cloud account; product name as workspace identity
     return 'Dango'
@@ -92,23 +99,19 @@ export default function Sidebar() {
 
   const handleCreateNewSession = useCallback(() => {
     startNewChat()
-
-    if (isSmallScreen) {
-      setShowSidebar(false)
-    }
     trackingEvent('create_new_conversation', { event_category: 'user' })
-  }, [setShowSidebar, isSmallScreen])
+  }, [])
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
-      if (isSmallScreen || isIconRail) return
+      if (presentation.show !== 'expanded') return
       e.preventDefault()
       e.stopPropagation()
       setIsResizing(true)
       resizeStartX.current = e.clientX
       resizeStartWidth.current = expandedSidebarWidth
     },
-    [isSmallScreen, isIconRail, expandedSidebarWidth]
+    [presentation.show, expandedSidebarWidth]
   )
 
   useEffect(() => {
@@ -134,56 +137,112 @@ export default function Sidebar() {
     }
   }, [isResizing, language, setSidebarWidth])
 
+  const cancelPeekIntent = useCallback(() => {
+    if (peekIntentTimer.current) {
+      clearTimeout(peekIntentTimer.current)
+      peekIntentTimer.current = null
+    }
+  }, [])
+
+  // Hovering the rail opens the peek after a 300 ms intent delay; leaving it closes the peek.
+  const handleRailMouseEnter = useCallback(() => {
+    if (!isIconRail) return
+    cancelPeekIntent()
+    peekIntentTimer.current = setTimeout(() => {
+      peekIntentTimer.current = null
+      setRailPeek(true)
+    }, 300)
+  }, [isIconRail, cancelPeekIntent, setRailPeek])
+
+  const handleRailMouseLeave = useCallback(() => {
+    cancelPeekIntent()
+    // The account menu lives in a portal; keep the peek while it is open.
+    if (railPeek && !accountMenuOpen) setRailPeek(false)
+  }, [cancelPeekIntent, railPeek, accountMenuOpen, setRailPeek])
+
+  useEffect(() => cancelPeekIntent, [cancelPeekIntent])
+
+  // Navigation closes the peek.
+  const lastPathname = useRef(pathname)
+  useEffect(() => {
+    if (lastPathname.current === pathname) return
+    lastPathname.current = pathname
+    cancelPeekIntent()
+    setRailPeek(false)
+  }, [pathname, cancelPeekIntent, setRailPeek])
+
+  // Esc closes the peek, unless a sheet or an inner control already handled it.
+  useEffect(() => {
+    if (!railPeek) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || hasOpenSheet()) return
+      refocusAfterPeekChange.current = containsFocus(railRef.current)
+      setRailPeek(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [railPeek, setRailPeek])
+
+  // A click outside the peek closes it (the account menu's portal and the sidebar toggles count as inside).
+  useEffect(() => {
+    if (!railPeek) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target
+      if (!(target instanceof Element)) return
+      if (railRef.current?.contains(target)) return
+      if (target.closest('.user-menu-dropdown, [data-sidebar-toggle]')) return
+      setRailPeek(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [railPeek, setRailPeek])
+
+  const openPeek = useCallback(() => {
+    cancelPeekIntent()
+    refocusAfterPeekChange.current = containsFocus(railRef.current)
+    setRailPeek(true)
+  }, [cancelPeekIntent, setRailPeek])
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the peek opens or closes
+  useEffect(() => {
+    if (!refocusAfterPeekChange.current) return
+    refocusAfterPeekChange.current = false
+    railRef.current?.querySelector<HTMLElement>('.rail-nav button')?.focus()
+  }, [isPeek])
+
   // Desktop never fully hides — collapse to icon-only rail.
   const handleCollapseSidebar = useCallback(() => {
-    if (isSmallScreen) {
-      setShowSidebar(false)
-      return
-    }
     setSidebarLayout('rail')
-  }, [isSmallScreen, setShowSidebar, setSidebarLayout])
+  }, [setSidebarLayout])
 
+  // At wide this expands in place; at medium (always the rail) it opens the peek instead.
   const handleExpandSidebar = useCallback(() => {
-    if (isSmallScreen) {
-      setShowSidebar(true)
-      return
-    }
-    setSidebarLayout('expanded')
-    setShowSidebar(true)
-  }, [isSmallScreen, setShowSidebar, setSidebarLayout])
+    toggleSidebar(mode)
+  }, [mode])
 
-  // Desktop drawer stays open (rail or expanded); mobile uses temporary open/close.
-  const drawerOpen = isSmallScreen ? showSidebar : true
-  // Mobile: near-full intentional Chats panel (not a squeezed 75% desktop rail).
-  const drawerWidth = isSmallScreen
-    ? 'min(100vw - 1.25rem, 22.5rem)'
-    : isIconRail
-      ? SIDEBAR_ICON_RAIL_WIDTH
-      : effectiveSidebarWidth
+  // Same wording as the Header toggle: medium opens the peek, wide expands in place.
+  const railToggleLabel = sidebarToggleLabel(t, mode, railPeek)
 
   return (
     <>
-      <SwipeableDrawer
+      {/* Medium and wide only: at phone the root mounts no sidebar (the tab bar navigates, RS3). Always open: the rail,
+          the expanded sidebar or the peek. */}
+      <Drawer
         anchor={language === 'ar' ? 'right' : 'left'}
-        variant={isSmallScreen ? 'temporary' : 'persistent'}
-        open={drawerOpen}
-        onClose={() => setShowSidebar(false)}
-        onOpen={() => setShowSidebar(true)}
-        ModalProps={{
-          keepMounted: true, // Better open performance on mobile.
-        }}
+        variant="persistent"
+        open
         sx={{
           '& .MuiDrawer-paper': {
             backgroundImage: 'none',
             backgroundColor: 'var(--chatbox-background-rail)',
             boxSizing: 'border-box',
-            width: drawerWidth,
-            maxWidth: isSmallScreen ? 'min(100vw - 1.25rem, 22.5rem)' : undefined,
+            width: presentation.drawerWidth,
             // Soft studio edge (no hard double border with .studio-rail)
             borderRight: 'none',
-            boxShadow: 'var(--chatbox-rail-edge-shadow)',
+            // The peek floats above the content like a popover.
+            boxShadow: isPeek ? 'var(--dango-shadow-popover)' : 'var(--chatbox-rail-edge-shadow)',
             overflowX: 'hidden',
-            transition: 'width 220ms cubic-bezier(0.2, 0, 0, 1)',
+            transition: 'width 150ms cubic-bezier(0.2, 0, 0, 1)',
             '@media (prefers-reduced-motion: reduce)': {
               transition: 'none',
             },
@@ -202,22 +261,23 @@ export default function Sidebar() {
               }
             : { sx: { overflowY: 'initial' } }
         }
-        disableSwipeToOpen={CHATBOX_BUILD_PLATFORM !== 'ios'} // iOSSwipeToOpen
-        disableEnforceFocus={true} // focus trap， modal input
       >
         <Stack
           h="100%"
           gap={0}
           pt="var(--mobile-safe-area-inset-top, 0px)"
           pb="var(--mobile-safe-area-inset-bottom, 0px)"
-          className={clsx('relative studio-rail', isIconRail && 'studio-rail--icon')}
+          ref={railRef}
+          className={clsx('relative studio-rail', isIconRail && 'studio-rail--icon', isPeek && 'dg-rail-peek')}
+          onMouseEnter={handleRailMouseEnter}
+          onMouseLeave={handleRailMouseLeave}
         >
-          {/* Brand / mobile Chats header */}
+          {/* Brand header */}
           <TitleBarRow
             heightMode="desktop"
             macTrafficInset={false}
             justify={isIconRail ? 'center' : 'flex-start'}
-            className={clsx('rail-head', isSmallScreen && 'rail-head--mobile')}
+            className="rail-head"
           >
             {isIconRail ? (
               <Tooltip label="Dango" position="right" withArrow openDelay={300}>
@@ -229,23 +289,6 @@ export default function Sidebar() {
                   className="rounded-[6px] active:scale-[0.96] transition-transform"
                 />
               </Tooltip>
-            ) : isSmallScreen ? (
-              <Flex align="center" gap={8} miw={0} justify="space-between" className="controls min-w-0 w-full">
-                <Text component="span" className="rail-mobile-title">
-                  {t('Chats')}
-                </Text>
-                <ActionIcon
-                  variant="subtle"
-                  color="chatbox-secondary"
-                  size={40}
-                  radius="md"
-                  className="active:scale-[0.96] transition-transform"
-                  aria-label={t('Hide sidebar')}
-                  onClick={() => setShowSidebar(false)}
-                >
-                  <IconX size={18} stroke={1.75} />
-                </ActionIcon>
-              </Flex>
             ) : (
               <Flex align="center" gap={8} miw={0} justify="flex-start" className="controls min-w-0 w-full">
                 <DangoWordmark size="rail" />
@@ -255,14 +298,11 @@ export default function Sidebar() {
           </TitleBarRow>
 
           {/* Nav — labels when expanded; icon-only tooltips in rail */}
-          <nav
-            className={clsx('rail-nav', isIconRail && 'rail-nav--icon', isSmallScreen && 'rail-nav--mobile')}
-            aria-label={t('Navigation')}
-          >
+          <nav className={clsx('rail-nav', isIconRail && 'rail-nav--icon')} aria-label={t('Navigation')}>
             {isIconRail ? (
               <>
                 <Tooltip label={t('Review')} position="right" withArrow openDelay={300}>
-                  <SidebarReviewRow variant="rail" onNavigate={closeSidebarIfMobile} />
+                  <SidebarReviewRow variant="rail" onNavigate={noNavigateEffect} />
                 </Tooltip>
                 <Tooltip label={`${t('Search')} ⌘K`} position="right" withArrow openDelay={300}>
                   <button
@@ -270,43 +310,62 @@ export default function Sidebar() {
                     className="rail-icon-btn active:scale-[0.96]"
                     onClick={() => {
                       setOpenSearchDialog(true)
-                      closeSidebarIfMobile()
                     }}
                     aria-label={t('Search')}
                   >
                     <IconSearch size={18} stroke={1.5} aria-hidden />
                   </button>
                 </Tooltip>
-                <Tooltip label={t('New Chat')} position="right" withArrow openDelay={300}>
+                {/* Chats and Scopes open the peek (session list and scopes); New chat is ⌘N and in the peek. */}
+                <Tooltip label={t('Chats')} position="right" withArrow openDelay={300}>
                   <button
                     type="button"
                     className="rail-icon-btn active:scale-[0.96]"
-                    onClick={handleCreateNewSession}
-                    aria-label={t('New Chat')}
+                    onClick={openPeek}
+                    aria-label={t('Chats')}
                   >
-                    <IconEdit size={18} stroke={1.5} aria-hidden />
+                    <IconMessages size={18} stroke={1.5} aria-hidden />
+                  </button>
+                </Tooltip>
+                <Tooltip label={t('Scopes')} position="right" withArrow openDelay={300}>
+                  <button
+                    type="button"
+                    className="rail-icon-btn active:scale-[0.96]"
+                    onClick={openPeek}
+                    aria-label={t('Scopes')}
+                  >
+                    <IconStack2 size={18} stroke={1.5} aria-hidden />
+                  </button>
+                </Tooltip>
+                <Tooltip label={t('Settings')} position="right" withArrow openDelay={300}>
+                  <button
+                    type="button"
+                    className="rail-icon-btn active:scale-[0.96]"
+                    onClick={() => navigateToSettings()}
+                    aria-label={t('Settings')}
+                  >
+                    <IconSettings size={18} stroke={1.5} aria-hidden />
                   </button>
                 </Tooltip>
               </>
             ) : (
               <>
-                <SidebarReviewRow variant="expanded" onNavigate={closeSidebarIfMobile} />
+                <SidebarReviewRow variant="expanded" onNavigate={noNavigateEffect} />
                 <button
                   type="button"
                   className="rail-nav-item"
                   onClick={() => {
                     setOpenSearchDialog(true)
-                    closeSidebarIfMobile()
                   }}
                 >
                   <IconSearch size={18} stroke={1.5} aria-hidden />
                   <span>{t('Search')}</span>
-                  {!isSmallScreen && <kbd className="rail-nav-kbd">⌘K</kbd>}
+                  <kbd className="rail-nav-kbd">⌘K</kbd>
                 </button>
                 <button type="button" className="rail-nav-item rail-nav-item--primary" onClick={handleCreateNewSession}>
                   <IconEdit size={18} stroke={1.5} aria-hidden />
                   <span>{t('New Chat')}</span>
-                  {!isSmallScreen && <kbd className="rail-nav-kbd">⌘N</kbd>}
+                  <kbd className="rail-nav-kbd">⌘N</kbd>
                 </button>
               </>
             )}
@@ -319,7 +378,7 @@ export default function Sidebar() {
                 showArchived={showArchived}
                 onShowArchivedChange={setShowArchived}
                 onCreateProject={() => setFolderModalOpened(true)}
-                density={isSmallScreen ? 'mobile' : 'desktop'}
+                density="desktop"
               />
             </Box>
           )}
@@ -329,12 +388,13 @@ export default function Sidebar() {
           {/* Account footer — expand sits above user (chrome control, then identity) */}
           <div className={clsx('rail-foot', isIconRail && 'rail-foot--icon')}>
             {isIconRail && (
-              <Tooltip label={t('Expand sidebar')} position="right" withArrow openDelay={300}>
+              <Tooltip label={railToggleLabel} position="right" withArrow openDelay={300}>
                 <button
                   type="button"
                   className="rail-icon-btn rail-expand-btn active:scale-[0.96]"
                   onClick={handleExpandSidebar}
-                  aria-label={t('Expand sidebar')}
+                  aria-label={railToggleLabel}
+                  data-sidebar-toggle
                 >
                   <IconLayoutSidebarLeftExpand size={18} stroke={1.5} aria-hidden />
                 </button>
@@ -413,7 +473,6 @@ export default function Sidebar() {
                   rightSection={<em className="user-menu-kbd">⌘,</em>}
                   onClick={() => {
                     navigateToSettings()
-                    closeSidebarIfMobile()
                   }}
                 >
                   {t('Settings')}
@@ -431,26 +490,25 @@ export default function Sidebar() {
                   }
                   onClick={() => {
                     navigate({ to: '/about' })
-                    closeSidebarIfMobile()
                   }}
                 >
                   {t('About')}
                 </Menu.Item>
 
-                {!isSmallScreen && (
+                {mode === 'wide' && (
                   <>
                     <Menu.Divider />
                     <Menu.Item
                       leftSection={
-                        isIconRail ? (
+                        sidebarLayout === 'rail' ? (
                           <IconLayoutSidebarLeftExpand size={15} stroke={1.5} />
                         ) : (
                           <IconLayoutSidebarLeftCollapse size={15} stroke={1.5} />
                         )
                       }
-                      onClick={isIconRail ? handleExpandSidebar : handleCollapseSidebar}
+                      onClick={sidebarLayout === 'rail' ? handleExpandSidebar : handleCollapseSidebar}
                     >
-                      {isIconRail ? t('Expand sidebar') : t('Collapse to icons')}
+                      {sidebarLayout === 'rail' ? t('Expand sidebar') : t('Collapse to icons')}
                     </Menu.Item>
                   </>
                 )}
@@ -462,7 +520,6 @@ export default function Sidebar() {
                       leftSection={<IconCode size={15} stroke={1.5} />}
                       onClick={() => {
                         navigate({ to: '/dev' })
-                        closeSidebarIfMobile()
                       }}
                     >
                       {t('Dev Tools')}
@@ -472,7 +529,7 @@ export default function Sidebar() {
               </Menu.Dropdown>
             </Menu>
           </div>
-          {!isSmallScreen && !isIconRail && (
+          {presentation.show === 'expanded' && (
             <Box
               onMouseDown={handleResizeStart}
               onDoubleClick={handleCollapseSidebar}
@@ -481,7 +538,7 @@ export default function Sidebar() {
             />
           )}
         </Stack>
-      </SwipeableDrawer>
+      </Drawer>
 
       <NewScopeSheet
         opened={folderModalOpened}

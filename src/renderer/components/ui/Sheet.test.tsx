@@ -153,6 +153,18 @@ describe('Sheet', () => {
     expect(document.activeElement).toBe(main)
   })
 
+  it('opened with focus on the body (the docked inspector it replaced is gone), closing focuses #main (T7 M3)', () => {
+    const main = document.createElement('main')
+    main.id = 'main'
+    main.tabIndex = -1
+    document.body.appendChild(main)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(document.activeElement).toBe(document.body)
+    const { rerender } = render(<TestSheet />)
+    rerender(<TestSheet opened={false} />)
+    expect(document.activeElement).toBe(main)
+  })
+
   it('inner Esc handler wins', () => {
     const onClose = vi.fn()
     render(

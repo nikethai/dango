@@ -6,6 +6,7 @@ import { Route } from '@/routes/index'
 
 // The route module is imported in node; its components pull in storage (localStorage).
 vi.mock('@/components/review/ReviewHome', () => ({ ReviewHome: () => null }))
+vi.mock('@/components/first-run/FirstReadCard', () => ({ FirstReadCard: () => null }))
 vi.mock('@/components/layout/Page', () => ({ default: () => null }))
 vi.mock('@/packages/sources', () => ({ useSources: () => [], useSourcesLoaded: () => false }))
 
@@ -65,6 +66,12 @@ describe('/new wiring', () => {
   })
   it('route tree has /new', () => {
     expect(src('routeTree.gen.ts')).toContain("path: '/new'")
+  })
+  it('route tree has /first-run', () => {
+    expect(src('routeTree.gen.ts')).toContain("path: '/first-run'")
+  })
+  it('route tree has /scopes', () => {
+    expect(src('routeTree.gen.ts')).toContain("path: '/scopes'")
   })
   it('sidebar and shortcut use startNewChat', () => {
     for (const f of ['Sidebar.tsx', 'hooks/useShortcut.tsx']) {

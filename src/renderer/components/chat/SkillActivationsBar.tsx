@@ -46,7 +46,7 @@ function SkillActivationsBar({ activations, className }: SkillActivationsBarProp
   return (
     <div
       className={cn('skill-activations', !hasForced && 'skill-activations--suggested', className)}
-      role="status"
+      role="group"
       aria-label={label}
     >
       <span className="skill-activations-label" title={label}>

@@ -8,7 +8,6 @@ import { useTranslation } from 'react-i18next'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { getSession, updateSession as updateSessionStore } from '@/stores/chatStore'
 import { switchCurrentSession } from '@/stores/sessionActions'
-import { useUIStore } from '@/stores/uiStore'
 import ActionMenu, { type ActionMenuItemProps } from '../ActionMenu'
 import { AdaptiveModal } from '../common/AdaptiveModal'
 import { ScalableIcon } from '../common/ScalableIcon'
@@ -24,13 +23,9 @@ export interface Props {
 function SessionItem(props: Props) {
   const { session, selected, nested = false } = props
   const { t } = useTranslation()
-  const setShowSidebar = useUIStore((s) => s.setShowSidebar)
   const isSmallScreen = useIsSmallScreen()
   const onClick = () => {
     switchCurrentSession(session.id)
-    if (isSmallScreen) {
-      setShowSidebar(false)
-    }
   }
 
   const [menuOpened, setMenuOpened] = useState(false)

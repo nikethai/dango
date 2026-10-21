@@ -28,9 +28,12 @@ SafeArea.getStatusBarHeight().then(({ statusBarHeight }) => {
 
 Keyboard.addListener('keyboardWillShow', async (info) => {
   document.documentElement.style.setProperty(`--mobile-safe-area-inset-bottom`, `0px`)
+  // The phone tab bar hides while the keyboard is up (dango-layout.css).
+  document.documentElement.dataset.keyboard = 'open'
 })
 
 Keyboard.addListener('keyboardWillHide', () => {
+  delete document.documentElement.dataset.keyboard
   SafeArea.getSafeAreaInsets().then(({ insets }) => {
     for (const [key, value] of Object.entries(insets)) {
       document.documentElement.style.setProperty(`--mobile-safe-area-inset-${key}`, `${value}px`)

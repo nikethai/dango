@@ -5,7 +5,8 @@ import { Sheet } from '@/components/ui/Sheet'
 
 export const TRUST_LABELS: Record<TrustLevel, string> = { auto: 'Auto', ask: 'Ask first' }
 
-const OPTIONS: { level: TrustLevel; line: string; detail: string }[] = [
+/** TR1's options and their lines (English keys). First run's Trust step (FR4) shows the same lines. */
+export const TRUST_OPTIONS: { level: TrustLevel; line: string; detail: string }[] = [
   {
     level: 'auto',
     line: 'Dango does safe things first and shows them in Review as Done, with Undo.',
@@ -52,7 +53,7 @@ export function TrustSheet(props: {
       }
     >
       <div role="radiogroup" aria-label={t('Trust')} style={{ display: 'grid', gap: 'var(--dango-space-3)' }}>
-        {OPTIONS.map((o) => (
+        {TRUST_OPTIONS.map((o) => (
           <label
             key={o.level}
             style={{ display: 'flex', gap: 'var(--dango-space-3)', alignItems: 'flex-start', cursor: 'pointer' }}

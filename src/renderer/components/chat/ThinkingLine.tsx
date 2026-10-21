@@ -4,8 +4,7 @@ import { Trans, useTranslation } from 'react-i18next'
 import { Mascot } from '@/components/brand/Mascot'
 import Markdown from '@/components/Markdown'
 import { formatDangoDuration, useThinkingTimer } from '@/hooks/useThinkingTimer'
-import { useThrottledValue } from '@/hooks/useThrottledValue'
-import { rollingSummary, THINKING_ANNOUNCE_MS, thinkingStage } from '@/packages/thinking/thinking'
+import { rollingSummary, thinkingStage } from '@/packages/thinking/thinking'
 
 export type ThinkingLineProps = {
   live: boolean
@@ -22,9 +21,6 @@ export type ThinkingLineProps = {
   showMascot?: boolean
   onStop?: () => void
 }
-
-/** Delay before the status region gets its first words: a region that exists empty first is announced reliably. */
-export const THINKING_STATUS_FILL_MS = 150
 
 const withEllipsis = (summary: string) => (summary.endsWith('…') ? summary : `${summary}…`)
 
@@ -67,13 +63,7 @@ export function ThinkingLine({
   const stage = live ? thinkingStage(elapsed) : null
   const stageTitle = stage === null ? '' : stage === 'thinking' ? t('Thinking') : t('Still thinking')
 
-  // Screen readers hear the summary (or the stage on a plain wait), at most every 5 s.
-  const announced = useThrottledValue(live ? summary || stageTitle : '', THINKING_ANNOUNCE_MS)
-  const [statusReady, setStatusReady] = useState(false)
-  useEffect(() => {
-    const timer = setTimeout(() => setStatusReady(true), THINKING_STATUS_FILL_MS)
-    return () => clearTimeout(timer)
-  }, [])
+  // Screen readers hear the turn from TurnAnnouncer (one polite region per turn, A11Y1 rule 1), not from this line.
 
   if (!live && !text.trim()) return null
 
@@ -141,11 +131,6 @@ export function ThinkingLine({
         <button type="button" className="dg-btn dg-btn--ghost dg-think-line__stop" onClick={onStop}>
           {t('Stop')}
         </button>
-      ) : null}
-      {live ? (
-        <div role="status" className="sr-only">
-          {statusReady ? announced : ''}
-        </div>
       ) : null}
     </div>
   )

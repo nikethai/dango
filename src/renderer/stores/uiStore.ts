@@ -5,7 +5,6 @@ import type { VirtuosoHandle } from 'react-virtuoso'
 import { v4 as uuidv4 } from 'uuid'
 import { createStore, useStore } from 'zustand'
 import { combine, persist } from 'zustand/middleware'
-import platform from '@/platform'
 import { safeStorage } from './safeStorage'
 
 /** Ephemeral composer quote draft (not persisted). */
@@ -56,9 +55,10 @@ export const uiStore = createStore(
         messageScrolling: null as RefObject<VirtuosoHandle> | null,
         messageScrollingAtTop: false,
         messageScrollingAtBottom: false,
-        showSidebar: platform.formFactor !== 'mobile',
         /** Desktop only: expanded tree vs icon-only rail (never fully hidden). */
         sidebarLayout: 'expanded' as 'expanded' | 'rail',
+        /** The rail's expanded sidebar laid over the content (medium, wide-rail); UI-only, never persisted. */
+        railPeek: false,
         sidebarMode: 'chat' as 'chat' | 'task',
         openSearchDialog: false,
         openAboutDialog: false, // (legacy)
@@ -119,12 +119,12 @@ export const uiStore = createStore(
           set((state) => (state.fileDragActive === fileDragActive ? state : { fileDragActive }))
         },
 
-        setShowSidebar: (showSidebar: boolean) => {
-          set((state) => (state.showSidebar === showSidebar ? state : { showSidebar }))
-        },
-
         setSidebarLayout: (sidebarLayout: 'expanded' | 'rail') => {
           set((state) => (state.sidebarLayout === sidebarLayout ? state : { sidebarLayout }))
+        },
+
+        setRailPeek: (railPeek: boolean) => {
+          set((state) => (state.railPeek === railPeek ? state : { railPeek }))
         },
 
         setSidebarMode: (sidebarMode: 'chat' | 'task') => {

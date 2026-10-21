@@ -37,7 +37,7 @@ const TEST_IMAGE_BASE64 =
  * @returns The final test state
  */
 export async function testModelCapabilities(options: TestModelOptions): Promise<ModelTestState> {
-  const { providerId, modelId, settings, configs, dependencies, onStateChange } = options
+  const { onStateChange } = options
 
   let state: ModelTestState = {
     testing: true,
@@ -49,15 +49,7 @@ export async function testModelCapabilities(options: TestModelOptions): Promise<
   onStateChange?.(state)
 
   try {
-    let authReadySettings = await refreshXaiAuthIfNeeded(settings, providerId)
-    authReadySettings = await refreshOpenAICodexAuthIfNeeded(authReadySettings, providerId)
-    authReadySettings = await refreshGeminiAntigravityAuthIfNeeded(authReadySettings, providerId)
-    const modelInstance = getModel(
-      { ...authReadySettings, provider: providerId, modelId },
-      authReadySettings,
-      configs,
-      dependencies
-    )
+    const modelInstance = await createTestModel(options)
 
     // Test 1: Basic text request
     state = await testBasicRequest(modelInstance, state)
@@ -81,6 +73,32 @@ export async function testModelCapabilities(options: TestModelOptions): Promise<
     onStateChange?.({ ...state })
   }
   return state
+}
+
+/**
+ * Send only the basic text request (one call), e.g. to check a key. Vision and tool tests are not run, so the state
+ * carries no `visionTest` or `toolTest`.
+ */
+export async function testBasicModelRequest(options: TestModelOptions): Promise<ModelTestState> {
+  const { onStateChange } = options
+  let state: ModelTestState = { testing: true, basicTest: { status: 'pending' } }
+  onStateChange?.(state)
+  try {
+    const modelInstance = await createTestModel(options)
+    state = { ...(await testBasicRequest(modelInstance, state)), testing: false }
+  } catch (e: unknown) {
+    state = { ...state, testing: false, basicTest: { status: 'error', error: String(e) } }
+  }
+  onStateChange?.({ ...state })
+  return state
+}
+
+async function createTestModel(options: TestModelOptions): Promise<ModelInterface> {
+  const { providerId, modelId, settings, configs, dependencies } = options
+  let authReadySettings = await refreshXaiAuthIfNeeded(settings, providerId)
+  authReadySettings = await refreshOpenAICodexAuthIfNeeded(authReadySettings, providerId)
+  authReadySettings = await refreshGeminiAntigravityAuthIfNeeded(authReadySettings, providerId)
+  return getModel({ ...authReadySettings, provider: providerId, modelId }, authReadySettings, configs, dependencies)
 }
 
 async function testBasicRequest(modelInstance: ModelInterface, state: ModelTestState): Promise<ModelTestState> {

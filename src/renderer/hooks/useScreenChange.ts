@@ -1,25 +1,12 @@
 import { useMantineTheme } from '@mantine/core'
 import { useTheme } from '@mui/material/styles'
 import useMediaQuery from '@mui/material/useMediaQuery'
-import { useEffect } from 'react'
 import { useUIStore } from '../stores/uiStore'
+import { sidebarPresentation, useLayoutMode } from './useLayoutMode'
 
-/** Desktop icon-only rail width (px). Expanded width uses useSidebarWidth(). */
-export const SIDEBAR_ICON_RAIL_WIDTH = 56
-
-export default function useScreenChange() {
-  const setShowSidebar = useUIStore((s) => s.setShowSidebar)
-  const realIsSmallScreen = useIsSmallScreen()
-  useEffect(() => {
-    // Desktop: always keep drawer open (expanded or icon rail). Mobile: closed by default.
-    setShowSidebar(!realIsSmallScreen)
-  }, [realIsSmallScreen, setShowSidebar])
-}
-
+/** Phone layout (< 760 px wide). */
 export function useIsSmallScreen() {
-  const theme = useTheme()
-  const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'))
-  return isSmallScreen
+  return useLayoutMode() === 'phone'
 }
 
 export function useScreenDownToMD() {
@@ -32,44 +19,21 @@ export function useIsLargeScreen() {
   return !useMediaQuery(theme.breakpoints.down('lg'))
 }
 
+/** Expanded sidebar width: the user's dragged width, else 220 px (README Layout) at every non-phone width. */
 export function useSidebarWidth() {
   const mantineTheme = useMantineTheme()
   const scale = mantineTheme.scale ?? 1
-  const theme = useTheme()
   const customWidth = useUIStore((s) => s.sidebarWidth)
-
-  // Always call hooks in the same order
-  const sm = useMediaQuery(theme.breakpoints.up('sm'))
-  const md = useMediaQuery(theme.breakpoints.up('md'))
-  const lg = useMediaQuery(theme.breakpoints.up('lg'))
-  const xl = useMediaQuery(theme.breakpoints.up('xl'))
-
-  // If custom width is set, use it
-  if (customWidth !== null) {
-    return customWidth
-  }
-
-  // Studio rail target ~280px (mock --rail-w); keep slightly tighter only on small desktop
-  if (xl || lg) {
-    return 280 * scale
-  } else if (md) {
-    return 260 * scale
-  } else if (sm) {
-    return 240 * scale
-  } else {
-    return 280 * scale
-  }
+  return customWidth ?? 220 * scale
 }
 
-/** Desktop: expanded tree width or 56px icon rail. Mobile callers still use 75vw for the drawer. */
+/** How far the main content sits from the window edge: the docked sidebar or rail, 0 at phone. */
 export function useSidebarEffectiveWidth() {
+  const mode = useLayoutMode()
   const expandedWidth = useSidebarWidth()
-  const isSmallScreen = useIsSmallScreen()
   const sidebarLayout = useUIStore((s) => s.sidebarLayout)
-  if (isSmallScreen) {
-    return expandedWidth
-  }
-  return sidebarLayout === 'rail' ? SIDEBAR_ICON_RAIL_WIDTH : expandedWidth
+  const railPeek = useUIStore((s) => s.railPeek)
+  return sidebarPresentation({ mode, sidebarLayout, railPeek, expandedWidth }).contentInset
 }
 
 export function useInputBoxHeight(): { min: number; max: number } {

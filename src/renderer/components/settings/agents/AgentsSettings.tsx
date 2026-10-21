@@ -179,13 +179,11 @@ function MiniItem(props: MiniItemProps) {
     event.preventDefault()
   }
 
+  // The tile is a card, not a button: its main button (stretched over the card by CSS) starts the chat, and the star,
+  // edit and delete buttons sit beside it. A button inside a button hides the inner ones from screen readers.
   return (
-    <button
-      type="button"
-      className={`agent-tile${props.mode === 'remote' ? ' agent-tile-remote' : ''}`}
-      onClick={onSelect}
-    >
-      <span className="agent-tile-avatar">
+    <div className={`agent-tile${props.mode === 'remote' ? ' agent-tile-remote' : ''}`}>
+      <span className="agent-tile-avatar" aria-hidden="true">
         {props.detail.emojiAvatar ? (
           props.detail.emojiAvatar
         ) : props.detail.picUrl ? (
@@ -194,9 +192,11 @@ function MiniItem(props: MiniItemProps) {
           '✦'
         )}
       </span>
-      <span className="agent-tile-name" title={props.detail.name}>
-        {props.detail.name}
-      </span>
+      <button type="button" className="agent-tile-main" onClick={onSelect}>
+        <span className="agent-tile-name" title={props.detail.name}>
+          {props.detail.name}
+        </span>
+      </button>
 
       {props.mode === 'local' && (
         <span className="agent-tile-actions">
@@ -242,7 +242,7 @@ function MiniItem(props: MiniItemProps) {
           )}
         </span>
       )}
-    </button>
+    </div>
   )
 }
 

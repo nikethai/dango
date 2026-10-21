@@ -11,8 +11,10 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
+import { Route as ScopesImport } from './routes/scopes'
 import { Route as QuickImport } from './routes/quick'
 import { Route as NewImport } from './routes/new'
+import { Route as FirstRunImport } from './routes/first-run'
 import { Route as CopilotsImport } from './routes/copilots'
 import { Route as AboutImport } from './routes/about'
 import { Route as SettingsRouteImport } from './routes/settings/route'
@@ -58,6 +60,12 @@ import { Route as SettingsProviderProviderIdImport } from './routes/settings/pro
 
 // Create/Update Routes
 
+const ScopesRoute = ScopesImport.update({
+  id: '/scopes',
+  path: '/scopes',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const QuickRoute = QuickImport.update({
   id: '/quick',
   path: '/quick',
@@ -67,6 +75,12 @@ const QuickRoute = QuickImport.update({
 const NewRoute = NewImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const FirstRunRoute = FirstRunImport.update({
+  id: '/first-run',
+  path: '/first-run',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -363,6 +377,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CopilotsImport
       parentRoute: typeof rootRoute
     }
+    '/first-run': {
+      id: '/first-run'
+      path: '/first-run'
+      fullPath: '/first-run'
+      preLoaderRoute: typeof FirstRunImport
+      parentRoute: typeof rootRoute
+    }
     '/new': {
       id: '/new'
       path: '/new'
@@ -375,6 +396,13 @@ declare module '@tanstack/react-router' {
       path: '/quick'
       fullPath: '/quick'
       preLoaderRoute: typeof QuickImport
+      parentRoute: typeof rootRoute
+    }
+    '/scopes': {
+      id: '/scopes'
+      path: '/scopes'
+      fullPath: '/scopes'
+      preLoaderRoute: typeof ScopesImport
       parentRoute: typeof rootRoute
     }
     '/settings/provider': {
@@ -746,8 +774,10 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRouteRouteWithChildren
   '/about': typeof AboutRoute
   '/copilots': typeof CopilotsRoute
+  '/first-run': typeof FirstRunRoute
   '/new': typeof NewRoute
   '/quick': typeof QuickRoute
+  '/scopes': typeof ScopesRoute
   '/settings/provider': typeof SettingsProviderRouteRouteWithChildren
   '/dev/context-generator': typeof DevContextGeneratorRoute
   '/dev/css-var': typeof DevCssVarRoute
@@ -791,8 +821,10 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/copilots': typeof CopilotsRoute
+  '/first-run': typeof FirstRunRoute
   '/new': typeof NewRoute
   '/quick': typeof QuickRoute
+  '/scopes': typeof ScopesRoute
   '/dev/context-generator': typeof DevContextGeneratorRoute
   '/dev/css-var': typeof DevCssVarRoute
   '/dev/design-system': typeof DevDesignSystemRoute
@@ -838,8 +870,10 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRouteRouteWithChildren
   '/about': typeof AboutRoute
   '/copilots': typeof CopilotsRoute
+  '/first-run': typeof FirstRunRoute
   '/new': typeof NewRoute
   '/quick': typeof QuickRoute
+  '/scopes': typeof ScopesRoute
   '/settings/provider': typeof SettingsProviderRouteRouteWithChildren
   '/dev/context-generator': typeof DevContextGeneratorRoute
   '/dev/css-var': typeof DevCssVarRoute
@@ -887,8 +921,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/about'
     | '/copilots'
+    | '/first-run'
     | '/new'
     | '/quick'
+    | '/scopes'
     | '/settings/provider'
     | '/dev/context-generator'
     | '/dev/css-var'
@@ -931,8 +967,10 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/copilots'
+    | '/first-run'
     | '/new'
     | '/quick'
+    | '/scopes'
     | '/dev/context-generator'
     | '/dev/css-var'
     | '/dev/design-system'
@@ -976,8 +1014,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/about'
     | '/copilots'
+    | '/first-run'
     | '/new'
     | '/quick'
+    | '/scopes'
     | '/settings/provider'
     | '/dev/context-generator'
     | '/dev/css-var'
@@ -1024,8 +1064,10 @@ export interface RootRouteChildren {
   SettingsRouteRoute: typeof SettingsRouteRouteWithChildren
   AboutRoute: typeof AboutRoute
   CopilotsRoute: typeof CopilotsRoute
+  FirstRunRoute: typeof FirstRunRoute
   NewRoute: typeof NewRoute
   QuickRoute: typeof QuickRoute
+  ScopesRoute: typeof ScopesRoute
   ScopeScopeIdRoute: typeof ScopeScopeIdRoute
   SessionSessionIdRoute: typeof SessionSessionIdRoute
   ImageCreatorIndexRoute: typeof ImageCreatorIndexRoute
@@ -1037,8 +1079,10 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRouteRoute: SettingsRouteRouteWithChildren,
   AboutRoute: AboutRoute,
   CopilotsRoute: CopilotsRoute,
+  FirstRunRoute: FirstRunRoute,
   NewRoute: NewRoute,
   QuickRoute: QuickRoute,
+  ScopesRoute: ScopesRoute,
   ScopeScopeIdRoute: ScopeScopeIdRoute,
   SessionSessionIdRoute: SessionSessionIdRoute,
   ImageCreatorIndexRoute: ImageCreatorIndexRoute,
@@ -1059,8 +1103,10 @@ export const routeTree = rootRoute
         "/settings",
         "/about",
         "/copilots",
+        "/first-run",
         "/new",
         "/quick",
+        "/scopes",
         "/scope/$scopeId",
         "/session/$sessionId",
         "/image-creator/"
@@ -1117,11 +1163,17 @@ export const routeTree = rootRoute
     "/copilots": {
       "filePath": "copilots.tsx"
     },
+    "/first-run": {
+      "filePath": "first-run.tsx"
+    },
     "/new": {
       "filePath": "new.tsx"
     },
     "/quick": {
       "filePath": "quick.tsx"
+    },
+    "/scopes": {
+      "filePath": "scopes.tsx"
     },
     "/settings/provider": {
       "filePath": "settings/provider/route.tsx",

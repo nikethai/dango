@@ -21,13 +21,17 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
-// small screen or not, for the media queries behind useIsSmallScreen
-let smallScreen = false
+// useIsSmallScreen follows the window width (phone < 760 px, slice 9 useLayoutMode)
+const setWindowWidth = (width: number) => {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width })
+  window.dispatchEvent(new Event('resize'))
+}
 
+// Mantine's color scheme reads matchMedia; jsdom has none
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({
-    matches: smallScreen,
+    matches: false,
     media: query,
     onchange: null,
     addListener: vi.fn(),
@@ -56,7 +60,7 @@ const renderButton = (enabled: boolean) =>
 
 beforeEach(() => {
   navigateToSettings.mockClear()
-  smallScreen = false
+  setWindowWidth(1280)
 })
 
 describe('DictateButton', () => {
@@ -87,7 +91,7 @@ describe('DictateButton', () => {
   })
 
   it('gets the 44px mobile touch target on small screens, like the Tools button', () => {
-    smallScreen = true
+    setWindowWidth(390)
     renderButton(false)
 
     const button = screen.getByRole('button', { name: 'Dictate' })

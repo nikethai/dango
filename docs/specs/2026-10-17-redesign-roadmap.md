@@ -119,6 +119,11 @@ Names one slice creates and others import. The owner builds it; nobody else re-c
 | `reviewStore`, `loadReviewEntries`, `subscribeReviewEntries` (slice 10's bridge also re-exports these) | `src/renderer/packages/review/store.ts` | 1b |
 | `loadSources`; `isLocalModelProvider` (moved beside `LOCAL_PROVIDERS` by slice 10) | `src/renderer/packages/sources/store.ts`, `src/renderer/packages/sources/model-check.ts` | 7 (changes made in slice 10) |
 | `startNewChat` is also imported directly by slice 10's `answer.ts` (fallback for questions it doesn't own) | `src/renderer/lib/startNewChat.ts` | 1b |
+| Existing names slice 9 imports (registered 2026-10-21, all already exported): `discardSourceDraft`, `draftWasDiscarded`, `sourceRuleErrorText`, `SourceRuleError`, `BACKGROUND_REVIEW_LINE`, `getSource`, `useSources`, `useSourcesLoaded`, `getSourceKind`, `MCP_SOURCE_OPTION`; `SourceDraft`; `useBackgroundJobs` | `src/renderer/packages/sources/`, `src/shared/types/sources.ts`, `src/renderer/packages/background/` | 7 |
+| `validateScopeName` | `src/renderer/projects/scope-store.ts` | 3 |
+| `formatShortcutLabel`, `Keys`; `knownWindowRole`, `getWindowRole` | `src/renderer/components/Shortcut.tsx`, `src/renderer/platform/windowRole.ts` | existing |
+| `TRUST_LABELS`, `readTrustLevel`; `useReviewEntries`, `hasOpenSheet`, `topSheet` | `src/renderer/components/settings/TrustSheet.tsx`, `src/shared/types/settings.ts`, `src/renderer/packages/review/`, `src/renderer/components/ui/Sheet.tsx` | 2, 5, 1b |
+| Additive exports slice 9 makes in their owners' files: `TRUST_OPTIONS` (the Trust sheet's option lines), an optional `className` on `Sheet`, the model tester's basic-test helper, and the Codex and Gemini OAuth model-seeding helpers | owners' files | 2, 1b, existing (changes made in slice 9) |
 
 ## Decisions where the spec disagreed with itself
 

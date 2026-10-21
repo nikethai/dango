@@ -12,12 +12,14 @@ import ChatDockStack from '@/components/chat/ChatDockStack'
 import { ChatDropOverlay } from '@/components/chat/ChatDropOverlay'
 import MessageList, { type MessageListRef } from '@/components/chat/MessageList'
 import SessionStatusBar from '@/components/chat/SessionStatusBar'
+import { TurnAnnouncer } from '@/components/chat/TurnAnnouncer'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import InputBox, { type InputBoxRef } from '@/components/InputBox/InputBox'
 import Header from '@/components/layout/Header'
 import { ProjectContextPanel } from '@/components/project/ProjectContextPanel'
 import ThreadHistoryDrawer from '@/components/session/ThreadHistoryDrawer'
 import WorkspacePanel, { useWorkspaceChromeActive } from '@/components/workspace/WorkspacePanel'
+import { useLayoutMode } from '@/hooks/useLayoutMode'
 import { useProjectWorkspace } from '@/hooks/useProjectWorkspace'
 import { useProviders } from '@/hooks/useProviders'
 import platform from '@/platform'
@@ -67,6 +69,11 @@ function RouteComponent() {
   const lastGeneratingMessage = useMemo(
     () => currentMessageList.find((m: Message) => m.generating),
     [currentMessageList]
+  )
+  // The turn the live region follows: the one generating (the first, as in swarm runs), else the last answer.
+  const turnMessage = useMemo(
+    () => lastGeneratingMessage ?? currentMessageList.findLast((m: Message) => m.role === 'assistant'),
+    [lastGeneratingMessage, currentMessageList]
   )
   // Live-lock + abort registry + message.generating. Never rely on cache alone.
   const [liveGen, setLiveGen] = useState(
@@ -251,6 +258,8 @@ function RouteComponent() {
   const isOpenClawProvider = currentSession?.settings?.provider === ModelProviderEnum.OpenClaw
   const [showSessionPanel, setShowSessionPanel] = useState(false)
   const workspaceChromeActive = useWorkspaceChromeActive()
+  // Only the docked inspector (wide) takes room from the chat; below 1200 px it is a sheet over it.
+  const layoutMode = useLayoutMode()
   const workspaceExpanded = useUIStore((s) => s.workspaceExpanded)
   const setWorkspacePanel = useUIStore((s) => s.setWorkspacePanel)
 
@@ -281,7 +290,7 @@ function RouteComponent() {
 
   return currentSession ? (
     <div
-      className={`session-shell ${workspaceChromeActive ? 'has-workspace' : ''}${workspaceExpanded ? ' has-workspace-expanded' : ''}`}
+      className={`session-shell ${layoutMode === 'wide' && workspaceChromeActive ? 'has-workspace' : ''}${layoutMode === 'wide' && workspaceExpanded ? ' has-workspace-expanded' : ''}`}
     >
       <Header session={currentSession} />
 
@@ -299,6 +308,8 @@ function RouteComponent() {
           <div className="session-thread">
             <MessageList ref={messageListRef} key={`message-list${currentSessionId}`} currentSession={currentSession} />
           </div>
+          {/* A11Y1 rule 1: the one polite live region for this chat's turn. */}
+          <TurnAnnouncer key={turnMessage?.id ?? 'none'} message={turnMessage} />
 
           {/* Agent chrome — compact strip above composer (OpenClaw + tool audit) */}
           {isAgentEnabled && isOpenClawProvider && (

@@ -7,6 +7,8 @@ import {
   GEMINI_ANTIGRAVITY_DEFAULT_MODELS,
   GEMINI_ANTIGRAVITY_REDIRECT_URI,
   GeminiAntigravityOAuthError,
+  type GeminiAntigravityPkceSession,
+  type GeminiAuthMode,
   humanizeGeminiAntigravityOAuthNetworkError,
   parseGeminiAntigravityRedirectUrl,
   resolveGeminiAuthMode,
@@ -14,11 +16,9 @@ import {
   settingsPatchFromGeminiAntigravityTokens,
   settingsPatchSignOutGeminiAntigravityOAuth,
   startGeminiAntigravityPkceAuth,
-  type GeminiAntigravityPkceSession,
-  type GeminiAuthMode,
 } from '@shared/providers/oauth'
-import { withInferredImageCapabilitiesList } from '@shared/utils/image-model-capabilities'
 import type { ProviderModelInfo, ProviderSettings } from '@shared/types'
+import { withInferredImageCapabilitiesList } from '@shared/utils/image-model-capabilities'
 import { IconExternalLink, IconLogout, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -36,6 +36,13 @@ import {
 interface GeminiAntigravityAuthSectionProps {
   providerSettings?: ProviderSettings
   setProviderSettings: (val: Partial<ProviderSettings>) => void
+  /** Hides the "How do you connect?" row (first run already chose Google). The risk notice always shows. */
+  hideModeSwitch?: boolean
+}
+
+/** The patch for switching Gemini into Google (OAuth) mode: Cloud Code Assist model ids, never the AI Studio catalog. */
+export function geminiAntigravityOAuthModePatch(): Partial<ProviderSettings> {
+  return { authMode: 'oauth', models: GEMINI_ANTIGRAVITY_DEFAULT_MODELS.map((m) => ({ ...m })) }
 }
 
 type SignInPhase = 'idle' | 'starting' | 'waiting' | 'exchanging' | 'error'
@@ -43,6 +50,7 @@ type SignInPhase = 'idle' | 'starting' | 'waiting' | 'exchanging' | 'error'
 export function GeminiAntigravityAuthSection({
   providerSettings,
   setProviderSettings,
+  hideModeSwitch = false,
 }: GeminiAntigravityAuthSectionProps) {
   const { t } = useTranslation()
   const authMode = resolveGeminiAuthMode(providerSettings)
@@ -136,11 +144,7 @@ export function GeminiAntigravityAuthSection({
     if (value !== 'oauth' && value !== 'api_key') return
     cancelSignIn()
     if (value === 'oauth') {
-      // Seed Cloud Code Assist model ids (never keep AI Studio catalog in oauth mode)
-      setProviderSettings({
-        authMode: 'oauth',
-        models: GEMINI_ANTIGRAVITY_DEFAULT_MODELS.map((m) => ({ ...m })),
-      })
+      setProviderSettings(geminiAntigravityOAuthModePatch())
       return
     }
     setProviderSettings({ authMode: value as GeminiAuthMode })
@@ -345,32 +349,34 @@ export function GeminiAntigravityAuthSection({
 
   return (
     <div className="settings-card-fields">
-      <SettingsPrefRow
-        title={t('How do you connect?')}
-        description={
-          authMode === 'oauth'
-            ? desktopCallback
-              ? t(
-                  'Google OAuth (PKCE). Approve in the browser — Dango finishes via localhost. Quota is separate from AI Studio API keys.'
-                )
-              : t(
-                  'Google OAuth (PKCE). After the browser opens, paste the full redirect URL from the address bar. Quota is separate from AI Studio API keys.'
-                )
-            : t('API keys from Google AI Studio are billed separately from Google AI / Antigravity quotas.')
-        }
-        align="start"
-        control={
-          <SegmentedControl
-            className="settings-segmented"
-            value={authMode}
-            onChange={handleModeChange}
-            data={[
-              { label: t('Google'), value: 'oauth' },
-              { label: t('API Key'), value: 'api_key' },
-            ]}
-          />
-        }
-      />
+      {!hideModeSwitch && (
+        <SettingsPrefRow
+          title={t('How do you connect?')}
+          description={
+            authMode === 'oauth'
+              ? desktopCallback
+                ? t(
+                    'Google OAuth (PKCE). Approve in the browser — Dango finishes via localhost. Quota is separate from AI Studio API keys.'
+                  )
+                : t(
+                    'Google OAuth (PKCE). After the browser opens, paste the full redirect URL from the address bar. Quota is separate from AI Studio API keys.'
+                  )
+              : t('API keys from Google AI Studio are billed separately from Google AI / Antigravity quotas.')
+          }
+          align="start"
+          control={
+            <SegmentedControl
+              className="settings-segmented"
+              value={authMode}
+              onChange={handleModeChange}
+              data={[
+                { label: t('Google'), value: 'oauth' },
+                { label: t('API Key'), value: 'api_key' },
+              ]}
+            />
+          }
+        />
+      )}
 
       {authMode === 'oauth' && (
         <>

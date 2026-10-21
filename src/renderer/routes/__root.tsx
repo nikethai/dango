@@ -3,6 +3,7 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import Toasts from '@/components/common/Toasts'
 import { MemoryMigrationSheet } from '@/components/knowledge/MemoryMigrationSheet'
 import ExitFullscreenButton from '@/components/layout/ExitFullscreenButton'
+import { PhoneTabBar } from '@/components/layout/PhoneTabBar'
 import { ToolPermissionHost } from '@/components/permission/ToolPermissionHost'
 import { registerChangeOpener } from '@/components/review/changeOpener'
 import { registerDefaultQuestionOpener } from '@/components/review/questionOpener'
@@ -11,8 +12,9 @@ import useAppTheme from '@/hooks/useAppTheme'
 import { useSystemLanguageWhenInit } from '@/hooks/useDefaultSystemLanguage'
 import { useDesktopShell } from '@/hooks/useDesktopShell'
 import { useI18nEffect } from '@/hooks/useI18nEffect'
+import { setLayoutAttributeSuppressed, setSidebarShown, useLayoutMode } from '@/hooks/useLayoutMode'
 import useNeedRoomForWinControls from '@/hooks/useNeedRoomForWinControls'
-import { useIsSmallScreen, useSidebarEffectiveWidth } from '@/hooks/useScreenChange'
+import { useSidebarEffectiveWidth } from '@/hooks/useScreenChange'
 import useShortcut from '@/hooks/useShortcut'
 import '@/modals'
 import NiceModal from '@ebay/nice-modal-react'
@@ -21,10 +23,12 @@ import Box from '@mui/material/Box'
 import CssBaseline from '@mui/material/CssBaseline'
 import Grid from '@mui/material/Grid'
 import { ThemeProvider } from '@mui/material/styles'
-import { createRootRoute, Outlet, useLocation } from '@tanstack/react-router'
+import { createRootRoute, Outlet, useLocation, useRouterState } from '@tanstack/react-router'
 import { useSetAtom } from 'jotai'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { navigateToSettings } from '@/modals/Settings'
+import { FIRST_RUN_PATH, useFirstRunGate } from '@/packages/first-run'
+import { registerFirstRunOpener } from '@/packages/first-run/opener'
 import { initKnowledge } from '@/packages/knowledge'
 import { useMenuBarSync } from '@/packages/menu-bar'
 import { getOS } from '@/packages/navigator'
@@ -37,7 +41,6 @@ import { router } from '@/router'
 import Sidebar from '@/Sidebar'
 import * as atoms from '@/stores/atoms'
 import { registerChatReviewOpener } from '@/stores/session/rate-limit-retry'
-import * as settingActions from '@/stores/settingActions'
 import { settingsStore, useLanguage, useSettingsStore, useTheme } from '@/stores/settingsStore'
 import { useUIStore } from '@/stores/uiStore'
 import { createDangoMantineTheme, dangoCssVariablesResolver } from '@/theme/mantineTheme'
@@ -69,12 +72,27 @@ function Root() {
   useEffect(() => registerChangeOpener(), [])
   // Needs you rows for a rate-limited chat open it and retry the answer (06b, ER3).
   useEffect(() => registerChatReviewOpener(), [])
+  // The Needs you row a skipped source leaves in first run opens Add a source in its scope (FR4/FR5).
+  useEffect(() => registerFirstRunOpener(), [])
 
   useEffect(() => {
     void platform.getWindowLabel?.().then((label) => {
       setIsQuickWindow(label === 'quick')
     })
   }, [])
+
+  // First run replaces the old welcome dialog: settings are hydrated before render (index.tsx), so it runs on every path
+  // change without the startup delay, once the window role is known (never in the quick window).
+  const goToFirstRun = useCallback((to: typeof FIRST_RUN_PATH, from: string) => {
+    void router.navigate({ to, search: { from }, replace: true })
+  }, [])
+  const firstRunFromPath = `${location.pathname}${location.searchStr}${location.hash ? `#${location.hash}` : ''}`
+  const firstRunPending = useFirstRunGate(location.pathname, goToFirstRun, firstRunFromPath)
+  // The location moves to /first-run before its lazy chunk loads, while the old match still renders.
+  const firstRunMatched = useRouterState({ select: (s) => s.matches.some((m) => m.routeId === FIRST_RUN_PATH) })
+  useEffect(() => {
+    if (firstRunPending) void router.preloadRoute({ to: FIRST_RUN_PATH })
+  }, [firstRunPending])
 
   useEffect(() => {
     if (initialized.current) {
@@ -85,14 +103,7 @@ function Root() {
       // biome-ignore lint/nursery/noFloatingPromises: inline call
       ;(async () => {
         setRemoteConfig((conf) => ({ ...conf }))
-        // (legacy comment removed)
         initialized.current = true
-        if (settingActions.needEditSetting() && location.pathname !== '/settings/mcp') {
-          await NiceModal.show('welcome')
-          return
-        }
-        // (legacy comment removed)
-        // (legacy comment removed)
         const shouldShowAboutDialogWhenStartUp = await platform.shouldShowAboutDialogWhenStartUp()
         if (shouldShowAboutDialogWhenStartUp) {
           setOpenAboutDialog(true)
@@ -102,14 +113,21 @@ function Root() {
     }, 2000)
 
     return () => clearTimeout(tid)
-  }, [setOpenAboutDialog, setRemoteConfig, location.pathname])
+  }, [setOpenAboutDialog, setRemoteConfig])
 
-  const showSidebar = useUIStore((s) => s.showSidebar)
+  // Wide, medium or phone; also keeps data-layout on <html> (RS1–RS3).
+  const layoutMode = useLayoutMode()
+  // Phone is one pane: no sidebar; the tab bar under the content navigates (RS3).
+  const isPhoneLayout = layoutMode === 'phone'
   const sidebarWidth = useSidebarEffectiveWidth()
-  const isSmallScreen = useIsSmallScreen()
   const isSettingsRoute = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
-  // Settings owns its own navigation; keep the global chat sidebar out of this page.
-  const offsetMainForSidebar = !isSettingsRoute && (isSmallScreen ? showSidebar : true)
+  const isFirstRunRoute = location.pathname === FIRST_RUN_PATH
+  // A new user never sees Review (or the sidebar) before first run: nothing is painted until its page renders (M1).
+  const holdForFirstRun = firstRunPending || (isFirstRunRoute && !firstRunMatched)
+  // Settings owns its own navigation, and first run is a full-window page; keep the app chrome out of both.
+  const hideAppChrome = isSettingsRoute || isFirstRunRoute || holdForFirstRun
+  // The docked sidebar or rail; 0 at phone, where the drawer lays over the content.
+  const offsetMainForSidebar = !hideAppChrome && sidebarWidth > 0
 
   // Legacy deep links used ?settings=/settings/...; rewrite to full-page /settings/* routes
   useEffect(() => {
@@ -174,6 +192,16 @@ function Root() {
   }, [needRoomForMacWindowControls])
 
   const isQuickRoute = isQuickWindow || location.pathname === '/quick'
+  // No data-layout in the Quick Chat window (its label resolves late). First run keeps it, for the phone targets; the
+  // tab bar marks <html> itself (data-tabbar), so .App keeps its safe-area padding there.
+  const suppressLayoutAttribute = isQuickRoute
+  useLayoutEffect(() => {
+    setLayoutAttributeSuppressed(suppressLayoutAttribute)
+  }, [suppressLayoutAttribute])
+  // ⌘\ only acts where a sidebar or rail is on screen.
+  useLayoutEffect(() => {
+    setSidebarShown(!isQuickRoute && !hideAppChrome && !isPhoneLayout)
+  }, [isQuickRoute, hideAppChrome, isPhoneLayout])
 
   return (
     <Box
@@ -196,10 +224,14 @@ function Root() {
           </Box>
         </ErrorBoundary>
       ) : (
-        <Grid container className="h-full" sx={{ minHeight: 0 }}>
-          {!isSettingsRoute && <Sidebar />}
+        <Grid
+          container
+          className="h-full"
+          sx={{ minHeight: 0, ...(isPhoneLayout ? { flexDirection: 'column', flexWrap: 'nowrap' } : {}) }}
+        >
+          {!hideAppChrome && !isPhoneLayout && <Sidebar />}
           <Box
-            className="h-full w-full min-h-0"
+            className="dg-content h-full w-full min-h-0"
             sx={{
               flexGrow: 1,
               minHeight: 0,
@@ -207,21 +239,24 @@ function Root() {
               flexDirection: 'column',
               backgroundColor: 'var(--chatbox-background-primary)',
               ...(offsetMainForSidebar
-                ? language === 'ar'
-                  ? {
-                      paddingRight: { sm: `${sidebarWidth}px` },
-                      transition: 'padding 220ms cubic-bezier(0.2, 0, 0, 1)',
-                    }
-                  : { paddingLeft: { sm: `${sidebarWidth}px` }, transition: 'padding 220ms cubic-bezier(0.2, 0, 0, 1)' }
+                ? {
+                    [language === 'ar' ? 'paddingRight' : 'paddingLeft']: `${sidebarWidth}px`,
+                    transition: 'padding 150ms cubic-bezier(0.2, 0, 0, 1)',
+                    '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+                  }
                 : {}),
             }}
           >
             <ErrorBoundary name="main">
-              <Box className="h-full min-h-0 flex flex-col flex-1">
-                <Outlet />
+              {/* #main: where focus lands when a sheet's opener is gone (1b useSheetFocus) */}
+              {/* biome-ignore lint/nursery/useUniqueElementIds: the app shell renders once per window */}
+              <Box id="main" tabIndex={-1} className="dg-main h-full min-h-0 flex flex-col flex-1">
+                {holdForFirstRun ? null : <Outlet />}
               </Box>
             </ErrorBoundary>
           </Box>
+          {/* Phone tabs (renders only at phone); first run is a full-window page without them */}
+          {!isFirstRunRoute && !holdForFirstRun && <PhoneTabBar />}
         </Grid>
       )}
       {/* Session settings */}
@@ -252,8 +287,6 @@ function Root() {
       <ToolPermissionHost />
       {/* One-time move of old memory into knowledge (not in Quick Chat) */}
       {isQuickRoute ? null : <MemoryMigrationSheet />}
-      {/* Welcome when no model configured */}
-      {/* <WelcomeDialog /> */}
       <Toasts /> {/* mui */}
       <UndoToast />
     </Box>

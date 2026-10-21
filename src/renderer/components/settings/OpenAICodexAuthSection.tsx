@@ -14,8 +14,8 @@ import {
   startOpenAICodexDeviceAuth,
   tokensFromCodexAuthJson,
 } from '@shared/providers/oauth'
-import { withInferredImageCapabilitiesList } from '@shared/utils/image-model-capabilities'
 import type { ProviderSettings } from '@shared/types'
+import { withInferredImageCapabilitiesList } from '@shared/utils/image-model-capabilities'
 import { IconCopy, IconExternalLink, IconFileImport, IconLogout, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -28,11 +28,31 @@ import { add as addToast } from '@/stores/toastActions'
 interface OpenAICodexAuthSectionProps {
   providerSettings?: ProviderSettings
   setProviderSettings: (val: Partial<ProviderSettings>) => void
+  /** Hides the "How do you connect?" row (first run already chose ChatGPT). */
+  hideModeSwitch?: boolean
+}
+
+/**
+ * The patch for switching OpenAI into ChatGPT (OAuth) mode. Seeds subscription-safe models when the list is empty or
+ * looks like the API catalog (API catalog models often fail on WHAM).
+ */
+export function openAICodexOAuthModePatch(providerSettings: ProviderSettings | undefined): Partial<ProviderSettings> {
+  const looksLikeApiCatalog = (providerSettings?.models || []).some((m) =>
+    /gpt-4o|gpt-5\.1|gpt-5-mini|o3|o4|embedding/i.test(m.modelId)
+  )
+  return {
+    authMode: 'oauth',
+    ...(looksLikeApiCatalog || !providerSettings?.models?.length ? { models: OPENAI_CODEX_DEFAULT_MODELS } : {}),
+  }
 }
 
 type SignInPhase = 'idle' | 'starting' | 'waiting' | 'error'
 
-export function OpenAICodexAuthSection({ providerSettings, setProviderSettings }: OpenAICodexAuthSectionProps) {
+export function OpenAICodexAuthSection({
+  providerSettings,
+  setProviderSettings,
+  hideModeSwitch = false,
+}: OpenAICodexAuthSectionProps) {
   const { t } = useTranslation()
   const authMode = resolveOpenAIAuthMode(providerSettings)
   const signedIn = Boolean(providerSettings?.oauth?.accessToken)
@@ -62,15 +82,7 @@ export function OpenAICodexAuthSection({ providerSettings, setProviderSettings }
     if (value !== 'oauth' && value !== 'api_key') return
     cancelSignIn()
     if (value === 'oauth') {
-      // Seed subscription-safe models when switching into ChatGPT mode
-      // (API catalog models often fail on WHAM).
-      const looksLikeApiCatalog = (providerSettings?.models || []).some((m) =>
-        /gpt-4o|gpt-5\.1|gpt-5-mini|o3|o4|embedding/i.test(m.modelId)
-      )
-      setProviderSettings({
-        authMode: 'oauth',
-        ...(looksLikeApiCatalog || !providerSettings?.models?.length ? { models: OPENAI_CODEX_DEFAULT_MODELS } : {}),
-      })
+      setProviderSettings(openAICodexOAuthModePatch(providerSettings))
       return
     }
     setProviderSettings({ authMode: value as OpenAIAuthMode })
@@ -255,26 +267,28 @@ export function OpenAICodexAuthSection({ providerSettings, setProviderSettings }
 
   return (
     <div className="settings-card-fields">
-      <SettingsPrefRow
-        title={t('How do you connect?')}
-        description={
-          authMode === 'oauth'
-            ? t('Uses your ChatGPT Plus, Pro, or Team quota — not Platform API billing.')
-            : t('API keys from platform.openai.com are billed separately from ChatGPT Plus/Pro.')
-        }
-        align="start"
-        control={
-          <SegmentedControl
-            className="settings-segmented"
-            value={authMode}
-            onChange={handleModeChange}
-            data={[
-              { label: t('Subscription'), value: 'oauth' },
-              { label: t('API Key'), value: 'api_key' },
-            ]}
-          />
-        }
-      />
+      {!hideModeSwitch && (
+        <SettingsPrefRow
+          title={t('How do you connect?')}
+          description={
+            authMode === 'oauth'
+              ? t('Uses your ChatGPT Plus, Pro, or Team quota — not Platform API billing.')
+              : t('API keys from platform.openai.com are billed separately from ChatGPT Plus/Pro.')
+          }
+          align="start"
+          control={
+            <SegmentedControl
+              className="settings-segmented"
+              value={authMode}
+              onChange={handleModeChange}
+              data={[
+                { label: t('Subscription'), value: 'oauth' },
+                { label: t('API Key'), value: 'api_key' },
+              ]}
+            />
+          }
+        />
+      )}
 
       {authMode === 'oauth' && (
         <>

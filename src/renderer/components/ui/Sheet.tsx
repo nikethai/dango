@@ -12,9 +12,11 @@ export type SheetProps = {
   actions?: ReactNode
   side?: 'bottom' | 'right'
   hint?: ReactNode
+  /** Extra class on the sheet, after dg-sheet and the side class (e.g. the phone inspector's full height). */
+  className?: string
 }
 
-function OpenSheet({ onClose, title, children, actions, side, hint }: Omit<SheetProps, 'opened'>) {
+function OpenSheet({ onClose, title, children, actions, side, hint, className }: Omit<SheetProps, 'opened'>) {
   const ref = useRef<HTMLElement>(null)
   const titleId = useId()
   useSheetFocus(ref, { onClose })
@@ -23,7 +25,7 @@ function OpenSheet({ onClose, title, children, actions, side, hint }: Omit<Sheet
       <div className="dg-sheet-scrim" aria-hidden="true" onClick={onClose} />
       <section
         ref={ref}
-        className={side === 'right' ? 'dg-sheet dango-sheet--right' : 'dg-sheet'}
+        className={['dg-sheet', side === 'right' ? 'dango-sheet--right' : null, className].filter(Boolean).join(' ')}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

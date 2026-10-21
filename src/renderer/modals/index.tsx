@@ -20,9 +20,7 @@ import SessionSettings from './SessionSettings'
 import ThreadNameEdit from './ThreadNameEdit'
 import VideoAttachmentPreview from './VideoAttachmentPreview'
 import VideoPlayer from './VideoPlayer'
-import Welcome from './Welcome'
 
-NiceModal.register('welcome', Welcome)
 NiceModal.register(ADD_SOURCE_MODAL_ID, AddSourceSheet)
 NiceModal.register('rewrite', RewriteSheet)
 NiceModal.register('import-chatgpt-archive', ImportChatGptArchive)

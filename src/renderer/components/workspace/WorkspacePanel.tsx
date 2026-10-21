@@ -24,6 +24,7 @@ import {
 import type React from 'react'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useLayoutMode } from '@/hooks/useLayoutMode'
 import { cn } from '@/lib/utils'
 import { copyToClipboard } from '@/packages/navigator'
 import platform from '@/platform'
@@ -35,6 +36,7 @@ import {
   type WorkspaceArtifactVersion,
   type WorkspacePanelState,
 } from '@/stores/uiStore'
+import { InspectorFrame } from '../layout/InspectorFrame'
 import Toolbar from '../layout/Toolbar'
 import WindowControls from '../layout/WindowControls'
 import Markdown from '../Markdown'
@@ -98,8 +100,14 @@ function WorkspacePreview(props: {
   return <WorkspaceCodeView code={content} language={language} />
 }
 
+/**
+ * The inspector for chats and artifacts. InspectorFrame picks the shell for the window size (slice 9 RS1, RS2): at
+ * wide this aside, docked at 380–460 px with its resizer and full screen mode; below 1200 px a sheet with the same
+ * header and body, without the resizer or full screen.
+ */
 function WorkspacePanel({ session }: { session?: Session }) {
   const { t } = useTranslation()
+  const docked = useLayoutMode() === 'wide'
   const panel = useUIStore((s) => s.workspacePanel)
   const storedWidthPx = useUIStore((s) => s.workspaceWidthPx)
   const widthPx = Math.min(WORKSPACE_MAX_WIDTH_PX, Math.max(WORKSPACE_MIN_WIDTH_PX, storedWidthPx))
@@ -153,6 +161,8 @@ function WorkspacePanel({ session }: { session?: Session }) {
   }, [contentKey, sourceKind])
 
   useEffect(() => {
+    // Below 1200 px the sheet owns Esc (useSheetFocus), and full screen does not apply.
+    if (!docked) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !panel) return
       e.preventDefault()
@@ -164,13 +174,41 @@ function WorkspacePanel({ session }: { session?: Session }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [panel, expanded, setWorkspaceExpanded, setWorkspacePanel])
+  }, [docked, panel, expanded, setWorkspaceExpanded, setWorkspacePanel])
 
+  // The docked pane takes focus when it opens, not on each update (a streaming artifact replaces `panel` per token)
+  // nor when the window size changes; a sheet places first focus itself.
+  const hasPanel = Boolean(panel)
+  // What had focus when the docked pane took it; closing the pane gives focus back (a sheet does this itself).
+  const openerRef = useRef<HTMLElement | null>(null)
+  const wasOpen = useRef(false)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only on open
   useEffect(() => {
-    if (open && panel && panelRef.current) {
+    if (docked && open && hasPanel && panelRef.current) {
+      const active = document.activeElement
+      openerRef.current =
+        active instanceof HTMLElement && active !== document.body && !panelRef.current.contains(active) ? active : null
       panelRef.current.focus({ preventScroll: true })
     }
-  }, [open, panel])
+  }, [open, hasPanel])
+
+  // Closing the docked pane while focus is in it (Esc, Close) would leave focus in a hidden aside, then on the body:
+  // back to the opener, or #main when the opener is gone. Focus elsewhere (the composer) stays where it is.
+  useEffect(() => {
+    if (hasPanel) {
+      wasOpen.current = true
+      return
+    }
+    if (!wasOpen.current) return
+    wasOpen.current = false
+    const opener = openerRef.current
+    openerRef.current = null
+    const pane = panelRef.current
+    const active = document.activeElement
+    if (!pane || !active || !(active === document.body || pane.contains(active))) return
+    if (opener?.isConnected) opener.focus({ preventScroll: true })
+    else document.getElementById('main')?.focus({ preventScroll: true })
+  }, [hasPanel])
 
   const onResizePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -235,194 +273,214 @@ function WorkspacePanel({ session }: { session?: Session }) {
     })
   }
 
-  return (
-    <aside
-      ref={panelRef}
-      className={cn('workspace-panel', open && 'is-open', !open && 'is-closing', expanded && 'is-expanded')}
-      style={
-        {
-          '--workspace-w': `${widthPx}px`,
-          width: !open ? 0 : expanded ? '100%' : `min(${widthPx}px, 42%)`,
-          transition: `width ${EXIT_MS}ms ${EASE}`,
-        } as React.CSSProperties
-      }
-      aria-label={t('Artifact')}
-      aria-hidden={!open}
-      tabIndex={-1}
-    >
-      {!expanded ? (
-        <div
-          className="workspace-panel-resizer"
-          onPointerDown={onResizePointerDown}
-          role="separator"
-          aria-orientation="vertical"
-          aria-valuenow={widthPx}
-          aria-valuemin={WORKSPACE_MIN_WIDTH_PX}
-          aria-valuemax={WORKSPACE_MAX_WIDTH_PX}
-          aria-label={t('Resize workspace')}
-        />
-      ) : null}
+  const fullScreen = docked && expanded
 
-      <div className="workspace-panel-shell">
-        <div className="workspace-panel-inner">
-          <header className="workspace-panel-header">
-            <div className="workspace-panel-header-left min-w-0">
-              <span className="workspace-panel-kicker">{kicker}</span>
-              <span className="workspace-panel-title" title={title}>
-                {title}
+  const body = (
+    <div className="workspace-panel-inner">
+      <header className="workspace-panel-header">
+        <div className="workspace-panel-header-left min-w-0">
+          <span className="workspace-panel-kicker">{kicker}</span>
+          {/* In a sheet the title is the sheet's heading. */}
+          {docked ? (
+            <span className="workspace-panel-title" title={title}>
+              {title}
+            </span>
+          ) : null}
+          {canPage ? (
+            <div className="workspace-version-pager">
+              <Tooltip label={t('Previous version')} openDelay={200}>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size={22}
+                  radius="md"
+                  disabled={versionIndex <= 0}
+                  onClick={() => showVersion(versionIndex - 1)}
+                  aria-label={t('Previous version')}
+                >
+                  <IconChevronLeft size={13} stroke={1.7} />
+                </ActionIcon>
+              </Tooltip>
+              <span className="workspace-version-label tabular-nums">
+                {t('v{{version}}', { version: versions[versionIndex]?.version ?? versionIndex + 1 })}
               </span>
-              {canPage ? (
-                <div className="workspace-version-pager">
-                  <Tooltip label={t('Previous version')} openDelay={200}>
-                    <ActionIcon
-                      variant="subtle"
-                      color="gray"
-                      size={22}
-                      radius="md"
-                      disabled={versionIndex <= 0}
-                      onClick={() => showVersion(versionIndex - 1)}
-                      aria-label={t('Previous version')}
-                    >
-                      <IconChevronLeft size={13} stroke={1.7} />
-                    </ActionIcon>
-                  </Tooltip>
-                  <span className="workspace-version-label tabular-nums">
-                    {t('v{{version}}', { version: versions[versionIndex]?.version ?? versionIndex + 1 })}
-                  </span>
-                  <Tooltip label={t('Next version')} openDelay={200}>
-                    <ActionIcon
-                      variant="subtle"
-                      color="gray"
-                      size={22}
-                      radius="md"
-                      disabled={versionIndex >= versions.length - 1}
-                      onClick={() => showVersion(versionIndex + 1)}
-                      aria-label={t('Next version')}
-                    >
-                      <IconChevronRight size={13} stroke={1.7} />
-                    </ActionIcon>
-                  </Tooltip>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="workspace-panel-header-actions">
-              <div className="workspace-tabs" role="tablist" aria-label={t('Artifact view')}>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === 'preview'}
-                  className={cn('workspace-tab', tab === 'preview' && 'is-on')}
-                  onClick={() => setTab('preview')}
+              <Tooltip label={t('Next version')} openDelay={200}>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size={22}
+                  radius="md"
+                  disabled={versionIndex >= versions.length - 1}
+                  onClick={() => showVersion(versionIndex + 1)}
+                  aria-label={t('Next version')}
                 >
-                  {t('Preview')}
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === 'code'}
-                  className={cn('workspace-tab', tab === 'code' && 'is-on')}
-                  onClick={() => setTab('code')}
-                >
-                  {t('Code')}
-                </button>
-              </div>
-              <div className="workspace-header-icons" role="toolbar" aria-label={t('Artifact actions')}>
-                <Tooltip label={expanded ? t('Exit full screen') : t('Full screen')} openDelay={200}>
-                  <ActionIcon
-                    variant="subtle"
-                    color="gray"
-                    size={26}
-                    radius="md"
-                    onClick={toggleExpanded}
-                    aria-label={expanded ? t('Exit full screen') : t('Full screen')}
-                    aria-pressed={expanded}
-                    className="workspace-action-btn workspace-header-expand"
-                  >
-                    {expanded ? (
-                      <IconArrowsMinimize size={14} stroke={1.6} />
-                    ) : (
-                      <IconArrowsMaximize size={14} stroke={1.6} />
-                    )}
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label={t('Refresh')} openDelay={200}>
-                  <ActionIcon
-                    variant="subtle"
-                    color="gray"
-                    size={26}
-                    radius="md"
-                    onClick={() => setReloadSign((n) => n + 1)}
-                    aria-label={t('Refresh')}
-                    className="workspace-action-btn"
-                  >
-                    <IconReload size={14} stroke={1.6} />
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label={t('Copy')} openDelay={200}>
-                  <ActionIcon
-                    variant="subtle"
-                    color="gray"
-                    size={26}
-                    radius="md"
-                    onClick={copySource}
-                    aria-label={t('Copy')}
-                    className="workspace-action-btn"
-                  >
-                    <IconCopy size={14} stroke={1.6} />
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label={t('Download')} openDelay={200}>
-                  <ActionIcon
-                    variant="subtle"
-                    color="gray"
-                    size={26}
-                    radius="md"
-                    onClick={download}
-                    aria-label={t('Download')}
-                    className="workspace-action-btn"
-                  >
-                    <IconDownload size={14} stroke={1.6} />
-                  </ActionIcon>
-                </Tooltip>
-                {expanded && session ? <Toolbar session={session} compact /> : null}
-                <Tooltip label={t('Close')} openDelay={200}>
-                  <ActionIcon
-                    variant="subtle"
-                    color="gray"
-                    size={26}
-                    radius="md"
-                    onClick={close}
-                    aria-label={t('Close')}
-                    className="workspace-action-btn workspace-action-close"
-                  >
-                    <IconX size={14} stroke={1.6} />
-                  </ActionIcon>
-                </Tooltip>
-                {expanded ? <WindowControls className="workspace-window-controls" /> : null}
-              </div>
+                  <IconChevronRight size={13} stroke={1.7} />
+                </ActionIcon>
+              </Tooltip>
             </div>
-          </header>
+          ) : null}
+        </div>
 
-          <div
-            className="workspace-panel-body"
-            key={`${display.artifactId ?? display.messageId ?? ''}-${tab}-${reloadSign}-${versionIndex}`}
-          >
-            {tab === 'code' ? (
-              <WorkspaceCodeView code={sourceText} language={source.language || source.kind} />
-            ) : (
-              <WorkspacePreview
-                kind={source.kind}
-                content={sourceText}
-                language={source.language}
-                reloadSign={reloadSign}
-                theme={realTheme}
-              />
-            )}
+        <div className="workspace-panel-header-actions">
+          <div className="workspace-tabs" role="tablist" aria-label={t('Artifact view')}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'preview'}
+              className={cn('workspace-tab', tab === 'preview' && 'is-on')}
+              onClick={() => setTab('preview')}
+            >
+              {t('Preview')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'code'}
+              className={cn('workspace-tab', tab === 'code' && 'is-on')}
+              onClick={() => setTab('code')}
+            >
+              {t('Code')}
+            </button>
+          </div>
+          <div className="workspace-header-icons" role="toolbar" aria-label={t('Artifact actions')}>
+            {docked ? (
+              <Tooltip label={expanded ? t('Exit full screen') : t('Full screen')} openDelay={200}>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size={26}
+                  radius="md"
+                  onClick={toggleExpanded}
+                  aria-label={expanded ? t('Exit full screen') : t('Full screen')}
+                  aria-pressed={expanded}
+                  className="workspace-action-btn workspace-header-expand"
+                >
+                  {expanded ? (
+                    <IconArrowsMinimize size={14} stroke={1.6} />
+                  ) : (
+                    <IconArrowsMaximize size={14} stroke={1.6} />
+                  )}
+                </ActionIcon>
+              </Tooltip>
+            ) : null}
+            <Tooltip label={t('Refresh')} openDelay={200}>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size={26}
+                radius="md"
+                onClick={() => setReloadSign((n) => n + 1)}
+                aria-label={t('Refresh')}
+                className="workspace-action-btn"
+              >
+                <IconReload size={14} stroke={1.6} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label={t('Copy')} openDelay={200}>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size={26}
+                radius="md"
+                onClick={copySource}
+                aria-label={t('Copy')}
+                className="workspace-action-btn"
+              >
+                <IconCopy size={14} stroke={1.6} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label={t('Download')} openDelay={200}>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size={26}
+                radius="md"
+                onClick={download}
+                aria-label={t('Download')}
+                className="workspace-action-btn"
+              >
+                <IconDownload size={14} stroke={1.6} />
+              </ActionIcon>
+            </Tooltip>
+            {fullScreen && session ? <Toolbar session={session} compact /> : null}
+            <Tooltip label={t('Close')} openDelay={200}>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size={26}
+                radius="md"
+                onClick={close}
+                aria-label={t('Close')}
+                className="workspace-action-btn workspace-action-close"
+              >
+                <IconX size={14} stroke={1.6} />
+              </ActionIcon>
+            </Tooltip>
+            {fullScreen ? <WindowControls className="workspace-window-controls" /> : null}
           </div>
         </div>
+      </header>
+
+      <div
+        className="workspace-panel-body"
+        key={`${display.artifactId ?? display.messageId ?? ''}-${tab}-${reloadSign}-${versionIndex}`}
+      >
+        {tab === 'code' ? (
+          <WorkspaceCodeView code={sourceText} language={source.language || source.kind} />
+        ) : (
+          <WorkspacePreview
+            kind={source.kind}
+            content={sourceText}
+            language={source.language}
+            reloadSign={reloadSign}
+            theme={realTheme}
+          />
+        )}
       </div>
-    </aside>
+    </div>
+  )
+
+  return (
+    <InspectorFrame
+      opened={Boolean(panel)}
+      onClose={close}
+      title={title}
+      docked={(inner) => (
+        <aside
+          ref={panelRef}
+          className={cn('workspace-panel', open && 'is-open', !open && 'is-closing', expanded && 'is-expanded')}
+          style={
+            {
+              '--workspace-w': `${widthPx}px`,
+              width: !open ? 0 : expanded ? '100%' : `min(${widthPx}px, 42%)`,
+              // Docked width is clamped to 380–460 px: the 42% cap never takes it under the minimum.
+              minWidth: open && !expanded ? `${WORKSPACE_MIN_WIDTH_PX}px` : undefined,
+              transition: `width ${EXIT_MS}ms ${EASE}`,
+            } as React.CSSProperties
+          }
+          aria-label={t('Artifact')}
+          aria-hidden={!open}
+          tabIndex={-1}
+        >
+          {!expanded ? (
+            <div
+              className="workspace-panel-resizer"
+              onPointerDown={onResizePointerDown}
+              role="separator"
+              aria-orientation="vertical"
+              aria-valuenow={widthPx}
+              aria-valuemin={WORKSPACE_MIN_WIDTH_PX}
+              aria-valuemax={WORKSPACE_MAX_WIDTH_PX}
+              aria-label={t('Resize workspace')}
+            />
+          ) : null}
+
+          <div className="workspace-panel-shell">{inner}</div>
+        </aside>
+      )}
+    >
+      {body}
+    </InspectorFrame>
   )
 }
 

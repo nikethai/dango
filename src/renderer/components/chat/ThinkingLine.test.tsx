@@ -12,7 +12,7 @@ import type { ReactNode } from 'react'
 import { initReactI18next } from 'react-i18next'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import en from '@/i18n/locales/en/translation.json'
-import { THINKING_STATUS_FILL_MS, ThinkingLine, type ThinkingLineProps } from './ThinkingLine'
+import { ThinkingLine, type ThinkingLineProps } from './ThinkingLine'
 
 vi.mock('@/components/Markdown', () => ({
   default: ({ children }: { children: ReactNode }) => <div data-testid="markdown">{children}</div>,
@@ -110,45 +110,15 @@ describe('ThinkingLine', () => {
     expect(text.endsWith('……')).toBe(false)
   })
 
-  it('announces at most every 5 s', () => {
-    const { rerenderLine } = line({ startedAt: Date.now(), text: 'reading the spec' })
-    const status = screen.getByRole('status')
-    expect(status.className).toContain('sr-only')
-    // Empty on mount so the live region exists before its first announcement.
-    expect(status.textContent).toBe('')
-    act(() => {
-      vi.advanceTimersByTime(THINKING_STATUS_FILL_MS)
-    })
-    expect(status.textContent).toBe('reading the spec')
-    act(() => {
-      vi.advanceTimersByTime(1_000)
-    })
-    rerenderLine({ text: 'reading the spec\ncomparing the quotes' })
-    act(() => {
-      vi.advanceTimersByTime(2_000)
-    })
-    rerenderLine({ text: 'reading the spec\ncomparing the quotes\nchecking totals' })
-    act(() => {
-      vi.advanceTimersByTime(1_000 - THINKING_STATUS_FILL_MS)
-    })
-    expect(screen.getByRole('status').textContent).toBe('reading the spec')
-    act(() => {
-      vi.advanceTimersByTime(1_000 + THINKING_STATUS_FILL_MS)
-    })
-    expect(screen.getByRole('status').textContent).toBe('checking totals')
-  })
-
-  it('a plain wait is spoken: Thinking, then Still thinking', () => {
-    line({ startedAt: Date.now(), onStop: vi.fn() })
-    expect(screen.getByRole('status').textContent).toBe('')
-    act(() => {
-      vi.advanceTimersByTime(THINKING_STATUS_FILL_MS)
-    })
-    expect(screen.getByRole('status').textContent).toBe('Thinking')
+  it('has no live region', () => {
+    // TurnAnnouncer speaks the turn (slice 09 Task 9); the line itself only shows it.
+    const { container } = line({ startedAt: Date.now(), text: 'reading the spec', onStop: vi.fn() })
     act(() => {
       vi.advanceTimersByTime(8_000)
     })
-    expect(screen.getByRole('status').textContent).toBe('Still thinking')
+    expect(container.querySelector('[role="status"]')).toBeNull()
+    for (const el of Array.from(container.querySelectorAll('[aria-live]')))
+      expect(el.getAttribute('aria-live')).toBe('off')
   })
 
   it('renders model text literally in the title', () => {

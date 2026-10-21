@@ -20,9 +20,7 @@ function resolveLabels(
   t: (key: string, opts?: Record<string, unknown>) => string
 ): { title: string; detail: string } {
   const parts = message?.contentParts || []
-  const runningTool = parts.find(
-    (p) => p.type === 'tool-call' && p.state === 'call' && p.toolName !== 'memory_lookup'
-  )
+  const runningTool = parts.find((p) => p.type === 'tool-call' && p.state === 'call' && p.toolName !== 'memory_lookup')
   if (runningTool && runningTool.type === 'tool-call') {
     const tool = runningTool.toolName
     if (tool === 'web_search') return { title: t('Using tools…'), detail: t('Web search') }
@@ -44,19 +42,14 @@ function resolveLabels(
 function elapsedFromMessage(message: Message | null | undefined): string {
   if (!message?.timestamp) return '0s'
   const reasoningPart = message.contentParts?.find((p) => p.type === 'reasoning')
-  const reasoningStart =
-    reasoningPart && reasoningPart.type === 'reasoning' ? reasoningPart.startTime : undefined
+  const reasoningStart = reasoningPart && reasoningPart.type === 'reasoning' ? reasoningPart.startTime : undefined
   const start = reasoningStart || message.timestamp
   const ms = Math.max(0, Date.now() - start)
   if (ms < 1000) return '0s'
   return formatWorkedDuration(ms)
 }
 
-export const LiveGenerationDockHint: FC<LiveGenerationDockHintProps> = ({
-  generating,
-  liveMessage,
-  className,
-}) => {
+export const LiveGenerationDockHint: FC<LiveGenerationDockHintProps> = ({ generating, liveMessage, className }) => {
   const { t } = useTranslation()
   const [visible, setVisible] = useState(generating)
   const [exiting, setExiting] = useState(false)
@@ -83,9 +76,7 @@ export const LiveGenerationDockHint: FC<LiveGenerationDockHintProps> = ({
       t,
       liveMessage?.id,
       liveMessage?.contentParts?.length,
-      liveMessage?.contentParts
-        ?.map((p) => (p.type === 'tool-call' ? `${p.toolName}:${p.state}` : p.type))
-        .join('|'),
+      liveMessage?.contentParts?.map((p) => (p.type === 'tool-call' ? `${p.toolName}:${p.state}` : p.type)).join('|'),
     ]
   )
 
@@ -94,12 +85,7 @@ export const LiveGenerationDockHint: FC<LiveGenerationDockHintProps> = ({
   if (!visible) return null
 
   return (
-    <div
-      className={['live-gen-dock', exiting && 'is-exiting', className].filter(Boolean).join(' ')}
-      role="status"
-      aria-live="polite"
-      aria-label={`${title} · ${detail}${elapsed ? ` · ${elapsed}` : ''}`}
-    >
+    <div className={['live-gen-dock', exiting && 'is-exiting', className].filter(Boolean).join(' ')}>
       <div className="live-gen-dock-inner">
         <PendingDots className="assistant-pending-dots--sm live-gen-dock-dots" />
         <span className="live-gen-dock-title">{title}</span>

@@ -268,11 +268,7 @@ const SessionStatusBar: FC<SessionStatusBarProps> = ({
   )
 
   return (
-    <div
-      className={`session-statusline${empty ? ' is-empty' : ''}${compact ? ' is-compact' : ''}`}
-      role="status"
-      aria-live="polite"
-    >
+    <div className={`session-statusline${empty ? ' is-empty' : ''}${compact ? ' is-compact' : ''}`}>
       <Flex
         className="session-statusline-inner"
         align="center"

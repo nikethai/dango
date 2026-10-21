@@ -18,9 +18,9 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import NiceModal from '@ebay/nice-modal-react'
-import { ActionIcon, Text, Tooltip, UnstyledButton } from '@mantine/core'
+import { ActionIcon, Text, Tooltip } from '@mantine/core'
 import type { Folder, Scope, SessionMeta } from '@shared/types'
-import { IconArchive, IconChevronDown, IconFolderPlus, IconTrash, IconX } from '@tabler/icons-react'
+import { IconArchive, IconFolderPlus, IconTrash, IconX } from '@tabler/icons-react'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 import clsx from 'clsx'
 import type { MutableRefObject, ReactNode } from 'react'
@@ -39,6 +39,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { DeleteScopeSheet } from '../scope/DeleteScopeSheet'
 import { EverywhereRow } from '../scope/EverywhereRow'
 import FolderItem from './FolderItem'
+import { SectionHeader } from './SectionHeader'
 import SessionItem from './SessionItem'
 import {
   ALL_FOLDER_KEY,
@@ -59,6 +60,8 @@ type Props = {
   onShowArchivedChange?(show: boolean): void
   /** Mobile collapses Projects empty promo and prioritizes Recents. */
   density?: 'desktop' | 'mobile'
+  /** Start with the Scopes section open (the phone Scopes tab); by default mobile density starts it collapsed. */
+  scopesOpen?: boolean
 }
 
 type FolderGroup = {
@@ -211,6 +214,7 @@ export default function SessionList({
   onShowArchivedChange,
   onCreateProject,
   density = 'desktop',
+  scopesOpen,
 }: Props) {
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
@@ -227,7 +231,7 @@ export default function SessionList({
   const [folderPhase, setFolderPhase] = useState<Record<string, CollapsiblePhase>>({})
   const folderPhaseTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   // Mobile: Projects collapsed by default so Recents own the first screen.
-  const projectsSection = useCollapsibleSection(!isMobileDensity)
+  const projectsSection = useCollapsibleSection(scopesOpen ?? !isMobileDensity)
   const recentsSection = useCollapsibleSection(true)
 
   const sensors = useSensors(
@@ -791,47 +795,6 @@ export default function SessionList({
         />
       ) : null}
     </>
-  )
-}
-
-function SectionHeader({
-  label,
-  open,
-  onToggle,
-  trailing,
-  droppableId,
-}: {
-  label: string
-  open: boolean
-  onToggle: () => void
-  trailing?: ReactNode
-  droppableId?: string
-}) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: droppableId || `section-static:${label}`,
-    disabled: !droppableId,
-  })
-
-  return (
-    <div ref={setNodeRef} className={clsx(isOver && droppableId && 'rail-drop-target')}>
-      <UnstyledButton
-        type="button"
-        className="rail-section group/rail-section active:scale-[0.99] transition-transform"
-        onClick={onToggle}
-        aria-expanded={open}
-      >
-        <span className="rail-section-label">{label}</span>
-        <span className="rail-section-trail">
-          {trailing}
-          <IconChevronDown
-            size={14}
-            stroke={1.75}
-            className={open ? 'rail-section-chevron is-open' : 'rail-section-chevron'}
-            aria-hidden
-          />
-        </span>
-      </UnstyledButton>
-    </div>
   )
 }
 

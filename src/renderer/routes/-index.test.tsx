@@ -27,6 +27,7 @@ vi.mock('@/components/review/ReviewHome', () => ({
     return <div>review-home {String(props.sourceCount)}</div>
   },
 }))
+vi.mock('@/components/first-run/FirstReadCard', () => ({ FirstReadCard: () => <div>first-read-card</div> }))
 // The real sources store over in-memory storage; only the hooks the route uses.
 vi.mock('@/packages/sources', async () => {
   const store = await import('@/packages/sources/store')
@@ -102,5 +103,11 @@ describe('Review route', () => {
     render(<Index />)
     await waitFor(() => expect(h.props.length).toBeGreaterThan(0))
     expect(h.props.every((p) => p.sourceCount === undefined)).toBe(true)
+  })
+
+  it('shows the first-read card above Review (FR5)', async () => {
+    const { container } = render(<Index />)
+    await screen.findByText('review-home 0')
+    expect(container.textContent).toMatch(/^first-read-card.*review-home/)
   })
 })
