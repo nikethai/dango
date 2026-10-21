@@ -11,7 +11,10 @@ vi.mock('i18next', () => ({
   t: (key: string, vars?: Record<string, string>) => key.replace(/\{\{(\w+)\}\}/g, (_, k) => vars?.[k] ?? ''),
 }))
 vi.mock('@/stores/toastActions', () => ({ add: vi.fn() }))
-vi.mock('@/stores/chatStore', () => ({ getSession: vi.fn(async () => ({ id: 's1', projectId: 'acme' })) }))
+const chat = vi.hoisted(() => ({ messages: [] as unknown[] }))
+vi.mock('@/stores/chatStore', () => ({
+  getSession: vi.fn(async () => ({ id: 's1', projectId: 'acme', messages: chat.messages })),
+}))
 vi.mock('./approve', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./approve')>()),
   addKnowledge: vi.fn(async () => ({ id: 'k1' })),
@@ -20,21 +23,29 @@ vi.mock('./approve', async (importOriginal) => ({
 const msg = (text: string) =>
   ({ id: 'm1', role: 'assistant', contentParts: [{ type: 'text', text }] }) as unknown as Message
 
+/** Saves the message as shown in its chat (the session holds it). */
+function saveIn(m: Message) {
+  chat.messages.length = 0
+  chat.messages.push(m)
+  return saveMessageAsKnowledge(m, 's1')
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  chat.messages.length = 0
 })
 
 describe('saveMessageAsKnowledge', () => {
   it("saves the message as a fact in the chat's scope (first 500 characters)", async () => {
     const text = 'x'.repeat(600)
-    await saveMessageAsKnowledge(msg(text), 's1')
+    await saveIn(msg(text))
     expect(addKnowledge).toHaveBeenCalledWith({ scopeId: 'acme', kind: 'fact', text: 'x'.repeat(500) })
     expect(toastActions.add).not.toHaveBeenCalled()
   })
 
   it('an unscoped chat saves to Everywhere', async () => {
-    vi.mocked(chatStore.getSession).mockResolvedValueOnce({ id: 's1' } as never)
-    await saveMessageAsKnowledge(msg('Launch is 13 Nov'), 's1')
+    vi.mocked(chatStore.getSession).mockResolvedValueOnce({ id: 's1', messages: chat.messages } as never)
+    await saveIn(msg('Launch is 13 Nov'))
     expect(addKnowledge).toHaveBeenCalledWith(expect.objectContaining({ scopeId: EVERYWHERE_SCOPE_ID }))
   })
 
@@ -42,25 +53,25 @@ describe('saveMessageAsKnowledge', () => {
     vi.mocked(addKnowledge).mockRejectedValueOnce(
       new KnowledgeConflictError({ id: 'c' } as KnowledgeConflict, 'Launch is 4 Nov')
     )
-    await saveMessageAsKnowledge(msg('Launch is 13 Nov'), 's1')
+    await saveIn(msg('Launch is 13 Nov'))
     expect(toastActions.add).toHaveBeenCalledWith('Waiting in Review: it contradicts "Launch is 4 Nov"')
   })
 
   it('a duplicate toasts Already saved', async () => {
     vi.mocked(addKnowledge).mockRejectedValueOnce(new Error('duplicate'))
-    await saveMessageAsKnowledge(msg('Launch is 13 Nov'), 's1')
+    await saveIn(msg('Launch is 13 Nov'))
     expect(toastActions.add).toHaveBeenCalledWith('Already saved')
   })
 
   it('an empty message saves nothing', async () => {
-    await saveMessageAsKnowledge(msg('   '), 's1')
+    await saveIn(msg('   '))
     expect(addKnowledge).not.toHaveBeenCalled()
     expect(toastActions.add).toHaveBeenCalledWith('Nothing to save')
   })
 
   it('any other failure toasts that it could not save', async () => {
     vi.mocked(addKnowledge).mockRejectedValueOnce(new Error('disk'))
-    await saveMessageAsKnowledge(msg('Launch is 13 Nov'), 's1')
+    await saveIn(msg('Launch is 13 Nov'))
     expect(toastActions.add).toHaveBeenCalledWith("Couldn't save that. Try again.")
   })
 
@@ -77,7 +88,7 @@ describe('saveMessageAsKnowledge', () => {
       }) as unknown as Message
 
     it('files the local-only sources with the fact, so it keeps their rule', async () => {
-      await saveMessageAsKnowledge(recallAnswer({ ok: true, localOnly: true, localOnlySourceIds: ['g1'] }), 's1')
+      await saveIn(recallAnswer({ ok: true, localOnly: true, localOnlySourceIds: ['g1'] }))
       expect(addKnowledge).toHaveBeenCalledWith({
         scopeId: 'acme',
         kind: 'fact',
@@ -88,21 +99,21 @@ describe('saveMessageAsKnowledge', () => {
     })
 
     it('saves nothing when the sources are not known', async () => {
-      await saveMessageAsKnowledge(recallAnswer({ ok: true, localOnly: true }), 's1')
+      await saveIn(recallAnswer({ ok: true, localOnly: true }))
       expect(addKnowledge).not.toHaveBeenCalled()
       expect(toastActions.add).toHaveBeenCalledWith(LOCAL_ONLY)
     })
 
     it('saves nothing from a client_answer result marked local-only, or a summary of such answers', async () => {
-      await saveMessageAsKnowledge(recallAnswer({ ok: true, localOnly: true, message: 'Saved' }, 'client_answer'), 's1')
-      await saveMessageAsKnowledge({ ...msg('Summary: price is 4,200 USD'), pmLocalOnly: true }, 's1')
+      await saveIn(recallAnswer({ ok: true, localOnly: true, message: 'Saved' }, 'client_answer'))
+      await saveIn({ ...msg('Summary: price is 4,200 USD'), pmLocalOnly: true })
       expect(addKnowledge).not.toHaveBeenCalled()
       expect(toastActions.add).toHaveBeenCalledTimes(2)
       expect(toastActions.add).toHaveBeenCalledWith(LOCAL_ONLY)
     })
 
     it('saves nothing from a Needs you opening, which quotes the mail', async () => {
-      await saveMessageAsKnowledge({ ...msg('Jo asks: is the price 4,200 USD?'), pmQuestionId: 'q1' }, 's1')
+      await saveIn({ ...msg('Jo asks: is the price 4,200 USD?'), pmQuestionId: 'q1' })
       expect(addKnowledge).not.toHaveBeenCalled()
       expect(toastActions.add).toHaveBeenCalledWith(LOCAL_ONLY)
     })
@@ -118,7 +129,7 @@ describe('saveMessageAsKnowledge', () => {
           later,
         ],
       } as never)
-      await saveMessageAsKnowledge(later, 's1')
+      await saveIn(later)
       expect(addKnowledge).toHaveBeenCalledWith(
         expect.objectContaining({ sources: [{ kind: 'chat', label: 'Chat answer', sourceId: 'g1' }] })
       )
@@ -128,7 +139,7 @@ describe('saveMessageAsKnowledge', () => {
         projectId: 'acme',
         messages: [{ ...recallAnswer({ ok: true, localOnly: true }), id: 'm1' }, later],
       } as never)
-      await saveMessageAsKnowledge(later, 's1')
+      await saveIn(later)
       expect(addKnowledge).toHaveBeenCalledTimes(1)
       expect(toastActions.add).toHaveBeenCalledWith(LOCAL_ONLY)
 
@@ -137,7 +148,7 @@ describe('saveMessageAsKnowledge', () => {
         projectId: 'acme',
         messages: [{ ...msg('Jo asks: is the price 4,200 USD?'), id: 'm0', pmQuestionId: 'q1' }, later],
       } as never)
-      await saveMessageAsKnowledge(later, 's1')
+      await saveIn(later)
       expect(addKnowledge).toHaveBeenCalledTimes(1)
       expect(toastActions.add).toHaveBeenCalledTimes(2)
     })
@@ -149,6 +160,20 @@ describe('saveMessageAsKnowledge', () => {
         projectId: 'acme',
         messages: [{ ...recallAnswer({ ok: true, localOnly: true }), id: 'm1' }, mine],
       } as never)
+      await saveIn(mine)
+      expect(addKnowledge).toHaveBeenCalledWith({ scopeId: 'acme', kind: 'fact', text: 'Our price is 4,000 USD' })
+    })
+
+    it("saves no answer it can't find in its chat: the session can't be read, or doesn't hold it", async () => {
+      vi.mocked(chatStore.getSession).mockResolvedValueOnce(null as never)
+      await saveMessageAsKnowledge(msg('Jo said 4,200 USD.'), 's1')
+      chat.messages.length = 0
+      await saveMessageAsKnowledge(msg('Jo said 4,200 USD.'), 's1')
+      expect(addKnowledge).not.toHaveBeenCalled()
+      expect(toastActions.add).toHaveBeenCalledTimes(2)
+      expect(toastActions.add).toHaveBeenCalledWith(LOCAL_ONLY)
+
+      const mine = { ...msg('Our price is 4,000 USD'), role: 'user' } as Message
       await saveMessageAsKnowledge(mine, 's1')
       expect(addKnowledge).toHaveBeenCalledWith({ scopeId: 'acme', kind: 'fact', text: 'Our price is 4,000 USD' })
     })

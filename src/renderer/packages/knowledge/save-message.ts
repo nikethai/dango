@@ -15,26 +15,27 @@ import { quote } from './text'
 
 const log = getLogger('knowledge')
 
-/** The messages of the message's thread up to and including it; just the message when it is not found. */
-function messagesUpTo(session: Session | null | undefined, msg: Message): Message[] {
+/** The messages of the message's thread up to and including it; null when the session does not hold it. */
+function messagesUpTo(session: Session | null | undefined, msg: Message): Message[] | null {
   const threads = [session?.messages ?? [], ...(session?.threads ?? []).map((th) => th.messages ?? [])]
   for (const messages of threads) {
     const at = messages.findIndex((m) => m.id === msg.id)
     if (at >= 0) return [...messages.slice(0, at), msg]
   }
-  return [msg]
+  return null
 }
 
 /**
  * ADR 0003 for a saved message: `null` when it holds no local-only text. Else the local-only sources its text may
  * repeat (from the first local-only recall of its chat to it), or `'unknown'` when they cannot all be named: a Needs you
  * opening or a later answer in that chat (they quote the mail), a summary of local-only answers, or a result
- * without `localOnlySourceIds`. The user's own messages are theirs (a cloud model gets them too).
+ * without `localOnlySourceIds`. The user's own messages are theirs (a cloud model gets them too). An answer whose chat
+ * cannot be read (`chat` null) counts as unknown: what came before it is not known.
  */
-function localOnlySources(chat: Message[]): string[] | 'unknown' | null {
-  const msg = chat[chat.length - 1]
+function localOnlySources(msg: Message, chat: Message[] | null): string[] | 'unknown' | null {
   if (msg.pmQuestionId) return 'unknown'
   if (msg.role === 'user') return null
+  if (!chat) return 'unknown'
   if (chat.some((m) => !!m.pmQuestionId)) return 'unknown'
   const from = chat.findIndex(holdsLocalOnlyRecall)
   if (from < 0) return null
@@ -72,7 +73,7 @@ export async function saveMessageAsKnowledge(msg: Message, sessionId: string): P
   try {
     const chatStore = await import('@/stores/chatStore')
     const session = await chatStore.getSession(sessionId)
-    const localOnly = localOnlySources(messagesUpTo(session, msg))
+    const localOnly = localOnlySources(msg, messagesUpTo(session, msg))
     if (localOnly === 'unknown') {
       toastActions.add(t("This answer used email or tasks kept on this device, so it can't be saved as knowledge."))
       return
