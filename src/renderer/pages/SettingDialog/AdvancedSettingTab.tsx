@@ -9,7 +9,7 @@ import Tabs from '@mui/material/Tabs'
 import Typography from '@mui/material/Typography'
 import { useTheme } from '@mui/material/styles'
 import type { Settings } from '@shared/types'
-import { useRef, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Accordion, AccordionDetails, AccordionSummary } from '@/components/Accordion'
 import TextFieldReset from '@/components/common/TextFieldReset'
@@ -17,7 +17,7 @@ import { ShortcutConfig } from '@/components/Shortcut'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import platform, { platformCapabilities } from '@/platform'
 import storage, { StorageKey } from '@/storage'
-import { omitDeviceOnlyKeys, settingsImportMerge } from '@/storage/exportFilter'
+import { settingsExportData, settingsImportMerge } from '@/storage/exportFilter'
 import { migrateOnData } from '@/stores/migration'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 
@@ -156,11 +156,13 @@ function ExportAndImport(props: { onCancel: () => void }) {
     ExportDataItem.Conversations,
     ExportDataItem.Copilot,
   ])
+  const [includeDeviceOnlyChats, setIncludeDeviceOnlyChats] = useState(false)
   const importInputRef = useRef<HTMLInputElement>(null)
   const [importTips, setImportTips] = useState('')
   const onExport = async () => {
-    // Client mail, pilot records, knowledge and sources stay on this device.
-    const data = omitDeviceOnlyKeys(await storage.getAll())
+    // Client mail, pilot records, knowledge, sources, accounts, Review, jobs and cursors stay on this device; chats
+    // that quote device-only mail only when the user ticks the box.
+    const data = settingsExportData(await storage.getAll(), { includeDeviceOnlyChats })
     delete data[StorageKey.Configs] // uuid
     ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // (legacy)
     ;(data[StorageKey.Settings] as Settings).licenseInstances = undefined // (legacy)
@@ -269,22 +271,35 @@ function ExportAndImport(props: { onCancel: () => void }) {
               { label: t('Chat History'), value: ExportDataItem.Conversations },
               { label: t('My Agents'), value: ExportDataItem.Copilot },
             ].map((item) => (
-              <FormControlLabel
-                key={item.value}
-                label={item.label}
-                control={
-                  <Checkbox
-                    checked={exportItems.includes(item.value)}
-                    onChange={(e, checked) => {
-                      if (checked && !exportItems.includes(item.value)) {
-                        setExportItems([...exportItems, item.value])
-                      } else if (!checked) {
-                        setExportItems(exportItems.filter((v) => v !== item.value))
-                      }
-                    }}
+              <Fragment key={item.value}>
+                <FormControlLabel
+                  label={item.label}
+                  control={
+                    <Checkbox
+                      checked={exportItems.includes(item.value)}
+                      onChange={(e, checked) => {
+                        if (checked && !exportItems.includes(item.value)) {
+                          setExportItems([...exportItems, item.value])
+                        } else if (!checked) {
+                          setExportItems(exportItems.filter((v) => v !== item.value))
+                        }
+                      }}
+                    />
+                  }
+                />
+                {item.value === ExportDataItem.Conversations && (
+                  <FormControlLabel
+                    label={t('Include chats that quote device-only mail')}
+                    disabled={!exportItems.includes(ExportDataItem.Conversations)}
+                    control={
+                      <Checkbox
+                        checked={includeDeviceOnlyChats}
+                        onChange={(_e, checked) => setIncludeDeviceOnlyChats(checked)}
+                      />
+                    }
                   />
-                }
-              />
+                )}
+              </Fragment>
             ))}
           </FormGroup>
           <Button variant="contained" color="primary" onClick={onExport}>
