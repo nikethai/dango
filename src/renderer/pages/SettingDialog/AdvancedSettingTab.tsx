@@ -17,7 +17,7 @@ import { ShortcutConfig } from '@/components/Shortcut'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import platform, { platformCapabilities } from '@/platform'
 import storage, { StorageKey } from '@/storage'
-import { settingsExportData, settingsImportMerge } from '@/storage/exportFilter'
+import { settingsExportData, settingsImportMerge, stripSyncSecrets } from '@/storage/exportFilter'
 import { migrateOnData } from '@/stores/migration'
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 
@@ -166,6 +166,9 @@ function ExportAndImport(props: { onCancel: () => void }) {
     delete data[StorageKey.Configs] // uuid
     ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // (legacy)
     ;(data[StorageKey.Settings] as Settings).licenseInstances = undefined // (legacy)
+    data[StorageKey.Settings] = stripSyncSecrets(data[StorageKey.Settings] as Settings, {
+      includeKeys: exportItems.includes(ExportDataItem.Key),
+    })
     if (!exportItems.includes(ExportDataItem.Key)) {
       delete (data[StorageKey.Settings] as Settings).licenseKey
       delete (data[StorageKey.Settings] as Settings).providers

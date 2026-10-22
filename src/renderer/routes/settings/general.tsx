@@ -19,7 +19,7 @@ import { languageNameMap, languages } from '@/i18n/locales'
 import { DEFAULT_NOTIFICATIONS_CONFIG } from '@/packages/notifications/types'
 import platform, { platformCapabilities } from '@/platform'
 import storage, { StorageKey } from '@/storage'
-import { settingsExportData, settingsImportEntries } from '@/storage/exportFilter'
+import { settingsExportData, settingsImportEntries, stripSyncSecrets } from '@/storage/exportFilter'
 import { recoverSessionList } from '@/stores/chatStore'
 import { exportHistoryTransferFile, importHistoryTransferFile } from '@/stores/historyTransfer'
 import { importRoomPack } from '@/stores/roomPack'
@@ -514,12 +514,9 @@ const ImportExportDataSection = () => {
     delete data[StorageKey.Configs] // uuid
     ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // (legacy)
     ;(data[StorageKey.Settings] as Settings).licenseInstances = undefined // (legacy)
-    if ((data[StorageKey.Settings] as Settings).extension?.historySync) {
-      ;(data[StorageKey.Settings] as Settings).extension.historySync = {
-        ...(data[StorageKey.Settings] as Settings).extension.historySync,
-        passphrase: undefined,
-      }
-    }
+    data[StorageKey.Settings] = stripSyncSecrets(data[StorageKey.Settings] as Settings, {
+      includeKeys: exportItems.includes(ExportDataItem.Key),
+    })
     if (!exportItems.includes(ExportDataItem.Key)) {
       delete (data[StorageKey.Settings] as Settings).licenseKey
       data[StorageKey.Settings].providers = mapValues(

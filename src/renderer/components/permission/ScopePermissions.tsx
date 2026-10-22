@@ -65,7 +65,7 @@ export function ScopePermissions({ scopeId }: { scopeId: string }) {
                 </span>
                 {grant.readOnlyCommands ? (
                   <span className="dg-type-caption" style={{ color: 'var(--dango-muted)' }}>
-                    {t('Read-only commands only')}
+                    {t('Only commands that just look')}
                   </span>
                 ) : null}
                 {grant.grantedAt > 0 ? (

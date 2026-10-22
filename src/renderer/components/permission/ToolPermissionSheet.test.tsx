@@ -28,7 +28,7 @@ vi.mock('i18next', () => ({
 
 const HINT = 'Dango always asks before it sends, deletes or changes your files.'
 const COMMAND_HINT = 'Dango always asks before it runs commands.'
-const READ_ONLY_HINT = 'Always covers only read-only commands like this one. Other commands still ask every time.'
+const READ_ONLY_HINT = '“Always” only skips this question for commands that just look, like this one. Commands that change anything will still ask.'
 
 function makeRequest(over: Partial<PermissionRequest> = {}): PermissionRequest {
   return {

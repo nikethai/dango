@@ -10,6 +10,7 @@ import {
   settingsExportData,
   settingsImportEntries,
   settingsImportMerge,
+  stripSyncSecrets,
 } from './exportFilter'
 import { StorageKey, StorageKeyGenerator } from './StoreStorage'
 
@@ -325,5 +326,32 @@ describe('settingsExportData', () => {
     const before = JSON.stringify(input)
     for (const includeDeviceOnlyChats of [false, true]) settingsExportData(input, { includeDeviceOnlyChats })
     expect(JSON.stringify(input)).toBe(before)
+  })
+})
+
+describe('stripSyncSecrets', () => {
+  const settings = () => ({
+    language: 'en',
+    extension: {
+      historySync: { enabled: true, endpoint: 'https://sync', token: 'h-tok', passphrase: 'h-pass' },
+      memorySync: { enabled: true, endpoint: 'https://mem', token: 'm-tok' },
+    },
+  })
+
+  it('drops both sync tokens and the passphrase unless API keys are included', () => {
+    const out = stripSyncSecrets(settings(), { includeKeys: false })
+    expect(out.extension.historySync).toEqual({ enabled: true, endpoint: 'https://sync' })
+    expect(out.extension.memorySync).toEqual({ enabled: true, endpoint: 'https://mem' })
+  })
+
+  it('keeps the tokens with API keys but never the passphrase', () => {
+    const out = stripSyncSecrets(settings(), { includeKeys: true })
+    expect(out.extension.historySync).toEqual({ enabled: true, endpoint: 'https://sync', token: 'h-tok' })
+    expect(out.extension.memorySync).toEqual({ enabled: true, endpoint: 'https://mem', token: 'm-tok' })
+  })
+
+  it('leaves settings without sync config alone', () => {
+    expect(stripSyncSecrets({ language: 'en' }, { includeKeys: false })).toEqual({ language: 'en' })
+    expect(stripSyncSecrets(undefined, { includeKeys: false })).toBeUndefined()
   })
 })

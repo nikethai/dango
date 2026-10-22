@@ -80,7 +80,14 @@ const recall = {
   ],
 }
 h.getAll.mockImplementation(async () => ({
-  settings: { language: 'en', providers: {} },
+  settings: {
+    language: 'en',
+    providers: {},
+    extension: {
+      historySync: { enabled: true, endpoint: 'https://sync', token: 'h-tok', passphrase: 'h-pass' },
+      memorySync: { enabled: true, endpoint: 'https://mem', token: 'm-tok' },
+    },
+  },
   'chat-sessions-list': [
     { id: 'plain', name: 'Plain' },
     { id: 'recall', name: 'Recall' },
@@ -150,7 +157,7 @@ describe('Settings > General export', () => {
     expect(h.exportTransfer.mock.calls[1][1]).toEqual({ includeDeviceOnlyChats: true })
   })
 
-  it('leaves out account tokens and sync state with API Keys unticked or ticked', async () => {
+  it('leaves out account tokens and sync state, and sync tokens unless API Keys is ticked', async () => {
     const { RouteComponent } = await import('./general')
     render(
       <MantineProvider>
@@ -168,6 +175,10 @@ describe('Settings > General export', () => {
       expect(Object.keys(data)).not.toContain('integration-secret:gmail-1')
       expect(Object.keys(data)).not.toContain('history-sync-state')
       expect(JSON.stringify(data)).not.toContain('tok-gmail')
+      // Sync tokens go with API Keys; the history passphrase never goes.
+      expect(JSON.stringify(data).includes('h-tok')).toBe(tick)
+      expect(JSON.stringify(data).includes('m-tok')).toBe(tick)
+      expect(JSON.stringify(data)).not.toContain('h-pass')
     }
   })
 })

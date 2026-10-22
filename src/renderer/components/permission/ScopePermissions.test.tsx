@@ -100,7 +100,7 @@ describe('ScopePermissions', () => {
     render(<ScopePermissions scopeId="scope-1" />)
     const rows = screen.getAllByRole('listitem')
     expect(rows).toHaveLength(1)
-    expect(rows[0].textContent).toContain('Read-only commands only')
+    expect(rows[0].textContent).toContain('Only commands that just look')
   })
 
   it('does not list a read-only marked grant for a tool the gate would not honour it for', () => {

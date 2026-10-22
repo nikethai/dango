@@ -81,7 +81,7 @@ export function ToolPermissionSheet({ request, onChoose }: ToolPermissionSheetPr
         alwaysAsksByEffect(request.toolName)
           ? t('Dango always asks before it sends, deletes or changes your files.')
           : request.readOnlyCommand && request.allowAlways
-            ? t('Always covers only read-only commands like this one. Other commands still ask every time.')
+            ? t('“Always” only skips this question for commands that just look, like this one. Commands that change anything will still ask.')
             : isCommandTool(request.toolName, request.toolDescription)
               ? t('Dango always asks before it runs commands.')
               : undefined

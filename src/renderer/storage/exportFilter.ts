@@ -146,3 +146,23 @@ export function settingsImportMerge(
     [StorageKey.ChatSessionsList]: uniqBy([...list(previousData), ...list(importData)], 'id'),
   }
 }
+
+type SyncConfig = { token?: unknown; passphrase?: unknown }
+
+/**
+ * Sync secrets in a settings export. The history passphrase never leaves the device; the history and memory sync
+ * tokens go with the API keys, so only when the user ticks API Keys. Returns a copy.
+ */
+export function stripSyncSecrets<T>(settings: T, opts: { includeKeys: boolean }): T {
+  const extension = (settings as { extension?: Record<string, unknown> } | undefined)?.extension
+  if (!extension) return settings
+  const strip = (config: unknown) => {
+    if (!config || typeof config !== 'object') return config
+    const { token, passphrase: _passphrase, ...rest } = config as SyncConfig
+    return opts.includeKeys && token !== undefined ? { ...rest, token } : rest
+  }
+  const next = { ...extension }
+  if ('historySync' in next) next.historySync = strip(next.historySync)
+  if ('memorySync' in next) next.memorySync = strip(next.memorySync)
+  return { ...settings, extension: next }
+}
