@@ -131,6 +131,7 @@ const BACKGROUND_LINE =
   'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.'
 
 const GMAIL_OFF_LINE = "Off: Dango keeps new mail for search but doesn't read it with a model or write drafts."
+const GMAIL_ON_LINE = 'Dango reads new mail with your model to draft replies.'
 
 const pick = vi.mocked(pickSource)
 const connect = vi.mocked(connectSource)
@@ -229,31 +230,53 @@ describe('AddSourceSheet', () => {
     expect(select.value).toBe('dango')
   })
 
-  it('background review is off by default and shows the line', async () => {
-    await toConnectStep(gmailDraft, 'Gmail')
+  it('background review is off by default for other kinds and shows the line', async () => {
+    await toConnectStep({ kind: 'asana', label: 'me@example.com', config: { accountId: 'a2' } }, 'Asana')
     const toggle = screen.getByRole('switch', { name: 'Background review' })
     expect(toggle.className).toBe('dg-switch')
     expect(toggle.getAttribute('aria-checked')).toBe('false')
     const hint = screen.getByText(BACKGROUND_LINE)
     expect(hint.className).toBe('dg-sheet__hint')
+    cleanup()
+    document.body.innerHTML = ''
+    await toConnectStep(folderDraft, 'Folder', { scopeId: 'dango' })
+    expect(screen.getByRole('switch', { name: 'Background review' }).getAttribute('aria-checked')).toBe('false')
   })
 
-  it('Gmail says under the switch what off means; other kinds do not (B6)', async () => {
+  it('Gmail starts with background review on and connects with it on (Decision 3)', async () => {
+    connect.mockResolvedValueOnce({ sourceId: 's1', jobId: 'j1' })
+    const { result } = await toConnectStep(gmailDraft, 'Gmail')
+    expect(screen.getByRole('switch', { name: 'Background review' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }))
+    await expect(result).resolves.toEqual({ sourceId: 's1' })
+    expect(connect).toHaveBeenCalledWith(gmailDraft, { scopeId: 'everywhere', backgroundReview: true })
+  })
+
+  it('Gmail says under the switch what on and off mean, linked to it; other kinds do not', async () => {
     await toConnectStep(gmailDraft, 'Gmail')
-    const caption = screen.getByText(GMAIL_OFF_LINE)
-    expect(caption.className).toBe('dg-type-caption')
-    expect(screen.getByRole('switch', { name: 'Background review' }).compareDocumentPosition(caption)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    )
+    const toggle = screen.getByRole('switch', { name: 'Background review' })
+    const on = screen.getByText(GMAIL_ON_LINE)
+    expect(on.className).toBe('dg-type-caption')
+    expect(toggle.getAttribute('aria-describedby')).toBe(on.id)
+    expect(toggle.compareDocumentPosition(on)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(screen.queryByText(GMAIL_OFF_LINE)).toBeNull()
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    const off = screen.getByText(GMAIL_OFF_LINE)
+    expect(off.className).toBe('dg-type-caption')
+    expect(toggle.getAttribute('aria-describedby')).toBe(off.id)
+    expect(screen.queryByText(GMAIL_ON_LINE)).toBeNull()
     cleanup()
     document.body.innerHTML = ''
     await toConnectStep({ kind: 'asana', label: 'me@example.com', config: { accountId: 'a2' } }, 'Asana')
-    expect(screen.getByRole('switch', { name: 'Background review' })).toBeTruthy()
+    expect(screen.getByRole('switch', { name: 'Background review' }).getAttribute('aria-describedby')).toBeNull()
     expect(screen.queryByText(GMAIL_OFF_LINE)).toBeNull()
+    expect(screen.queryByText(GMAIL_ON_LINE)).toBeNull()
     cleanup()
     document.body.innerHTML = ''
     await toConnectStep(folderDraft, 'Folder', { scopeId: 'dango' })
     expect(screen.queryByText(GMAIL_OFF_LINE)).toBeNull()
+    expect(screen.queryByText(GMAIL_ON_LINE)).toBeNull()
   })
 
   it('documents has no background review', async () => {
@@ -363,7 +386,7 @@ describe('AddSourceSheet', () => {
     const { result } = await toConnectStep(gmailDraft, 'Gmail')
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }))
     await result
-    expect(connect).toHaveBeenCalledWith(gmailDraft, { scopeId: 'everywhere', backgroundReview: false })
+    expect(connect).toHaveBeenCalledWith(gmailDraft, { scopeId: 'everywhere', backgroundReview: true })
     expect(vi.mocked(pushUndo).mock.calls[0][0].message).toBe('Connected me@example.com to Everywhere')
   })
 

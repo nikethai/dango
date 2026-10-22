@@ -130,7 +130,8 @@ const AddSourceSheet = NiceModal.create(({ scopeId: openedFrom, kind: startKind 
         return
       }
       setScopeId(initialScope(draft.kind))
-      setBackgroundReview(false)
+      // Decision 3: Gmail starts with Background review on; other kinds start off.
+      setBackgroundReview(draft.kind === 'gmail')
       setStep({ name: 'connect', draft })
     } catch (error) {
       if (controller.signal.aborted) return
@@ -250,8 +251,9 @@ const AddSourceSheet = NiceModal.create(({ scopeId: openedFrom, kind: startKind 
       ...scopes.map((s) => ({ id: s.id, name: s.name })),
     ]
     const showSwitch = !!def?.supportsBackgroundReview
-    // B6: with the switch off, Gmail mail is only synced and stored (no judge, drafts or read-back).
-    const offCaption = showSwitch && step.draft.kind === 'gmail'
+    // B6 / Decision 3: Gmail says what the switch does. Off, mail is only synced and stored (no judge, drafts or
+    // read-back); on, the model reads new mail to draft replies.
+    const gmailCaption = showSwitch && step.draft.kind === 'gmail'
     if (showSwitch) hint = t(BACKGROUND_REVIEW_LINE)
     body = (
       <>
@@ -302,15 +304,17 @@ const AddSourceSheet = NiceModal.create(({ scopeId: openedFrom, kind: startKind 
               className="dg-switch"
               aria-checked={backgroundReview ? 'true' : 'false'}
               aria-labelledby={switchLabelId}
-              {...(offCaption ? { 'aria-describedby': switchCaptionId } : {})}
+              {...(gmailCaption ? { 'aria-describedby': switchCaptionId } : {})}
               disabled={busy}
               onClick={() => setBackgroundReview((on) => !on)}
             />
           </div>
         ) : null}
-        {offCaption ? (
+        {gmailCaption ? (
           <p id={switchCaptionId} className="dg-type-caption" style={{ color: 'var(--dango-muted)' }}>
-            {t("Off: Dango keeps new mail for search but doesn't read it with a model or write drafts.")}
+            {backgroundReview
+              ? t('Dango reads new mail with your model to draft replies.')
+              : t("Off: Dango keeps new mail for search but doesn't read it with a model or write drafts.")}
           </p>
         ) : null}
         {errorView(step.error)}

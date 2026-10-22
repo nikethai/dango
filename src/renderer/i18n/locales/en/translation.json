@@ -1439,6 +1439,7 @@
   "Background review": "Background review",
   "Background review is off for this source.": "Background review is off for this source.",
   "Off: Dango keeps new mail for search but doesn't read it with a model or write drafts.": "Off: Dango keeps new mail for search but doesn't read it with a model or write drafts.",
+  "Dango reads new mail with your model to draft replies.": "Dango reads new mail with your model to draft replies.",
   "Migration": "Migration",
   "proposed": "proposed",
   "approved": "approved",

@@ -172,7 +172,7 @@ export function SourceRow({ source, scopeName }: { source: ConnectedSource; scop
   const menu = useRef<HTMLDivElement>(null)
   const switchLabelId = useId()
   const switchHintId = useId()
-  const switchOffId = useId()
+  const switchCaptionId = useId()
   const localLabelId = useId()
   const localHintId = useId()
 
@@ -252,7 +252,7 @@ export function SourceRow({ source, scopeName }: { source: ConnectedSource; scop
                 className="dg-switch"
                 aria-checked={source.backgroundReview ? 'true' : 'false'}
                 aria-labelledby={switchLabelId}
-                aria-describedby={source.kind === 'gmail' ? `${switchHintId} ${switchOffId}` : switchHintId}
+                aria-describedby={source.kind === 'gmail' ? `${switchHintId} ${switchCaptionId}` : switchHintId}
                 disabled={!roleKnown}
                 onClick={() =>
                   inJobsWindow(() => updateSource(source.id, { backgroundReview: !source.backgroundReview }))
@@ -265,10 +265,12 @@ export function SourceRow({ source, scopeName }: { source: ConnectedSource; scop
             <span id={switchHintId} className="dg-item__meta">
               {t(BACKGROUND_REVIEW_LINE)}
             </span>
-            {/* B6: with the switch off, Gmail mail is only synced and stored. */}
+            {/* B6 / Decision 3: Gmail says what the switch does; off, mail is only synced and stored. */}
             {source.kind === 'gmail' ? (
-              <span id={switchOffId} className="dg-item__meta">
-                {t("Off: Dango keeps new mail for search but doesn't read it with a model or write drafts.")}
+              <span id={switchCaptionId} className="dg-item__meta">
+                {source.backgroundReview
+                  ? t('Dango reads new mail with your model to draft replies.')
+                  : t("Off: Dango keeps new mail for search but doesn't read it with a model or write drafts.")}
               </span>
             ) : null}
           </div>

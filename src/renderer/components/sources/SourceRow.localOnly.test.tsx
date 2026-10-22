@@ -133,24 +133,41 @@ describe('SourceRow local-only switch', () => {
   })
 })
 
-describe('SourceRow Background review caption (B6)', () => {
+describe('SourceRow Background review caption (B6, Decision 3)', () => {
   const OFF_LINE = "Off: Dango keeps new mail for search but doesn't read it with a model or write drafts."
+  const ON_LINE = 'Dango reads new mail with your model to draft replies.'
 
-  it('Gmail says what off means, linked to the switch; other kinds do not', async () => {
-    await renderRow(source({ kind: 'gmail' }))
+  it('Gmail with review off says what off means, linked to the switch; other kinds do not', async () => {
+    await renderRow(source({ kind: 'gmail', backgroundReview: false }))
     const toggle = screen.getByRole('switch', { name: 'Background review' })
     const caption = screen.getByText(OFF_LINE)
     expect(toggle.getAttribute('aria-describedby')?.split(' ')).toEqual([
       screen.getByText('Background review line').id,
       caption.id,
     ])
+    expect(screen.queryByText(ON_LINE)).toBeNull()
     cleanup()
     for (const kind of ['asana', 'folder', 'codex-threads'] as const) {
-      await renderRow(source({ kind }))
-      const other = screen.getByRole('switch', { name: 'Background review' })
-      expect(other.getAttribute('aria-describedby')).toBe(screen.getByText('Background review line').id)
-      expect(screen.queryByText(OFF_LINE)).toBeNull()
-      cleanup()
+      for (const backgroundReview of [false, true]) {
+        await renderRow(source({ kind, backgroundReview }))
+        const other = screen.getByRole('switch', { name: 'Background review' })
+        expect(other.getAttribute('aria-describedby')).toBe(screen.getByText('Background review line').id)
+        expect(screen.queryByText(OFF_LINE)).toBeNull()
+        expect(screen.queryByText(ON_LINE)).toBeNull()
+        cleanup()
+      }
     }
+  })
+
+  it('Gmail with review on says what on means, linked to the switch', async () => {
+    await renderRow(source({ kind: 'gmail', backgroundReview: true }))
+    const toggle = screen.getByRole('switch', { name: 'Background review' })
+    const caption = screen.getByText(ON_LINE)
+    expect(caption.className).toBe('dg-item__meta')
+    expect(toggle.getAttribute('aria-describedby')?.split(' ')).toEqual([
+      screen.getByText('Background review line').id,
+      caption.id,
+    ])
+    expect(screen.queryByText(OFF_LINE)).toBeNull()
   })
 })
