@@ -700,6 +700,101 @@ describe('runGmailPipeline with Background review off (B6)', () => {
   })
 })
 
+describe('runGmailPipeline after Background review is turned back on (D4)', () => {
+  const ENABLED = CONNECTED + 50_000
+
+  it('acts only on mail newer than reviewEnabledAt; mail stored while off stays stored', async () => {
+    // Review off: mail is stored only.
+    h.sources = [source({ backgroundReview: false })]
+    syncReturns([mail({ externalId: 'while-off', occurredAt: CONNECTED + 10_000 })])
+    await runGmailPipeline(h.sources[0], ctx())
+    expect(judgeThread).not.toHaveBeenCalled()
+
+    // Turned back on: the earlier mail is never judged or drafted, the newer mail is.
+    h.sources = [source({ reviewEnabledAt: ENABLED })]
+    syncReturns([mail({ externalId: 'after-on', occurredAt: ENABLED + 1 })])
+    await runGmailPipeline(h.sources[0], ctx())
+    expect(judgeThread).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(judgeThread).mock.calls[0][0].inbound.externalId).toBe('after-on')
+    expect(actOnThread).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(actOnThread).mock.calls[0][0].inbound.externalId).toBe('after-on')
+    expect(h.records.map((r) => r.externalId).sort()).toEqual(['after-on', 'while-off'])
+    expect(h.processed.has('acc1:while-off')).toBe(false)
+
+    // And on later runs too.
+    syncReturns([])
+    await runGmailPipeline(h.sources[0], ctx())
+    expect(judgeThread).toHaveBeenCalledTimes(1)
+  })
+
+  it('mail at exactly reviewEnabledAt is not acted on', async () => {
+    h.sources = [source({ reviewEnabledAt: ENABLED })]
+    syncReturns([mail({ occurredAt: ENABLED })])
+    await runGmailPipeline(h.sources[0], ctx())
+    expect(judgeThread).not.toHaveBeenCalled()
+  })
+
+  it('a reviewEnabledAt older than the connection does not reach back before it', async () => {
+    h.sources = [source({ reviewEnabledAt: CONNECTED - 50_000 })]
+    syncReturns([mail({ occurredAt: CONNECTED - 1000 }), mail({ externalId: 'new', occurredAt: CONNECTED + 1000 })])
+    await runGmailPipeline(h.sources[0], ctx())
+    expect(judgeThread).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(judgeThread).mock.calls[0][0].inbound.externalId).toBe('new')
+  })
+
+  it('a "Which client is this?" backfill of mail from while review was off drafts nothing', async () => {
+    h.sources = [
+      source({ reviewEnabledAt: ENABLED }),
+      source({ id: 'g2', scopeId: 'globex', reviewEnabledAt: ENABLED, config: { accountId: 'acc1', matchers: [] } }),
+    ]
+    vi.mocked(loadSources).mockImplementationOnce(() => {
+      h.sources = [
+        source({ reviewEnabledAt: ENABLED }),
+        source({
+          id: 'g2',
+          scopeId: 'globex',
+          reviewEnabledAt: ENABLED,
+          config: { accountId: 'acc1', matchers: ['@newco.com'] },
+        }),
+      ]
+      return Promise.resolve()
+    })
+    h.questions = [
+      {
+        id: 'q2',
+        kind: 'which-client',
+        scopeId: null,
+        accountId: 'acc1',
+        threadId: 't-old',
+        subject: 'Hello',
+        from: 'ann@newco.com',
+        summary: '',
+        candidates: [],
+        domain: 'newco.com',
+        state: 'answered',
+        createdAt: 1,
+        backfill: { sourceId: 'g2', matcher: '@newco.com' },
+      },
+    ]
+    h.cursors = [
+      { accountId: 'acc1', sourceKind: 'gmail', scope: 'mailbox', value: 'h1', updatedAt: 1, ownAddress: OWN },
+    ]
+    const old = mail({
+      externalId: 'm-old',
+      threadOrTaskId: 't-old',
+      author: 'ann@newco.com',
+      participants: ['ann@newco.com', OWN],
+      occurredAt: ENABLED - 1000,
+    })
+    syncReturns([old], true) // the backfill
+    syncReturns([]) // the poll
+    await runGmailPipeline(source({ id: 'g2', scopeId: 'globex' }), ctx())
+    expect(h.records.find((r) => r.externalId === 'm-old')).toMatchObject({ scopeId: 'globex', sourceId: 'g2' })
+    expect(judgeThread).not.toHaveBeenCalled()
+    expect(actOnThread).not.toHaveBeenCalled()
+  })
+})
+
 describe('runGmailPipeline with a source pending removal (S11)', () => {
   const pending = () =>
     source({

@@ -16,6 +16,12 @@ export const ConnectedSourceSchema = z.object({
   lastSyncAt: z.number().optional(),
   lastReviewAt: z.number().optional(),
   /**
+   * When Background review was last turned from off to on (D4). Review acts only on mail newer than
+   * max(connectedAt, reviewEnabledAt): mail that arrived while it was off stays stored and searchable but is never
+   * judged or drafted. Absent when review has not been turned on since the source was connected.
+   */
+  reviewEnabledAt: z.number().optional(),
+  /**
    * When the user removed the source (S11). Set during the 5 s undo window and kept if the app quits meanwhile, so the
    * next launch finishes the removal. A pending source is hidden from lists and no job of it runs.
    */

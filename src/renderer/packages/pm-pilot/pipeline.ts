@@ -62,6 +62,8 @@ import { getFreshToken } from './tokens'
  * - Mail is only ever proposed to knowledge (slice 4), never approved here.
  * - A source with Background review off (B6) is synced and stored only: no model is resolved for it, and none of its
  *   mail is read back, judged or drafted for. Its "Which client is this?" questions and backfills (no model) stay.
+ *   Turned back on (D4), it acts only on mail newer than `reviewEnabledAt`: mail from while it was off stays stored
+ *   and searchable, but is never judged or drafted, even when a which-client backfill brings it in later.
  * - Logs carry fixed text and error class names, never mail text.
  */
 
@@ -405,7 +407,8 @@ const DAY_MS = 86_400_000
 
 /**
  * Threads of the account's client sources whose newest inbound message may be acted on: not noise, not answered by the
- * PM since, not processed, newer than the source's connection and at most `GMAIL_BACKFILL_DAYS` old. Newest first.
+ * PM since, not processed, newer than the source's connection and than review last being turned on
+ * (`reviewEnabledAt`, D4), and at most `GMAIL_BACKFILL_DAYS` old. Newest first.
  * Read from the stored records, so threads left over from an earlier tick (the per-tick cap, a failure) come back.
  */
 async function newMailCandidates(ctx: RunContext, sources: ConnectedSource[]): Promise<Candidate[]> {
@@ -413,7 +416,8 @@ async function newMailCandidates(ctx: RunContext, sources: ConnectedSource[]): P
   const out: Candidate[] = []
   for (const source of sources) {
     if (source.scopeId === EVERYWHERE_SCOPE_ID) continue
-    const after = Math.max(source.connectedAt, oldest)
+    // Mail from before the source was connected, or from while Background review was off (D4), is never acted on.
+    const after = Math.max(source.connectedAt, source.reviewEnabledAt ?? 0, oldest)
     const records = (await pmStore.getRecords(source.scopeId)).filter(
       (r) => r.sourceId === source.id && r.sourceKind === 'gmail' && r.occurredAt > after
     )

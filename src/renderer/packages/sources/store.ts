@@ -249,6 +249,11 @@ function patched(
 ): ConnectedSource {
   const next: Record<string, unknown> = { ...source, ...patch, id: source.id, kind: source.kind }
   next.connectedAt = source.connectedAt
+  // Background review turned from off to on (D4): it acts only on mail newer than now. Judged against the stored row,
+  // so every caller (Settings › Sources, the which-client answer, a stale UI row) gets the same rule; on → off keeps it.
+  if (patch.backgroundReview === true && !source.backgroundReview && patch.reviewEnabledAt === undefined) {
+    next.reviewEnabledAt = Date.now()
+  }
   for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key]
   return next as ConnectedSource
 }
