@@ -175,6 +175,46 @@ describe('sources store', () => {
     expect(getSource(a.id)).toMatchObject({ label: 'renamed', lastSyncAt: 42, kind: 'gmail', scopeId: 'acme' })
   })
 
+  it('turning Background review from off to on stores reviewEnabledAt = now (D4)', async () => {
+    const a = await addSource(input())
+    expect(getSource(a.id)?.reviewEnabledAt).toBeUndefined()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(5_000)
+    try {
+      await updateSource(a.id, { backgroundReview: true })
+    } finally {
+      now.mockRestore()
+    }
+    expect(getSource(a.id)).toMatchObject({ backgroundReview: true, reviewEnabledAt: 5_000 })
+    _resetSourcesForTests()
+    await loadSources()
+    expect(getSource(a.id)?.reviewEnabledAt).toBe(5_000)
+  })
+
+  it('turning review off, or saving it on while on, leaves reviewEnabledAt alone (D4)', async () => {
+    const a = await addSource(input())
+    const now = vi.spyOn(Date, 'now').mockReturnValue(5_000)
+    try {
+      await updateSource(a.id, { backgroundReview: true })
+      now.mockReturnValue(9_000)
+      await updateSource(a.id, { backgroundReview: true, label: 'renamed' })
+      expect(getSource(a.id)?.reviewEnabledAt).toBe(5_000)
+      await updateSource(a.id, { backgroundReview: false })
+      expect(getSource(a.id)).toMatchObject({ backgroundReview: false, reviewEnabledAt: 5_000 })
+      await updateSource(a.id, { lastSyncAt: 1 })
+      expect(getSource(a.id)?.reviewEnabledAt).toBe(5_000)
+      now.mockReturnValue(12_000)
+      await updateSource(a.id, { backgroundReview: true })
+      expect(getSource(a.id)?.reviewEnabledAt).toBe(12_000)
+    } finally {
+      now.mockRestore()
+    }
+  })
+
+  it('a source connected with review on has no reviewEnabledAt: its connection is the start (D4)', async () => {
+    const a = await addSource(input({ backgroundReview: true }))
+    expect(getSource(a.id)?.reviewEnabledAt).toBeUndefined()
+  })
+
   it('drops corrupt stored rows one by one', async () => {
     memory.set('sources', [
       { id: 'ok', kind: 'gmail', scopeId: 'acme', label: 'x', connectedAt: 1 },
@@ -424,6 +464,18 @@ describe('sources store', () => {
     expect(calls).toEqual([])
   })
 
+  it('registerSourcesResolver: a source pending removal cannot open and keeps its label (S11)', async () => {
+    vi.mocked(setJobSourceResolver).mockClear()
+    registerSourcesResolver()
+    const resolver = vi.mocked(setJobSourceResolver).mock.calls.at(-1)?.[0]
+    const s = await addSource(input({ label: 'me@work' }))
+    await updateSource(s.id, { removalPendingAt: 1 })
+    expect(resolver?.exists(s.id)).toBe(false)
+    expect(resolver?.label(s.id)).toBe('me@work')
+    await updateSource(s.id, { removalPendingAt: undefined })
+    expect(resolver?.exists(s.id)).toBe(true)
+  })
+
   it('registerSourcesResolver: removed sources cannot open, labels come from the store', async () => {
     vi.mocked(setJobSourceResolver).mockClear()
     registerSourcesResolver()
@@ -501,6 +553,14 @@ describe('adoptExistingFolderBindings', () => {
     restore().mockImplementation(async (id: string) => descriptor(id, 'ready'))
     expect(await adoptExistingFolderBindings(['acme'])).toBe(0)
     expect(restore()).not.toHaveBeenCalled()
+  })
+
+  it('does not adopt the binding of a folder source pending removal (S11)', async () => {
+    const folder = await addSource(input({ kind: 'folder', label: 'site' }))
+    await updateSource(folder.id, { removalPendingAt: 1 })
+    restore().mockImplementation(async (id: string) => descriptor(id, 'ready'))
+    expect(await adoptExistingFolderBindings(['acme'])).toBe(0)
+    expect(listSources({ includePending: true }).map((s) => s.id)).toEqual([folder.id])
   })
 
   it('does nothing when the platform has no folder bindings', async () => {

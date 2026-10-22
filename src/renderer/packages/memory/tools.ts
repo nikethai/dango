@@ -1,5 +1,5 @@
 import { getModel } from '@shared/models'
-import { createMessage } from '@shared/types'
+import { createMessage, type SessionSettings, type Settings } from '@shared/types'
 import type { MemoryBank, MemorySettings } from '@shared/types/memory'
 import { emptyMemoryBank } from '@shared/types/memory'
 import { tool } from 'ai'
@@ -11,8 +11,8 @@ import { settingsStore } from '@/stores/settingsStore'
 import { createEntry, forgetEntry, listEntries, retainEntry, updateEntry } from './bank-ops'
 import { rebuildProfileLocal } from './extract'
 import { buildReflectSystemPrompt } from './prompts/extract'
-import { getMemoryRepository } from './repository'
 import { touchAccessedEntries } from './recall'
+import { getMemoryRepository } from './repository'
 
 export interface MemoryToolContext {
   settings: MemorySettings
@@ -29,7 +29,18 @@ export interface MemoryToolContext {
    * Default true when omitted.
    */
   allowRetain?: boolean
+  /**
+   * The chat holds email or tasks kept on this device (or this turn may read them): omit memory_retain, memory_update
+   * and memory_reflect, so nothing a model read from local-only text is saved or sent on (ADR 0003, B3).
+   */
+  localOnlyChat?: boolean
+  /** The chat's model settings; memory_reflect calls that model, not the default one. */
+  sessionSettings?: SessionSettings
 }
+
+/** Told to the model (not shown to the user): why a local-only chat has no saving or reflecting. */
+export const MEMORY_LOCAL_ONLY_NOTE =
+  'Saving and reflecting are off in this chat because it holds email or tasks kept on this device.'
 
 export const MEMORY_TOOL_NAMES = [
   'memory_retain',
@@ -41,13 +52,15 @@ export const MEMORY_TOOL_NAMES = [
 ] as const
 
 export function getMemoryToolSet(ctx: MemoryToolContext) {
-  const allowRetain = ctx.allowRetain !== false
+  const localOnlyChat = ctx.localOnlyChat === true
+  const allowRetain = ctx.allowRetain !== false && !localOnlyChat
+  const allowWrite = !localOnlyChat
   const mode = ctx.settings.retrievalMode ?? 'hybrid'
   const retrievalHint =
     mode === 'always'
       ? 'Some memories may already appear in the system prompt. Still use memory_recall for older or missing facts before web search.'
       : mode === 'hybrid'
-        ? 'A host Memory lookup already ran for this user message (see system Memory section). Only profile + pinned facts are always injected. If lookup has no match but the question may involve the user\'s projects/stack/prefs, call memory_recall ONCE with keywords from the user message BEFORE any web search.'
+        ? "A host Memory lookup already ran for this user message (see system Memory section). Only profile + pinned facts are always injected. If lookup has no match but the question may involve the user's projects/stack/prefs, call memory_recall ONCE with keywords from the user message BEFORE any web search."
         : 'A host Memory lookup already ran for this user message. Full memory is not injected. Call memory_recall ONCE before web search when personal/project context may matter.'
 
   const retainBullet = allowRetain ? '- memory_retain — store a short durable fact\n' : ''
@@ -66,9 +79,7 @@ Tool order for research questions that might involve the user's work:
 ${retainBullet}- memory_recall — keyword search (prefer before web search when personal/project context is possible)
 - memory_list — recent/pinned entries
 - memory_forget — disable or hard-delete by id
-- memory_update — edit by id
-- memory_reflect — answer a question from memories only
-${allowRetain ? '' : '\nMemory retain is disabled for this chat; do not invent a store tool.\n'}
+${allowWrite ? '- memory_update — edit by id\n- memory_reflect — answer a question from memories only\n' : ''}${localOnlyChat ? `\n${MEMORY_LOCAL_ONLY_NOTE}\n` : allowRetain ? '' : '\nMemory retain is disabled for this chat; do not invent a store tool.\n'}
 Do not store secrets, passwords, API keys, or ephemeral task noise.
 `
 
@@ -120,6 +131,86 @@ Do not store secrets, passwords, API keys, or ephemeral task noise.
       }
 
       return { ok: true, id: entry.id, scope, content: entry.content }
+    },
+  } as any)
+
+  const memoryUpdateTool = tool({
+    description: 'Update content or tags of a memory by id.',
+    inputSchema: z.object({
+      id: z.string(),
+      content: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      enabled: z.boolean().optional(),
+      pinned: z.boolean().optional(),
+    }),
+    execute: async (input: { id: string; content?: string; tags?: string[]; enabled?: boolean; pinned?: boolean }) => {
+      const patch = {
+        content: input.content,
+        tags: input.tags,
+        enabled: input.enabled,
+        pinned: input.pinned,
+      }
+      const g = ctx.getGlobalBank()
+      if (g.entries.some((e) => e.id === input.id)) {
+        await ctx.setGlobalBank(rebuildProfileLocal(updateEntry(g, input.id, patch)))
+        return { ok: true, scope: 'global' }
+      }
+      const a = ctx.getAgentBank()
+      if (a?.entries.some((e) => e.id === input.id)) {
+        await ctx.setAgentBank(rebuildProfileLocal(updateEntry(a, input.id, patch)))
+        return { ok: true, scope: 'agent' }
+      }
+      return { ok: false, error: 'Memory id not found' }
+    },
+  } as any)
+
+  const memoryReflectTool = tool({
+    description: 'Synthesize an answer from long-term memories for a question.',
+    inputSchema: z.object({
+      question: z.string(),
+      scope: z.enum(['global', 'agent', 'all']).optional().default('all'),
+    }),
+    execute: async (input: { question: string; scope?: 'global' | 'agent' | 'all' }) => {
+      const chunks: string[] = []
+      if (input.scope !== 'agent') {
+        const g = ctx.getGlobalBank()
+        if (g.profileSummary) chunks.push(`Global profile:\n${g.profileSummary}`)
+        for (const e of listEntries(g, { limit: 30, enabledOnly: true })) {
+          chunks.push(`- [${e.id}] ${e.content}`)
+        }
+      }
+      if (input.scope !== 'global' && ctx.getAgentBank()) {
+        const a = ctx.getAgentBank()!
+        if (a.profileSummary) chunks.push(`Agent profile:\n${a.profileSummary}`)
+        for (const e of listEntries(a, { limit: 30, enabledOnly: true })) {
+          chunks.push(`- [${e.id}] ${e.content}`)
+        }
+      }
+      if (chunks.length === 0) {
+        return { answer: 'No memories available.' }
+      }
+
+      try {
+        const globalSettings = settingsStore.getState().getSettings()
+        const settings = { ...globalSettings, ...ctx.sessionSettings } as Settings
+        const dependencies = await createModelDependencies()
+        const configs = await platform.getConfig()
+        const model = getModel(settings, globalSettings, configs, dependencies)
+        const messages = [
+          createMessage('system', buildReflectSystemPrompt()),
+          createMessage('user', `Memories:\n${chunks.join('\n').slice(0, 8000)}\n\nQuestion: ${input.question}`),
+        ]
+        const result = await generateText(model, messages)
+        const answer =
+          result.contentParts
+            ?.filter((c) => c.type === 'text')
+            .map((c) => c.text)
+            .join('')
+            ?.trim() ?? ''
+        return { answer: answer || 'No answer generated.' }
+      } catch (e) {
+        return { answer: '', error: e instanceof Error ? e.message : String(e) }
+      }
     },
   } as any)
 
@@ -225,90 +316,8 @@ Do not store secrets, passwords, API keys, or ephemeral task noise.
       },
     } as any),
 
-    memory_update: tool({
-      description: 'Update content or tags of a memory by id.',
-      inputSchema: z.object({
-        id: z.string(),
-        content: z.string().optional(),
-        tags: z.array(z.string()).optional(),
-        enabled: z.boolean().optional(),
-        pinned: z.boolean().optional(),
-      }),
-      execute: async (input: {
-        id: string
-        content?: string
-        tags?: string[]
-        enabled?: boolean
-        pinned?: boolean
-      }) => {
-        const patch = {
-          content: input.content,
-          tags: input.tags,
-          enabled: input.enabled,
-          pinned: input.pinned,
-        }
-        const g = ctx.getGlobalBank()
-        if (g.entries.some((e) => e.id === input.id)) {
-          await ctx.setGlobalBank(rebuildProfileLocal(updateEntry(g, input.id, patch)))
-          return { ok: true, scope: 'global' }
-        }
-        const a = ctx.getAgentBank()
-        if (a?.entries.some((e) => e.id === input.id)) {
-          await ctx.setAgentBank(rebuildProfileLocal(updateEntry(a, input.id, patch)))
-          return { ok: true, scope: 'agent' }
-        }
-        return { ok: false, error: 'Memory id not found' }
-      },
-    } as any),
-
-    memory_reflect: tool({
-      description: 'Synthesize an answer from long-term memories for a question.',
-      inputSchema: z.object({
-        question: z.string(),
-        scope: z.enum(['global', 'agent', 'all']).optional().default('all'),
-      }),
-      execute: async (input: { question: string; scope?: 'global' | 'agent' | 'all' }) => {
-        const chunks: string[] = []
-        if (input.scope !== 'agent') {
-          const g = ctx.getGlobalBank()
-          if (g.profileSummary) chunks.push(`Global profile:\n${g.profileSummary}`)
-          for (const e of listEntries(g, { limit: 30, enabledOnly: true })) {
-            chunks.push(`- [${e.id}] ${e.content}`)
-          }
-        }
-        if (input.scope !== 'global' && ctx.getAgentBank()) {
-          const a = ctx.getAgentBank()!
-          if (a.profileSummary) chunks.push(`Agent profile:\n${a.profileSummary}`)
-          for (const e of listEntries(a, { limit: 30, enabledOnly: true })) {
-            chunks.push(`- [${e.id}] ${e.content}`)
-          }
-        }
-        if (chunks.length === 0) {
-          return { answer: 'No memories available.' }
-        }
-
-        try {
-          const globalSettings = settingsStore.getState().getSettings()
-          const dependencies = await createModelDependencies()
-          const configs = await platform.getConfig()
-          const model = getModel(globalSettings, globalSettings, configs, dependencies)
-          const messages = [
-            createMessage('system', buildReflectSystemPrompt()),
-            createMessage('user', `Memories:\n${chunks.join('\n').slice(0, 8000)}\n\nQuestion: ${input.question}`),
-          ]
-          const result = await generateText(model, messages)
-          const answer =
-            result.contentParts
-              ?.filter((c) => c.type === 'text')
-              .map((c) => c.text)
-              .join('')
-              ?.trim() ?? ''
-          return { answer: answer || 'No answer generated.' }
-        } catch (e) {
-          return { answer: '', error: e instanceof Error ? e.message : String(e) }
-        }
-      },
-    } as any),
+    // memory_update can write the same text memory_retain would; memory_reflect sends memories on to a model.
+    ...(allowWrite ? { memory_update: memoryUpdateTool, memory_reflect: memoryReflectTool } : {}),
   }
 
   return { description, tools }

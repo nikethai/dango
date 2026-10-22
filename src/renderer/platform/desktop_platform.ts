@@ -193,6 +193,14 @@ export default class DesktopPlatform implements Platform {
       }
     }
   }
+  /** The stored text for an IndexedDB key; file-backed keys go through IPC as parsed values, so they return `null`. */
+  public async getStoreRaw(key: string): Promise<string | null> {
+    if (this.needStoreInFile(key)) return null
+    const stored = await store.getItem<unknown>(key)
+    if (stored === null || stored === undefined) return null
+    // Values are written as JSON strings; anything else (never written by this app) must not read as missing.
+    return typeof stored === 'string' ? stored : (JSON.stringify(stored) ?? String(stored))
+  }
   public async delStoreValue(key: string) {
     if (this.needStoreInFile(key)) {
       return this.ipc.invoke('delStoreValue', key)

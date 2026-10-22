@@ -72,6 +72,21 @@ export default class BaseStorage {
     }
   }
 
+  /**
+   * The stored text behind `key`, unparsed: `null` when nothing is stored, `undefined` when the platform cannot
+   * tell (no `getStoreRaw`). A reader that sees `readItem` return `null` for a listed key uses it to tell a stored
+   * `null` (or empty text) from text that does not parse.
+   */
+  public async readRawItem(key: string): Promise<string | null | undefined> {
+    if (!platform.getStoreRaw) return undefined
+    try {
+      return await platform.getStoreRaw(key)
+    } catch (error) {
+      log.error(`Failed to read raw text from storage (key: ${key}):`, error)
+      throw error
+    }
+  }
+
   public async removeItem(key: string): Promise<void> {
     return platform.delStoreValue(key)
   }

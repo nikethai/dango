@@ -186,7 +186,7 @@ generated: { by: claude/opus-5.5, at: 2026-10-17T19:00:00+07:00 }
   - `MemoryPrivacyPage(): JSX.Element` — header `Memory and privacy`, description `What Dango keeps, what it may do before asking, and what it should stop suggesting.` Sections in order:
     1. `Trust`: row title `Trust level`, description `TRUST_LABELS[trustLevel]` plus ` · Dango does safe things first and shows you what it did.` (auto) or ` · Everything waits for your approval.` (ask); control button `Change` opening the Trust sheet.
     2. `Don't suggest again`: `DontSuggestList`.
-    3. `Export`: row `Export your data`, description `Back up chats, settings and knowledge to a file.`, button `Open backup` → `navigateToSettings('/general')` (General holds Data backup).
+    3. `Export`: row `Export your data`, description `Back up chats and settings to a file. Knowledge stays on this device.` (changed by the [blockers plan](2026-10-21-redesign-blockers.md)), button `Open backup` → `navigateToSettings('/general')` (General holds Data backup).
   - Not written here: the Everywhere row (`Open Everywhere` → `/scope/everywhere`), which slice 4 adds once slices 3 and 4 are merged.
 
 - [ ] **Step 1: Write the failing tests** (`MemoryPrivacyPage.test.tsx`, jsdom, mocks as in Task 4 plus `@/modals/Settings`):

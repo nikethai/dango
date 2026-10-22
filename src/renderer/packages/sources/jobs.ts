@@ -4,6 +4,7 @@ import i18n from '@/i18n'
 import { startJob } from '@/packages/background'
 import { syncJobLabel } from './connect'
 import { getSourceKind, listSourceKinds } from './kinds'
+import { isRemovalPending } from './store'
 
 /** The due check never runs more often than this, whatever a kind's `pollMs`. */
 export const MIN_DUE_CHECK_MS = 30_000
@@ -45,14 +46,14 @@ function blocked(
 }
 
 /**
- * Sources due a background review: the switch is on, the kind can `read`, a kind that syncs has synced once, no review
+ * Sources due a background review: not pending removal (S11), the switch is on, the kind can `read`, a kind that syncs has synced once, no review
  * is running, and the last review is at least `REVIEW_INTERVAL_MS` ago (or there was none).
  */
 export function dueReviews(sources: ConnectedSource[], jobs: BackgroundJob[], now: number): string[] {
   return sources
     .filter((source) => {
       const def = getSourceKind(source.kind)
-      if (!source.backgroundReview || !def?.read) return false
+      if (isRemovalPending(source) || !source.backgroundReview || !def?.read) return false
       if (def.sync && source.lastSyncAt === undefined) return false
       if (blocked(jobs, source.id, 'review', now, REVIEW_INTERVAL_MS)) return false
       return source.lastReviewAt === undefined || now - source.lastReviewAt >= REVIEW_INTERVAL_MS
@@ -61,7 +62,7 @@ export function dueReviews(sources: ConnectedSource[], jobs: BackgroundJob[], no
 }
 
 /**
- * Sources due a sync: the kind can sync, no sync is running or waits for its fix, and either the source never synced
+ * Sources due a sync: not pending removal (S11), the kind can sync, no sync is running or waits for its fix, and either the source never synced
  * (whatever the kind's `pollMs`: a folder adopted at launch or a first sync that never finished would otherwise never
  * sync, and so never be reviewed; after a stop it waits `pollMs`, else `REVIEW_INTERVAL_MS`) or the kind polls
  * (`pollMs`) and the last sync is at least `pollMs` ago.
@@ -70,7 +71,7 @@ export function dueSyncs(sources: ConnectedSource[], jobs: BackgroundJob[], now:
   return sources
     .filter((source) => {
       const def = getSourceKind(source.kind)
-      if (!def?.sync) return false
+      if (isRemovalPending(source) || !def?.sync) return false
       const pollMs = def.pollMs
       if (source.lastSyncAt === undefined) return !blocked(jobs, source.id, 'sync', now, pollMs || REVIEW_INTERVAL_MS)
       if (!pollMs || blocked(jobs, source.id, 'sync', now, pollMs)) return false

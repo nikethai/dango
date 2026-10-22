@@ -2,9 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const setStoreValue = vi.fn(async (_key: string, _value: unknown) => {})
 const stored = new Map<string, unknown>()
+const rawText = new Map<string, string>()
+const platformMock = vi.hoisted(() => ({ withRaw: true }))
 
 vi.mock('@/platform', () => ({
   default: {
+    get getStoreRaw() {
+      return platformMock.withRaw
+        ? async (key: string) => (rawText.has(key) ? (rawText.get(key) as string) : null)
+        : undefined
+    },
     setStoreValue: (key: string, value: unknown) => setStoreValue(key, value),
     getStoreValue: vi.fn(async (key: string) => (stored.has(key) ? stored.get(key) : null)),
     getStorageType: () => 'test',
@@ -86,5 +93,25 @@ describe('StoreStorage readItem', () => {
     const storage = new StoreStorage()
     expect(await storage.getItem(StorageKey.MyCopilots, [])).toEqual([])
     expect(setStoreValue).toHaveBeenCalledWith(StorageKey.MyCopilots, [])
+  })
+})
+
+describe('StoreStorage readRawItem', () => {
+  beforeEach(() => {
+    rawText.clear()
+    platformMock.withRaw = true
+  })
+
+  it('returns the stored text unparsed, or null when nothing is stored', async () => {
+    rawText.set(StorageKey.Knowledge, '{"items": [')
+    const storage = new StoreStorage()
+    expect(await storage.readRawItem(StorageKey.Knowledge)).toBe('{"items": [')
+    expect(await storage.readRawItem(StorageKey.Sources)).toBeNull()
+  })
+
+  it('returns undefined when the platform cannot show stored text', async () => {
+    platformMock.withRaw = false
+    rawText.set(StorageKey.Knowledge, 'null')
+    expect(await new StoreStorage().readRawItem(StorageKey.Knowledge)).toBeUndefined()
   })
 })

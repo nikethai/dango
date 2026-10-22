@@ -150,23 +150,35 @@ async function mutateOrSkip(
   }
 }
 
-type SourceFilter = { scopeId?: string; kind?: SourceKind }
+/**
+ * The source was removed and its removal waits out the undo window, or the next launch (S11, `pending-removal.ts`).
+ * It is left out of every list and lookup unless `includePending` asks for it, so nothing shows it or works on it.
+ * Callers that decide what may leave the device (local-only sets) or what is pruned include it: an Undo brings it back.
+ */
+export function isRemovalPending(source: ConnectedSource): boolean {
+  return source.removalPendingAt !== undefined
+}
+
+type SourceFilter = { scopeId?: string; kind?: SourceKind; includePending?: boolean }
 
 function filterSources(sources: ConnectedSource[], filter?: SourceFilter): ConnectedSource[] {
   return sources.filter(
     (s) =>
       (filter?.scopeId === undefined || s.scopeId === filter.scopeId) &&
-      (filter?.kind === undefined || s.kind === filter.kind)
+      (filter?.kind === undefined || s.kind === filter.kind) &&
+      (filter?.includePending === true || !isRemovalPending(s))
   )
 }
 
-/** This window's sources matching `filter`, in connection order. */
+/** This window's sources matching `filter`, in connection order; sources pending removal only with `includePending`. */
 export function listSources(filter?: SourceFilter): ConnectedSource[] {
   return filterSources(sourcesStore.getState().sources, filter)
 }
 
-export function getSource(id: string): ConnectedSource | undefined {
-  return sourcesStore.getState().sources.find((s) => s.id === id)
+/** The source, unless it is gone or (without `includePending`) pending removal. */
+export function getSource(id: string, opts?: { includePending?: boolean }): ConnectedSource | undefined {
+  const source = sourcesStore.getState().sources.find((s) => s.id === id)
+  return source && (opts?.includePending === true || !isRemovalPending(source)) ? source : undefined
 }
 
 function useLoadSources(): boolean {
@@ -180,8 +192,11 @@ function useLoadSources(): boolean {
 export function useSources(filter?: SourceFilter): ConnectedSource[] {
   useLoadSources()
   const sources = useStore(sourcesStore, (s) => s.sources)
-  const { scopeId, kind } = filter ?? {}
-  return useMemo(() => filterSources(sources, { scopeId, kind }), [sources, scopeId, kind])
+  const { scopeId, kind, includePending } = filter ?? {}
+  return useMemo(
+    () => filterSources(sources, { scopeId, kind, includePending }),
+    [sources, scopeId, kind, includePending]
+  )
 }
 
 /** False until the stored sources have been read once, so a count of 0 is never shown before it is known. */
@@ -227,14 +242,28 @@ export async function addSource(input: Omit<ConnectedSource, 'id' | 'connectedAt
   throw outcome
 }
 
+/** The source with `patch` applied; a field patched to `undefined` is removed from the row. */
+function patched(
+  source: ConnectedSource,
+  patch: Partial<Omit<ConnectedSource, 'id' | 'kind' | 'connectedAt'>>
+): ConnectedSource {
+  const next: Record<string, unknown> = { ...source, ...patch, id: source.id, kind: source.kind }
+  next.connectedAt = source.connectedAt
+  // Background review turned from off to on (D4): it acts only on mail newer than now. Judged against the stored row,
+  // so every caller (Settings › Sources, the which-client answer, a stale UI row) gets the same rule; on → off keeps it.
+  if (patch.backgroundReview === true && !source.backgroundReview && patch.reviewEnabledAt === undefined) {
+    next.reviewEnabledAt = Date.now()
+  }
+  for (const key of Object.keys(next)) if (next[key] === undefined) delete next[key]
+  return next as ConnectedSource
+}
+
 export async function updateSource(
   id: string,
   patch: Partial<Omit<ConnectedSource, 'id' | 'kind' | 'connectedAt'>>
 ): Promise<void> {
   await mutateOrSkip('a source update', (sources) => ({
-    sources: sources.some((s) => s.id === id)
-      ? sources.map((s) => (s.id === id ? { ...s, ...patch, id: s.id, kind: s.kind, connectedAt: s.connectedAt } : s))
-      : sources,
+    sources: sources.some((s) => s.id === id) ? sources.map((s) => (s.id === id ? patched(s, patch) : s)) : sources,
     result: undefined,
   }))
 }
@@ -255,6 +284,9 @@ async function dismissJobEntries(jobIds: Set<string>): Promise<void> {
   }
 }
 
+// Revokes in flight per source id.
+const revoking = new Map<string, Promise<void>>()
+
 /**
  * Removes a source: stops its running jobs, runs the kind's `revoke` (a folder is unbound; Integrations accounts and
  * Documents collections are kept), marks its knowledge sources removed (approved knowledge stays), deletes the record
@@ -264,9 +296,18 @@ async function dismissJobEntries(jobIds: Set<string>): Promise<void> {
  * If `revoke` or `markSourceRemoved` throws, the call rejects with the record kept and the entries open, so the user
  * can try again; a retry repeats every step (each is idempotent, see `SourceKindDefinition.revoke`).
  */
-export async function revokeSource(id: string): Promise<void> {
+export function revokeSource(id: string): Promise<void> {
+  // One revoke per source at a time: the undo timer and a launch or due check may both finish the same removal.
+  const running = revoking.get(id)
+  if (running) return running
+  const run = revokeNow(id).finally(() => revoking.delete(id))
+  revoking.set(id, run)
+  return run
+}
+
+async function revokeNow(id: string): Promise<void> {
   await ensureLoaded()
-  const source = getSource(id)
+  const source = getSource(id, { includePending: true })
   if (!source) return
   // Jobs (and so their Review entries) are matched through this window's job store. Main is the only window that
   // runs jobs and revokes sources, and it has loaded its jobs by then.
@@ -310,7 +351,10 @@ export async function adoptExistingFolderBindings(scopeIds: string[]): Promise<n
   await ensureLoaded()
   let added = 0
   for (const scopeId of scopeIds) {
-    if (scopeId === EVERYWHERE_SCOPE_ID || listSources({ scopeId, kind: 'folder' }).length > 0) continue
+    // A folder source pending removal still owns its binding until the removal finishes (or is undone).
+    if (scopeId === EVERYWHERE_SCOPE_ID || listSources({ scopeId, kind: 'folder', includePending: true }).length > 0) {
+      continue
+    }
     let displayPath: string
     try {
       const descriptor = await restore(scopeId)
@@ -349,7 +393,8 @@ export function registerSourcesResolver(): void {
       }
       return getSource(id) !== undefined
     },
-    label: (id) => getSource(id)?.label,
+    // A source pending removal cannot be opened, but its jobs keep its name.
+    label: (id) => getSource(id, { includePending: true })?.label,
   })
 }
 

@@ -1,26 +1,15 @@
+import type { SessionSettings } from '@shared/types'
 import type { MemoryBank, MemoryEntry, MemorySettings, MemorySource } from '@shared/types/memory'
 import { defaultMemorySettings, emptyMemoryBank } from '@shared/types/memory'
-import type { SessionSettings } from '@shared/types'
 import { createStore, useStore } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import {
-  clearBank,
-  createEntry,
-  markEntryDeleted,
-  retainEntry,
-  updateEntry,
-} from '@/packages/memory/bank-ops'
+import { getLogger } from '@/lib/utils'
+import { clearBank, createEntry, markEntryDeleted, retainEntry, updateEntry } from '@/packages/memory/bank-ops'
 import { plainClone } from '@/packages/memory/clone'
 import { consolidateBank } from '@/packages/memory/consolidate'
 import { rebuildProfileLocal } from '@/packages/memory/extract'
-import {
-  formatMemoryMetrics,
-  getMemoryMetrics,
-  recordBankStats,
-  recordConsolidateLlm,
-} from '@/packages/memory/metrics'
+import { formatMemoryMetrics, getMemoryMetrics, recordBankStats, recordConsolidateLlm } from '@/packages/memory/metrics'
 import { getMemoryRepository } from '@/packages/memory/repository'
-import { getLogger } from '@/lib/utils'
 
 const log = getLogger('memory-store')
 
@@ -60,7 +49,13 @@ type MemoryActions = {
   ) => Promise<void>
   remove: (scope: 'global' | 'agent', id: string, agentId?: string) => Promise<void>
   clear: (scope: 'global' | 'agent', agentId?: string) => Promise<void>
-  rebuildProfile: (scope: 'global' | 'agent', agentId?: string, useLlm?: boolean) => Promise<void>
+  /** `opts.sessionSettings`: the chat whose model consolidates (the default model when omitted). */
+  rebuildProfile: (
+    scope: 'global' | 'agent',
+    agentId?: string,
+    useLlm?: boolean,
+    opts?: { sessionSettings?: SessionSettings }
+  ) => Promise<void>
   importBank: (scope: 'global' | 'agent', bank: MemoryBank, agentId?: string) => Promise<void>
   exportBank: (scope: 'global' | 'agent', agentId?: string) => MemoryBank
   bumpSessionTurn: (sessionId: string) => number
@@ -283,13 +278,15 @@ export const memoryStore = createStore<MemoryStore>()(
       publishBankMetrics(get().globalBank, get().agentBanks)
     },
 
-    rebuildProfile: async (scope, agentId, useLlm = true) => {
+    rebuildProfile: async (scope, agentId, useLlm = true, opts) => {
       await ensureMemoryStoreInit()
       const repo = getMemoryRepository()
       if (scope === 'agent') {
         if (!agentId) throw new Error('agentId required')
         let bank = get().agentBanks[agentId] ?? (await get().ensureAgentBank(agentId))
-        bank = useLlm ? await consolidateBank(plainClone(bank)) : rebuildProfileLocal(plainClone(bank))
+        bank = useLlm
+          ? await consolidateBank(plainClone(bank), { sessionSettings: opts?.sessionSettings })
+          : rebuildProfileLocal(plainClone(bank))
         if (useLlm) recordConsolidateLlm()
         bank = plainClone(bank)
         set((s) => ({
@@ -299,7 +296,9 @@ export const memoryStore = createStore<MemoryStore>()(
         await repo.saveAgent(agentId, bank, { immediate: true })
       } else {
         let bank = plainClone(get().globalBank)
-        bank = useLlm ? await consolidateBank(bank) : rebuildProfileLocal(bank)
+        bank = useLlm
+          ? await consolidateBank(bank, { sessionSettings: opts?.sessionSettings })
+          : rebuildProfileLocal(bank)
         if (useLlm) recordConsolidateLlm()
         bank = plainClone(bank)
         set({ globalBank: bank, retainsSinceConsolidate: 0 })
@@ -376,11 +375,11 @@ export const memoryStore = createStore<MemoryStore>()(
 
       set({ retainsSinceConsolidate: 0 })
       void get()
-        .rebuildProfile('global', undefined, true)
+        .rebuildProfile('global', undefined, true, { sessionSettings: options?.sessionSettings })
         .catch((e) => log.error('lazy consolidate global failed', e))
       if (options?.agentId) {
         void get()
-          .rebuildProfile('agent', options.agentId, true)
+          .rebuildProfile('agent', options.agentId, true, { sessionSettings: options.sessionSettings })
           .catch((e) => log.error('lazy consolidate agent failed', e))
       }
     },

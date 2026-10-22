@@ -5,8 +5,9 @@ import { getLogger } from '@/lib/utils'
 import { extractFactsFromTranscript, transcriptFromMessages } from '@/packages/memory/extract'
 import { isSessionMemoryAutoSaveAllowed } from '@/packages/memory/session-policy'
 import { cloudSafeMessages, holdsLocalOnlyRecall } from '@/packages/model-calls/toolsets/pm-pilot-history'
-import { isLocalModelProvider } from '@/packages/sources/model-check'
+import { isLocalModelIn } from '@/packages/sources/model-check'
 import { ensureMemoryStoreInit, memoryStore } from '@/stores/memoryStore'
+import { settingsStore } from '@/stores/settingsStore'
 import { proposeKnowledge } from './proposals'
 
 const log = getLogger('knowledge-chat-proposer')
@@ -44,15 +45,19 @@ export async function proposeFromChatTurn(o: {
   if (o.messages.some((m) => m.pmQuestionId)) return []
   // A local model would read a local-only recall (and the answers after it) in full, and its proposals would carry no
   // source id, so once approved they could reach a cloud model (ADR 0003): such chats propose nothing on a local model.
-  if (isLocalModelProvider(o.sessionSettings?.provider) && o.messages.some(holdsLocalOnlyRecall)) return []
+  // The model `extractFactsFromTranscript` calls: global settings with the session's on top.
+  const globalSettings = settingsStore.getState().getSettings()
+  const called = { ...globalSettings, ...o.sessionSettings }
+  const local = isLocalModelIn(globalSettings, called)
+  if (local && o.messages.some(holdsLocalOnlyRecall)) return []
   if (inFlight.has(o.sessionId)) return []
   const every = Math.max(1, settings.retainEveryNTurns || 3)
   if (store.bumpSessionTurn(o.sessionId) % every !== 0) return []
 
   inFlight.add(o.sessionId)
   try {
-    // ADR 0003: a cloud model (the session's; none set counts as cloud) never gets local-only mail or tasks.
-    const transcript = transcriptFromMessages(await cloudSafeMessages(o.messages, o.sessionSettings?.provider))
+    // ADR 0003: a cloud model (the one extraction calls; none set counts as cloud) never gets local-only mail or tasks.
+    const transcript = transcriptFromMessages(await cloudSafeMessages(o.messages, called, globalSettings))
     if (!transcript.trim()) return []
     const extracted = await extractFactsFromTranscript({
       transcript,

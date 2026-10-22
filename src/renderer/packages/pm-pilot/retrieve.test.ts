@@ -137,6 +137,24 @@ describe('retrieveEvidence', () => {
     expect(onLocal.map((e) => e.id).sort()).toEqual(['r:gmail:cloud', 'r:gmail:local'])
   })
 
+  it('leaves out records of excluded sources (Background review off, B6) on any model', async () => {
+    getRecords.mockResolvedValue([
+      rec({ externalId: 'off', sourceId: 'src-off', text: 'website launch date' }),
+      rec({ externalId: 'on', text: 'website launch date' }),
+    ])
+    const exclude = new Set(['src-off'])
+    for (const cloudModel of [true, false]) {
+      const out = await retrieveEvidence({
+        scopeId: 'acme',
+        inbound,
+        localOnlySourceIds: new Set(),
+        cloudModel,
+        excludeSourceIds: exclude,
+      })
+      expect(out.map((e) => e.id)).toEqual(['r:gmail:on'])
+    }
+  })
+
   it('refuses when the inbound record itself is local-only and the model is cloud', async () => {
     getRecords.mockResolvedValue([rec({ externalId: 'cloud', text: 'website launch date' })])
     const localInbound = { ...inbound, sourceId: 'src-local' }

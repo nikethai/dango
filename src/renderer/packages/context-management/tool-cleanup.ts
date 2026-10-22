@@ -1,4 +1,5 @@
 import type { Message, MessageContentParts } from '@shared/types'
+import { usedLocalOnlyRecall } from '@/packages/model-calls/toolsets/pm-pilot-history'
 
 /**
  * Removes tool-call parts from messages older than the specified number of rounds.
@@ -56,5 +57,8 @@ function removeToolCallParts(message: Message): Message {
   return {
     ...message,
     contentParts: filteredParts,
+    // ADR 0003 / B3: the client_recall or client_answer part is the only mark of a local-only answer, so the cleaned
+    // copy carries it as pmLocalOnly (context only, never saved) and cloud turns, summaries and memory still see it.
+    ...(usedLocalOnlyRecall(message) ? { pmLocalOnly: true } : {}),
   }
 }

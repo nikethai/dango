@@ -2,7 +2,7 @@ import { ToolRiskTier } from '@shared/types/mcp'
 import { useMemo } from 'react'
 import { createStore, useStore } from 'zustand'
 import { combine, persist } from 'zustand/middleware'
-import { safeStorage } from './safeStorage'
+import { createSafeStorage } from './safeStorage'
 
 export type ToolApprovalScope = 'once' | 'session' | 'scope'
 export type ToolApprovalAuditDecision = 'allow' | 'deny' | 'auto-approve'
@@ -14,13 +14,23 @@ export type ToolApprovalRecord = {
   timestamp: number
   /** Concrete invocation fingerprint; required for workspace mutations. */
   argsFingerprint?: string
+  /** "Always" for a shell tool's read-only commands only (ADR 0015); never covers any other call of the tool. */
+  readOnlyCommands?: boolean
 }
 
 /**
  * "Always" for one tool in one scope. Applies only to calls with exactly this risk tier. `toolDescription` (optional,
  * absent on older grants) lets the scope list hide grants the gate ignores for tools that always ask.
+ * `readOnlyCommands` (optional, additive) marks a shell tool's grant for read-only commands only (ADR 0015): it runs
+ * allowlisted commands such as `ls` or `git status` at any tier but CRITICAL, and never covers any other call.
  */
-export type ScopeToolGrant = { toolName: string; riskTier: ToolRiskTier; grantedAt: number; toolDescription?: string }
+export type ScopeToolGrant = {
+  toolName: string
+  riskTier: ToolRiskTier
+  grantedAt: number
+  toolDescription?: string
+  readOnlyCommands?: boolean
+}
 
 /** scopeId → toolName → grant. */
 export type ScopeGrants = Record<string, Record<string, ScopeToolGrant>>
@@ -35,18 +45,23 @@ export type ToolApprovalAuditEntry = {
   args?: unknown
   /** Concrete invocation fingerprint of a workspace mutation (audit only; never used to approve). */
   argsFingerprint?: string
+  /** The call was allowed by, or stored, an Always for a shell tool's read-only commands only. */
+  readOnlyCommands?: boolean
 }
 
 type ToolApprovalState = {
   approvedTools: Map<string, ToolApprovalRecord>
   auditLog: ToolApprovalAuditEntry[]
   scopeGrants: ScopeGrants
-  addApproval: (sessionId: string, approval: ToolApprovalRecord) => void
+  /** Returns false when the change could not be saved (it still applies in this window until restart). */
+  addApproval: (sessionId: string, approval: ToolApprovalRecord) => boolean
   removeApproval: (sessionId: string, toolName: string) => void
   clearSessionApprovals: (sessionId: string) => void
   addAuditEntry: (entry: ToolApprovalAuditEntry) => void
-  addScopeGrant: (scopeId: string, grant: ScopeToolGrant) => void
-  revokeScopeGrant: (scopeId: string, toolName: string) => void
+  /** Returns false when the grant could not be saved (it still applies in this window until restart). */
+  addScopeGrant: (scopeId: string, grant: ScopeToolGrant) => boolean
+  /** Returns false when the revoke could not be saved (the grant may come back after restart). */
+  revokeScopeGrant: (scopeId: string, toolName: string) => boolean
 }
 
 function getApprovalKey(sessionId: string, toolName: string) {
@@ -85,6 +100,7 @@ function sanitizeScopeGrants(raw: unknown): ScopeGrants {
         riskTier: grant.riskTier as ToolRiskTier,
         grantedAt: typeof grant.grantedAt === 'number' ? grant.grantedAt : 0,
         ...(typeof grant.toolDescription === 'string' ? { toolDescription: grant.toolDescription } : {}),
+        ...(grant.readOnlyCommands === true ? { readOnlyCommands: true } : {}),
       }
     }
     if (Object.keys(kept).length > 0) result[scopeId] = kept
@@ -93,6 +109,23 @@ function sanitizeScopeGrants(raw: unknown): ScopeGrants {
 }
 
 const TOOL_APPROVAL_STORAGE_KEY = 'tool-approval-store'
+
+/** Newest audit entries kept; older ones are dropped so the persisted payload stays small. */
+export const AUDIT_LOG_LIMIT = 500
+
+/** The last write error of this store; cleared before each action that reports whether it saved. */
+let lastWriteError: unknown
+
+const toolApprovalStorage = createSafeStorage((_name, error) => {
+  lastWriteError = error ?? new Error('write failed')
+})
+
+/** Run `update`; `persist` writes synchronously inside `set`, so afterwards we know whether the write threw. */
+function saved(update: () => void): boolean {
+  lastWriteError = undefined
+  update()
+  return lastWriteError === undefined
+}
 
 export const toolApprovalStore = createStore<ToolApprovalState>()(
   persist(
@@ -104,11 +137,13 @@ export const toolApprovalStore = createStore<ToolApprovalState>()(
       },
       (set, _get) => ({
         addApproval: (sessionId: string, approval: ToolApprovalRecord) =>
-          set((state) => {
-            const approvedTools = new Map(state.approvedTools)
-            approvedTools.set(getApprovalKey(sessionId, approval.toolName), approval)
-            return { approvedTools }
-          }),
+          saved(() =>
+            set((state) => {
+              const approvedTools = new Map(state.approvedTools)
+              approvedTools.set(getApprovalKey(sessionId, approval.toolName), approval)
+              return { approvedTools }
+            })
+          ),
         removeApproval: (sessionId: string, toolName: string) =>
           set((state) => {
             const approvedTools = new Map(state.approvedTools)
@@ -127,22 +162,26 @@ export const toolApprovalStore = createStore<ToolApprovalState>()(
           }),
         addAuditEntry: (entry: ToolApprovalAuditEntry) =>
           set((state) => ({
-            auditLog: [...state.auditLog, entry],
+            auditLog: [...state.auditLog, entry].slice(-AUDIT_LOG_LIMIT),
           })),
         addScopeGrant: (scopeId: string, grant: ScopeToolGrant) =>
-          set((state) => ({
-            scopeGrants: {
-              ...state.scopeGrants,
-              [scopeId]: { ...state.scopeGrants[scopeId], [grant.toolName]: grant },
-            },
-          })),
+          saved(() =>
+            set((state) => ({
+              scopeGrants: {
+                ...state.scopeGrants,
+                [scopeId]: { ...state.scopeGrants[scopeId], [grant.toolName]: grant },
+              },
+            }))
+          ),
         revokeScopeGrant: (scopeId: string, toolName: string) =>
-          set((state) => {
-            const current = state.scopeGrants[scopeId]
-            if (!current?.[toolName]) return {}
-            const { [toolName]: _removed, ...rest } = current
-            return { scopeGrants: { ...state.scopeGrants, [scopeId]: rest } }
-          }),
+          saved(() =>
+            set((state) => {
+              const current = state.scopeGrants[scopeId]
+              if (!current?.[toolName]) return {}
+              const { [toolName]: _removed, ...rest } = current
+              return { scopeGrants: { ...state.scopeGrants, [scopeId]: rest } }
+            })
+          ),
       })
     ),
     {
@@ -165,7 +204,7 @@ export const toolApprovalStore = createStore<ToolApprovalState>()(
           scopeGrants,
         }
       },
-      storage: safeStorage,
+      storage: toolApprovalStorage,
     }
   )
 )

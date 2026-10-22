@@ -50,6 +50,9 @@ vi.mock('@/packages/sources', () => {
     useSourcesLoaded: () => h.loaded,
     updateSource: vi.fn(async () => undefined),
     revokeSource: vi.fn(async () => undefined),
+    markRemovalPending: vi.fn(async () => undefined),
+    cancelRemovalPending: vi.fn(async () => undefined),
+    REMOVE_DELAY_MS: 5_000,
     syncJobLabel: (k: string) => `${k} sync`,
     BACKGROUND_REVIEW_LINE:
       'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.',
@@ -87,7 +90,7 @@ vi.mock('./AddSourceSheet', () => ({
 }))
 
 import { runJobFix, startJob } from '@/packages/background'
-import { revokeSource, updateSource } from '@/packages/sources'
+import { cancelRemovalPending, markRemovalPending, revokeSource, updateSource } from '@/packages/sources'
 import { pushUndo } from '@/packages/undo'
 import { add as addToast } from '@/stores/toastActions'
 import { openAddSourceSheet, openConfiguration } from './AddSourceSheet'
@@ -275,6 +278,31 @@ describe('SourcesSettings', () => {
     expect(revokeSource).toHaveBeenCalledWith('s1')
     expect(addToast).toHaveBeenCalledWith("Couldn't remove chaeboxi")
     expect(screen.getByText('chaeboxi')).toBeTruthy()
+  })
+
+  it('remove stores the pending removal at once and Undo clears it (S11)', async () => {
+    h.sources = [source()]
+    await renderPage()
+    await openMenu('chaeboxi')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }))
+    expect(markRemovalPending).toHaveBeenCalledWith('s1', NOW)
+    expect(cancelRemovalPending).not.toHaveBeenCalled()
+    await act(async () => {
+      await vi.mocked(pushUndo).mock.calls[0][0].undo()
+    })
+    expect(cancelRemovalPending).toHaveBeenCalledWith('s1')
+    await act(() => vi.advanceTimersByTimeAsync(6000))
+    expect(revokeSource).not.toHaveBeenCalled()
+  })
+
+  it('a failed removal also clears the stored pending removal, so the row stays listed', async () => {
+    h.sources = [source()]
+    vi.mocked(revokeSource).mockRejectedValueOnce(new Error('unbind failed'))
+    await renderPage()
+    await openMenu('chaeboxi')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }))
+    await act(() => vi.advanceTimersByTimeAsync(5000))
+    expect(cancelRemovalPending).toHaveBeenCalledWith('s1')
   })
 
   it('a needs-you row shows the fix as its button and no retry count', async () => {

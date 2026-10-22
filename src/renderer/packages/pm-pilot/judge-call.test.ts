@@ -5,18 +5,23 @@ const state = vi.hoisted(() => ({
   choice: { provider: 'openai', modelId: 'gpt-x' } as { provider: string; modelId: string } | null,
   usable: true,
   sources: [] as Array<{ id: string; localOnly: boolean }>,
+  providers: {} as Record<string, { apiHost?: string }>,
 }))
 
-vi.mock('./bridge', () => ({
+vi.mock('./bridge', async () => ({
   backgroundModelChoice: () => state.choice,
   hasUsableModel: () => state.usable,
-  isLocalModelProvider: (p: string) => p === 'ollama' || p === 'lm-studio',
+  isLocalModelIn: (
+    await vi.importActual<typeof import('@/packages/sources/model-check')>('@/packages/sources/model-check')
+  ).isLocalModelIn,
   loadSources: vi.fn(async () => undefined),
   listSources: () => state.sources,
 }))
 vi.mock('@/stores/settingsStore', () => ({
   settingsStore: {
-    getState: () => ({ getSettings: () => ({ provider: 'session-provider', modelId: 'session-model' }) }),
+    getState: () => ({
+      getSettings: () => ({ provider: 'session-provider', modelId: 'session-model', providers: state.providers }),
+    }),
   },
 }))
 vi.mock('@/stores/lastUsedModelStore', () => ({ lastUsedModelStore: { getState: () => ({ chat: undefined }) } }))
@@ -71,6 +76,7 @@ beforeEach(() => {
   vi.mocked(generateText).mockReset()
   vi.mocked(getModel).mockClear()
   state.choice = { provider: 'openai', modelId: 'gpt-x' }
+  state.providers = {}
   state.usable = true
   state.sources = []
 })
@@ -177,6 +183,23 @@ describe('judgeThread', () => {
     reply(json)
     await judgeThread({ scopeName: 'Acme', inbound, evidence: [ev('r:gmail:a'), ev('r:gmail:secret', 'src-local')] })
     expect(promptOf()).toContain('r:gmail:secret')
+  })
+
+  it('counts Ollama on another machine, or running a cloud model, as a cloud model (B2)', async () => {
+    state.sources = [{ id: 'src-local', localOnly: true }]
+    const json = JSON.stringify({ intent: 'fyi', summary: 'x', evidenceIds: [], confidence: 0, candidates: [] })
+    state.choice = { provider: 'ollama', modelId: 'llama' }
+    state.providers = { ollama: { apiHost: 'http://192.168.1.20:11434' } }
+    reply(json)
+    await judgeThread({ scopeName: 'Acme', inbound, evidence: [ev('r:gmail:a'), ev('r:gmail:secret', 'src-local')] })
+    expect(promptOf()).not.toContain('r:gmail:secret')
+
+    vi.mocked(generateText).mockReset()
+    state.providers = {}
+    state.choice = { provider: 'ollama', modelId: 'gpt-oss:120b-cloud' }
+    reply(json)
+    await judgeThread({ scopeName: 'Acme', inbound, evidence: [ev('r:gmail:a'), ev('r:gmail:secret', 'src-local')] })
+    expect(promptOf()).not.toContain('r:gmail:secret')
   })
 
   it('refuses an inbound record without a source id on a cloud model', async () => {

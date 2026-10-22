@@ -10,6 +10,7 @@ import {
 import {
   adoptExistingFolderBindings,
   dueCheckIntervalMs,
+  finishPendingRemovals,
   loadSources,
   registerSourceFixHandlers,
   registerSourcesResolver,
@@ -34,8 +35,8 @@ async function isJobWindow(): Promise<boolean> {
 /**
  * Starts background work in the main window: registers the sync and review handlers, the sources' fix handlers,
  * the Review opener and (desktop) the Gmail and Asana adapters, removes folder bindings left over from an unfinished
- * Add a source, resumes stored jobs, turns folder bindings made before sources existed into sources, then starts due
- * syncs and reviews at launch, every 15 minutes (sooner when a kind polls more often) and whenever a sync finishes.
+ * Add a source, resumes stored jobs, turns folder bindings made before sources existed into sources, then finishes
+ * source removals left pending at quit and starts due syncs and reviews at launch, every 15 minutes (sooner when a kind polls more often) and whenever a sync finishes.
  * Nothing is started before the stored jobs are resumed; when resuming fails, the next check tries it again first.
  * Returns at once in any other window.
  */
@@ -94,6 +95,8 @@ export async function initBackgroundJobs(): Promise<void> {
           if (!(await ensureResumed())) return
           if (!sourcesStore.getState().loaded) await loadSources()
           if (!sourcesStore.getState().loaded) return
+          // A removal still pending (the app quit within its 5 s undo window) finishes before any due job starts.
+          await finishPendingRemovals(sourcesStore.getState().sources, Date.now())
           startDueJobs(sourcesStore.getState().sources, listJobs())
         } catch (error) {
           console.warn('[background] Could not check for due work', error)

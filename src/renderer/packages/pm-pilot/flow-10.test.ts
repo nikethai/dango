@@ -47,9 +47,12 @@ vi.mock('./bridge', async () => {
   const { NeedsUserError } = await import('@/packages/background/errors')
   const { JOB_FIX_LABELS } = await import('@shared/types/background')
   const { EVERYWHERE_SCOPE_ID } = await import('@shared/types/scope')
-  const listSources = (filter?: { kind?: string; scopeId?: string }) =>
+  const listSources = (filter?: { kind?: string; scopeId?: string; includePending?: boolean }) =>
     h.sources.filter(
-      (s) => (!filter?.kind || s.kind === filter.kind) && (!filter?.scopeId || s.scopeId === filter.scopeId)
+      (s) =>
+        (!filter?.kind || s.kind === filter.kind) &&
+        (!filter?.scopeId || s.scopeId === filter.scopeId) &&
+        (filter?.includePending || s.removalPendingAt === undefined)
     )
   return {
     ...review,
@@ -64,6 +67,7 @@ vi.mock('./bridge', async () => {
     }),
     getScope: vi.fn(async (id: string) => (id === ACME.id ? ACME : undefined)),
     listClientScopes: vi.fn(async () => [ACME]),
+    isRemovalPending: (s: { removalPendingAt?: number }) => s.removalPendingAt !== undefined,
     listSources,
     loadSources: vi.fn(async () => undefined),
     sourcesStore: { getState: () => ({ loaded: true, sources: h.sources }) },
@@ -219,7 +223,8 @@ beforeEach(async () => {
       kind: 'gmail',
       scopeId: 'acme',
       label: OWN,
-      backgroundReview: false,
+      // The flow judges and drafts, which needs Background review on (B6).
+      backgroundReview: true,
       localOnly: false,
       config: { accountId: 'acc1', matchers: ['@acme.example'] },
       connectedAt: CONNECTED,

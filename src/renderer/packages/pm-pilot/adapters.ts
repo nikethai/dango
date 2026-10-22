@@ -81,10 +81,11 @@ function mapAsanaError(e: unknown, signal?: AbortSignal): unknown {
   return new PmRetryError(t(ASANA_FAILED))
 }
 
+/** Every Asana source, pending removal included (S11), so their records are not pruned before an Undo. */
 async function asanaSources(): Promise<ConnectedSource[]> {
   if (!sourcesStore.getState().loaded) await loadSources()
   if (!sourcesStore.getState().loaded) throw new PmRetryError(t(SOURCES_UNREADABLE))
-  return listSources({ kind: 'asana' })
+  return listSources({ kind: 'asana', includePending: true })
 }
 
 async function freshToken(accountId: string): Promise<string> {

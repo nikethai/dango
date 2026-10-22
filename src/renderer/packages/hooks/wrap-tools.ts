@@ -1,5 +1,6 @@
 import { isSensitiveToolName, redactSensitiveToolPayload } from '@shared/privacy/sensitive-tools'
 import type { ToolSet } from 'ai'
+import { CLIENT_ANSWER_TOOL, CLIENT_RECALL_TOOL } from '@/packages/model-calls/toolsets/pm-pilot-history'
 import { runHooks } from './executor'
 
 export type ToolHookContext = {
@@ -9,11 +10,15 @@ export type ToolHookContext = {
 
 type ToolExecute = (args: unknown, options: unknown) => PromiseLike<unknown> | unknown
 
+/** Their results hold client mail and tasks that may be kept on this device (ADR 0003), so no hook gets them. */
+const NO_POST_HOOK_TOOLS: ReadonlySet<string> = new Set([CLIENT_RECALL_TOOL, CLIENT_ANSWER_TOOL])
+
 /**
  * Wrap every tool `execute` with global PreToolUse / PostToolUse hooks.
  * - PreToolUse exit/block → return error payload to the model (do not throw)
  * - Failures in the hook runner itself are fail-soft (tool still runs)
  * - Tools without execute (e.g. some provider-native tools) are left unchanged
+ * - `client_recall` and `client_answer` get no PostToolUse (result or error): those can quote local-only mail
  */
 export function wrapToolsWithLifecycleHooks(tools: ToolSet, ctx: ToolHookContext = {}): ToolSet {
   if (!tools || Object.keys(tools).length === 0) {
@@ -35,6 +40,7 @@ export function wrapToolsWithLifecycleHooks(tools: ToolSet, ctx: ToolHookContext
         {
           ...definition,
           execute: async (args: unknown, options: unknown) => {
+            const postHooks = !NO_POST_HOOK_TOOLS.has(toolName)
             const pre = await safeRunToolHooks('PreToolUse', toolName, args, ctx)
             if (pre?.blocked) {
               return {
@@ -46,12 +52,14 @@ export function wrapToolsWithLifecycleHooks(tools: ToolSet, ctx: ToolHookContext
 
             try {
               const result = await rawExecute(args, options)
-              await safeRunToolHooks('PostToolUse', toolName, args, ctx, result)
+              if (postHooks) await safeRunToolHooks('PostToolUse', toolName, args, ctx, result)
               return result
             } catch (err) {
-              await safeRunToolHooks('PostToolUse', toolName, args, ctx, {
-                error: (err as Error)?.message || String(err),
-              })
+              if (postHooks) {
+                await safeRunToolHooks('PostToolUse', toolName, args, ctx, {
+                  error: (err as Error)?.message || String(err),
+                })
+              }
               throw err
             }
           },

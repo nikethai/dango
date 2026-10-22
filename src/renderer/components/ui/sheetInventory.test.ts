@@ -26,8 +26,9 @@ const SHEET_OWNERS = ['components/ui/Sheet.tsx', 'routes/dev/design-system.tsx']
 
 /**
  * AdaptiveModal uses found on 2026-10-21. None is an approval or a permission: most are forms, viewers, settings
- * editors or previews, and three confirm the user's own action (MessageEdit's discard, CompressionModal and
- * ImportedConversationView's delete; TASK-46 moves them). ClearSessionList and ContextOverflow moved onto Sheet (R24).
+ * editors or previews, and two confirm the user's own action (MessageEdit's discard and CompressionModal; TASK-46
+ * moves them). ClearSessionList and ContextOverflow moved onto Sheet (R24). ImportedConversationView stays a viewer
+ * on AdaptiveModal; its delete now asks in DeleteImportedSourceSheet, which closes the viewer while it is up.
  * A new approval or permission goes through Sheet; do not add it here.
  */
 const ADAPTIVE_MODAL_ALLOWED = [

@@ -746,6 +746,7 @@ export async function generate(
           error: `Send blocked: ${evalResult.message}. Disable hard-stop in Settings → Usage, or raise your monthly cap.`,
           // Not the provider's error: the notice points to Usage, never to Retry.
           errorExtra: { kind: 'budget' },
+          localOnlyToolsOff: undefined,
           status: [],
         }
         await modifyMessage(sessionId, targetMsg, true)
@@ -771,6 +772,8 @@ export async function generate(
     errorCode: undefined,
     error: undefined,
     errorExtra: undefined,
+    // An earlier run's "outside tools are off" line: this run sets its own, and a failed run has none.
+    localOnlyToolsOff: undefined,
     status: [],
     firstTokenLatency: undefined,
     // Set isStreamingMode once during Message initialization (constant property)
@@ -1297,7 +1300,7 @@ export async function generate(
 
         // What the stream last showed, as streamText would return it when stopped (see the catch below).
         let lastStreamedParts: Message['contentParts'] = []
-        const { result, knowledgeIds } = await streamText(model, {
+        const { result, knowledgeIds, localOnlyToolsOff } = await streamText(model, {
           sessionId: session.id,
           knowledgeScopeId: getEffectiveProjectId(session) ?? null,
           scopeId: getEffectiveProjectId(session),
@@ -1428,7 +1431,7 @@ export async function generate(
           // after Stop is the same Stop, so the run settles as stopped (plan time kept, Continue offered), not failed.
           if (isAbortError(error) && wasGenerationCancelled(sessionId, targetMsg.id)) {
             const stopped: StreamTextResult = { contentParts: lastStreamedParts }
-            return { result: stopped, knowledgeIds: [] as string[] }
+            return { result: stopped, knowledgeIds: [] as string[], localOnlyToolsOff: false }
           }
           throw error
         })
@@ -1437,7 +1440,9 @@ export async function generate(
         const stoppedDuringStream = wasGenerationCancelled(sessionId, targetMsg.id)
 
         // The approved knowledge this answer was given with: kept on the message and recorded as a use.
-        targetMsg = { ...targetMsg, knowledgeIds }
+        // ADR 0016: a device-only turn that lost its web toggle or outside tools says so under the answer (a regenerated
+        // answer drops an earlier turn's mark).
+        targetMsg = { ...targetMsg, knowledgeIds, localOnlyToolsOff: localOnlyToolsOff || undefined }
         if (knowledgeIds.length) {
           void import('@/packages/knowledge/uses')
             .then(({ recordKnowledgeUse }) =>
@@ -1834,8 +1839,9 @@ export async function generate(
       cancel: undefined,
       errorCode: ocrError ? (causeError instanceof BaseError ? causeError.code : errorCode) : errorCode,
       error: `${error.message}`,
-      // Only a finished answer has a duration.
+      // Only a finished answer has a duration, and a failed one has no "outside tools are off" line.
       durationMs: undefined,
+      localOnlyToolsOff: undefined,
       errorExtra: {
         aiProvider: ocrError ? ocrError.ocrProvider : effectiveSettings.provider,
         host:

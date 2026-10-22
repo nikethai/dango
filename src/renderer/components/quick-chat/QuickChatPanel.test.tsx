@@ -128,6 +128,21 @@ describe('QuickChatPanel', () => {
     expect((screen.getByRole('button', { name: 'Continue in Chat' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('shows the device-only line under a finished answer whose web and outside tools were off', () => {
+    const note = 'Web and outside tools are off because this chat holds device-only mail.'
+    const p = props({ view: 'answered', generating: true, question: 'q' })
+    const { rerender } = render(
+      <QuickChatPanel {...p} answer={answer('Part', { id: 'l1', generating: true, localOnlyToolsOff: true })} />
+    )
+    expect(screen.queryByText(note)).toBeNull()
+    rerender(
+      <QuickChatPanel {...p} generating={false} answer={answer('Done', { id: 'l1', localOnlyToolsOff: true })} />
+    )
+    expect(screen.getByText(note).className).toContain('dg-type-caption')
+    rerender(<QuickChatPanel {...p} generating={false} answer={answer('Done', { id: 'l2' })} />)
+    expect(screen.queryByText(note)).toBeNull()
+  })
+
   it('citation chips only open http(s) links', () => {
     const bad = [{ ...citations(1)[0], url: 'javascript:alert(1)', title: 'Bad' }]
     render(<QuickChatPanel {...props({ view: 'answered', answer: answer('x', { citations: bad }) })} />)

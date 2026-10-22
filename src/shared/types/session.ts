@@ -463,6 +463,8 @@ export const MessageSchema = z.object({
   roomRound: z.number().int().positive().optional().catch(undefined),
   /** Approved knowledge item ids this answer was given with (the built-in item excluded). */
   knowledgeIds: z.array(z.string()).optional().catch(undefined),
+  /** ADR 0016: this answer's turn held device-only text, so web and outside tools were off (shown as one quiet line). */
+  localOnlyToolsOff: z.boolean().optional().catch(undefined),
   /** Swarm run this turn belongs to (plan, do, deliver and run notes share one runId). `note`: the could-not-plan note. */
   swarm: z
     .object({

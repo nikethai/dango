@@ -42,6 +42,12 @@ export {
 } from './kinds/codex-threads'
 export { INTEGRATIONS_ROUTE, isOAuthClientIdError, OAuthClientIdError } from './kinds/oauth'
 export {
+  cancelRemovalPending,
+  finishPendingRemovals,
+  markRemovalPending,
+  REMOVE_DELAY_MS,
+} from './pending-removal'
+export {
   _resetReviewForTests,
   buildReviewPrompt,
   type ProposalDraft,
@@ -55,6 +61,7 @@ export {
   addSource,
   adoptExistingFolderBindings,
   getSource,
+  isRemovalPending,
   listSources,
   loadSources,
   registerSourcesResolver,

@@ -32,7 +32,11 @@ vi.mock('./bridge', async () => {
     }),
     addReviewEntry: vi.fn(async (input: Record<string, unknown>) => ({ ...input, state: 'open' })),
     getScope: vi.fn(async (id: string) => (id === 'acme' ? { id, name: 'Acme Co', kind: 'client' } : undefined)),
-    listSources: (filter?: { kind?: string }) => h.sources.filter((s) => !filter?.kind || s.kind === filter.kind),
+    isRemovalPending: (s: { removalPendingAt?: number }) => s.removalPendingAt !== undefined,
+    listSources: (filter?: { kind?: string; includePending?: boolean }) =>
+      h.sources.filter(
+        (s) => (!filter?.kind || s.kind === filter.kind) && (filter?.includePending || s.removalPendingAt === undefined)
+      ),
     loadSources: vi.fn(async () => undefined),
     registerSourceAdapter: vi.fn(),
     sourcesStore: {
@@ -232,6 +236,13 @@ describe('registerPmAdapters', () => {
 })
 
 describe('syncAsanaSource', () => {
+  it("another Asana source's sync does not prune the records of one pending removal (S11)", async () => {
+    h.sources = [asanaSource(), asanaSource({ id: 'a2', removalPendingAt: 1 })]
+    vi.mocked(syncAsanaProject).mockResolvedValue({ records: [], cursor: null } as never)
+    await syncAsanaSource(h.sources[0], ctx()).catch(() => undefined)
+    expect(pmStore.pruneRecords).toHaveBeenCalledWith('asana', new Set(['a1', 'a2']))
+  })
+
   it('Asana without a project asks which project once', async () => {
     h.sources = [asanaSource({ config: { accountId: 'acc-asana' } })]
     vi.mocked(listAsanaProjects).mockResolvedValue([

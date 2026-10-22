@@ -111,7 +111,7 @@ export function knowledgeEvidence(item: KnowledgeItem): Evidence {
 /**
  * Records of the scope outside the inbound thread that share words with it (best first, newest on a tie, at most
  * `RETRIEVE_MAX_RECORDS`), then every approved knowledge item for the scope except the built-in "Never send email".
- * On a cloud model, evidence `mayReachCloud` refuses is skipped, and an inbound record `inboundMayReachCloud` refuses
+ * Records of `excludeSourceIds` are never evidence. On a cloud model, evidence `mayReachCloud` refuses is skipped, and an inbound record `inboundMayReachCloud` refuses
  * (local-only, or no source id) throws `LocalOnlyModelError`.
  */
 export async function retrieveEvidence(input: {
@@ -119,8 +119,10 @@ export async function retrieveEvidence(input: {
   inbound: SourceRecord
   localOnlySourceIds: Set<string>
   cloudModel: boolean
+  /** Sources whose records are never evidence: Gmail sources with Background review off (B6). */
+  excludeSourceIds?: ReadonlySet<string>
 }): Promise<Evidence[]> {
-  const { scopeId, inbound, localOnlySourceIds, cloudModel } = input
+  const { scopeId, inbound, localOnlySourceIds, cloudModel, excludeSourceIds } = input
   if (cloudModel && !inboundMayReachCloud(inbound, localOnlySourceIds)) throw new LocalOnlyModelError()
   const allowed = (e: Evidence) => !cloudModel || mayReachCloud(e, localOnlySourceIds)
 
@@ -132,6 +134,7 @@ export async function retrieveEvidence(input: {
         r.scopeId === scopeId &&
         !r.noise &&
         r.id !== inbound.id &&
+        !(r.sourceId && excludeSourceIds?.has(r.sourceId)) &&
         !(r.sourceKind === inbound.sourceKind && r.threadOrTaskId === inbound.threadOrTaskId)
     )
     .map((r) => ({ r, e: recordEvidence(r) }))

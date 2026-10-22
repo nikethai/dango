@@ -5,7 +5,7 @@ import { IconInfoCircle } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
 import dayjs from 'dayjs'
 import { mapValues, uniqBy } from 'lodash'
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AdaptiveSelect } from '@/components/AdaptiveSelect'
 import LazySlider from '@/components/common/LazySlider'
@@ -19,7 +19,7 @@ import { languageNameMap, languages } from '@/i18n/locales'
 import { DEFAULT_NOTIFICATIONS_CONFIG } from '@/packages/notifications/types'
 import platform, { platformCapabilities } from '@/platform'
 import storage, { StorageKey } from '@/storage'
-import { isDeviceOnlyKey, omitDeviceOnlyKeys } from '@/storage/exportFilter'
+import { settingsExportData, settingsImportEntries, stripSyncSecrets } from '@/storage/exportFilter'
 import { recoverSessionList } from '@/stores/chatStore'
 import { exportHistoryTransferFile, importHistoryTransferFile } from '@/stores/historyTransfer'
 import { importRoomPack } from '@/stores/roomPack'
@@ -455,13 +455,17 @@ const ImportExportDataSection = () => {
     ExportDataItem.Conversations,
     ExportDataItem.Copilot,
   ])
+  const [includeDeviceOnlyChats, setIncludeDeviceOnlyChats] = useState(false)
+  const [transferDeviceOnlyChats, setTransferDeviceOnlyChats] = useState(false)
 
   const onExportHistoryTransfer = async () => {
     setHistoryTransferTips('')
     setHistoryTransferError(false)
     setIsHistoryTransferPending(true)
     try {
-      const { fileName, content, sessionCount } = await exportHistoryTransferFile()
+      const { fileName, content, sessionCount } = await exportHistoryTransferFile(undefined, {
+        includeDeviceOnlyChats: transferDeviceOnlyChats,
+      })
       await platform.exporter.exportTextFile(fileName, content)
       setHistoryTransferTips(t('Exported {{count}} conversations for transfer', { count: sessionCount }))
     } catch (error) {
@@ -504,17 +508,15 @@ const ImportExportDataSection = () => {
   }
 
   const onExport = async () => {
-    // Client mail and pilot records stay on this device.
-    const data = omitDeviceOnlyKeys(await storage.getAll())
+    // Client mail, pilot records, knowledge, sources, accounts, Review, jobs and cursors stay on this device; chats
+    // that quote device-only mail only when the user ticks the box.
+    const data = settingsExportData(await storage.getAll(), { includeDeviceOnlyChats })
     delete data[StorageKey.Configs] // uuid
     ;(data[StorageKey.Settings] as Settings).licenseDetail = undefined // (legacy)
     ;(data[StorageKey.Settings] as Settings).licenseInstances = undefined // (legacy)
-    if ((data[StorageKey.Settings] as Settings).extension?.historySync) {
-      ;(data[StorageKey.Settings] as Settings).extension.historySync = {
-        ...(data[StorageKey.Settings] as Settings).extension.historySync,
-        passphrase: undefined,
-      }
-    }
+    data[StorageKey.Settings] = stripSyncSecrets(data[StorageKey.Settings] as Settings, {
+      includeKeys: exportItems.includes(ExportDataItem.Key),
+    })
     if (!exportItems.includes(ExportDataItem.Key)) {
       delete (data[StorageKey.Settings] as Settings).licenseKey
       data[StorageKey.Settings].providers = mapValues(
@@ -587,13 +589,8 @@ const ImportExportDataSection = () => {
             false
           )
 
-          const entriesToImport = Object.entries(importData).filter(
-            ([key]) =>
-              key !== StorageKey.ChatSessionsList &&
-              key !== StorageKey.ConfigVersion &&
-              !key.startsWith('__') &&
-              !isDeviceOnlyKey(key)
-          )
+          // Device-only keys (client mail, knowledge, sources) are never written.
+          const entriesToImport = settingsImportEntries(importData)
 
           const importedChatSessions = Array.isArray(importData[StorageKey.ChatSessionsList])
             ? importData[StorageKey.ChatSessionsList]
@@ -709,6 +706,11 @@ const ImportExportDataSection = () => {
                 <Text size="sm">{historyTransferTips}</Text>
               </Alert>
             )}
+            <Checkbox
+              checked={transferDeviceOnlyChats}
+              label={t('Also transfer chats that quote device-only mail')}
+              onChange={(e) => setTransferDeviceOnlyChats(e.currentTarget.checked)}
+            />
             <div className="settings-actions">
               <Button onClick={onExportHistoryTransfer} loading={isHistoryTransferPending}>
                 {t('Export Chat History for Transfer')}
@@ -775,19 +777,28 @@ const ImportExportDataSection = () => {
               { label: t('Chat History'), value: ExportDataItem.Conversations },
               { label: t('My Agents'), value: ExportDataItem.Copilot },
             ].map(({ label, value }) => (
-              <Checkbox
-                key={value}
-                checked={exportItems.includes(value)}
-                label={label}
-                onChange={(e) => {
-                  const checked = e.currentTarget.checked
-                  if (checked && !exportItems.includes(value)) {
-                    setExportItems([...exportItems, value])
-                  } else if (!checked) {
-                    setExportItems(exportItems.filter((v) => v !== value))
-                  }
-                }}
-              />
+              <Fragment key={value}>
+                <Checkbox
+                  checked={exportItems.includes(value)}
+                  label={label}
+                  onChange={(e) => {
+                    const checked = e.currentTarget.checked
+                    if (checked && !exportItems.includes(value)) {
+                      setExportItems([...exportItems, value])
+                    } else if (!checked) {
+                      setExportItems(exportItems.filter((v) => v !== value))
+                    }
+                  }}
+                />
+                {value === ExportDataItem.Conversations && (
+                  <Checkbox
+                    checked={includeDeviceOnlyChats}
+                    disabled={!exportItems.includes(ExportDataItem.Conversations)}
+                    label={t('Include chats that quote device-only mail')}
+                    onChange={(e) => setIncludeDeviceOnlyChats(e.currentTarget.checked)}
+                  />
+                )}
+              </Fragment>
             ))}
             <div className="settings-actions">
               <Button onClick={onExport}>{t('Export Selected Data')}</Button>

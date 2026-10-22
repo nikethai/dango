@@ -10,13 +10,21 @@ import { useNow } from '@/hooks/useNow'
 import { useWindowRole } from '@/hooks/useWindowRole'
 import i18n from '@/i18n'
 import { runJobFix, startJob, useBackgroundJobs } from '@/packages/background'
-import { BACKGROUND_REVIEW_LINE, getSourceKind, revokeSource, syncJobLabel, updateSource } from '@/packages/sources'
+import {
+  BACKGROUND_REVIEW_LINE,
+  cancelRemovalPending,
+  getSourceKind,
+  markRemovalPending,
+  REMOVE_DELAY_MS,
+  revokeSource,
+  syncJobLabel,
+  updateSource,
+} from '@/packages/sources'
 import { pushUndo } from '@/packages/undo'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
 import { openConfiguration, SOURCES_SETTINGS_ROUTE } from './AddSourceSheet'
 
-const REMOVE_DELAY_MS = 5_000
 /** Kinds whose text can be kept off cloud models (ADR 0003, slice 10). */
 const LOCAL_ONLY_KINDS: ReadonlySet<ConnectedSource['kind']> = new Set(['gmail', 'asana'])
 const MINUTE = 60_000
@@ -70,7 +78,8 @@ export function sourceStatusLine(
 }
 
 // Sources removed in the last 5 s: hidden at once, revoked when the undo window ends. Module-level, so leaving the
-// page does not cancel a removal.
+// page does not cancel a removal. The removal is also stored on the source (`removalPendingAt`), which hides it in
+// every list and lets the next launch finish it when the app quits within the 5 s (S11).
 const hiddenStore = createStore<{ ids: ReadonlySet<string> }>()(() => ({ ids: new Set<string>() }))
 const removalTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -88,9 +97,16 @@ export function useHiddenSourceIds(): ReadonlySet<string> {
   return useStore(hiddenStore, (s) => s.ids)
 }
 
+function cancelStored(id: string): void {
+  void cancelRemovalPending(id).catch((error) => console.warn('[sources] Could not undo the pending removal', error))
+}
+
 function removeWithUndo(source: ConnectedSource): void {
   if (removalTimers.has(source.id)) return
   setHidden(source.id, true)
+  void markRemovalPending(source.id, Date.now()).catch((error) =>
+    console.warn('[sources] Could not store the pending removal', error)
+  )
   removalTimers.set(
     source.id,
     setTimeout(() => {
@@ -100,6 +116,7 @@ function removeWithUndo(source: ConnectedSource): void {
           console.warn('[sources] Could not remove the source', error)
           // The row comes back; removing it again repeats every step. The label is user or service text (a value).
           addToast(i18n.t("Couldn't remove {{label}}", { label: source.label }))
+          cancelStored(source.id)
         })
         .finally(() => setHidden(source.id, false))
     }, REMOVE_DELAY_MS)
@@ -113,6 +130,7 @@ function removeWithUndo(source: ConnectedSource): void {
       clearTimeout(timer)
       removalTimers.delete(source.id)
       setHidden(source.id, false)
+      cancelStored(source.id)
     },
     group: 'other',
   })
@@ -154,6 +172,7 @@ export function SourceRow({ source, scopeName }: { source: ConnectedSource; scop
   const menu = useRef<HTMLDivElement>(null)
   const switchLabelId = useId()
   const switchHintId = useId()
+  const switchCaptionId = useId()
   const localLabelId = useId()
   const localHintId = useId()
 
@@ -233,7 +252,7 @@ export function SourceRow({ source, scopeName }: { source: ConnectedSource; scop
                 className="dg-switch"
                 aria-checked={source.backgroundReview ? 'true' : 'false'}
                 aria-labelledby={switchLabelId}
-                aria-describedby={switchHintId}
+                aria-describedby={source.kind === 'gmail' ? `${switchHintId} ${switchCaptionId}` : switchHintId}
                 disabled={!roleKnown}
                 onClick={() =>
                   inJobsWindow(() => updateSource(source.id, { backgroundReview: !source.backgroundReview }))
@@ -246,6 +265,14 @@ export function SourceRow({ source, scopeName }: { source: ConnectedSource; scop
             <span id={switchHintId} className="dg-item__meta">
               {t(BACKGROUND_REVIEW_LINE)}
             </span>
+            {/* B6 / Decision 3: Gmail says what the switch does; off, mail is only synced and stored. */}
+            {source.kind === 'gmail' ? (
+              <span id={switchCaptionId} className="dg-item__meta">
+                {source.backgroundReview
+                  ? t('Dango reads new mail with your model to draft replies.')
+                  : t("Off: Dango keeps new mail for search but doesn't read it with a model or write drafts.")}
+              </span>
+            ) : null}
           </div>
         ) : null}
         {LOCAL_ONLY_KINDS.has(source.kind) ? (

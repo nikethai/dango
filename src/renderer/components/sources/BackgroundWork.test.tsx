@@ -39,6 +39,9 @@ vi.mock('@/packages/sources', () => {
     useSourcesLoaded: () => true,
     updateSource: vi.fn(async () => undefined),
     revokeSource: vi.fn(async () => undefined),
+    markRemovalPending: vi.fn(async () => undefined),
+    cancelRemovalPending: vi.fn(async () => undefined),
+    REMOVE_DELAY_MS: 5_000,
     syncJobLabel: (k: string) => `${k} sync`,
     BACKGROUND_REVIEW_LINE:
       'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.',

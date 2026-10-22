@@ -1,6 +1,6 @@
-import type { ToolRiskTier } from '@shared/types/mcp'
+import { ToolRiskTier } from '@shared/types/mcp'
 import { useSyncExternalStore } from 'react'
-import { canAlways, type PermissionChoice, type ToolActionSummary } from './describe'
+import { canAlways, offersReadOnlyCommandGrant, type PermissionChoice, type ToolActionSummary } from './describe'
 
 export type PermissionRequest = {
   id: string
@@ -12,6 +12,11 @@ export type PermissionRequest = {
   riskTier: ToolRiskTier
   summary: ToolActionSummary
   allowAlways: boolean
+  /**
+   * A read-only command (`ls`, `git status`) on a local shell tool: Always here covers that tool's read-only commands
+   * only (ADR 0015). Absent or false for every other call.
+   */
+  readOnlyCommand?: boolean
 }
 
 type Entry = {
@@ -59,13 +64,15 @@ export function usePermissionHead(): PermissionRequest | null {
 
 function sameGrantTarget(a: PermissionRequest, b: PermissionRequest): boolean {
   if (a.toolName !== b.toolName || a.riskTier !== b.riskTier || a.allowAlways !== b.allowAlways) return false
+  // A read-only command grant and an ordinary grant are different targets.
+  if (Boolean(a.readOnlyCommand) !== Boolean(b.readOnlyCommand)) return false
   if (a.scopeId || b.scopeId) return a.scopeId === b.scopeId
   return a.sessionId === b.sessionId
 }
 
 /**
- * Settle a request. `'always'` also settles every queued request for the same tool, risk tier and scope
- * (same chat when unscoped). A request that does not allow Always is settled `'once'` instead.
+ * Settle a request. `'always'` also settles every queued request for the same tool, risk tier, scope (same chat when
+ * unscoped) and grant kind (read-only commands or ordinary). A request that does not allow Always is settled `'once'`.
  */
 export function resolvePermission(id: string, choice: PermissionChoice): void {
   const entry = queue.find((e) => e.request.id === id)
@@ -82,7 +89,8 @@ export function resolvePermission(id: string, choice: PermissionChoice): void {
 /**
  * Queue a permission request; resolves with the user's choice. The timeout (default 120 s, counted from when
  * the request shows) and an aborted signal both resolve `'deny'` and remove the request, so the next one shows.
- * `allowAlways` is stored as `allowAlways && canAlways(toolName, riskTier, toolDescription)`.
+ * `allowAlways` is stored as `allowAlways && canAlways(toolName, riskTier, toolDescription)`, or for a read-only
+ * command as `allowAlways && offersReadOnlyCommandGrant(toolName, toolDescription)` and not CRITICAL.
  */
 export function requestToolPermission(
   req: Omit<PermissionRequest, 'id'>,
@@ -92,9 +100,15 @@ export function requestToolPermission(
   if (signal?.aborted) return Promise.resolve('deny')
 
   nextId += 1
-  // Never trust the caller: tools that always ask (incl. command tools), and critical ones, never offer Always.
-  const allowAlways = req.allowAlways && canAlways(req.toolName, req.riskTier, req.toolDescription)
-  const request: PermissionRequest = { ...req, allowAlways, id: `permission-${nextId}` }
+  // Never trust the caller: tools that always ask (incl. command tools), and critical ones, never offer Always. A
+  // read-only command may offer it only on a local shell tool that does not send, delete, pay or change files.
+  const readOnlyCommand = req.readOnlyCommand === true
+  const allowAlways =
+    req.allowAlways &&
+    (readOnlyCommand
+      ? offersReadOnlyCommandGrant(req.toolName, req.toolDescription) && req.riskTier !== ToolRiskTier.CRITICAL
+      : canAlways(req.toolName, req.riskTier, req.toolDescription))
+  const request: PermissionRequest = { ...req, allowAlways, readOnlyCommand, id: `permission-${nextId}` }
 
   return new Promise<PermissionChoice>((resolve) => {
     const onAbort = () => resolvePermission(request.id, 'deny')

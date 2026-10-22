@@ -65,7 +65,7 @@ import { pmStore } from './store'
  * - External text in the opening (sender, subject, summary, values, labels, names) is an inert interpolation value,
  *   with Markdown made literal, in plain message text.
  * - Nothing sends: the reply is drafted only through `actOnThread` and the draft applier; Trust and the daily cap
- *   apply as for any draft.
+ *   apply as for any draft. A source with Background review off (B6) gets no draft: the answer is only saved.
  * - Mail records change only in the jobs window: a "Which client is this?" answer stores its backfill on the question,
  *   which the jobs window's Gmail run performs (`pipeline.ts`); this module only starts that run when it is there.
  */
@@ -266,9 +266,10 @@ export function initPmQuestions(): () => void {
 // ---------------------------------------------------------------------------------------------------------------------
 // Local-only
 
+/** Every source, pending removal included (S11): a source the user may still Undo stays local-only. */
 async function freshSources(): Promise<ConnectedSource[] | null> {
   await loadSources()
-  return sourcesStore.getState().loaded ? listSources() : null
+  return sourcesStore.getState().loaded ? listSources({ includePending: true }) : null
 }
 
 /** Whether the question's chat holds text from a source kept on this device; unreadable sources count as local. */
@@ -533,7 +534,8 @@ async function saveFact(
   const proposal = await proposeKnowledge({ scopeId, kind: 'fact', text: fact, sources, origin: 'user' })
   if (!proposal) {
     const known = await approvedItem(scopeId, fact)
-    return knowledgeEvidence(known ?? (await addKnowledge({ scopeId, kind: 'fact', text: fact })))
+    // The same sources as the proposal: an option's records may be local-only (ADR 0003).
+    return knowledgeEvidence(known ?? (await addKnowledge({ scopeId, kind: 'fact', text: fact, sources })))
   }
   try {
     return knowledgeEvidence(await approveProposal(proposal.id, { text: fact }))
@@ -631,7 +633,15 @@ async function answerWhich(
     return refuse('failed', 'The answer could not be saved. Ask the user to try again.', mark)
   }
   await closeEntry(q)
-  const drafted = await draftReply(q, scope, evidence)
+  // Background review off (B6): the source's mail is stored only, so no model writes a reply to it. A source that was
+  // removed, or whose removal is pending (S11), gets no reply either.
+  const source = q.sourceId ? listSources().find((s) => s.id === q.sourceId) : undefined
+  const drafted =
+    q.sourceId && !source
+      ? 'The reply was not drafted: this source was removed.'
+      : source && !source.backgroundReview
+        ? 'The reply was not drafted: Background review is off for this source.'
+        : await draftReply(q, scope, evidence)
   // The saved text is not echoed: it may come from client mail, and this result goes back to the model.
   return { ok: true, message: `Saved the answer for ${scope.name}. ${drafted}`, ...mark }
 }

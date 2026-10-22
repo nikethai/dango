@@ -2,7 +2,8 @@ import { type Evidence, mayReachCloud } from '@shared/pm-pilot'
 import type { Message } from '@shared/types'
 import type { KnowledgeItem } from '@shared/types/knowledge'
 import { t } from 'i18next'
-import { isLocalModelProvider } from '@/packages/sources/model-check'
+import { holdsLocalOnlyRecall } from '@/packages/pm-pilot/local-only-chat'
+import { isLocalModelIn, type ModelRef, type ProviderHostSettings } from '@/packages/sources/model-check'
 
 /*
  * What a cloud model may be sent from the PM pilot (ADR 0003: a local-only source's text never reaches a cloud
@@ -20,28 +21,29 @@ import { isLocalModelProvider } from '@/packages/sources/model-check'
  *   is local-only; knowledge the user typed (no source id) goes.
  */
 
-export const CLIENT_RECALL_TOOL = 'client_recall'
-export const CLIENT_ANSWER_TOOL = 'client_answer'
-const PM_TOOLS: ReadonlySet<string> = new Set([CLIENT_RECALL_TOOL, CLIENT_ANSWER_TOOL])
+// The chat-level checks live in a module with no runtime imports (the settings export uses them); kept here as before.
+export {
+  CLIENT_ANSWER_TOOL,
+  CLIENT_RECALL_TOOL,
+  chatHoldsLocalOnly,
+  holdsLocalOnlyRecall,
+  usedLocalOnlyRecall,
+} from '@/packages/pm-pilot/local-only-chat'
 
 /** Translation key (en value = key) of what a cloud model sees in place of such an answer. */
 export const LOCAL_ONLY_ANSWER_PLACEHOLDER =
   '(This answer used email or tasks kept on this device, so it is not shared with this model.)'
 
-function isLocalOnlyRecallResult(result: unknown): boolean {
-  return typeof result === 'object' && result !== null && (result as { localOnly?: unknown }).localOnly === true
-}
-
-/** True when the message holds a `client_recall` or `client_answer` result marked local-only. */
-export function usedLocalOnlyRecall(message: Pick<Message, 'contentParts'>): boolean {
-  return (message.contentParts ?? []).some(
-    (p) => p.type === 'tool-call' && PM_TOOLS.has(p.toolName) && isLocalOnlyRecallResult(p.result)
-  )
-}
-
-/** True when the message used a local-only recall, or is a summary built from messages that did. */
-export function holdsLocalOnlyRecall(message: Pick<Message, 'contentParts' | 'pmLocalOnly'>): boolean {
-  return message.pmLocalOnly === true || usedLocalOnlyRecall(message)
+/**
+ * True when a turn may read local-only text: a local model in a chat that holds it, or that is offered client recall
+ * (which may answer from local-only records). A cloud model gets placeholders and recall without local-only records.
+ */
+export function localOnlyTurn(i: {
+  holdsLocalOnly: boolean
+  cloudModel: boolean
+  clientRecallOffered: boolean
+}): boolean {
+  return !i.cloudModel && (i.holdsLocalOnly || i.clientRecallOffered)
 }
 
 /**
@@ -101,12 +103,16 @@ export function hideLocalOnlyRecalls(
 }
 
 /**
- * The messages as `provider`'s model may receive them: unchanged for a local model (Ollama, LM Studio); for any other
- * provider, or none given, `hideLocalOnlyRecalls` with the CH6 questions that are local-only now (all of them when
- * that cannot be read).
+ * The messages as `model` may receive them: unchanged for a local model (`isLocalModelIn`: Ollama or LM Studio on a
+ * loopback host, not a cloud model); for any other model, or none given, `hideLocalOnlyRecalls` with the CH6
+ * questions that are local-only now (all of them when that cannot be read). `settings`: global settings (the hosts).
  */
-export async function cloudSafeMessages(messages: Message[], provider: string | undefined | null): Promise<Message[]> {
-  if (isLocalModelProvider(provider)) return messages
+export async function cloudSafeMessages(
+  messages: Message[],
+  model: ModelRef | null | undefined,
+  settings: ProviderHostSettings | undefined
+): Promise<Message[]> {
+  if (isLocalModelIn(settings, model)) return messages
   const questionIds = ch6QuestionIds(messages)
   let localOnly: Set<string> | null = new Set()
   if (questionIds.length > 0) {

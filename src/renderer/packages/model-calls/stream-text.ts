@@ -23,7 +23,7 @@ import { ensureKnowledgeLoaded } from '@/packages/knowledge/store'
 import { hostPreSearchMemories } from '@/packages/memory/host-presearch'
 import { isSessionMemoryToolRetainAllowed } from '@/packages/memory/session-policy'
 import { getMemoryToolSet, MEMORY_TOOL_NAMES } from '@/packages/memory/tools'
-import { isLocalModelProvider } from '@/packages/sources/model-check'
+import { isLocalModelIn } from '@/packages/sources/model-check'
 import { commandToolInstructions } from '@/packages/tool-permission'
 import platform from '@/platform'
 import { ensureMemoryStoreInit, memoryStore } from '@/stores/memoryStore'
@@ -86,7 +86,13 @@ import generateImageToolSet, {
 } from './toolsets/generate-image'
 import { getToolSet } from './toolsets/knowledge-base'
 import { loadLocalOnlySourceIds, loadPmToolSet } from './toolsets/pm-pilot'
-import { CLIENT_RECALL_TOOL, cloudSafeMessages, knowledgeMayReachCloud } from './toolsets/pm-pilot-history'
+import {
+  CLIENT_RECALL_TOOL,
+  chatHoldsLocalOnly,
+  cloudSafeMessages,
+  knowledgeMayReachCloud,
+  localOnlyTurn,
+} from './toolsets/pm-pilot-history'
 import taskTrackingToolSet from './toolsets/task-tracking'
 import videoToolSet, { initVideoToolBudget, resetVideoToolBudget } from './toolsets/video'
 import videoUrlToolSet from './toolsets/video-url'
@@ -299,6 +305,26 @@ function filterToolsByAccess(tools: ToolSet, toolAccess?: CopilotToolAccess): To
   }
 }
 
+/** Tools that send what the model writes to a search provider or a site. */
+const WEB_TOOL_NAMES: ReadonlySet<string> = new Set(['web_search', 'parse_link', 'google_search'])
+
+/**
+ * ADR 0016: tools that send content off the device, all off on a turn that may read local-only text. MCP tools (Dango
+ * can't know where a server sends data), browser and video-URL reading, image generation, web search and link reading.
+ * Computer use is not here: its screenshots go to the turn's (local) model.
+ */
+const OUTSIDE_TOOL_PREDICATES: ReadonlyArray<(name: string) => boolean> = [
+  (name) => name.startsWith(MCP_TOOL_PREFIX),
+  (name) => name.startsWith('browser_'),
+  (name) => name === 'read_video_url',
+  (name) => name === 'generate_image',
+  (name) => WEB_TOOL_NAMES.has(name),
+]
+
+function isOutsideTool(name: string): boolean {
+  return OUTSIDE_TOOL_PREDICATES.some((matches) => matches(name))
+}
+
 /**
  * (legacy comment removed)
  */
@@ -344,7 +370,13 @@ export async function streamText(
     knowledgeQuery?: string
   },
   signal?: AbortSignal
-): Promise<{ result: StreamTextResult; coreMessages: ModelMessage[]; knowledgeIds: string[] }> {
+): Promise<{
+  result: StreamTextResult
+  coreMessages: ModelMessage[]
+  knowledgeIds: string[]
+  /** ADR 0016: this local-only turn had its web toggle on, or had outside tools removed. */
+  localOnlyToolsOff: boolean
+}> {
   const {
     knowledgeBase,
     webBrowsing,
@@ -366,11 +398,15 @@ export async function streamText(
     scopeId,
   } = params
   const globalSettings = settingsStore.getState().getSettings()
-  // ADR 0003: whether this turn's model is cloud (the chat's own provider). A cloud turn never carries an earlier
-  // answer built from local-only mail or tasks.
-  const cloudModel = !isLocalModelProvider(sessionSettings?.provider)
+  // ADR 0003: whether this turn's model is cloud (the chat's provider and its host, and the model id this call sends).
+  // A cloud turn never carries an earlier answer built from local-only mail or tasks.
+  // Invariant: callers build `model` from these same `sessionSettings` (generation.ts: both from `effectiveSettings`).
+  const calledModel = { provider: sessionSettings?.provider, modelId: model.modelId || sessionSettings?.modelId }
+  const cloudModel = !isLocalModelIn(globalSettings, calledModel)
+  // B3: taken before cloudSafeMessages, whose placeholder drops the tool parts that mark it.
+  const holdsLocalOnly = chatHoldsLocalOnly(params.messages)
   // Local-only mail and tasks (recall answers, Needs you chats) are replaced by a placeholder for a cloud model.
-  params.messages = await cloudSafeMessages(params.messages, sessionSettings?.provider)
+  params.messages = await cloudSafeMessages(params.messages, calledModel, globalSettings)
   const hasDocumentFileOrLink = params.messages.some(
     (m) => m.links?.length || m.files?.some((f) => f.mediaKind !== 'video')
   )
@@ -408,7 +444,6 @@ export async function streamText(
   const videoUrlExtension = settingsStore.getState().extension?.videoUrl
   const needVideoUrlToolSet = !customTools && videoUrlExtension?.enabled !== false && model.isSupportToolUse()
   const kbNotSupported = knowledgeBase && !model.isSupportToolUse('knowledge-base')
-  const webNotSupported = webBrowsing && !model.isSupportToolUse('web-browsing')
   const workspaceFileToolSet = needWorkspaceCodingTools
     ? createWorkspaceFileToolSet({
         capabilityId,
@@ -522,6 +557,14 @@ export async function streamText(
       console.error('Failed to load client email and tasks toolset:', err)
     }
   }
+  // B3: legacy memory saves and reflects nothing in a chat that holds local-only text, or on a turn that may read it.
+  const turnIsLocalOnly = localOnlyTurn({ holdsLocalOnly, cloudModel, clientRecallOffered: pmToolSet !== null })
+  // S13: no web search, link reading or grounding on a turn that may read local-only text: a query or URL the model
+  // writes would carry that text to the search provider or the site.
+  const searchWeb = Boolean(webBrowsing) && !turnIsLocalOnly
+  const webNotSupported = searchWeb && !model.isSupportToolUse('web-browsing')
+  // ADR 0016: the answer says so when the web toggle was on, or outside tools are removed below.
+  let localOnlyToolsOff = turnIsLocalOnly && Boolean(webBrowsing)
   const mcpTools = wrapToolsWithApproval(sessionId, mcpController.getAvailableTools(), { scopeId })
   // Task tools must be decided before grounding: Gemini forbids mixing provider tools
   // (google.tools.googleSearch) with function tools. Counting tasks too late caused
@@ -592,7 +635,7 @@ export async function streamText(
     memoryToolsAvailable ||
     needGenerateImageTool
   // Native Gemini grounding only when there are no function tools at all.
-  const useGeminiGrounding = nativeWebSearch === 'gemini-grounding' && webBrowsing && !hasFunctionTools
+  const useGeminiGrounding = nativeWebSearch === 'gemini-grounding' && searchWeb && !hasFunctionTools
 
   if (taskToolsAvailable && sessionId) {
     await taskStore.getState().hydrateSessionTasks(sessionId)
@@ -610,7 +653,7 @@ export async function streamText(
   if (workspaceFileToolSet) {
     toolSetInstructions += workspaceFileToolSet.description
   }
-  if (browserToolSet) {
+  if (browserToolSet && !turnIsLocalOnly) {
     toolSetInstructions += browserToolSet.description
   }
   if (computerToolSet) {
@@ -637,7 +680,7 @@ ${!capabilityId ? '- No native Project folder is bound. Ask the user to Open Fol
   if (needVideoToolSet) {
     toolSetInstructions += videoToolSet.description
   }
-  if (needVideoUrlToolSet) {
+  if (needVideoUrlToolSet && !turnIsLocalOnly) {
     toolSetInstructions += videoUrlToolSet.description
   }
   // Memory tools + priority instructions BEFORE web search so models see recall first.
@@ -660,11 +703,13 @@ ${!capabilityId ? '- No native Project folder is bound. Ask the user to Open Fol
       agentName: memoryContext?.agentName,
       sessionId,
       allowRetain: isSessionMemoryToolRetainAllowed(memorySettings, sessionSettings),
+      localOnlyChat: holdsLocalOnly || turnIsLocalOnly,
+      sessionSettings,
       scheduleConsolidate: (scope) => {
         if (!memorySettings.autoConsolidate) return
         void memoryStore
           .getState()
-          .rebuildProfile(scope, scope === 'agent' ? memoryContext?.agentId : undefined, true)
+          .rebuildProfile(scope, scope === 'agent' ? memoryContext?.agentId : undefined, true, { sessionSettings })
           .catch(() => {})
       },
     })
@@ -686,7 +731,7 @@ Do not open with repeated web searches when personal memory may apply.
     }
   }
 
-  if (webBrowsing && !webNotSupported && !useGeminiGrounding) {
+  if (searchWeb && !webNotSupported && !useGeminiGrounding) {
     toolSetInstructions += websearchToolSet.description
   }
 
@@ -696,7 +741,7 @@ Do not open with repeated web searches when personal memory may apply.
       toolSetInstructions += formatActiveTaskContext(taskStore.getState().getSessionTasks(sessionId))
     }
   }
-  if (needGenerateImageTool) {
+  if (needGenerateImageTool && !turnIsLocalOnly) {
     toolSetInstructions += generateImageToolSet.description
     toolSetInstructions += `\n\n${formatImageCatalogInstructions(imageCatalog)}`
     if (agentImageFlowInstructions) {
@@ -705,7 +750,13 @@ Do not open with repeated web searches when personal memory may apply.
   }
 
   // Command tools always ask: have the model say in `reason` what the command does (the sheet shows it as "why").
-  toolSetInstructions += commandToolInstructions(customTools ?? { ...mcpTools, ...(workspaceFileToolSet?.tools ?? {}) })
+  // ADR 0016: outside (MCP) tools are removed below on a local-only turn, so they are not described either.
+  const describedTools = customTools ?? { ...mcpTools, ...(workspaceFileToolSet?.tools ?? {}) }
+  toolSetInstructions += commandToolInstructions(
+    turnIsLocalOnly
+      ? Object.fromEntries(Object.entries(describedTools).filter(([name]) => !isOutsideTool(name)))
+      : describedTools
+  )
 
   const memoryForceHybridFallback =
     memorySettings.enabled && memorySettings.retrievalMode === 'on_demand' && !model.isSupportToolUse()
@@ -858,6 +909,7 @@ Do not open with repeated web searches when personal memory may apply.
             dependencies
           )),
           knowledgeIds,
+          localOnlyToolsOff,
         }
       }
       // (legacy comment removed)
@@ -884,6 +936,7 @@ Do not open with repeated web searches when personal memory may apply.
             dependencies
           )),
           knowledgeIds,
+          localOnlyToolsOff,
         }
       }
       // (legacy comment removed)
@@ -909,6 +962,7 @@ Do not open with repeated web searches when personal memory may apply.
             dependencies
           )),
           knowledgeIds,
+          localOnlyToolsOff,
         }
       }
     }
@@ -922,7 +976,7 @@ Do not open with repeated web searches when personal memory may apply.
           mode: 'MODE_DYNAMIC',
           dynamicThreshold: 0.3,
         })
-      } else if (webBrowsing) {
+      } else if (searchWeb) {
         tools.web_search = webSearchTool
         tools.parse_link = parseLinkTool
       }
@@ -937,7 +991,10 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (needAttachmentFileToolSet) {
-        const wrappedAttachmentTools = wrapToolsWithApproval(sessionId, attachmentFileToolSet.tools, { scopeId })
+        const wrappedAttachmentTools = wrapToolsWithApproval(sessionId, attachmentFileToolSet.tools, {
+          scopeId,
+          builtin: true,
+        })
         tools = {
           ...tools,
           ...wrappedAttachmentTools,
@@ -945,7 +1002,10 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (workspaceFileToolSet) {
-        const wrappedWorkspaceTools = wrapToolsWithApproval(sessionId, workspaceFileToolSet.tools, { scopeId })
+        const wrappedWorkspaceTools = wrapToolsWithApproval(sessionId, workspaceFileToolSet.tools, {
+          scopeId,
+          builtin: true,
+        })
         tools = {
           ...tools,
           ...wrappedWorkspaceTools,
@@ -953,7 +1013,10 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (needVideoToolSet) {
-        const wrappedVideoTools = wrapToolsWithApproval(sessionId, videoToolSet.tools as ToolSet, { scopeId })
+        const wrappedVideoTools = wrapToolsWithApproval(sessionId, videoToolSet.tools as ToolSet, {
+          scopeId,
+          builtin: true,
+        })
         tools = {
           ...tools,
           ...wrappedVideoTools,
@@ -961,7 +1024,10 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (needVideoUrlToolSet) {
-        const wrappedVideoUrlTools = wrapToolsWithApproval(sessionId, videoUrlToolSet.tools as ToolSet, { scopeId })
+        const wrappedVideoUrlTools = wrapToolsWithApproval(sessionId, videoUrlToolSet.tools as ToolSet, {
+          scopeId,
+          builtin: true,
+        })
         tools = {
           ...tools,
           ...wrappedVideoUrlTools,
@@ -981,7 +1047,7 @@ Do not open with repeated web searches when personal memory may apply.
               comfyuiAgentMode: Boolean(agentImageFlowInstructions),
             }),
           },
-          { scopeId }
+          { scopeId, builtin: true }
         )
         tools = {
           ...tools,
@@ -990,7 +1056,7 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (browserToolSet) {
-        const wrappedBrowserTools = wrapToolsWithApproval(sessionId, browserToolSet.tools, { scopeId })
+        const wrappedBrowserTools = wrapToolsWithApproval(sessionId, browserToolSet.tools, { scopeId, builtin: true })
         tools = {
           ...tools,
           ...wrappedBrowserTools,
@@ -998,7 +1064,7 @@ Do not open with repeated web searches when personal memory may apply.
       }
 
       if (computerToolSet) {
-        const wrappedComputerTools = wrapToolsWithApproval(sessionId, computerToolSet.tools, { scopeId })
+        const wrappedComputerTools = wrapToolsWithApproval(sessionId, computerToolSet.tools, { scopeId, builtin: true })
         tools = {
           ...tools,
           ...wrappedComputerTools,
@@ -1027,6 +1093,14 @@ Do not open with repeated web searches when personal memory may apply.
     if (allowedTools && allowedTools.length > 0) {
       const allowedSet = new Set(allowedTools)
       tools = Object.fromEntries(Object.entries(tools).filter(([name]) => allowedSet.has(name)))
+    }
+
+    // S13 / ADR 0016: no outside tools on a turn that may read local-only text, including tools the turn brings
+    // itself (plan mode, Swarm, a copilot's allowlist). Computer use stays.
+    if (turnIsLocalOnly) {
+      const kept = Object.entries(tools).filter(([name]) => !isOutsideTool(name))
+      if (kept.length < Object.keys(tools).length) localOnlyToolsOff = true
+      tools = Object.fromEntries(kept)
     }
 
     // Computer UI space lock: strip tools that collide with "find" / leave the desktop app.
@@ -1096,12 +1170,12 @@ Do not open with repeated web searches when personal memory may apply.
       })
     )
 
-    return { result, coreMessages, knowledgeIds }
+    return { result, coreMessages, knowledgeIds, localOnlyToolsOff }
   } catch (err) {
     console.error(err)
     // if a cancellation is performed, do not throw an exception, otherwise the content will be overwritten.
     if (controller.signal.aborted) {
-      return { result, coreMessages, knowledgeIds }
+      return { result, coreMessages, knowledgeIds, localOnlyToolsOff }
     }
     throw err
   } finally {

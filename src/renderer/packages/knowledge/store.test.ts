@@ -1,4 +1,4 @@
-import type { KnowledgeProposal, KnowledgeState } from '@shared/types/knowledge'
+import { emptyKnowledgeState, type KnowledgeProposal, type KnowledgeState } from '@shared/types/knowledge'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { pushUndo } from '@/packages/undo'
 import {
@@ -8,8 +8,9 @@ import {
   KnowledgeUnreadableError,
   knowledgeStore,
   onKnowledgeCommit,
+  startKnowledgeOver,
 } from './store'
-import { getRaw, makeItem, putRaw, resetTestStorage, testStorage } from './test-storage'
+import { getRaw, makeItem, putRaw, putRawText, resetTestStorage, testStorage } from './test-storage'
 import { assignSourceIds, contentHash, knowledgeTextKey, newRevision, parseStaleAfter, quote } from './text'
 import { pushKnowledgeUndo } from './undo'
 
@@ -87,6 +88,59 @@ describe('knowledge store', () => {
     await commitKnowledge((d) => d.proposals.push(proposal()))
     expect(stored()?.items.map((i) => i.id)).toEqual(['k2'])
     expect(stored()?.proposals).toHaveLength(1)
+  })
+
+  it.each(['null', '', '  null \n'])('a listed key whose stored text is %j reads as missing', async (text) => {
+    putRaw(KEY, null)
+    putRawText(KEY, text)
+    await ensureKnowledgeLoaded({ fresh: true })
+    expect(knowledgeStore.getState().state).toEqual(emptyKnowledgeState())
+    expect(knowledgeStore.getState().unreadable).toBe(false)
+    expect(testStorage.setItemNow).not.toHaveBeenCalled()
+  })
+
+  it('stored text that does not parse is unreadable until Start over writes an empty document', async () => {
+    putRaw(KEY, null)
+    putRawText(KEY, '{"items": [')
+    await expect(ensureKnowledgeLoaded({ fresh: true })).rejects.toBeInstanceOf(KnowledgeUnreadableError)
+    expect(knowledgeStore.getState().unreadable).toBe(true)
+    expect(testStorage.setItemNow).not.toHaveBeenCalled()
+
+    await expect(startKnowledgeOver()).resolves.toBe(true)
+    expect(stored()).toEqual(emptyKnowledgeState())
+    expect(knowledgeStore.getState().unreadable).toBe(false)
+    expect(knowledgeStore.getState().state).toEqual(emptyKnowledgeState())
+
+    await commitKnowledge((d) => d.proposals.push(proposal()))
+    expect(stored()?.proposals).toHaveLength(1)
+  })
+
+  it('an unreadable value the platform cannot show as text stays unreadable, and Start over still recovers it', async () => {
+    putRaw(KEY, null)
+    await expect(ensureKnowledgeLoaded({ fresh: true })).rejects.toBeInstanceOf(KnowledgeUnreadableError)
+    expect(knowledgeStore.getState().unreadable).toBe(true)
+    await expect(startKnowledgeOver()).resolves.toBe(true)
+    expect(stored()).toEqual(emptyKnowledgeState())
+  })
+
+  it.each([
+    ['a readable document', true],
+    ['nothing stored', false],
+  ])('Start over on %s resolves false and writes nothing', async (_, seeded) => {
+    if (seeded) putRaw(KEY, { items: [await makeItem({ id: 'k1' })] })
+    await expect(startKnowledgeOver()).resolves.toBe(false)
+    expect(testStorage.setItemNow).not.toHaveBeenCalled()
+    if (seeded) expect(stored()?.items.map((i) => i.id)).toEqual(['k1'])
+    else expect(getRaw(KEY)).toBeUndefined()
+  })
+
+  it('a good read clears the unreadable flag', async () => {
+    putRaw(KEY, 'oops')
+    await expect(ensureKnowledgeLoaded({ fresh: true })).rejects.toBeInstanceOf(KnowledgeUnreadableError)
+    expect(knowledgeStore.getState().unreadable).toBe(true)
+    putRaw(KEY, { items: [await makeItem({ id: 'k1' })] })
+    await ensureKnowledgeLoaded({ fresh: true })
+    expect(knowledgeStore.getState().unreadable).toBe(false)
   })
 
   it('drops one bad record, keeps the rest', async () => {

@@ -1,6 +1,6 @@
 import type { ModelInterface } from '@shared/models/types'
 import { createMessage, type Message, ModelProviderEnum, type StreamTextResult } from '@shared/types'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   createAndGenerateMock,
@@ -92,18 +92,32 @@ vi.mock('@/stores/settingsStore', () => ({
   },
 }))
 
+const memorySettingsState = vi.hoisted(() => ({ enabled: false, autoSave: false, autoConsolidate: false }))
+const rebuildProfileSpy = vi.hoisted(() => vi.fn(async () => {}))
+const getMemoryToolSetSpy = vi.hoisted(() => vi.fn())
+vi.mock('@/packages/memory/tools', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/packages/memory/tools')>()
+  return {
+    ...actual,
+    getMemoryToolSet: (ctx: Parameters<typeof actual.getMemoryToolSet>[0]) => {
+      getMemoryToolSetSpy(ctx)
+      return actual.getMemoryToolSet(ctx)
+    },
+  }
+})
+
 vi.mock('@/stores/memoryStore', () => ({
   ensureMemoryStoreInit: vi.fn(async () => {}),
   memoryStore: {
     getState: () => ({
       ready: true,
-      settings: { enabled: false, autoSave: false },
+      settings: memorySettingsState,
       globalBank: { scope: 'global', entries: [], profileSummary: '', version: 1 },
       agentBanks: {},
       ensureAgentBank: vi.fn(async () => ({ scope: 'agent', entries: [], profileSummary: '', version: 1 })),
       replaceGlobalBank: vi.fn(),
       replaceAgentBank: vi.fn(),
-      rebuildProfile: vi.fn(),
+      rebuildProfile: rebuildProfileSpy,
     }),
   },
 }))
@@ -129,9 +143,10 @@ vi.mock('@/packages/remote', () => ({
   parseUserLinkFree: parseUserLinkFreeMock,
 }))
 
+const mcpToolsState = vi.hoisted(() => ({ tools: {} as Record<string, unknown> }))
 vi.mock('../mcp/controller', () => ({
   mcpController: {
-    getAvailableTools: () => ({}),
+    getAvailableTools: () => mcpToolsState.tools,
   },
 }))
 
@@ -664,6 +679,31 @@ describe('streamText client_recall', () => {
     })
   })
 
+  it('counts Ollama on another machine, or a cloud model on Ollama, as a cloud model', async () => {
+    const { streamText } = await import('./stream-text')
+    const chat = vi.fn(async () => ({ contentParts: [], text: 'done' }) as StreamTextResult)
+    settingsState.providers[ModelProviderEnum.Ollama] = { apiHost: 'http://10.0.0.5:11434' }
+    try {
+      await streamText(createTestModel(chat), {
+        messages: [createMessage('user', 'hello')],
+        sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'llama3' },
+        onResultChangeWithCancel: vi.fn(),
+      })
+      expect(loadPmToolSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ cloudModel: true }))
+    } finally {
+      delete settingsState.providers[ModelProviderEnum.Ollama]
+    }
+    await streamText(
+      { ...createTestModel(chat), modelId: 'gpt-oss:120b-cloud' },
+      {
+        messages: [createMessage('user', 'hello')],
+        sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'gpt-oss:120b-cloud' },
+        onResultChangeWithCancel: vi.fn(),
+      }
+    )
+    expect(loadPmToolSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ cloudModel: true }))
+  })
+
   it('is not loaded for a turn with its own tools or a model without tool use', async () => {
     const { streamText } = await import('./stream-text')
     const chat = vi.fn((_messages, options) => {
@@ -875,5 +915,354 @@ describe('streamText local-only client data on a cloud turn', () => {
     })
     expect(loadPmToolSetMock).toHaveBeenCalledTimes(1)
     expect(instructions()).toContain('CLIENT RECALL TOOLS')
+  })
+})
+
+describe('streamText legacy memory in chats that hold local-only text (B3)', () => {
+  const recallAnswer = (): Message => ({
+    ...createMessage('assistant', 'Jo wrote 8,400.'),
+    contentParts: [
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'r1',
+        toolName: 'client_recall',
+        args: {},
+        result: { localOnly: true },
+      },
+      { type: 'text', text: 'Jo wrote 8,400.' },
+    ],
+  })
+  const toolsOffered = vi.fn()
+  const chat = () =>
+    vi.fn((_messages, options) => {
+      toolsOffered(Object.keys(options.tools ?? {}))
+      return Promise.resolve({ contentParts: [], text: 'done' } as StreamTextResult)
+    })
+  const lastCtx = () => getMemoryToolSetSpy.mock.calls.at(-1)?.[0]
+  const memoryToolsOffered = () =>
+    (toolsOffered.mock.calls.at(-1)?.[0] as string[]).filter((n) => n.startsWith('memory_'))
+
+  beforeEach(() => {
+    memorySettingsState.enabled = true
+    getMemoryToolSetSpy.mockClear()
+    toolsOffered.mockClear()
+    loadPmToolSetMock.mockReset().mockResolvedValue(null)
+  })
+  afterEach(() => {
+    memorySettingsState.enabled = false
+  })
+
+  const ollama = { provider: ModelProviderEnum.Ollama, modelId: 'llama3' }
+  const openai = { provider: ModelProviderEnum.OpenAI, modelId: 'gpt-4o' }
+
+  it('turns off saving and reflecting in a chat that holds a local-only recall, local or cloud', async () => {
+    const { streamText } = await import('./stream-text')
+    for (const sessionSettings of [ollama, openai]) {
+      await streamText(createTestModel(chat()), {
+        messages: [createMessage('user', 'quote?'), recallAnswer(), createMessage('user', 'remember that')],
+        sessionSettings,
+        onResultChangeWithCancel: vi.fn(),
+      })
+      expect(lastCtx()).toMatchObject({ localOnlyChat: true, sessionSettings })
+      expect(memoryToolsOffered()).toEqual(['memory_recall', 'memory_list', 'memory_forget'])
+    }
+  })
+
+  it('turns them off in a Needs you chat, and on a local turn offered client recall', async () => {
+    const { streamText } = await import('./stream-text')
+    await streamText(createTestModel(chat()), {
+      messages: [{ ...createMessage('assistant', 'Client asks'), pmQuestionId: 'q1' }, createMessage('user', 'ok')],
+      sessionSettings: openai,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(lastCtx()).toMatchObject({ localOnlyChat: true })
+
+    loadPmToolSetMock.mockResolvedValue({ description: 'CLIENT RECALL TOOLS', tools: { client_recall: {} } })
+    await streamText(createTestModel(chat()), {
+      messages: [createMessage('user', 'When is the Acme launch?')],
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(lastCtx()).toMatchObject({ localOnlyChat: true })
+    expect(memoryToolsOffered()).not.toContain('memory_retain')
+
+    // A cloud turn offered client recall gets no local-only records, so memory stays as it is.
+    await streamText(createTestModel(chat()), {
+      messages: [createMessage('user', 'When is the Acme launch?')],
+      sessionSettings: openai,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(lastCtx()).toMatchObject({ localOnlyChat: false })
+  })
+
+  it('keeps every memory tool in an ordinary chat and consolidates with the chat model', async () => {
+    const { streamText } = await import('./stream-text')
+    await streamText(createTestModel(chat()), {
+      messages: [createMessage('user', 'I like tea')],
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(lastCtx()).toMatchObject({ localOnlyChat: false, sessionSettings: ollama })
+    expect(memoryToolsOffered()).toContain('memory_retain')
+    expect(memoryToolsOffered()).toContain('memory_reflect')
+
+    memorySettingsState.autoConsolidate = true
+    try {
+      lastCtx().scheduleConsolidate('global')
+      expect(rebuildProfileSpy).toHaveBeenLastCalledWith('global', undefined, true, { sessionSettings: ollama })
+    } finally {
+      memorySettingsState.autoConsolidate = false
+    }
+  })
+})
+
+describe('streamText web search on a local-only turn (S13)', () => {
+  const localOnlyRecall = (): Message => ({
+    ...createMessage('assistant', ''),
+    contentParts: [
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'c1',
+        toolName: 'client_recall',
+        args: { query: 'price' },
+        result: { ok: true, records: [{ text: 'The price is 4,200 USD' }], gaps: [], localOnly: true },
+      },
+      { type: 'text', text: 'Jo said the price is 4,200 USD.' },
+    ],
+  })
+  const toolsSeen = () => {
+    const seen: Record<string, unknown>[] = []
+    const chat = vi.fn((_messages, options) => {
+      seen.push({ ...(options.tools ?? {}) })
+      return Promise.resolve({ contentParts: [], text: 'done' } as StreamTextResult)
+    })
+    return { chat, seen }
+  }
+
+  beforeEach(() => {
+    loadPmToolSetMock
+      .mockReset()
+      .mockResolvedValue({ description: 'CLIENT RECALL TOOLS', tools: { client_recall: { execute: vi.fn() } } })
+  })
+
+  it('offers no web search or link reading to a local turn offered client recall; a cloud turn keeps them', async () => {
+    const { streamText } = await import('./stream-text')
+    const { chat, seen } = toolsSeen()
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'What did Jo say?')],
+      webBrowsing: true,
+      sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'test-model' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(seen[0].client_recall).toBeDefined()
+    expect(seen[0].web_search).toBeUndefined()
+    expect(seen[0].parse_link).toBeUndefined()
+    expect(injectModelSystemPromptMock.mock.calls.at(-1)?.[2]).not.toContain('web_search')
+
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'What did Jo say?')],
+      webBrowsing: true,
+      sessionSettings: { provider: ModelProviderEnum.OpenAI, modelId: 'gpt' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(seen[1].web_search).toBeDefined()
+    expect(seen[1].parse_link).toBeDefined()
+  })
+
+  it('removes web tools a turn brings itself (plan mode) on a local-only turn; a cloud turn keeps them', async () => {
+    loadPmToolSetMock.mockResolvedValue(null)
+    const { streamText } = await import('./stream-text')
+    const { chat, seen } = toolsSeen()
+    const ownTools = () => ({
+      web_search: { description: 'search', execute: vi.fn() },
+      parse_link: { description: 'link', execute: vi.fn() },
+      google_search: { description: 'grounding', execute: vi.fn() },
+      read_file: { description: 'read', execute: vi.fn() },
+    })
+    const messages = () => [createMessage('user', 'Price?'), localOnlyRecall(), createMessage('user', 'Plan it')]
+    await streamText(createTestModel(chat), {
+      messages: messages(),
+      tools: ownTools() as never,
+      sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'test-model' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(Object.keys(seen[0])).toEqual(['read_file'])
+
+    await streamText(createTestModel(chat), {
+      messages: messages(),
+      tools: ownTools() as never,
+      sessionSettings: { provider: ModelProviderEnum.OpenAI, modelId: 'gpt' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(Object.keys(seen[1])).toEqual(expect.arrayContaining(['web_search', 'parse_link', 'read_file']))
+  })
+
+  it('does no prompt-engineered search or native grounding for a local model in a chat holding local-only text', async () => {
+    loadPmToolSetMock.mockResolvedValue(null)
+    const { streamText } = await import('./stream-text')
+    const tools = await import('./tools')
+    vi.mocked(tools.searchByPromptEngineering).mockClear()
+    const { chat, seen } = toolsSeen()
+    const messages = () => [createMessage('user', 'Price?'), localOnlyRecall(), createMessage('user', 'And now?')]
+    await streamText(createTestModel(chat, false), {
+      messages: messages(),
+      webBrowsing: true,
+      sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'test-model' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(tools.searchByPromptEngineering).not.toHaveBeenCalled()
+    expect(chat).toHaveBeenCalledTimes(1)
+
+    await streamText(createTestModel(chat), {
+      messages: messages(),
+      webBrowsing: true,
+      nativeWebSearch: 'gemini-grounding',
+      sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'test-model' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(seen[1].google_search).toBeUndefined()
+    expect(seen[1].web_search).toBeUndefined()
+  })
+})
+
+describe('streamText outside tools on a local-only turn (D2)', () => {
+  const localOnlyRecall = (): Message => ({
+    ...createMessage('assistant', ''),
+    contentParts: [
+      {
+        type: 'tool-call',
+        state: 'result',
+        toolCallId: 'c1',
+        toolName: 'client_recall',
+        args: { query: 'price' },
+        result: { ok: true, records: [{ text: 'The price is 4,200 USD' }], gaps: [], localOnly: true },
+      },
+      { type: 'text', text: 'Jo said the price is 4,200 USD.' },
+    ],
+  })
+  const messages = () => [createMessage('user', 'Price?'), localOnlyRecall(), createMessage('user', 'And now?')]
+  const toolsSeen = () => {
+    const seen: Record<string, unknown>[] = []
+    const chat = vi.fn((_messages, options) => {
+      seen.push({ ...(options.tools ?? {}) })
+      return Promise.resolve({ contentParts: [], text: 'done' } as StreamTextResult)
+    })
+    return { chat, seen }
+  }
+  const ollama = { provider: ModelProviderEnum.Ollama, modelId: 'test-model' }
+  const openai = { provider: ModelProviderEnum.OpenAI, modelId: 'gpt' }
+  const OUTSIDE = ['mcp__notes__search', 'mcp__web_search', 'read_video_url', 'generate_image']
+
+  beforeEach(() => {
+    loadPmToolSetMock.mockReset().mockResolvedValue(null)
+    mcpToolsState.tools = {
+      mcp__notes__search: { description: 'search notes', execute: vi.fn() },
+      mcp__web_search: { description: 'search', execute: vi.fn() },
+    }
+    settingsState.extension.videoUrl.enabled = true
+  })
+  afterEach(() => {
+    mcpToolsState.tools = {}
+    settingsState.extension.videoUrl.enabled = false
+  })
+
+  it('offers no MCP, video-URL or image tools to a local-only turn and says so; a cloud turn keeps them', async () => {
+    const { streamText } = await import('./stream-text')
+    const { chat, seen } = toolsSeen()
+    const local = await streamText(createTestModel(chat), {
+      messages: messages(),
+      enableImageGenerationTool: true,
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    for (const name of OUTSIDE) expect(seen[0][name]).toBeUndefined()
+    expect(local.localOnlyToolsOff).toBe(true)
+    const instructions = String(injectModelSystemPromptMock.mock.calls.at(-1)?.[2] ?? '')
+    expect(instructions).not.toContain('generate_image')
+
+    const cloud = await streamText(createTestModel(chat), {
+      messages: messages(),
+      enableImageGenerationTool: true,
+      sessionSettings: openai,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    for (const name of OUTSIDE) expect(seen[1][name]).toBeDefined()
+    expect(cloud.localOnlyToolsOff).toBe(false)
+  })
+
+  it('removes outside tools a turn brings itself (browser, MCP, web) and keeps computer use', async () => {
+    const { streamText } = await import('./stream-text')
+    const { chat, seen } = toolsSeen()
+    const ownTools = () => ({
+      browser_navigate: { description: 'go', execute: vi.fn() },
+      browser_snapshot: { description: 'look', execute: vi.fn() },
+      mcp__x__fetch: { description: 'fetch', execute: vi.fn() },
+      read_video_url: { description: 'video', execute: vi.fn() },
+      generate_image: { description: 'image', execute: vi.fn() },
+      web_search: { description: 'search', execute: vi.fn() },
+      computer_screenshot: { description: 'see', execute: vi.fn() },
+      read_file: { description: 'read', execute: vi.fn() },
+    })
+    const local = await streamText(createTestModel(chat), {
+      messages: messages(),
+      tools: ownTools() as never,
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(Object.keys(seen[0]).sort()).toEqual(['computer_screenshot', 'read_file'])
+    expect(local.localOnlyToolsOff).toBe(true)
+
+    await streamText(createTestModel(chat), {
+      messages: messages(),
+      tools: ownTools() as never,
+      sessionSettings: openai,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(Object.keys(seen[1]).sort()).toEqual(Object.keys(ownTools()).sort())
+  })
+
+  it('applies after a copilot allowlist that names outside tools', async () => {
+    const { streamText } = await import('./stream-text')
+    const { chat, seen } = toolsSeen()
+    await streamText(createTestModel(chat), {
+      messages: messages(),
+      sessionSettings: ollama,
+      toolAccess: { mode: 'allowlist', tools: ['mcp__notes__search', 'read_video_url'], includeMcp: true },
+      allowedTools: ['mcp__notes__search', 'read_video_url'],
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(Object.keys(seen[0])).toEqual([])
+  })
+
+  it('carries no flag when nothing was removed and the web toggle was off; the web toggle alone sets it', async () => {
+    mcpToolsState.tools = {}
+    settingsState.extension.videoUrl.enabled = false
+    const { streamText } = await import('./stream-text')
+    const { chat } = toolsSeen()
+    const quiet = await streamText(createTestModel(chat), {
+      messages: messages(),
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(quiet.localOnlyToolsOff).toBe(false)
+
+    const web = await streamText(createTestModel(chat), {
+      messages: messages(),
+      webBrowsing: true,
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(web.localOnlyToolsOff).toBe(true)
+
+    // A model without tool use takes the prompt-engineered path; the web toggle still reads as off.
+    const noTools = await streamText(createTestModel(chat, false), {
+      messages: messages(),
+      webBrowsing: true,
+      sessionSettings: ollama,
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(noTools.localOnlyToolsOff).toBe(true)
   })
 })

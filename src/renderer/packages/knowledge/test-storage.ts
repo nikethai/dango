@@ -12,6 +12,12 @@ import { contentHash } from './text'
 /** The backing map. Values are stored as clones, so tests can inspect or overwrite them directly. */
 export const memory = new Map<string, unknown>()
 
+/**
+ * The stored text behind a value, as `BaseStorage.readRawItem` returns it. A key with no entry here is one the
+ * platform cannot show as text (`undefined`), so the knowledge store fails closed on it.
+ */
+export const rawText = new Map<string, string | null>()
+
 const clone = <T>(v: T): T => (v === undefined ? v : structuredClone(v))
 
 export const testStorage = {
@@ -21,16 +27,24 @@ export const testStorage = {
   ),
   /** Like `StoreStorage.readItem`: the stored value or `null`, never a default write. */
   readItem: vi.fn((key: string): Promise<unknown> => Promise.resolve(memory.has(key) ? clone(memory.get(key)) : null)),
+  /** Like `StoreStorage.readRawItem`: the stored text, or `undefined` when none was set with `putRawText`. */
+  readRawItem: vi.fn(
+    (key: string): Promise<string | null | undefined> =>
+      Promise.resolve(rawText.has(key) ? rawText.get(key) : undefined)
+  ),
   setItem: vi.fn((key: string, value: unknown): Promise<void> => {
     memory.set(key, clone(value))
+    rawText.delete(key)
     return Promise.resolve()
   }),
   setItemNow: vi.fn((key: string, value: unknown): Promise<void> => {
     memory.set(key, clone(value))
+    rawText.delete(key)
     return Promise.resolve()
   }),
   removeItem: vi.fn((key: string): Promise<void> => {
     memory.delete(key)
+    rawText.delete(key)
     return Promise.resolve()
   }),
   getAllKeys: vi.fn((): Promise<string[]> => Promise.resolve([...memory.keys()])),
@@ -39,12 +53,22 @@ export const testStorage = {
 /** Clears the map and the call history of every storage spy. */
 export function resetTestStorage() {
   memory.clear()
+  rawText.clear()
   for (const fn of Object.values(testStorage)) fn.mockClear()
 }
 
 /** Writes a raw value, bypassing the store (another window, or a hand edit). */
 export function putRaw(key: string, value: unknown) {
   memory.set(key, clone(value))
+  rawText.delete(key)
+}
+
+/**
+ * Sets the stored text behind `key` (what the platform holds before parsing). Use it after `putRaw(key, null)`
+ * for a value the platform read as `null`: `'null'` or `''` is a missing document, anything else a corrupt one.
+ */
+export function putRawText(key: string, text: string | null) {
+  rawText.set(key, text)
 }
 
 /** Reads the raw stored value. */

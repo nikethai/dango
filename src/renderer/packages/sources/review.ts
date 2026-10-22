@@ -6,7 +6,7 @@ import { type JobHandler, NeedsUserError } from '@/packages/background'
 import { proposeKnowledge } from '@/packages/knowledge'
 import { getSourceKind } from './kinds'
 import { throwIfAborted } from './kinds/common'
-import { backgroundModelChoice, hasUsableModel, isLocalModelProvider } from './model-check'
+import { backgroundModelChoice, hasUsableModel, isLocalModelIn } from './model-check'
 import { _resetReviewStateForTests, forgetReviewState, reviewProgressFor } from './review-state'
 import { getSource, loadSources, SourcesUnreadableError, sourcesStore, updateSource } from './store'
 
@@ -120,7 +120,7 @@ function uniqueByRef(items: SourceItem[]): SourceItem[] {
 }
 
 /**
- * The job's source, or undefined when it was removed (its jobs then end quietly). Sources that could not be read are
+ * The job's source, or undefined when it was removed or its removal is pending (its jobs then end quietly, S11). Sources that could not be read are
  * not "removed": that throws, so the runner retries the job.
  */
 async function sourceFor(sourceId: string | undefined): Promise<ConnectedSource | undefined> {
@@ -131,6 +131,12 @@ async function sourceFor(sourceId: string | undefined): Promise<ConnectedSource 
 
 /** A run of a removed source: no error (so no retries and no Needs you entry) and no Done entry. */
 const removedOutcome = () => ({ summary: i18n.t('This source was removed.'), addDoneEntry: false })
+
+/**
+ * A review of a source whose Background review is off (B6): a job that was running, waiting to retry or resumed when
+ * the switch went off. Ends like a removed source: no error, no Done entry, and the cursor is not saved.
+ */
+const switchedOffOutcome = () => ({ summary: i18n.t('Background review is off for this source.'), addDoneEntry: false })
 
 async function cursorStorage() {
   const [mod, { StorageKeyGenerator }] = await Promise.all([import('@/storage'), import('@/storage/StoreStorage')])
@@ -158,6 +164,9 @@ async function askModel(source: ConnectedSource, batch: SourceItem[]): Promise<s
   ])
   const global = settingsStore.getState().getSettings()
   const choice = backgroundModelChoice(global, lastUsedModelStore.getState().chat)
+  // Per batch: the background model (or the source's "Keep on this device only") can change while a long review runs.
+  const localOnly = source.localOnly || !!getSource(source.id, { includePending: true })?.localOnly
+  if (localOnly && !isLocalModelIn(global, choice)) throw new NeedsUserError(LOCAL_ONLY_REASON, chooseModel())
   const settings = { ...global, ...(choice ? { provider: choice.provider, modelId: choice.modelId } : {}) }
   const model = getModel(settings, global, await platform.getConfig(), await createModelDependencies())
   const { system, user } = buildReviewPrompt(source.label, batch)
@@ -177,8 +186,7 @@ async function checkModel(source: ConnectedSource): Promise<void> {
   const settings = settingsStore.getState().getSettings()
   const lastUsed = lastUsedModelStore.getState().chat
   if (!hasUsableModel(settings, lastUsed)) throw new NeedsUserError(NO_MODEL_REASON, chooseModel())
-  const provider = backgroundModelChoice(settings, lastUsed)?.provider
-  if (source.localOnly && !isLocalModelProvider(provider)) {
+  if (source.localOnly && !isLocalModelIn(settings, backgroundModelChoice(settings, lastUsed))) {
     throw new NeedsUserError(LOCAL_ONLY_REASON, chooseModel())
   }
 }
@@ -197,6 +205,7 @@ function reviewSummary(read: number, proposals: number, label: string): string {
 export const reviewJobHandler: JobHandler = async ({ job, signal, progress }) => {
   const source = await sourceFor(job.sourceId)
   if (!source) return removedOutcome()
+  if (!source.backgroundReview) return switchedOffOutcome()
   await checkModel(source)
   const def = getSourceKind(source.kind)
   if (!def?.read) throw new Error(i18n.t('This source cannot be reviewed.'))
@@ -213,6 +222,11 @@ export const reviewJobHandler: JobHandler = async ({ job, signal, progress }) =>
   let done = items.length - pending.length
   for (const batch of toBatches(pending)) {
     throwIfAborted(signal)
+    // Turned off or removed (S11) mid-run: stop before the next model call. Proposals filed so far stay; the cursor is
+    // not saved, so an Undo or a switch-on resumes.
+    const now = getSource(source.id)
+    if (!now) return removedOutcome()
+    if (now.backgroundReview === false) return switchedOffOutcome()
     progress(i18n.t('Reviewed {{done}} of {{count}} items', { done, count: items.length }))
     const drafts = parseProposalDraft(await askModel(source, batch), new Set(batch.map((item) => item.ref)))
     const byRef = new Map(batch.map((item) => [item.ref, item]))

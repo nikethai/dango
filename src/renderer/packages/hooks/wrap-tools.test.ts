@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { ToolSet } from 'ai'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const runHooks = vi.fn()
 const loadHookOverrides = vi.fn()
@@ -74,5 +74,31 @@ describe('wrapToolsWithLifecycleHooks', () => {
     } as unknown as ToolSet
     const wrapped = wrapToolsWithLifecycleHooks(tools, {})
     expect(wrapped.google_search).toEqual(tools.google_search)
+  })
+
+  it('never runs PostToolUse on client_recall or client_answer results (local-only mail); PreToolUse still runs', async () => {
+    const records = { ok: true, records: [{ text: 'The price is 4,200 USD' }], localOnly: true }
+    const tools = {
+      client_recall: { description: 'recall', execute: vi.fn(async () => records) },
+      client_answer: {
+        description: 'answer',
+        execute: vi.fn(() => Promise.reject(new Error('Jo wrote 4,200 USD'))),
+      },
+      Bash: { description: 'run', execute: vi.fn(async () => ({ ok: true })) },
+    } as unknown as ToolSet
+    const wrapped = wrapToolsWithLifecycleHooks(tools, {}) as unknown as Record<
+      string,
+      { execute: (a: unknown, o: unknown) => Promise<unknown> }
+    >
+
+    await expect(wrapped.client_recall.execute({ query: 'price' }, {})).resolves.toEqual(records)
+    await expect(wrapped.client_answer.execute({ answer: 'yes' }, {})).rejects.toThrow('Jo wrote')
+    const post = () => runHooks.mock.calls.filter(([o]) => (o as { event: string }).event === 'PostToolUse')
+    expect(post()).toEqual([])
+    expect(runHooks).toHaveBeenCalledWith(expect.objectContaining({ event: 'PreToolUse', toolName: 'client_recall' }))
+    expect(runHooks).toHaveBeenCalledWith(expect.objectContaining({ event: 'PreToolUse', toolName: 'client_answer' }))
+
+    await wrapped.Bash.execute({ cmd: 'ls' }, {})
+    expect(post().map(([o]) => (o as { toolName: string }).toolName)).toEqual(['Bash'])
   })
 })

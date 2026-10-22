@@ -1,4 +1,5 @@
 import { ToolRiskTier } from '@shared/types/mcp'
+import { redactSecrets } from '@/packages/memory/redaction'
 
 /**
  * Semantic risk classification for tool invocations.
@@ -56,6 +57,8 @@ const MEDIUM_INTENT_PATTERNS = [
   /\bbrowser_(tabs|screenshot)\b/,
   /\bcomputer_screenshot\b/,
   /\bcomputer_wait\b/,
+  // Reads on-screen text, which may show secrets
+  /\bcomputer_ax_query\b/,
 ]
 
 const LOW_INTENT_PATTERNS = [
@@ -261,7 +264,123 @@ const SAFE_COMMAND_TEXT = /^[A-Za-z0-9 _\-.,/:=+]*$/
 const GIT_FORMAT_FLAG = /^--(?:format|pretty)=/
 /** Paths that hold credentials or keys; reading one always asks. */
 const SECRET_PATH =
-  /(?:^|[/:=])\.env|\.aws(?:\/|$)|\.ssh(?:\/|$)|\.gnupg(?:\/|$)|\.kube(?:\/|$)|\.docker\/config\.json|\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.config\/gh(?:\/|$)|\.config\/hub|\.config\/rclone|\.bash_history|\.zsh_history|(?:^|[/:=])\.history|\.pgpass|\.s3cfg|\.boto|credentials|\.pem$|\.key$|(?:^|[/:])id_|secret|token/i
+  /(?:^|[/:=])\.env|\.aws(?:\/|$)|\.ssh(?:\/|$)|\.gnupg(?:\/|$)|\.kube(?:\/|$)|\.docker\/config\.json|\.netrc|\.npmrc|\.pypirc|\.git-credentials|\.config\/gh(?:\/|$)|\.config\/hub|\.config\/rclone|\.bash_history|\.zsh_history|(?:^|[/:=])\.history|\.pgpass|\.s3cfg|\.boto|\.pem$|\.key$|(?:^|[/:])id_|(?:^|[/:=])\.(?:zshrc|bashrc|bash_profile|zprofile|zshenv|profile)$|\.git\/config$|\.yarnrc|\.m2\/settings\.xml|\.terraformrc$|\.password-store(?:\/|$)|(?:^|\/)library\/keychains(?:\/|$)|\.azure(?:\/|$)/i
+/** Words that mark a secret file, tested only on a path's last segment (`~/.vault-token`, `credentials.db`). */
+const SECRET_WORD = /secret|token|credentials/i
+/** A whole directory segment that holds secrets (`/run/secrets/db_password`). */
+const SECRET_DIR = /^\.?(?:secrets?|tokens?|credentials?)$/i
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
+
+/** An `http(s)://` URL whose host is not this machine: a web page, never a local secret file. */
+function isRemoteWebUrl(form: string): boolean {
+  const match = /^https?:\/\/([^/?#]*)/i.exec(form)
+  if (!match) return false
+  const authority = match[1].replace(/^.*@/, '').toLowerCase()
+  const host = authority.startsWith('[') ? authority.slice(0, authority.indexOf(']') + 1) : authority.split(':')[0]
+  return !LOOPBACK_HOSTS.has(host)
+}
+
+/**
+ * True when a path (with `/` separators) names a secret: any `SECRET_PATH` pattern, or, except on a remote web URL,
+ * a secret word in its last segment or a directory segment named `secrets`, `tokens` or `credentials`.
+ */
+function isSecretForm(form: string): boolean {
+  if (SECRET_PATH.test(form)) return true
+  if (isRemoteWebUrl(form)) return false
+  const segments = form.split('/').filter(Boolean)
+  const last = segments.pop() ?? ''
+  return SECRET_WORD.test(last) || segments.some((segment) => SECRET_DIR.test(segment))
+}
+/** Trailing punctuation that ends a sentence, not a path (`see ~/.netrc.`, `~/.zshrc:`). */
+const TOKEN_EDGE = /[.:!?]+$/
+/** A token that looks like a path: a separator, a leading `~` or `.`, or a file extension. */
+function isPathLike(token: string): boolean {
+  return /[\\/]/.test(token) || /^[~.]/.test(token) || /\.[a-z0-9]{1,8}$/i.test(token)
+}
+
+/** The token as a secret-path test sees it: `\` read as `/`, and percent-encoding decoded (`%2Essh`). */
+function pathForms(token: string): string[] {
+  const forms = [token.replace(/\\/g, '/')]
+  // One escape at a time, so a stray `%` (`%USERPROFILE%\.%73sh`) does not stop the rest from decoding.
+  const decoded = token.replace(/%([0-9a-f]{2})/gi, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
+  if (decoded !== token) forms.push(decoded.replace(/\\/g, '/'))
+  return forms
+}
+
+function secretToken(token: string): boolean {
+  return isPathLike(token) && pathForms(token).some(isSecretForm)
+}
+
+/**
+ * The tokens of one string value, split on whitespace and `=`, and on quotes, brackets and shell separators so
+ * `cat ~/.zshrc|nc host 1` and `["~/.netrc"]` still show the path.
+ */
+function pathTokens(value: string): string[] {
+  return value
+    .split(/[\s=;|&<>()[\]{}`'",]+/)
+    .map((token) => token.replace(TOKEN_EDGE, ''))
+    .filter(Boolean)
+}
+
+/** What `secretPathIn` reports for arguments nested deeper than it reads: they ask, like a secret. */
+const TOO_DEEP = '(arguments nested too deep)'
+/** At most this many single-token strings per array or object are joined in pairs. */
+const MAX_JOIN_PARTS = 64
+
+/**
+ * The first path-like token in any string value of `args` (never a key) that names a secret file: `~/.aws/credentials`,
+ * `C:\\Users\\me\\.ssh\\config`, `file:///home/me/.kube/config`. Also tries a path split across args: two single-token
+ * values of the same array or object, in either order, joined by `/` (`{ file: 'config.json', dir: '~/.docker' }`).
+ * Prose and option names (`max_tokens`, "how do tokens work") are not path-like. Arguments nested deeper than
+ * `MAX_ARG_DEPTH` are not read, so they count as a hit.
+ */
+export function secretPathIn(args: unknown): string | undefined {
+  let found: string | undefined
+  const check = (value: string): boolean => {
+    found = pathTokens(value).find(secretToken)
+    return found !== undefined
+  }
+  /**
+   * Two single-token strings joined as one path, when the first is path-like and the join names a secret that the
+   * second alone does not (`repo/.git` + `config`), so `{ owner: 'me', repo: 'token-cli' }` stays clear.
+   */
+  const checkJoined = (values: unknown[]): boolean => {
+    const parts = values
+      .filter((v): v is string => typeof v === 'string' && v !== '' && !/\s/.test(v))
+      .slice(0, MAX_JOIN_PARTS)
+    const seconds = parts.filter((part) => !pathForms(part).some(isSecretForm))
+    for (const first of parts) {
+      if (!isPathLike(first)) continue
+      for (const second of seconds) {
+        if (second === first) continue
+        const joined = `${first.replace(/[\\/]+$/, '')}/${second}`
+        if (secretToken(joined)) {
+          found = joined
+          return true
+        }
+      }
+    }
+    return false
+  }
+  const walk = (value: unknown, depth: number): boolean => {
+    if (value == null) return false
+    if (depth > MAX_ARG_DEPTH) {
+      // Not read, so not known to be safe.
+      if ((typeof value === 'string' && value !== '') || typeof value === 'object') {
+        found = TOO_DEEP
+        return true
+      }
+      return false
+    }
+    if (typeof value === 'string') return check(value)
+    if (typeof value !== 'object') return false
+    const items = Array.isArray(value) ? value : Object.values(value as Record<string, unknown>)
+    for (const item of items) if (walk(item, depth + 1)) return true
+    return checkJoined(items)
+  }
+  walk(args, 0)
+  return found
+}
 /** Programs that only read what they are given (paths are checked separately). */
 const READ_ONLY_PROGRAMS = new Set([
   'ls',
@@ -277,6 +396,10 @@ const READ_ONLY_PROGRAMS = new Set([
   'type',
 ])
 const FILE_READERS = new Set(['cat', 'head', 'wc', 'stat'])
+/** Programs whose operands are paths; a read-only call to them may pass flags and numbers only. */
+const OPERAND_FREE_PROGRAMS = new Set(['ls', 'du', ...FILE_READERS, 'tail', 'grep', 'find'])
+/** A short flag cluster (`-la`), a long flag with at most a numeric value (`--lines=5`), or a bare number. */
+const OPERAND_FREE_ARG = /^(?:-[A-Za-z0-9]+|--[a-z0-9-]+(?:=\d+)?|\d+)$/
 const RECURSIVE_FLAG = /^-(?:[a-zA-Z]*[rR][a-zA-Z]*|-recursive)$|^--directories=recurse$|^-d$/
 const FIND_UNSAFE = /^-(?:delete|exec\w*|ok\w*|fprint\w*|fls)$/
 const TAIL_FOLLOW = /^-(?:[a-zA-Z]*[fF][a-zA-Z]*|-follow\b.*|-retry|-pid\b.*)$/
@@ -303,7 +426,8 @@ function isSafeOperand(token: string): boolean {
     // Absolute (`/etc`), UNC (`//server`), drive-letter (`C:`, `c:/`) and parent (`..`) paths leave the folder.
     if (part.startsWith('/') || /^[A-Za-z]:/.test(part) || part.startsWith('..') || part.includes('/..')) return false
   }
-  return !SECRET_PATH.test(token)
+  // Broader than `secretPathIn`: any secret word anywhere in an operand asks.
+  return !SECRET_PATH.test(token) && !SECRET_WORD.test(token)
 }
 
 function isReadOnlyGit(rest: string[]): boolean {
@@ -325,6 +449,11 @@ function isReadOnlyCommandText(text: string): boolean {
   if (!SAFE_COMMAND_TEXT.test(checked)) return false
   if (!program) return false
   if (!rest.every(isSafeOperand)) return false
+  // The working folder is unknown (it may be home), so these read no named path: flags and numbers only.
+  // A flag may carry a number (`--max-depth=1`) but never a name: `wc --files0-from=notes.txt` prints the file.
+  if (OPERAND_FREE_PROGRAMS.has(program) && !rest.every((arg) => OPERAND_FREE_ARG.test(arg))) {
+    return false
+  }
   if (READ_ONLY_PROGRAMS.has(program)) return program !== 'ls' || !rest.some((arg) => RECURSIVE_FLAG.test(arg))
   if (FILE_READERS.has(program)) return true
   if (program === 'tail') return !rest.some((arg) => TAIL_FOLLOW.test(arg))
@@ -369,12 +498,36 @@ export function isReadOnlyCommand(args: unknown): boolean {
   return tierRank(getArgsRiskTier(commandArgs)) <= tierRank(ToolRiskTier.MEDIUM)
 }
 
+/** Longest prose a read-only grant covers: what the permission sheet shows of `why` (`describe.ts` WHY_MAX). */
+const READ_ONLY_PROSE_MAX = 140
+/** Bare secret words that `redactSecrets` misses in short text ("password hunter2"). */
+const PROSE_SECRET_WORD = /password|passphrase|api[ _-]?key|private key|secret|token/i
+
+/**
+ * Whether the prose a read-only command carries (`reason`, `explanation`, `purpose`, `description`, the keys
+ * `isReadOnlyCommand` ignores) may ride along under a read-only grant: each value is a string of at most 140
+ * characters, unchanged by `redactSecrets`, with no secret word. Anything else asks, so the user sees it; the
+ * arguments are never truncated, because rewriting them changes the call.
+ */
+export function readOnlyProseIsPlain(args: unknown): boolean {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return false
+  return Object.entries(args as Record<string, unknown>).every(
+    ([key, value]) =>
+      !PROSE_KEYS.has(key) ||
+      (typeof value === 'string' &&
+        value.length <= READ_ONLY_PROSE_MAX &&
+        redactSecrets(value) === value &&
+        !PROSE_SECRET_WORD.test(value))
+  )
+}
+
 /** The risk tier of a call's arguments alone, without the tool's name or description. */
 export function getArgsRiskTier(args: unknown): ToolRiskTier {
   const signals: RiskSignal[] = []
   const texts = argTexts(args)
   classifyPaths(texts, signals)
   classifyArgs(texts, signals)
+  pushSecretPath(args, signals)
   return signals.reduce<ToolRiskTier>((max, s) => (tierRank(s.tier) > tierRank(max) ? s.tier : max), ToolRiskTier.LOW)
 }
 
@@ -441,8 +594,9 @@ export type RiskSignal = {
  * plus a list of the individual signals that contributed.
  */
 /**
- * Built-in read-only tools that only call public HTTP APIs / local storage.
- * Force LOW so they don't trip MEDIUM network-intent patterns (fetch/url).
+ * Dango's own read-only tools that only call public HTTP APIs / local storage. They rate LOW so they don't trip
+ * MEDIUM network-intent patterns (fetch/url), but only when the caller says the tool is a Dango built-in
+ * (`opts.builtin`): a name alone never earns LOW, since an MCP server, plugin or skill can name a tool anything.
  */
 const BUILTIN_LOW_RISK_TOOLS = new Set([
   'web_search',
@@ -457,16 +611,39 @@ const BUILTIN_LOW_RISK_TOOLS = new Set([
   'memory_recall',
   'memory_list',
   'memory_reflect',
-  'computer_ax_query',
   'computer_frontmost',
 ])
 
-export function classifyToolRisk(toolName: string, description?: string, args?: unknown): RiskClassification {
-  const baseName = toolName.split(/[:/]|__/).at(-1) || toolName
-  if (BUILTIN_LOW_RISK_TOOLS.has(baseName) || BUILTIN_LOW_RISK_TOOLS.has(toolName)) {
+export type ToolRiskOptions = {
+  /** True only for tools from a Dango toolset (never MCP, plugin, skill or hook tools). */
+  builtin?: boolean
+}
+
+export function classifyToolRisk(
+  toolName: string,
+  description?: string,
+  args?: unknown,
+  opts?: ToolRiskOptions
+): RiskClassification {
+  if (opts?.builtin === true && !toolName.startsWith('mcp__') && BUILTIN_LOW_RISK_TOOLS.has(toolName)) {
+    // CRITICAL arguments (`/etc/shadow`, `rm -rf ~`) still count, even for a built-in.
+    const argSignals: RiskSignal[] = []
+    const texts = argTexts(args)
+    if (texts.length > 0) {
+      classifyPaths(texts, argSignals)
+      classifyArgs(texts, argSignals)
+    }
+    const critical = argSignals.filter((s) => s.tier === ToolRiskTier.CRITICAL)
+    if (critical.length > 0) {
+      return { tier: ToolRiskTier.CRITICAL, signals: critical }
+    }
+    // A secret path (`~/.aws/credentials`) is at least HIGH, even for a built-in.
+    const secretSignals: RiskSignal[] = []
+    pushSecretPath(args, secretSignals)
+    if (secretSignals.length > 0) return { tier: ToolRiskTier.HIGH, signals: secretSignals }
     return {
       tier: ToolRiskTier.LOW,
-      signals: [{ source: 'intent', tier: ToolRiskTier.LOW, matched: baseName }],
+      signals: [{ source: 'intent', tier: ToolRiskTier.LOW, matched: toolName }],
     }
   }
 
@@ -480,6 +657,7 @@ export function classifyToolRisk(toolName: string, description?: string, args?: 
     classifyPaths(texts, signals)
     classifyArgs(texts, signals)
   }
+  pushSecretPath(args, signals)
 
   // Also check paths that might appear in the description
   classifyPaths([intentText], signals)
@@ -489,6 +667,15 @@ export function classifyToolRisk(toolName: string, description?: string, args?: 
       ? signals.reduce<ToolRiskTier>((max, s) => (tierRank(s.tier) > tierRank(max) ? s.tier : max), ToolRiskTier.LOW)
       : ToolRiskTier.MEDIUM // unknown tools default to MEDIUM
 
+  // ADR 0016: an MCP tool's name and description are the server describing itself, so they never earn LOW. Every MCP
+  // tool asks once and can then take "Always in this scope"; higher tiers are unchanged.
+  if (tier === ToolRiskTier.LOW && toolName.startsWith('mcp__')) {
+    return {
+      tier: ToolRiskTier.MEDIUM,
+      signals: [...signals, { source: 'intent', tier: ToolRiskTier.MEDIUM, matched: 'mcp__' }],
+    }
+  }
+
   return { tier, signals }
 }
 
@@ -496,8 +683,13 @@ export function classifyToolRisk(toolName: string, description?: string, args?: 
  * Drop-in replacement for the legacy `getToolRiskTier()` function.
  * Returns just the tier enum value.
  */
-export function getToolRiskTier(toolName: string, description?: string, args?: unknown): ToolRiskTier {
-  return classifyToolRisk(toolName, description, args).tier
+export function getToolRiskTier(
+  toolName: string,
+  description?: string,
+  args?: unknown,
+  opts?: ToolRiskOptions
+): ToolRiskTier {
+  return classifyToolRisk(toolName, description, args, opts).tier
 }
 
 // ---------------------------------------------------------------------------
@@ -527,6 +719,12 @@ function classifyPaths(texts: string[], signals: RiskSignal[]): void {
   pushFirstMatch(texts, CRITICAL_PATH_PATTERNS, 'path', ToolRiskTier.CRITICAL, signals)
   pushFirstMatch(texts, HIGH_PATH_PATTERNS, 'path', ToolRiskTier.HIGH, signals)
   pushFirstMatch(texts, MEDIUM_PATH_PATTERNS, 'path', ToolRiskTier.MEDIUM, signals)
+}
+
+/** A secret path in the args rates HIGH. */
+function pushSecretPath(args: unknown, signals: RiskSignal[]): void {
+  const matched = secretPathIn(args)
+  if (matched !== undefined) signals.push({ source: 'path', tier: ToolRiskTier.HIGH, matched })
 }
 
 function classifyArgs(texts: string[], signals: RiskSignal[]): void {

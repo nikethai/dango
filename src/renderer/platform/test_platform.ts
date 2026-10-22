@@ -43,6 +43,11 @@ export class InMemoryStorage implements Storage {
     return value !== undefined ? value : null
   }
 
+  /** The stored value as JSON text (values are kept parsed), or `null` when nothing is stored. */
+  public getStoreRaw(key: string): Promise<string | null> {
+    return Promise.resolve(this.store.has(key) ? JSON.stringify(this.store.get(key)) : null)
+  }
+
   public async delStoreValue(key: string): Promise<void> {
     this.store.delete(key)
   }
@@ -161,6 +166,10 @@ export default class TestPlatform implements Platform {
 
   public async getStoreValue(key: string): Promise<any> {
     return this.storage.getStoreValue(key)
+  }
+
+  public getStoreRaw(key: string): Promise<string | null> {
+    return this.storage.getStoreRaw(key)
   }
 
   public async delStoreValue(key: string): Promise<void> {

@@ -37,6 +37,8 @@ vi.mock('@/packages/model-calls/toolsets/pm-pilot', () => ({
   loadLocalOnlyQuestionIds: vi.fn(async (ids: string[]) => new Set(ids.filter((id) => h.localOnly.has(id)))),
 }))
 
+import { summaryLocalOnlyMarks } from '@/packages/model-calls/toolsets/pm-pilot-history'
+import { buildContextForAI } from './context-builder'
 import { generateSummary, generateSummaryWithStream } from './summary-generator'
 
 const ch6 = (): Message[] => [
@@ -72,6 +74,40 @@ describe('summaries of a chat with local-only client mail', () => {
   it('decides by the model that summarises (a cloud naming model for a local chat)', async () => {
     h.settings = { ...h.settings, threadNamingModel: { provider: 'openai', model: 'gpt-5-mini' } }
     await generateSummary({ messages: ch6(), sessionSettings: { provider: 'ollama', modelId: 'llama' } })
+    expect(JSON.stringify(h.sent[0])).not.toContain('8,400')
+  })
+})
+
+describe('compaction of a chat whose local-only recall is more than 2 rounds old (review I1)', () => {
+  const oldRecallChat = (): Message[] => [
+    createMessage('user', 'What did Jo quote?'),
+    {
+      ...createMessage('assistant', ''),
+      contentParts: [
+        {
+          type: 'tool-call',
+          state: 'result',
+          toolCallId: 'r1',
+          toolName: 'client_recall',
+          args: { query: 'quote' },
+          result: { localOnly: true },
+        },
+        { type: 'text', text: 'Jo wrote 8,400.' },
+      ],
+    },
+    createMessage('user', 'a'),
+    createMessage('assistant', 'b'),
+    createMessage('user', 'c'),
+    createMessage('assistant', 'd'),
+  ]
+
+  it('marks the summary and sends a cloud summarizer no recall answer', async () => {
+    // compaction.ts builds the summary input and its marks from the cleaned context.
+    const context = buildContextForAI({ messages: oldRecallChat() })
+    expect(context[1].contentParts.some((p) => p.type === 'tool-call')).toBe(false)
+    expect(summaryLocalOnlyMarks(context)).toEqual({ pmLocalOnly: true })
+    await generateSummary({ messages: context, sessionSettings: { provider: 'openai', modelId: 'gpt-5' } })
+    expect(h.sent).toHaveLength(1)
     expect(JSON.stringify(h.sent[0])).not.toContain('8,400')
   })
 })

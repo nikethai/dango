@@ -142,7 +142,7 @@ export function registerSourceFixHandlers(): void {
   // TASK-20: a local-only source (ADR 0003) accepts only a model that runs on this device; with a usable cloud model
   // it opens default models so the user picks a local one. Dango never switches models by itself.
   registerFixHandler('choose-model', async (job) => {
-    const [{ settingsStore }, { lastUsedModelStore }, { backgroundModelChoice, hasUsableModel, isLocalModelProvider }] =
+    const [{ settingsStore }, { lastUsedModelStore }, { backgroundModelChoice, hasUsableModel, isLocalModelIn }] =
       await Promise.all([
         import('@/stores/settingsStore'),
         import('@/stores/lastUsedModelStore'),
@@ -152,7 +152,7 @@ export function registerSourceFixHandlers(): void {
     const lastUsed = lastUsedModelStore.getState().chat
     const usable = hasUsableModel(settings, lastUsed)
     const source = await sourceOfJob(job.sourceId)
-    const allowed = !source?.localOnly || isLocalModelProvider(backgroundModelChoice(settings, lastUsed)?.provider)
+    const allowed = !source?.localOnly || isLocalModelIn(settings, backgroundModelChoice(settings, lastUsed))
     if (usable && allowed) return true
     // Loaded on demand: it reaches the router, which pulls in every route.
     const { openConfiguration } = await import('@/components/sources/openConfiguration')

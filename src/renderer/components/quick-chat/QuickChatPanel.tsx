@@ -14,6 +14,7 @@ import {
   useState,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { LocalOnlyToolsNote } from '@/components/chat/LocalOnlyToolsNote'
 import { ThinkingLine } from '@/components/chat/ThinkingLine'
 import Markdown from '@/components/Markdown'
 import { REWRITE_OPTIONS, RewritePanel } from '@/components/rewrite'
@@ -346,6 +347,7 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
                 </>
               ) : null}
               {answer ? <QuickSourceChips message={answer} /> : null}
+              {answer ? <LocalOnlyToolsNote msg={answer} /> : null}
             </>
           ) : null}
         </div>

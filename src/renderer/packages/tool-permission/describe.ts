@@ -162,6 +162,14 @@ export function isShellCommandTool(toolName: string, description?: string): bool
   return (byName || byDescription) && !words.some((word) => UI_WORDS.has(word))
 }
 
+/**
+ * Tools whose read-only commands (`ls`, `git status`; see `isReadOnlyCommand`) can take an Always that covers those
+ * commands only (ADR 0015, maintainer 2026-10-22): local shell tools that do not send, delete, pay or change files.
+ */
+export function offersReadOnlyCommandGrant(toolName: string, description?: string): boolean {
+  return isShellCommandTool(toolName, description) && !alwaysAsksByEffect(toolName)
+}
+
 /** Tools that send, delete, pay, or change workspace files: they ask every time, even for a harmless call. */
 export function alwaysAsksByEffect(toolName: string): boolean {
   if (isSensitiveToolName(toolName) || isSendLike(toolName)) return true

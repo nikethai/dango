@@ -26,6 +26,20 @@ function detectPlatformTypeForLegacyStorage(): PlatformType {
   return 'web'
 }
 
+/**
+ * A localforage entry as text: values are written as JSON strings, so a string is returned as is; anything else
+ * (never written by this app) is serialised, so it never reads as missing.
+ */
+function rawText(stored: unknown): string | null {
+  if (stored === null || stored === undefined) return null
+  if (typeof stored === 'string') return stored
+  try {
+    return JSON.stringify(stored) ?? String(stored)
+  } catch {
+    return String(stored)
+  }
+}
+
 export class DesktopFileStorage implements Storage {
   public ipc = window.desktopAPI
 
@@ -85,6 +99,9 @@ export class LocalStorage implements Storage {
   public async getStoreValue(key: string) {
     const json = localStorage.getItem(key)
     return json ? JSON.parse(json) : null
+  }
+  public getStoreRaw(key: string): Promise<string | null> {
+    return Promise.resolve(localStorage.getItem(key))
   }
   public async delStoreValue(key: string) {
     return localStorage.removeItem(key)
@@ -272,6 +289,9 @@ export class MobileSQLiteStorage implements Storage {
     const json = await this.sqliteStorage.getItem(key)
     return json ? JSON.parse(json) : null
   }
+  public getStoreRaw(key: string): Promise<string | null> {
+    return this.sqliteStorage.getItem(key)
+  }
   public async delStoreValue(key: string) {
     await this.sqliteStorage.removeItem(key)
   }
@@ -323,6 +343,9 @@ export class IndexedDBStorage implements Storage {
       console.error(`Failed to parse stored value for key "${key}":`, error)
       return null
     }
+  }
+  public async getStoreRaw(key: string): Promise<string | null> {
+    return rawText(await this.store.getItem<unknown>(key))
   }
   public async delStoreValue(key: string) {
     return await this.store.removeItem(key)

@@ -1,7 +1,8 @@
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import { alwaysAsks, toolLabel } from '@/packages/tool-permission'
+import { alwaysAsks, offersReadOnlyCommandGrant, toolLabel } from '@/packages/tool-permission'
 import { pushUndo } from '@/packages/undo'
+import { add as addToast } from '@/stores/toastActions'
 import { getScopeGrant, type ScopeToolGrant, toolApprovalStore, useScopeGrants } from '@/stores/toolApprovalStore'
 
 /** Tools this scope runs without asking ("Always" grants), with a way to stop each one. */
@@ -9,12 +10,25 @@ export function ScopePermissions({ scopeId }: { scopeId: string }) {
   const { t } = useTranslation()
   const headingId = useId()
   // Grants for tools that always ask (older grants for command tools) are ignored by the gate, so not listed. Older
-  // grants have no stored description; their name alone decides.
-  const grants = useScopeGrants(scopeId).filter((grant) => !alwaysAsks(grant.toolName, grant.toolDescription))
+  // grants have no stored description; their name alone decides. A shell tool's read-only command grant is listed.
+  const grants = useScopeGrants(scopeId).filter((grant) =>
+    grant.readOnlyCommands
+      ? offersReadOnlyCommandGrant(grant.toolName, grant.toolDescription)
+      : !alwaysAsks(grant.toolName, grant.toolDescription)
+  )
 
   const stopAllowing = (grant: ScopeToolGrant) => {
     const label = toolLabel(grant.toolName)
-    toolApprovalStore.getState().revokeScopeGrant(scopeId, grant.toolName)
+    if (!toolApprovalStore.getState().revokeScopeGrant(scopeId, grant.toolName)) {
+      // Stopped in this window, but the saved grant is unchanged; undo would not be honest here.
+      addToast(
+        t(
+          "Couldn't save this change. “{{label}}” may be allowed again after Dango restarts. Free up some disk space and try again.",
+          { label }
+        )
+      )
+      return
+    }
     pushUndo({
       message: t('Dango will ask before “{{label}}” again.', { label }),
       undo: () => {
@@ -49,6 +63,11 @@ export function ScopePermissions({ scopeId }: { scopeId: string }) {
                 <span className="dg-type-body" style={{ overflowWrap: 'anywhere' }}>
                   {toolLabel(grant.toolName)}
                 </span>
+                {grant.readOnlyCommands ? (
+                  <span className="dg-type-caption" style={{ color: 'var(--dango-muted)' }}>
+                    {t('Only commands that just look')}
+                  </span>
+                ) : null}
                 {grant.grantedAt > 0 ? (
                   <span className="dg-type-caption" style={{ color: 'var(--dango-muted)' }}>
                     {t('Since {{date}}', { date: new Date(grant.grantedAt).toLocaleDateString() })}

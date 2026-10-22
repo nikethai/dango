@@ -28,7 +28,13 @@ import { getModelDisplayName } from '@/utils/modelDisplayName'
 import { getModelReadiness, type SelectedModel } from '@/utils/modelReadiness'
 import { readQuickSessionSnapshot, resolveQuickSessionId, writeQuickSessionSnapshot } from '@/utils/quickSession'
 import type { QuickChatPanelProps } from './QuickChatPanel'
-import { isLocalModel, quickChatName, quickErrorSummary, resolveQuickScope, resolveQuickView } from './quickChatState'
+import {
+  quickChatName,
+  quickErrorSummary,
+  reachableOffline,
+  resolveQuickScope,
+  resolveQuickView,
+} from './quickChatState'
 
 const PROVIDER_SETTINGS_PATH = '/settings/provider'
 
@@ -169,7 +175,7 @@ export function useQuickChat(): UseQuickChat {
   }, [session?.settings?.provider, session?.settings?.modelId, defaultChatModel, lastUsedChat])
 
   const readiness = useMemo(() => getModelReadiness(model, providers), [model, providers])
-  const local = useMemo(() => isLocalModel(model, providers), [model, providers])
+  const local = useMemo(() => reachableOffline(model, providers), [model, providers])
   const view = resolveQuickView({ readiness, online, local, hasExchange: sessionId !== null, rewriting: !!rewrite })
 
   const messages = useMemo(() => (session ? getAllMessageList(session) : []), [session])

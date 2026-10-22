@@ -116,6 +116,44 @@ describe('permission queue', () => {
     await expect(second).resolves.toBe('deny')
   })
 
+  it('a read-only command on a local shell tool keeps Always', () => {
+    void requestToolPermission(
+      req({ toolName: 'mcp__shell__run_command', toolDescription: 'Run a shell command', readOnlyCommand: true })
+    )
+    expect(getPermissionHead()?.allowAlways).toBe(true)
+  })
+
+  it.each([
+    ['mcp__code__run_python', 'Run Python code', ToolRiskTier.MEDIUM],
+    ['mcp__gmail__send_email', 'Send an email', ToolRiskTier.MEDIUM],
+    ['mcp__shell__run_command', 'Run a shell command', ToolRiskTier.CRITICAL],
+  ])('the read-only flag does not give %s (%s, %s) Always', (toolName, toolDescription, riskTier) => {
+    void requestToolPermission(req({ toolName, toolDescription, riskTier, readOnlyCommand: true }))
+    expect(getPermissionHead()?.allowAlways).toBe(false)
+  })
+
+  it('Always on a read-only command does not settle a queued non-read-only command of the same tool', async () => {
+    const shell = (readOnlyCommand: boolean) =>
+      req({
+        toolName: 'mcp__shell__run_command',
+        toolDescription: 'Run a shell command',
+        riskTier: ToolRiskTier.MEDIUM,
+        allowAlways: readOnlyCommand,
+        readOnlyCommand,
+      })
+    const readOnly = requestToolPermission(shell(true))
+    const other = requestToolPermission(shell(false))
+    const anotherReadOnly = requestToolPermission(shell(true))
+    resolvePermission(headId(), 'always')
+    await expect(readOnly).resolves.toBe('always')
+    await expect(anotherReadOnly).resolves.toBe('always')
+    const head = getPermissionHead()
+    expect(head?.readOnlyCommand).toBe(false)
+    expect(head?.allowAlways).toBe(false)
+    resolvePermission(headId(), 'deny')
+    await expect(other).resolves.toBe('deny')
+  })
+
   it('a tool whose description says it runs shell commands never offers Always', async () => {
     const first = requestToolPermission(req({ toolName: 'mcp_tool', toolDescription: 'Run a shell command' }))
     void requestToolPermission(req({ toolName: 'mcp_tool', toolDescription: 'Run a shell command' }))

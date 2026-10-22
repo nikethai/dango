@@ -21,6 +21,7 @@ import {
   ensureKnowledgeLoaded,
   getScope,
   gmailConfig,
+  isRemovalPending,
   JOB_FIX_LABELS,
   listSources,
   loadReviewEntries,
@@ -59,6 +60,10 @@ import { getFreshToken } from './tokens'
  * - Cloud or local is decided once per run, and the same model and local-only set go to retrieval, judge and draft.
  *   A local-only source on a cloud model gets one "choose a local model" Needs you, and no model call.
  * - Mail is only ever proposed to knowledge (slice 4), never approved here.
+ * - A source with Background review off (B6) is synced and stored only: no model is resolved for it, and none of its
+ *   mail is read back, judged or drafted for. Its "Which client is this?" questions and backfills (no model) stay.
+ *   Turned back on (D4), it acts only on mail newer than `reviewEnabledAt`: mail from while it was off stays stored
+ *   and searchable, but is never judged or drafted, even when a which-client backfill brings it in later.
  * - Logs carry fixed text and error class names, never mail text.
  */
 
@@ -141,11 +146,21 @@ function mapGmailError(e: unknown, signal?: AbortSignal): unknown {
 // ---------------------------------------------------------------------------------------------------------------------
 // Sources and routing
 
-/** Every Gmail source, read from the loaded sources store; unreadable sources are retried, never treated as none. */
+/**
+ * Every Gmail source, read from the loaded sources store; unreadable sources are retried, never treated as none.
+ * Sources pending removal (S11) are included: their records are not pruned and their mail is still filed under them,
+ * so an Undo loses nothing, but nothing reviews, judges or drafts for them.
+ */
 async function gmailSources(): Promise<ConnectedSource[]> {
   if (!sourcesStore.getState().loaded) await loadSources()
   if (!sourcesStore.getState().loaded) throw new PmRetryError(t(SOURCES_UNREADABLE))
-  return listSources({ kind: 'gmail' })
+  return listSources({ kind: 'gmail', includePending: true })
+}
+
+/** The source was removed, or its removal started, after this run read it (S11): its mail is left alone. */
+function removedSince(sourceId: string): boolean {
+  const now = listSources({ includePending: true }).find((s) => s.id === sourceId)
+  return !now || isRemovalPending(now)
 }
 
 /** Records of removed sources go (slice 7's revoke has no hook for slice 10). Only with the sources store loaded. */
@@ -208,6 +223,8 @@ type RunContext = {
   /** Decided once per run: the background model (null: none) and the sources that stay on this device. */
   model: BackgroundModel | null
   localOnly: Set<string>
+  /** Gmail sources with Background review off (B6): their mail is never evidence. Decided once per run. */
+  reviewOff: Set<string>
   /** The account's processed message ids, read once per run and kept up to date by this run. */
   processed: Set<string>
 }
@@ -259,13 +276,6 @@ async function runAccount(ctx: RunContext): Promise<void> {
   await pmStore.upsertRecords(stored)
   for (const r of stored) if (r.sourceId) statsFor(ctx, r.sourceId).threads.add(r.threadOrTaskId)
 
-  // Decided once per run and passed to every model step (read-back, retrieve, judge, draft).
-  ctx.model = await resolveBackgroundModel()
-  ctx.localOnly = new Set(
-    listSources()
-      .filter((s) => s.localOnly)
-      .map((s) => s.id)
-  )
   ctx.processed = await pmStore.processedIds(accountId)
 
   // Questions about unknown threads before the cursor moves: those threads are not stored, so a failure after the
@@ -274,8 +284,31 @@ async function runAccount(ctx: RunContext): Promise<void> {
   // The whole cursor, own address included, only now: `setCursor` flushes the records above first.
   await pmStore.setCursor(result.cursor)
 
-  await readBack(ctx, stored)
-  await actOnNewMail(ctx, sources)
+  // Background review off (B6): the source's mail is only synced and stored. No model is resolved for it, and its
+  // mail is not read back, judged or drafted for; a "choose a local model" question left from when it was on closes.
+  // A source pending removal (S11) is not reviewed either; its questions stay as they are for an Undo.
+  const reviewing = sources.filter((s) => s.backgroundReview && !isRemovalPending(s))
+  for (const s of sources) if (!s.backgroundReview && !isRemovalPending(s)) await closeLocalModelQuestion(s)
+  if (reviewing.length === 0) return
+  const reviewingIds = new Set(reviewing.map((s) => s.id))
+
+  // Decided once per run and passed to every model step (read-back, retrieve, judge, draft).
+  ctx.model = await resolveBackgroundModel()
+  ctx.localOnly = new Set(
+    listSources({ includePending: true })
+      .filter((s) => s.localOnly)
+      .map((s) => s.id)
+  )
+  // A Gmail source pending removal (S11) counts as review off: its mail is no one's evidence.
+  ctx.reviewOff = new Set(
+    listSources({ includePending: true })
+      .filter((s) => s.kind === 'gmail' && (!s.backgroundReview || isRemovalPending(s)))
+      .map((s) => s.id)
+  )
+
+  const reviewed = stored.filter((r) => r.sourceId && reviewingIds.has(r.sourceId))
+  await readBack(ctx, reviewed)
+  await actOnNewMail(ctx, reviewing)
 }
 
 /** The sent-reply read-back (flow 10 step 5), with Review and knowledge loaded so its notes land. Never fails a run. */
@@ -374,7 +407,8 @@ const DAY_MS = 86_400_000
 
 /**
  * Threads of the account's client sources whose newest inbound message may be acted on: not noise, not answered by the
- * PM since, not processed, newer than the source's connection and at most `GMAIL_BACKFILL_DAYS` old. Newest first.
+ * PM since, not processed, newer than the source's connection and than review last being turned on
+ * (`reviewEnabledAt`, D4), and at most `GMAIL_BACKFILL_DAYS` old. Newest first.
  * Read from the stored records, so threads left over from an earlier tick (the per-tick cap, a failure) come back.
  */
 async function newMailCandidates(ctx: RunContext, sources: ConnectedSource[]): Promise<Candidate[]> {
@@ -382,7 +416,8 @@ async function newMailCandidates(ctx: RunContext, sources: ConnectedSource[]): P
   const out: Candidate[] = []
   for (const source of sources) {
     if (source.scopeId === EVERYWHERE_SCOPE_ID) continue
-    const after = Math.max(source.connectedAt, oldest)
+    // Mail from before the source was connected, or from while Background review was off (D4), is never acted on.
+    const after = Math.max(source.connectedAt, source.reviewEnabledAt ?? 0, oldest)
     const records = (await pmStore.getRecords(source.scopeId)).filter(
       (r) => r.sourceId === source.id && r.sourceKind === 'gmail' && r.occurredAt > after
     )
@@ -416,6 +451,7 @@ async function judgeAndAct(ctx: RunContext, c: Candidate, model: BackgroundModel
     inbound: c.inbound,
     localOnlySourceIds: ctx.localOnly,
     cloudModel: model.cloud,
+    excludeSourceIds: ctx.reviewOff,
   })
   throwIfAborted(ctx.signal)
   const { judgement, error } = await judgeThread({
@@ -507,6 +543,7 @@ async function actOnNewMail(ctx: RunContext, sources: ConnectedSource[]): Promis
     if (acted >= PIPELINE_MAX_THREADS_PER_TICK) break
     throwIfAborted(ctx.signal)
     if (ctx.processed.has(c.inbound.externalId)) continue
+    if (removedSince(c.source.id)) continue
     if (!model) throw noModel()
     if (model.cloud && localOnly.has(c.source.id)) {
       // No model call for a source that stays on this device (ADR 0003).
@@ -600,6 +637,7 @@ function accountRun(accountId: string, joiner: Joiner, now: number): Promise<Run
     scopes: new Map(),
     model: null,
     localOnly: new Set(),
+    reviewOff: new Set(),
     processed: new Set(),
   }
   run.promise = onAccount(accountId, async () => {
@@ -709,7 +747,9 @@ async function drainBackfills(ctx: RunContext): Promise<void> {
   for (const q of answered) {
     const backfill = q.backfill
     if (!backfill) continue
-    const target = listSources({ kind: 'gmail' }).find((s) => s.id === backfill.sourceId)
+    const target = listSources({ kind: 'gmail', includePending: true }).find((s) => s.id === backfill.sourceId)
+    // Pending removal (S11): kept for an Undo; read once the source is back, or dropped once it is gone.
+    if (target && isRemovalPending(target)) continue
     try {
       if (target && gmailConfig(target).accountId === ctx.accountId) {
         await readMatcher(target, backfill.matcher, { signal: ctx.signal, progress: ctx.progress })

@@ -23,7 +23,7 @@ export type CostEstimateInput = {
 
 const LOCAL_PROVIDERS = new Set<string>([ModelProviderEnum.Ollama, ModelProviderEnum.LMStudio])
 
-/** Models on the user's own machine or network cost nothing per token. */
+/** Models on the user's own machine or network cost nothing per token. Not a privacy check (that is `isLocalModelIn`). */
 export function isLocalModelProvider(providerId: string, apiHost?: string): boolean {
   if (LOCAL_PROVIDERS.has(providerId)) return true
   return !!apiHost && isLocalHost(apiHost)

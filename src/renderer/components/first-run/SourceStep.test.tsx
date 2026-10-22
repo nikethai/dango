@@ -166,6 +166,41 @@ describe('SourceStep (FR2)', () => {
     expect(onNext).toHaveBeenCalledWith(FOLDER, false)
   })
 
+  it('a Gmail draft starts on and says under the switch what on and off mean, linked to it; a folder does not', async () => {
+    const OFF_LINE = "Off: Dango keeps new mail for search but doesn't read it with a model or write drafts."
+    const ON_LINE = 'Dango reads new mail with your model to draft replies.'
+    const LINE =
+      'Lets Dango read this source on a schedule to propose knowledge. Reading never makes anything authoritative.'
+    const onNext = vi.fn()
+    render(<SourceStep onNext={onNext} />)
+    const gmail = { kind: 'gmail', label: 'pm@acme.com', config: { accountId: 'a1' } } as SourceDraft
+    h.pickSource.mockResolvedValueOnce(gmail)
+    fireEvent.click(screen.getByText('pick gmail'))
+    await flush()
+    const toggle = screen.getByRole('switch', { name: 'Background review' })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    const on = screen.getByText(ON_LINE)
+    expect(on.className).toContain('dg-type-caption')
+    expect(toggle.getAttribute('aria-describedby')?.split(' ')).toEqual([screen.getByText(LINE).id, on.id])
+    expect(screen.queryByText(OFF_LINE)).toBeNull()
+    fireEvent.click(toggle)
+    const off = screen.getByText(OFF_LINE)
+    expect(off.className).toContain('dg-type-caption')
+    expect(toggle.getAttribute('aria-describedby')?.split(' ')).toEqual([screen.getByText(LINE).id, off.id])
+    expect(screen.queryByText(ON_LINE)).toBeNull()
+    fireEvent.click(toggle)
+    fireEvent.click(continueButton())
+    expect(onNext).toHaveBeenCalledWith(gmail, true)
+    cleanup()
+    render(<SourceStep onNext={vi.fn()} />)
+    await pickFolder()
+    expect(screen.getByRole('switch', { name: 'Background review' }).getAttribute('aria-describedby')).toBe(
+      screen.getByText(LINE).id
+    )
+    expect(screen.queryByText(OFF_LINE)).toBeNull()
+    expect(screen.queryByText(ON_LINE)).toBeNull()
+  })
+
   it('documents has no background review switch', async () => {
     const onNext = vi.fn()
     render(<SourceStep onNext={onNext} />)
