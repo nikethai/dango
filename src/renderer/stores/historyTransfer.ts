@@ -2,6 +2,7 @@ import { SessionMetaSchema, SessionSchema, type Session, type SessionMeta } from
 import dayjs from 'dayjs'
 import uniqBy from 'lodash/uniqBy'
 import storage, { StorageKey } from '@/storage'
+import { sessionHoldsDeviceOnly } from '@/storage/exportFilter'
 import { migrateSession } from '@/utils/session-utils'
 
 export const HISTORY_TRANSFER_MAGIC = 'chatbox-history-transfer'
@@ -255,12 +256,20 @@ function mergeSessionMetaList(options: {
   return uniqBy(merged, 'id')
 }
 
-export async function exportHistoryTransferFile(store: HistoryTransferStorage = storage): Promise<{
+/**
+ * Builds the transfer file. History sync passes no options and uploads every chat; the file export leaves out chats that quote
+ * device-only mail unless `includeDeviceOnlyChats` (ADR 0003).
+ */
+export async function exportHistoryTransferFile(
+  store: HistoryTransferStorage = storage,
+  opts: { includeDeviceOnlyChats?: boolean } = {}
+): Promise<{
   fileName: string
   content: string
   sessionCount: number
 }> {
-  const sessions = await collectSessionsFromStorage(store)
+  const all = await collectSessionsFromStorage(store)
+  const sessions = opts.includeDeviceOnlyChats === false ? all.filter((s) => !sessionHoldsDeviceOnly(s)) : all
   const payload = buildPayload(sessions, store)
   const dateStr = dayjs().format('YYYY-M-D')
   return {

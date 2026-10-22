@@ -94,6 +94,31 @@ describe('historyTransfer', () => {
     expect(payload.sessionMetaList.map((session) => session.id)).toEqual(['session-a', 'session-b'])
   })
 
+  it('leaves out chats that quote device-only mail unless asked to include them', async () => {
+    const plain = createSession('plain', 'Plain', [100])
+    const mail = createSession('mail', 'Mail', [200])
+    mail.messages.push({ id: 'mail-a', role: 'assistant', contentParts: [], pmLocalOnly: true })
+    const store = new MemoryStore({
+      [StorageKey.ChatSessionsList]: [createMeta(plain), createMeta(mail)],
+      [getSessionStorageKey(plain.id)]: plain,
+      [getSessionStorageKey(mail.id)]: mail,
+    })
+    const ids = (content: string) => {
+      const payload = JSON.parse(content) as { sessions: Session[]; sessionMetaList: SessionMeta[] }
+      return [payload.sessions.map((s) => s.id), payload.sessionMetaList.map((s) => s.id)]
+    }
+
+    const without = await exportHistoryTransferFile(store as never, { includeDeviceOnlyChats: false })
+    expect(without.sessionCount).toBe(1)
+    expect(ids(without.content)).toEqual([['plain'], ['plain']])
+
+    const withThem = await exportHistoryTransferFile(store as never, { includeDeviceOnlyChats: true })
+    expect(ids(withThem.content)).toEqual([
+      ['plain', 'mail'],
+      ['plain', 'mail'],
+    ])
+  })
+
   it('imports from legacy backup format that contains session:* keys', async () => {
     const incoming = createSession('legacy-session', 'Legacy Session', [123])
     const fileText = JSON.stringify({

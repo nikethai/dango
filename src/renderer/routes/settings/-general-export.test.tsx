@@ -6,7 +6,7 @@ import { MantineProvider } from '@mantine/core'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const h = vi.hoisted(() => ({ exportTextFile: vi.fn(), getAll: vi.fn() }))
+const h = vi.hoisted(() => ({ exportTextFile: vi.fn(), getAll: vi.fn(), exportTransfer: vi.fn() }))
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
@@ -33,7 +33,10 @@ vi.mock('@/storage', async () => {
   return { default: { getAll: h.getAll }, StorageKey }
 })
 vi.mock('@/stores/chatStore', () => ({ recoverSessionList: vi.fn() }))
-vi.mock('@/stores/historyTransfer', () => ({ exportHistoryTransferFile: vi.fn(), importHistoryTransferFile: vi.fn() }))
+vi.mock('@/stores/historyTransfer', () => ({
+  exportHistoryTransferFile: h.exportTransfer,
+  importHistoryTransferFile: vi.fn(),
+}))
 vi.mock('@/stores/roomPack', () => ({ importRoomPack: vi.fn() }))
 vi.mock('@/stores/migration', () => ({ migrateOnData: vi.fn() }))
 
@@ -123,6 +126,28 @@ describe('Settings > General export', () => {
 
     fireEvent.click(screen.getByLabelText('Chat History'))
     expect(box.disabled).toBe(true)
+  })
+
+  it('history transfer leaves out chats that quote device-only mail unless its box is ticked', async () => {
+    h.exportTransfer.mockResolvedValue({ fileName: 'f.json', content: '{}', sessionCount: 1 })
+    const { RouteComponent } = await import('./general')
+    render(
+      <MantineProvider>
+        <RouteComponent />
+      </MantineProvider>
+    )
+    fireEvent.click(screen.getByText('Data & backup'))
+    const box = screen.getByLabelText('Also transfer chats that quote device-only mail') as HTMLInputElement
+    expect(box.checked).toBe(false)
+
+    fireEvent.click(screen.getByText('Export Chat History for Transfer'))
+    await waitFor(() => expect(h.exportTransfer).toHaveBeenCalledTimes(1))
+    expect(h.exportTransfer.mock.calls[0][1]).toEqual({ includeDeviceOnlyChats: false })
+
+    fireEvent.click(box)
+    fireEvent.click(screen.getByText('Export Chat History for Transfer'))
+    await waitFor(() => expect(h.exportTransfer).toHaveBeenCalledTimes(2))
+    expect(h.exportTransfer.mock.calls[1][1]).toEqual({ includeDeviceOnlyChats: true })
   })
 
   it('leaves out account tokens and sync state with API Keys unticked or ticked', async () => {

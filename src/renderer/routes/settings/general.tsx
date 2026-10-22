@@ -456,13 +456,16 @@ const ImportExportDataSection = () => {
     ExportDataItem.Copilot,
   ])
   const [includeDeviceOnlyChats, setIncludeDeviceOnlyChats] = useState(false)
+  const [transferDeviceOnlyChats, setTransferDeviceOnlyChats] = useState(false)
 
   const onExportHistoryTransfer = async () => {
     setHistoryTransferTips('')
     setHistoryTransferError(false)
     setIsHistoryTransferPending(true)
     try {
-      const { fileName, content, sessionCount } = await exportHistoryTransferFile()
+      const { fileName, content, sessionCount } = await exportHistoryTransferFile(undefined, {
+        includeDeviceOnlyChats: transferDeviceOnlyChats,
+      })
       await platform.exporter.exportTextFile(fileName, content)
       setHistoryTransferTips(t('Exported {{count}} conversations for transfer', { count: sessionCount }))
     } catch (error) {
@@ -706,6 +709,11 @@ const ImportExportDataSection = () => {
                 <Text size="sm">{historyTransferTips}</Text>
               </Alert>
             )}
+            <Checkbox
+              checked={transferDeviceOnlyChats}
+              label={t('Also transfer chats that quote device-only mail')}
+              onChange={(e) => setTransferDeviceOnlyChats(e.currentTarget.checked)}
+            />
             <div className="settings-actions">
               <Button onClick={onExportHistoryTransfer} loading={isHistoryTransferPending}>
                 {t('Export Chat History for Transfer')}

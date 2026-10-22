@@ -482,6 +482,7 @@
   "Importing...": "Importing...",
   "Improve Network Compatibility": "Improve Network Compatibility",
   "Include chats that quote device-only mail": "Include chats that quote device-only mail",
+  "Also transfer chats that quote device-only mail": "Also transfer chats that quote device-only mail",
   "Include Raw Content": "Include raw content",
   "Inject default metadata": "Inject default metadata",
   "Insert a New Line into the Input Box": "Insert a New Line into the Input Box",
