@@ -258,12 +258,13 @@ describe('chats that quote device-only mail', () => {
 })
 
 describe('account tokens and sync state stay on the device', () => {
-  const KEYS = ['integration-secret:gmail-1', 'integration-secret:asana-2', 'history-sync-state']
+  const KEYS = ['integration-secret:gmail-1', 'integration-secret:asana-2', 'history-sync-state', 'memory-sync-state']
   const dump = (): Record<string, unknown> => ({
     [StorageKey.Settings]: { language: 'en' },
     'integration-secret:gmail-1': { accessToken: 'tok-gmail', refreshToken: 'ref-gmail' },
     'integration-secret:asana-2': { apiToken: 'tok-asana' },
     'history-sync-state': { lastSyncedAt: 5, deviceId: 'this-device' },
+    'memory-sync-state': { revision: 3, deviceId: 'this-device' },
   })
 
   it.each(KEYS)('%s is device-only', (key) => {
@@ -271,7 +272,13 @@ describe('account tokens and sync state stay on the device', () => {
   })
 
   it('look-alikes still travel', () => {
-    for (const key of ['integration-secrets', 'history-sync-state-old', 'history-sync']) {
+    for (const key of [
+      'integration-secrets',
+      'history-sync-state-old',
+      'history-sync',
+      'memory-sync-state-old',
+      'memory-sync',
+    ]) {
       expect(isDeviceOnlyKey(key)).toBe(false)
     }
   })
@@ -286,7 +293,11 @@ describe('account tokens and sync state stay on the device', () => {
 
   it('neither import writes them', () => {
     expect(settingsImportEntries(dump()).map(([key]) => key)).toEqual([StorageKey.Settings])
-    const device = { 'integration-secret:gmail-1': { accessToken: 'mine' }, 'history-sync-state': { lastSyncedAt: 9 } }
+    const device = {
+      'integration-secret:gmail-1': { accessToken: 'mine' },
+      'history-sync-state': { lastSyncedAt: 9 },
+      'memory-sync-state': { revision: 7 },
+    }
     const merged = settingsImportMerge(device, dump())
     for (const key of KEYS) expect(Object.keys(merged)).not.toContain(key)
   })

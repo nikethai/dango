@@ -13,7 +13,8 @@ import { StorageKey } from './StoreStorage'
  *   `background-jobs`, `source-cursor:*`; Decision 5, ADR 0016). Imported history still travels;
  * - connected-account tokens where no keychain holds them (`integration-secret:*`, `packages/integrations/
  *   secret-store.ts`; web, mobile and the desktop fallback), whatever the API Keys box says;
- * - this device's history sync state (`history-sync-state`, `stores/historySync.ts`).
+ * - this device's history and memory sync state (`history-sync-state`, `stores/historySync.ts`;
+ *   `memory-sync-state`, `stores/memorySync.ts`).
  * Chats that quote device-only mail are a separate, opt-in choice: see `settingsExportData`.
  */
 
@@ -25,6 +26,7 @@ const DEVICE_ONLY_KEYS: ReadonlySet<string> = new Set([
   StorageKey.ReviewEntries,
   StorageKey.BackgroundJobs,
   'history-sync-state',
+  'memory-sync-state',
 ])
 
 const DEVICE_ONLY_PREFIXES = ['pm-', 'pm:', 'source-cursor:', 'integration-secret:'] as const
