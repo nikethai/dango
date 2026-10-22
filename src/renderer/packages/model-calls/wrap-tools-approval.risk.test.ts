@@ -493,6 +493,53 @@ describe('wrapToolsWithApproval with the real risk engine', () => {
       expect(addScopeGrantMock).toHaveBeenCalledTimes(1)
     })
 
+    describe('prose that rides along after the grant must be short and plain', () => {
+      it.each([
+        { command: 'pwd', reason: 'x'.repeat(141) },
+        { command: 'pwd', reason: 'password hunter2' },
+        { command: 'pwd', explanation: 'token=ghp_abcdefghijklmnopqrstuvwxyz0123' },
+        { command: 'pwd', purpose: 'Check ghp_abcdefghijklmnopqrstuvwxyz0123 works' },
+        { command: 'pwd', description: 'My API key is here' },
+        { command: 'pwd', reason: { text: 'nested' } },
+      ])('%j asks with no Always and is not truncated', async (args) => {
+        requestToolPermissionMock.mockResolvedValue('always')
+        const { execute, tool } = shell()
+        await tool.execute({ command: 'ls -la' }, {})
+        expect(addScopeGrantMock).toHaveBeenCalledTimes(1)
+
+        await tool.execute(args, {})
+        expect(requestToolPermissionMock).toHaveBeenCalledTimes(2)
+        expect(requestToolPermissionMock.mock.calls[1]?.[0]).toEqual(
+          expect.objectContaining({ allowAlways: false, readOnlyCommand: false })
+        )
+        expect(addScopeGrantMock).toHaveBeenCalledTimes(1)
+        expect(execute).toHaveBeenLastCalledWith(args, {})
+      })
+
+      it('the same prose on the first call offers no Always', async () => {
+        requestToolPermissionMock.mockResolvedValue('always')
+        const { tool } = shell()
+        await tool.execute({ command: 'ls -la', reason: 'password hunter2' }, {})
+        expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(
+          expect.objectContaining({ allowAlways: false, readOnlyCommand: false })
+        )
+        expect(addScopeGrantMock).not.toHaveBeenCalled()
+      })
+
+      it.each([
+        { command: 'pwd', reason: 'List the files' },
+        { command: 'pwd', reason: 'y'.repeat(140) },
+      ])('%j runs unasked after the grant', async (args) => {
+        requestToolPermissionMock.mockResolvedValue('always')
+        const { execute, tool } = shell()
+        await tool.execute({ command: 'ls -la' }, {})
+        await tool.execute(args, {})
+        expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+        expect(execute).toHaveBeenCalledTimes(2)
+        expect(execute).toHaveBeenLastCalledWith(args, {})
+      })
+    })
+
     it.each([ToolRiskTier.LOW, ToolRiskTier.MEDIUM, ToolRiskTier.HIGH])(
       'a %s grant without the read-only marker (an older grant for the command tool) does not run ls',
       async (riskTier) => {

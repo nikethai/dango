@@ -2,6 +2,7 @@ import { type Evidence, mayReachCloud } from '@shared/pm-pilot'
 import type { Message } from '@shared/types'
 import type { KnowledgeItem } from '@shared/types/knowledge'
 import { t } from 'i18next'
+import { holdsLocalOnlyRecall } from '@/packages/pm-pilot/local-only-chat'
 import { isLocalModelIn, type ModelRef, type ProviderHostSettings } from '@/packages/sources/model-check'
 
 /*
@@ -20,40 +21,18 @@ import { isLocalModelIn, type ModelRef, type ProviderHostSettings } from '@/pack
  *   is local-only; knowledge the user typed (no source id) goes.
  */
 
-export const CLIENT_RECALL_TOOL = 'client_recall'
-export const CLIENT_ANSWER_TOOL = 'client_answer'
-const PM_TOOLS: ReadonlySet<string> = new Set([CLIENT_RECALL_TOOL, CLIENT_ANSWER_TOOL])
+// The chat-level checks live in a module with no runtime imports (the settings export uses them); kept here as before.
+export {
+  CLIENT_ANSWER_TOOL,
+  CLIENT_RECALL_TOOL,
+  chatHoldsLocalOnly,
+  holdsLocalOnlyRecall,
+  usedLocalOnlyRecall,
+} from '@/packages/pm-pilot/local-only-chat'
 
 /** Translation key (en value = key) of what a cloud model sees in place of such an answer. */
 export const LOCAL_ONLY_ANSWER_PLACEHOLDER =
   '(This answer used email or tasks kept on this device, so it is not shared with this model.)'
-
-function isLocalOnlyRecallResult(result: unknown): boolean {
-  return typeof result === 'object' && result !== null && (result as { localOnly?: unknown }).localOnly === true
-}
-
-/** True when the message holds a `client_recall` or `client_answer` result marked local-only. */
-export function usedLocalOnlyRecall(message: Pick<Message, 'contentParts'>): boolean {
-  return (message.contentParts ?? []).some(
-    (p) => p.type === 'tool-call' && PM_TOOLS.has(p.toolName) && isLocalOnlyRecallResult(p.result)
-  )
-}
-
-/** True when the message used a local-only recall, or is a summary built from messages that did. */
-export function holdsLocalOnlyRecall(message: Pick<Message, 'contentParts' | 'pmLocalOnly'>): boolean {
-  return message.pmLocalOnly === true || usedLocalOnlyRecall(message)
-}
-
-/**
- * True when the chat holds text a local model read from local-only mail or tasks: a local-only recall, a summary
- * built from one, or a Needs you chat (whose opening quotes client mail). Legacy memory saves nothing from such a chat.
- * Take it from the messages before `cloudSafeMessages`, whose placeholder drops the tool parts.
- */
-export function chatHoldsLocalOnly(
-  messages: Pick<Message, 'contentParts' | 'pmLocalOnly' | 'pmQuestionId'>[]
-): boolean {
-  return messages.some((m) => holdsLocalOnlyRecall(m) || !!m.pmQuestionId)
-}
 
 /**
  * True when a turn may read local-only text: a local model in a chat that holds it, or that is offered client recall

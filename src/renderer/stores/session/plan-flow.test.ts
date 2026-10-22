@@ -44,6 +44,7 @@ type StreamOpts = {
 type StreamReturn = {
   result: { contentParts: Message['contentParts']; text: string; finishReason: string }
   knowledgeIds: string[]
+  localOnlyToolsOff?: boolean
 }
 type Step = (opts: StreamOpts) => Promise<StreamReturn>
 
@@ -238,6 +239,7 @@ function step(
     before?: (o: StreamOpts) => void
     during?: () => Promise<void>
     abortOnStop?: boolean
+    localOnlyToolsOff?: boolean
   } = {}
 ): Step {
   return async (o) => {
@@ -257,6 +259,7 @@ function step(
     return {
       result: { contentParts: parts, text: value, finishReason: opts.finishReason ?? 'stop' },
       knowledgeIds: [],
+      ...(opts.localOnlyToolsOff !== undefined ? { localOnlyToolsOff: opts.localOnlyToolsOff } : {}),
     }
   }
 }
@@ -451,5 +454,36 @@ describe('plan flow end to end (scripted model)', () => {
     await resumeStoppedPlan('s1', 'a1')
     expect(planOf(storedMessage('a1'))?.finishedAt).toBeDefined()
     expect(h.addReviewEntry).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the "outside tools are off" mark on the answer (ADR 0016)', () => {
+  test('a turn whose tools were taken away marks its answer; a re-run that keeps them clears the mark', async () => {
+    const a1 = seedChat()
+    h.script.push(step([text('From the device only')], { localOnlyToolsOff: true }))
+    await generate('s1', a1, { operationType: 'send_message' })
+    expect(storedMessage('a1').localOnlyToolsOff).toBe(true)
+
+    h.script.push(step([text('With every tool')], { localOnlyToolsOff: false }))
+    await generate('s1', storedMessage('a1'), { operationType: 'send_message' })
+    const rerun = storedMessage('a1')
+    expect(textOf(rerun)).toBe('With every tool')
+    expect(rerun.localOnlyToolsOff).toBeUndefined()
+  })
+
+  test('an in-place re-run that fails clears the old mark, so the error does not sit under it', async () => {
+    seedChat()
+    h.sessions.set('s1', {
+      ...stored(),
+      messages: [
+        stored().messages[0],
+        { id: 'a1', role: 'assistant', contentParts: [text('From the device only')], localOnlyToolsOff: true },
+      ],
+    })
+    h.script.push(step([text('Partial')], { during: () => Promise.reject(new Error('Provider down')) }))
+    await generate('s1', storedMessage('a1'), { operationType: 'send_message' })
+    const failed = storedMessage('a1')
+    expect(failed.error).toContain('Provider down')
+    expect(failed.localOnlyToolsOff).toBeUndefined()
   })
 })

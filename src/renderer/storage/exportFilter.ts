@@ -1,5 +1,5 @@
 import uniqBy from 'lodash/uniqBy'
-import { chatHoldsLocalOnly } from '@/packages/model-calls/toolsets/pm-pilot-history'
+import { chatHoldsLocalOnly } from '@/packages/pm-pilot/local-only-chat'
 import { StorageKey } from './StoreStorage'
 
 /*

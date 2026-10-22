@@ -1,4 +1,5 @@
 import { ToolRiskTier } from '@shared/types/mcp'
+import { redactSecrets } from '@/packages/memory/redaction'
 
 /**
  * Semantic risk classification for tool invocations.
@@ -495,6 +496,29 @@ export function isReadOnlyCommand(args: unknown): boolean {
   if (commands.length === 0 || !commands.every(isReadOnlyCommandText)) return false
   const commandArgs = Object.fromEntries(Object.entries(record).filter(([key]) => !PROSE_KEYS.has(key)))
   return tierRank(getArgsRiskTier(commandArgs)) <= tierRank(ToolRiskTier.MEDIUM)
+}
+
+/** Longest prose a read-only grant covers: what the permission sheet shows of `why` (`describe.ts` WHY_MAX). */
+const READ_ONLY_PROSE_MAX = 140
+/** Bare secret words that `redactSecrets` misses in short text ("password hunter2"). */
+const PROSE_SECRET_WORD = /password|passphrase|api[ _-]?key|private key|secret|token/i
+
+/**
+ * Whether the prose a read-only command carries (`reason`, `explanation`, `purpose`, `description`, the keys
+ * `isReadOnlyCommand` ignores) may ride along under a read-only grant: each value is a string of at most 140
+ * characters, unchanged by `redactSecrets`, with no secret word. Anything else asks, so the user sees it; the
+ * arguments are never truncated, because rewriting them changes the call.
+ */
+export function readOnlyProseIsPlain(args: unknown): boolean {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return false
+  return Object.entries(args as Record<string, unknown>).every(
+    ([key, value]) =>
+      !PROSE_KEYS.has(key) ||
+      (typeof value === 'string' &&
+        value.length <= READ_ONLY_PROSE_MAX &&
+        redactSecrets(value) === value &&
+        !PROSE_SECRET_WORD.test(value))
+  )
 }
 
 /** The risk tier of a call's arguments alone, without the tool's name or description. */

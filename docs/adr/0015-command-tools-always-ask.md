@@ -4,7 +4,7 @@ status: draft
 description: "Read-only commands on MCP shell tools ask once and then run unasked in that scope; every other shell command or code run asks every time and never takes an Always grant"
 generated: { by: claude/opus-5.5, at: 2026-10-20T05:00:00Z }
 ---
-# ADR 0015: Command tools ask unless the command is read-only
+# ADR 0015: Command tools always ask; read-only MCP commands ask once
 
 Status: **proposal**, written from the maintainer's instructions of 2026-10-20 ("If dangerous command needed, make llm ask"; "ls, df... should be auto allow"). The maintainer accepts it by setting `status: stable` and adding `verified`.
 
@@ -41,6 +41,7 @@ The risk engine keeps rating command calls. Its tier still decides how the sheet
 ## Consequences
 
 - The first read-only command per MCP shell tool and scope costs one click; with Always, later ones cost none. Once granted, the model's `reason` text goes to the server unasked with each read-only command (secret paths in it still ask).
+- Prose over 140 characters or with secret-looking text (`reason`, `explanation`, `purpose`, `description`) asks with no Always, even after the read-only Always; Dango asks rather than shortening it.
 - Every command outside the read-only allowlist costs one click per call. Adding a command to the allowlist is a code change with tests, never a grant.
 - Detection by name and description can miss a command tool that hides its purpose. Such a tool still asks for anything the engine rates CRITICAL.
 - Commands that name a file or folder ask, because Dango does not know the server's working folder; secret files never take a grant, for any tool. After the read-only Always, `ls -la`, `df -h` and `git status` run without asking, and `git show`/`git diff`/`git log` can still print files tracked in the repository.

@@ -746,6 +746,7 @@ export async function generate(
           error: `Send blocked: ${evalResult.message}. Disable hard-stop in Settings → Usage, or raise your monthly cap.`,
           // Not the provider's error: the notice points to Usage, never to Retry.
           errorExtra: { kind: 'budget' },
+          localOnlyToolsOff: undefined,
           status: [],
         }
         await modifyMessage(sessionId, targetMsg, true)
@@ -771,6 +772,8 @@ export async function generate(
     errorCode: undefined,
     error: undefined,
     errorExtra: undefined,
+    // An earlier run's "outside tools are off" line: this run sets its own, and a failed run has none.
+    localOnlyToolsOff: undefined,
     status: [],
     firstTokenLatency: undefined,
     // Set isStreamingMode once during Message initialization (constant property)
@@ -1836,8 +1839,9 @@ export async function generate(
       cancel: undefined,
       errorCode: ocrError ? (causeError instanceof BaseError ? causeError.code : errorCode) : errorCode,
       error: `${error.message}`,
-      // Only a finished answer has a duration.
+      // Only a finished answer has a duration, and a failed one has no "outside tools are off" line.
       durationMs: undefined,
+      localOnlyToolsOff: undefined,
       errorExtra: {
         aiProvider: ocrError ? ocrError.ocrProvider : effectiveSettings.provider,
         host:

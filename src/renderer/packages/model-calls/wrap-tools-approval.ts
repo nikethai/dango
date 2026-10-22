@@ -20,7 +20,7 @@ import {
   type ToolApprovalAuditEntry,
   toolApprovalStore,
 } from '@/stores/toolApprovalStore'
-import { getToolRiskTier, isReadOnlyCommand, secretPathIn } from '../tools/risk-engine'
+import { getToolRiskTier, isReadOnlyCommand, readOnlyProseIsPlain, secretPathIn } from '../tools/risk-engine'
 
 const TOOL_EXECUTE_TIMEOUT_MS = 90_000
 
@@ -154,11 +154,13 @@ export function wrapToolsWithApproval(
               !asksEveryTime &&
               !secretPathIn(args)
             // A read-only command (ADR 0015): its grant, if any, covers only calls that pass this same check.
+            // Prose that rides along must be short and plain, or the call asks with no Always.
             const readOnlyCommand =
               readOnlyCommandTool &&
               riskTier !== ToolRiskTier.CRITICAL &&
               !secretPathIn(args) &&
-              isReadOnlyCommand(args)
+              isReadOnlyCommand(args) &&
+              readOnlyProseIsPlain(args)
             const fingerprint = workspaceApprovalFingerprint(toolName, args) ?? undefined
             const audit = (
               scope: ToolApprovalAuditEntry['scope'],

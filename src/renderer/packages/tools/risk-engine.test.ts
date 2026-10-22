@@ -1,6 +1,6 @@
 import { ToolRiskTier } from '@shared/types/mcp'
 import { describe, expect, it } from 'vitest'
-import { classifyToolRisk, getToolRiskTier, isReadOnlyCommand, secretPathIn } from './risk-engine'
+import { classifyToolRisk, getToolRiskTier, isReadOnlyCommand, readOnlyProseIsPlain, secretPathIn } from './risk-engine'
 
 describe('risk-engine', () => {
   describe('getToolRiskTier', () => {
@@ -787,4 +787,28 @@ describe('isReadOnlyCommand', () => {
     expect(isReadOnlyCommand(undefined)).toBe(false)
     expect(isReadOnlyCommand({ command: 42 })).toBe(false)
   })
+})
+
+describe('readOnlyProseIsPlain', () => {
+  it.each([
+    { command: 'ls' },
+    { command: 'ls', reason: 'List the files' },
+    { command: 'ls', reason: 'a'.repeat(140), explanation: 'Check the folder', purpose: 'Status', description: 'Look' },
+  ])('%j is plain', (args) => expect(readOnlyProseIsPlain(args)).toBe(true))
+
+  it.each([
+    { command: 'ls', reason: 'a'.repeat(141) },
+    { command: 'ls', reason: 'password hunter2' },
+    { command: 'ls', explanation: 'Passphrase is long' },
+    { command: 'ls', purpose: 'api_key check' },
+    { command: 'ls', description: 'the private key' },
+    { command: 'ls', reason: 'a secret' },
+    { command: 'ls', reason: 'Tokens' },
+    { command: 'ls', reason: 'use ghp_abcdefghijklmnopqrstuvwxyz0123 now' },
+    { command: 'ls', reason: 'Bearer abc.def' },
+    { command: 'ls', reason: 42 },
+    { command: 'ls', reason: ['List'] },
+    null,
+    'ls',
+  ])('%j is not plain', (args) => expect(readOnlyProseIsPlain(args)).toBe(false))
 })
