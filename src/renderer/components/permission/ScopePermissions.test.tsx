@@ -89,6 +89,32 @@ describe('ScopePermissions', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
   })
 
+  it('lists a read-only command grant for a shell tool, marked read-only commands only', () => {
+    grant('scope-1', {
+      toolName: 'mcp__shell__run_command',
+      riskTier: ToolRiskTier.MEDIUM,
+      grantedAt: 3,
+      toolDescription: 'Run a shell command',
+      readOnlyCommands: true,
+    })
+    render(<ScopePermissions scopeId="scope-1" />)
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].textContent).toContain('Read-only commands only')
+  })
+
+  it('does not list a read-only marked grant for a tool the gate would not honour it for', () => {
+    grant('scope-1', {
+      toolName: 'mcp__code__run_python',
+      riskTier: ToolRiskTier.MEDIUM,
+      grantedAt: 3,
+      toolDescription: 'Run Python code',
+      readOnlyCommands: true,
+    })
+    render(<ScopePermissions scopeId="scope-1" />)
+    expect(screen.getByText(EMPTY)).toBeTruthy()
+  })
+
   it('shows the empty copy when only command-tool grants remain', () => {
     grant('scope-1', { toolName: 'terminal_exec', riskTier: ToolRiskTier.MEDIUM, grantedAt: 1 })
     render(<ScopePermissions scopeId="scope-1" />)

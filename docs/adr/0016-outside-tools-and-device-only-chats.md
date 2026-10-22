@@ -16,7 +16,7 @@ PR #110 also turned off web search and link reading in chats that hold device-on
 
 ## Decision
 
-- **MCP tools ask once, then remember.** No MCP tool rates below MEDIUM. The first call asks and offers "Always in this scope"; later calls in that scope run unasked. A server's own name, description and annotations (including any "read-only" hint) never lower a tier, because they are the server describing itself. Secret paths and the always-ask tools (send, delete, pay, commands, [ADR 0015](0015-command-tools-always-ask.md)) are unchanged.
+- **MCP tools ask once, then remember.** No MCP tool rates below MEDIUM. The first call asks and offers "Always in this scope"; later calls in that scope run unasked. A server's own name, description and annotations (including any "read-only" hint) never lower a tier, because they are the server describing itself. Secret paths and the always-ask tools (send, delete, pay, commands, [ADR 0015](0015-command-tools-always-ask.md)) are unchanged. Read-only shell commands (`ls`, `git status`) on an MCP tool ask once too, with an Always that covers only that tool's read-only commands; every other command still asks every time ([ADR 0015](0015-command-tools-always-ask.md), maintainer 2026-10-22).
 - **Device-only chats close outside tools.** On a turn that holds device-only text, every tool that sends content off the device is off: MCP tools (Dango can't know where a server sends data), browser and video-URL reading, image generation, web search and link reading. Computer use stays, because its screenshots go to the local model. The chat shows one quiet line: "Web and outside tools are off because this chat holds device-only mail."
 
 ## Consequences

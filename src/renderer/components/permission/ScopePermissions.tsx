@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import { alwaysAsks, toolLabel } from '@/packages/tool-permission'
+import { alwaysAsks, offersReadOnlyCommandGrant, toolLabel } from '@/packages/tool-permission'
 import { pushUndo } from '@/packages/undo'
 import { add as addToast } from '@/stores/toastActions'
 import { getScopeGrant, type ScopeToolGrant, toolApprovalStore, useScopeGrants } from '@/stores/toolApprovalStore'
@@ -10,8 +10,12 @@ export function ScopePermissions({ scopeId }: { scopeId: string }) {
   const { t } = useTranslation()
   const headingId = useId()
   // Grants for tools that always ask (older grants for command tools) are ignored by the gate, so not listed. Older
-  // grants have no stored description; their name alone decides.
-  const grants = useScopeGrants(scopeId).filter((grant) => !alwaysAsks(grant.toolName, grant.toolDescription))
+  // grants have no stored description; their name alone decides. A shell tool's read-only command grant is listed.
+  const grants = useScopeGrants(scopeId).filter((grant) =>
+    grant.readOnlyCommands
+      ? offersReadOnlyCommandGrant(grant.toolName, grant.toolDescription)
+      : !alwaysAsks(grant.toolName, grant.toolDescription)
+  )
 
   const stopAllowing = (grant: ScopeToolGrant) => {
     const label = toolLabel(grant.toolName)
@@ -59,6 +63,11 @@ export function ScopePermissions({ scopeId }: { scopeId: string }) {
                 <span className="dg-type-body" style={{ overflowWrap: 'anywhere' }}>
                   {toolLabel(grant.toolName)}
                 </span>
+                {grant.readOnlyCommands ? (
+                  <span className="dg-type-caption" style={{ color: 'var(--dango-muted)' }}>
+                    {t('Read-only commands only')}
+                  </span>
+                ) : null}
                 {grant.grantedAt > 0 ? (
                   <span className="dg-type-caption" style={{ color: 'var(--dango-muted)' }}>
                     {t('Since {{date}}', { date: new Date(grant.grantedAt).toLocaleDateString() })}

@@ -14,13 +14,23 @@ export type ToolApprovalRecord = {
   timestamp: number
   /** Concrete invocation fingerprint; required for workspace mutations. */
   argsFingerprint?: string
+  /** "Always" for a shell tool's read-only commands only (ADR 0015); never covers any other call of the tool. */
+  readOnlyCommands?: boolean
 }
 
 /**
  * "Always" for one tool in one scope. Applies only to calls with exactly this risk tier. `toolDescription` (optional,
  * absent on older grants) lets the scope list hide grants the gate ignores for tools that always ask.
+ * `readOnlyCommands` (optional, additive) marks a shell tool's grant for read-only commands only (ADR 0015): it runs
+ * allowlisted commands such as `ls` or `git status` at any tier but CRITICAL, and never covers any other call.
  */
-export type ScopeToolGrant = { toolName: string; riskTier: ToolRiskTier; grantedAt: number; toolDescription?: string }
+export type ScopeToolGrant = {
+  toolName: string
+  riskTier: ToolRiskTier
+  grantedAt: number
+  toolDescription?: string
+  readOnlyCommands?: boolean
+}
 
 /** scopeId → toolName → grant. */
 export type ScopeGrants = Record<string, Record<string, ScopeToolGrant>>
@@ -35,6 +45,8 @@ export type ToolApprovalAuditEntry = {
   args?: unknown
   /** Concrete invocation fingerprint of a workspace mutation (audit only; never used to approve). */
   argsFingerprint?: string
+  /** The call was allowed by, or stored, an Always for a shell tool's read-only commands only. */
+  readOnlyCommands?: boolean
 }
 
 type ToolApprovalState = {
@@ -88,6 +100,7 @@ function sanitizeScopeGrants(raw: unknown): ScopeGrants {
         riskTier: grant.riskTier as ToolRiskTier,
         grantedAt: typeof grant.grantedAt === 'number' ? grant.grantedAt : 0,
         ...(typeof grant.toolDescription === 'string' ? { toolDescription: grant.toolDescription } : {}),
+        ...(grant.readOnlyCommands === true ? { readOnlyCommands: true } : {}),
       }
     }
     if (Object.keys(kept).length > 0) result[scopeId] = kept

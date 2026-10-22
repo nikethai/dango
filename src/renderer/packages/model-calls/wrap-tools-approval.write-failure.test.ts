@@ -107,3 +107,54 @@ describe('a failed Always grant really asks again', () => {
     ])
   })
 })
+
+describe('a failed read-only command grant really asks again', () => {
+  const NAME = 'mcp__shell__run_command'
+  const shell = () =>
+    ({ [NAME]: { description: 'Run a shell command', execute: vi.fn(async () => ({ ok: true })) } }) as never
+
+  it('in a scope: the next read-only command asks, and a later successful write does not save the grant', async () => {
+    const wrapped = wrapToolsWithApproval('sess-1', shell(), { scopeId: 's1' })
+    failWrites()
+    await (wrapped[NAME] as Exec).execute({ command: 'ls -la' }, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(1)
+    expect(getScopeGrant('s1', NAME)).toBeUndefined()
+
+    vi.restoreAllMocks()
+    requestToolPermissionMock.mockResolvedValue('once')
+    await (wrapped[NAME] as Exec).execute({ command: 'git status' }, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(2)
+    expect(persistedState().scopeGrants?.s1?.[NAME]).toBeUndefined()
+  })
+
+  it('in a scope: an older read-only grant is kept as it was', async () => {
+    const older = { toolName: NAME, riskTier: ToolRiskTier.MEDIUM, grantedAt: 1, readOnlyCommands: true }
+    toolApprovalStore.getState().addScopeGrant('s2', older)
+    failWrites()
+    await (wrapToolsWithApproval('sess-1', shell(), { scopeId: 's1' })[NAME] as Exec).execute({ command: 'ls' }, {})
+    expect(getScopeGrant('s1', NAME)).toBeUndefined()
+    expect(getScopeGrant('s2', NAME)).toEqual(older)
+  })
+
+  it('in a session: the next read-only command asks', async () => {
+    const wrapped = wrapToolsWithApproval('sess-1', shell())
+    failWrites()
+    await (wrapped[NAME] as Exec).execute({ command: 'ls -la' }, {})
+    expect(getToolApproval('sess-1', NAME)).toBeUndefined()
+
+    vi.restoreAllMocks()
+    requestToolPermissionMock.mockResolvedValue('once')
+    await (wrapped[NAME] as Exec).execute({ command: 'ls -la' }, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('a saved read-only grant is persisted with its marker and survives a reload', async () => {
+    await (wrapToolsWithApproval('sess-1', shell(), { scopeId: 's1' })[NAME] as Exec).execute({ command: 'ls' }, {})
+    expect(persistedState().scopeGrants?.s1?.[NAME]).toEqual(expect.objectContaining({ readOnlyCommands: true }))
+    const saved = localStorage.getItem(KEY) ?? ''
+    toolApprovalStore.setState({ scopeGrants: {} })
+    localStorage.setItem(KEY, saved)
+    await toolApprovalStore.persist.rehydrate()
+    expect(getScopeGrant('s1', NAME)).toEqual(expect.objectContaining({ readOnlyCommands: true }))
+  })
+})

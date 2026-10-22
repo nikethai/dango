@@ -28,6 +28,7 @@ vi.mock('i18next', () => ({
 
 const HINT = 'Dango always asks before it sends, deletes or changes your files.'
 const COMMAND_HINT = 'Dango always asks before it runs commands.'
+const READ_ONLY_HINT = 'Always covers only read-only commands like this one. Other commands still ask every time.'
 
 function makeRequest(over: Partial<PermissionRequest> = {}): PermissionRequest {
   return {
@@ -168,6 +169,23 @@ describe('ToolPermissionSheet', () => {
     expect(screen.queryByRole('button', { name: /^Always/ })).toBeNull()
     expect(screen.getByText(COMMAND_HINT)).toBeTruthy()
     expect(screen.queryByText(HINT)).toBeNull()
+  })
+
+  it('a read-only command offers Always in this scope and says other commands still ask', () => {
+    void requestToolPermission({
+      sessionId: 's1',
+      scopeId: 'scope-1',
+      toolName: 'mcp__shell__run_command',
+      toolDescription: 'Run a shell command',
+      riskTier: ToolRiskTier.MEDIUM,
+      summary: { what: 'Run a command', touches: ['ls -la'] },
+      allowAlways: true,
+      readOnlyCommand: true,
+    })
+    render(<ToolPermissionSheet request={getPermissionHead()} onChoose={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Always in this scope' })).toBeTruthy()
+    expect(screen.getByText(READ_ONLY_HINT)).toBeTruthy()
+    expect(screen.queryByText(COMMAND_HINT)).toBeNull()
   })
 
   it('a tool described as running shell commands shows the commands hint', () => {

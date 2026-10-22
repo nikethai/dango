@@ -6,6 +6,7 @@ export {
   describeToolAction,
   isCommandTool,
   isShellCommandTool,
+  offersReadOnlyCommandGrant,
   type PermissionChoice,
   type ToolActionSummary,
   toolLabel,
