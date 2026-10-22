@@ -256,3 +256,63 @@ describe('chats that quote device-only mail', () => {
     expect(sessionHoldsDeviceOnly('not a session')).toBe(false)
   })
 })
+
+describe('account tokens and sync state stay on the device', () => {
+  const KEYS = ['integration-secret:gmail-1', 'integration-secret:asana-2', 'history-sync-state']
+  const dump = (): Record<string, unknown> => ({
+    [StorageKey.Settings]: { language: 'en' },
+    'integration-secret:gmail-1': { accessToken: 'tok-gmail', refreshToken: 'ref-gmail' },
+    'integration-secret:asana-2': { apiToken: 'tok-asana' },
+    'history-sync-state': { lastSyncedAt: 5, deviceId: 'this-device' },
+  })
+
+  it.each(KEYS)('%s is device-only', (key) => {
+    expect(isDeviceOnlyKey(key)).toBe(true)
+  })
+
+  it('look-alikes still travel', () => {
+    for (const key of ['integration-secrets', 'history-sync-state-old', 'history-sync']) {
+      expect(isDeviceOnlyKey(key)).toBe(false)
+    }
+  })
+
+  it('an export leaves them out whether or not chats are included', () => {
+    for (const includeDeviceOnlyChats of [false, true]) {
+      const exported = settingsExportData(dump(), { includeDeviceOnlyChats })
+      expect(Object.keys(exported)).toEqual([StorageKey.Settings])
+      expect(JSON.stringify(exported)).not.toContain('tok-')
+    }
+  })
+
+  it('neither import writes them', () => {
+    expect(settingsImportEntries(dump()).map(([key]) => key)).toEqual([StorageKey.Settings])
+    const device = { 'integration-secret:gmail-1': { accessToken: 'mine' }, 'history-sync-state': { lastSyncedAt: 9 } }
+    const merged = settingsImportMerge(device, dump())
+    for (const key of KEYS) expect(Object.keys(merged)).not.toContain(key)
+  })
+})
+
+describe('settingsExportData', () => {
+  it('leaves its input unchanged', () => {
+    const recall = {
+      id: 'a',
+      role: 'assistant',
+      contentParts: [
+        { type: 'tool-call', toolCallId: 'c', toolName: 'client_recall', args: {}, result: { localOnly: true } },
+      ],
+    }
+    const input: Record<string, unknown> = {
+      [StorageKey.Settings]: { language: 'en' },
+      [StorageKey.ReviewEntries]: [{ id: 'r1' }],
+      'integration-secret:gmail-1': { accessToken: 't' },
+      [StorageKey.ChatSessionsList]: [{ id: 'p' }, { id: 'r' }],
+      [StorageKey.ChatSessions]: [{ id: 'r', messages: [recall] }],
+      'session:p': { id: 'p', messages: [] },
+      'session:r': { id: 'r', messages: [recall] },
+      'session:r:tasks': [{ id: 't' }],
+    }
+    const before = JSON.stringify(input)
+    for (const includeDeviceOnlyChats of [false, true]) settingsExportData(input, { includeDeviceOnlyChats })
+    expect(JSON.stringify(input)).toBe(before)
+  })
+})

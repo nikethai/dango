@@ -10,7 +10,10 @@ import { StorageKey } from './StoreStorage'
  * - approved knowledge, its migration record and connected sources (`knowledge`, `knowledge-migration`,
  *   `sources`). OKF import (ADR 0014) is how knowledge comes in, as proposals;
  * - connected accounts, Review entries, background jobs and source sync cursors (`integrations`, `review-entries`,
- *   `background-jobs`, `source-cursor:*`; Decision 5, ADR 0016). Imported history still travels.
+ *   `background-jobs`, `source-cursor:*`; Decision 5, ADR 0016). Imported history still travels;
+ * - connected-account tokens where no keychain holds them (`integration-secret:*`, `packages/integrations/
+ *   secret-store.ts`; web, mobile and the desktop fallback), whatever the API Keys box says;
+ * - this device's history sync state (`history-sync-state`, `stores/historySync.ts`).
  * Chats that quote device-only mail are a separate, opt-in choice: see `settingsExportData`.
  */
 
@@ -21,10 +24,13 @@ const DEVICE_ONLY_KEYS: ReadonlySet<string> = new Set([
   StorageKey.Integrations,
   StorageKey.ReviewEntries,
   StorageKey.BackgroundJobs,
+  'history-sync-state',
 ])
 
+const DEVICE_ONLY_PREFIXES = ['pm-', 'pm:', 'source-cursor:', 'integration-secret:'] as const
+
 export function isDeviceOnlyKey(key: string): boolean {
-  return key.startsWith('pm-') || key.startsWith('pm:') || key.startsWith('source-cursor:') || DEVICE_ONLY_KEYS.has(key)
+  return DEVICE_ONLY_PREFIXES.some((prefix) => key.startsWith(prefix)) || DEVICE_ONLY_KEYS.has(key)
 }
 
 /** A copy of `data` without the device-only keys. */

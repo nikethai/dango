@@ -86,6 +86,8 @@ h.getAll.mockImplementation(async () => ({
   'session:recall': { id: 'recall', name: 'Recall', messages: [recall] },
   'review-entries': [{ id: 'r1' }],
   'imported-history': { archives: [] },
+  'integration-secret:gmail-1': { accessToken: 'tok-gmail', refreshToken: 'ref-gmail' },
+  'history-sync-state': { lastSyncedAt: 5 },
 }))
 
 async function exported(): Promise<Record<string, unknown>> {
@@ -121,5 +123,26 @@ describe('Settings > General export', () => {
 
     fireEvent.click(screen.getByLabelText('Chat History'))
     expect(box.disabled).toBe(true)
+  })
+
+  it('leaves out account tokens and sync state with API Keys unticked or ticked', async () => {
+    const { RouteComponent } = await import('./general')
+    render(
+      <MantineProvider>
+        <RouteComponent />
+      </MantineProvider>
+    )
+    fireEvent.click(screen.getByText('Data & backup'))
+    const apiKeys = screen.getByLabelText('API Keys') as HTMLInputElement
+    expect(apiKeys.checked).toBe(false)
+    for (const tick of [false, true]) {
+      if (tick) fireEvent.click(apiKeys)
+      expect(apiKeys.checked).toBe(tick)
+      h.exportTextFile.mockReset()
+      const data = await exported()
+      expect(Object.keys(data)).not.toContain('integration-secret:gmail-1')
+      expect(Object.keys(data)).not.toContain('history-sync-state')
+      expect(JSON.stringify(data)).not.toContain('tok-gmail')
+    }
   })
 })
