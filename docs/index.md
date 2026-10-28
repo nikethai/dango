@@ -32,6 +32,7 @@ Start here. [log.md](log.md) lists what changed, newest first. Work items and id
 * [2026-10-14-pm-pilot-phase-1-client-memory](specs/2026-10-14-pm-pilot-phase-1-client-memory.md) - PM Pilot Phase 1: Client Memory Implementation Plan (deprecated; see slice 10)
 * [2026-10-16-redesign-brief](specs/2026-10-16-redesign-brief.md) - Total redesign brief: structure first, then a new look (draft)
 * [2026-10-16-ux-flows](specs/2026-10-16-ux-flows.md) - UX flows for the redesign: trigger, steps, states and exits for every user journey (draft)
+* [2026-10-17-clean-room-relicense](specs/2026-10-17-clean-room-relicense.md) - Remove or clean-room rewrite every upstream-derived file so Dango can leave GPL-3.0-only (draft)
 * [2026-10-17-dango-theme-first-slice](specs/2026-10-17-dango-theme-first-slice.md) - First code slice of the redesign: Dango tokens, sidebar, composer, ReviewItem (draft)
 * [2026-10-17-redesign-roadmap](specs/2026-10-17-redesign-roadmap.md) - The whole Dango redesign as thirteen plans: order, dependencies, the shared types every slice codes against, and how to run the plans (draft)
 * [2026-10-17-slice-01b-shared-foundations](specs/2026-10-17-slice-01b-shared-foundations.md) - Slice 1b of the redesign: the shared pieces later slices import: Sheet with focus rules, undo with a 5 s toast and ⌘Z, the eight-state Mascot, the Review entries store, BackgroundJob types and the /new route (draft)
@@ -53,6 +54,8 @@ Start here. [log.md](log.md) lists what changed, newest first. Work items and id
 * [2026-08-11-computer-use-industry-parity](research/2026-08-11-computer-use-industry-parity.md) - Research Report: Computer Use Parity (Claude / GPT / Perplexity → Dango)
 * [2026-10-05-copilotkit-reference-review](research/2026-10-05-copilotkit-reference-review.md) - CopilotKit reference review for Dango
 * [2026-10-13-work-source-access](research/2026-10-13-work-source-access.md) - Work source access feasibility
+* [2026-10-17-upstream-provenance](research/2026-10-17-upstream-provenance.md) - Which files on main still contain code, text or assets from the upstream GPLv3 project, before the redesign
+* [2026-10-28-upstream-provenance-after-redesign](research/2026-10-28-upstream-provenance-after-redesign.md) - Upstream-derived code left on main after the redesign merged, with a work package for every flagged file
 * [feature-gap-synthesis](research/feature-gap-synthesis.md) - Dango Feature Gap Synthesis (v2 — Evidence-Based)
 * [provider-usage-adapter-spikes](research/provider-usage-adapter-spikes.md) - Provider usage adapter spikes (v1)
 * [research-agent-video-url-reader-2026-08-10](research/research-agent-video-url-reader-2026-08-10.md) - Research Report: Agent Tool for Reading YouTube / Vimeo / TikTok / Facebook Video URLs
