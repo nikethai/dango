@@ -3,7 +3,8 @@ id: TASK-10.16
 title: Dependency license gate and brand cleanup
 status: Proposed
 assignee: []
-created_date: '2026-10-17 07:24'
+created_date: 2026-10-17 07:24
+updated_date: '2026-10-28T08:13:00Z'
 labels:
   - licensing
 dependencies:
@@ -11,6 +12,7 @@ dependencies:
 documentation:
   - docs/research/2026-10-17-upstream-provenance.md
   - docs/specs/2026-10-17-clean-room-relicense.md
+  - docs/research/2026-10-28-upstream-provenance-after-redesign.md
 parent_task_id: TASK-10
 type: chore
 ordinal: 27000
