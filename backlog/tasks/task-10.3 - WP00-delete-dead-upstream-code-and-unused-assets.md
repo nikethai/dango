@@ -4,7 +4,7 @@ title: 'WP00: delete dead upstream code and unused assets'
 status: Proposed
 assignee: []
 created_date: 2026-10-17 07:24
-updated_date: '2026-10-28T08:13:00Z'
+updated_date: '2026-10-29T15:46:00Z'
 labels:
   - licensing
 dependencies:
@@ -28,4 +28,5 @@ The 2026-10-28 audit found 65 upstream files (about 3.0k lines) that nothing in 
 - [ ] #1 All WP00 rows in files.csv are deleted, or reassigned to another WP with a reason
 - [ ] #2 pnpm check, pnpm test and pnpm build:web pass
 - [ ] #3 The maintainer decision on src/renderer/routes/dev is recorded in the task notes
+- [ ] #4 Tests that list deleted file paths (for example sheetInventory.test.ts) are updated in the same PR
 <!-- AC:END -->

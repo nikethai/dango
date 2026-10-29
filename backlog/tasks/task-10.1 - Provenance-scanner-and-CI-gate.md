@@ -4,7 +4,7 @@ title: Provenance scanner and CI gate
 status: Proposed
 assignee: []
 created_date: 2026-10-17 07:24
-updated_date: '2026-10-28T08:13:00Z'
+updated_date: '2026-10-29T15:46:00Z'
 labels:
   - licensing
 dependencies: []
@@ -27,7 +27,7 @@ Every later step needs one repeatable definition of "clean", and a way to stop n
 <!-- AC:BEGIN -->
 - [ ] #1 pnpm provenance classifies files as identical, upstream, mixed, trace or clean using blame -w -M -C -C plus 4-line copy matching against the pinned baseline refs (fe801920, 40cbd874, 0ac6385a)
 - [ ] #2 Run with --ref 2e3a77ce --all, it reproduces the 2026-10-28 audit counts: identical 268, upstream 226, mixed 169, trace 297, clean 1,477
-- [ ] #3 The team author pattern in config.json includes noreply@anthropic.com
-- [ ] #4 A pull_request workflow fails when a changed file is not clean and not allowlisted
+- [ ] #3 The team author pattern in config.json includes noreply@anthropic.com, and a line whose commit is reachable from a baseline counts as upstream whatever its author
+- [ ] #4 A pull_request workflow runs pnpm provenance --changed --fail as a ratchet against the merge base: it fails when a new file is not clean, a clean file stops being clean, or a flagged file gains upstream blame or copy-matched lines, and passes when a flagged file is only rewired or shrunk
 - [ ] #5 Tags provenance-baseline-2026-10-17 (3f7c2725) and provenance-baseline-2026-10-28 (2e3a77ce) exist on origin
 <!-- AC:END -->

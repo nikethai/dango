@@ -21,9 +21,9 @@ The relicensing plan starts once every redesign slice has merged. It leaves the 
 
 The four checks are the same as in the [earlier audit](2026-10-17-upstream-provenance.md#method), with these changes:
 
-- **Team authors now include Claude.** `noreply@anthropic.com` is the author of 352 commits made on the fork for the team. Upstream has no commits from that address, and every other fork author already matched the team pattern. The pattern is now `/thong|nikethai|canvilled|huyminh|huynguyen|noreply@anthropic\.com/i`. Without that address, the scan would credit about 90,000 Claude-written lines to upstream. It would then flag 1,449 files and about 170,000 lines instead of the 951 files and 79,700 lines below.
+- **Team authors now include Claude.** `noreply@anthropic.com` is the author of 352 commits made on the fork for the team, and every other fork author already matched the team pattern. Upstream has two commits from that address, `2168dd3d` and `a01fe3f9`. Both are on side branches that none of the three baselines reach, so no upstream line in this scan comes from them. The plan also counts any line whose commit is reachable from a baseline as upstream, whatever its author. The pattern is now `/thong|nikethai|canvilled|huyminh|huynguyen|noreply@anthropic\.com/i`. Without that address, the scan would credit about 90,000 Claude-written lines to upstream. It would then flag 1,449 files and about 170,000 lines instead of the 951 files and 79,700 lines below.
 - **Pinned upstream refs.** The copy check uses the trees of all three refs above. The identical-file check uses every blob in the history of `fe801920` and `0ac6385a`. The refs are pinned so the numbers can be reproduced later, even after upstream moves on.
-- **Exclusions are unchanged:** lock files, `LICENSE`, `NOTICE` and `docs/archive/`.
+- **Exclusions are unchanged:** every `pnpm-lock.yaml` and `Cargo.lock`, plus `LICENSE`, `NOTICE` and `docs/archive/`. Files ending in `.lock` are never blamed, so `ios/App/Podfile.lock` is counted in scope and is always clean. Excluding it too would make 2,283 files in scope and 1,332 clean; nothing else changes.
 
 ## Findings
 
@@ -43,8 +43,10 @@ On 2026-10-17 the figures were 799 files and about 80,100 lines. The upstream li
 | **total** | | **2,284** | **2,437** |
 
 **The redesign edited old files more than it replaced them.** Only 14 files from the 2026-10-17 list are gone, and only 4 more are now clean. Settings, chat UI and modals (WP07, WP09 and WP10) went from 206 files and 15,430 lines to 244 files and 14,343 lines:
-- 192 of the old files are still there, with 13,933 lines between them. 12 old files dropped off: deleted, now clean, or moved to WP00.
+- 191 of the old files are still flagged, with 13,824 lines between them. The other 15 dropped off: 12 were deleted or are now clean, and 3 moved to WP00.
+- 1 file moved in from WP00: `static/Block.css` (109 lines), which the app uses again.
 - 52 new files joined, almost all of them traces, with 410 lines between them.
+- That makes 191 + 1 + 52 = 244 files and 13,824 + 109 + 410 = 14,343 lines.
 
 | Work package | Files | Est. upstream lines | New since 10-17 | Change from 10-17 |
 |---|---:|---:|---:|---|

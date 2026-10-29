@@ -2,6 +2,14 @@
 
 Newest first. Add a line when you create, accept, supersede or move a decision, spec or research note.
 
+## 2026-10-29
+* **Update**: [clean-room rewrite and relicensing plan](specs/2026-10-17-clean-room-relicense.md) and [upstream provenance after the redesign](research/2026-10-28-upstream-provenance-after-redesign.md), after an independent review of PR #112:
+  - The PR gate is now a ratchet against the merge base. A PR fails if it adds a non-clean file, makes a clean file non-clean, or adds upstream lines to a flagged file. Rewiring callers in flagged files passes. The old rule, "fail any changed non-clean file", would have blocked every WP that edits callers.
+  - A line whose commit is reachable from an upstream baseline counts as upstream, whatever its author. Upstream has two `noreply@anthropic.com` commits on side branches that the baselines don't reach.
+  - Task 3 updates tests that list deleted files, such as `sheetInventory.test.ts`.
+  - The UI counts are corrected: 191 old files retained, plus `Block.css` moved in from WP00, plus 52 new. The lock-file exclusions are spelled out.
+  - TASK-10.1, 10.3 and 10.13 are updated to match.
+
 ## 2026-10-28
 * **Research**: [upstream provenance after the redesign](research/2026-10-28-upstream-provenance-after-redesign.md) (draft) — `main` at `2e3a77ce` still has 951 files and about 79.7k lines of upstream-derived code, almost the same as before the redesign. The redesign edited old UI files in place, and 170 new files picked up traces (`theme/mantineTheme.ts`, `routes/new.tsx` and `AgentsSettings.tsx` copy real upstream code). Includes a new `files.csv` with a work package for every file.
 * **Update**: [clean-room rewrite and relicensing plan](specs/2026-10-17-clean-room-relicense.md) — its precondition (every redesign slice merged) is met. It now works from the new `files.csv`. The team author pattern adds `noreply@anthropic.com`, without which about 90k team lines would count as upstream. The upstream baseline refs are pinned (`fe801920`, `40cbd874`, `0ac6385a`), and the scanner's regression test uses the new counts. Task counts are refreshed: WP00 has 65 files, and the UI packages still have 244 files. Task 13 no longer assumes the redesign replaced the UI. The TASK-10 cards are updated to match.

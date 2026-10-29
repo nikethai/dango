@@ -38,8 +38,17 @@ generated: { by: claude/opus-5.5, at: 2026-10-17T13:50:00+07:00 }
   - `0ac6385ae1ff5bf778777826da3c5edcd55b61b8`, upstream `main` on 2026-09-24, the newest at the 2026-10-28 audit
 
   The audited ref is `2e3a77cebb305b91c47f96eb803ea66be67ef779`, which is `main` after the redesign. The pre-redesign audit used `3f7c27254b6866b7a1582e2cd6eb28abfb527e5c`. To pick up a newer upstream release, add its commit to the list and refresh the audit.
-- **Team authors.** Author emails matching `/thong|nikethai|canvilled|huyminh|huynguyen|noreply@anthropic\.com/i` count as team, and every other author counts as upstream. `noreply@anthropic.com` is the author of commits Claude made for the team (352 on the fork as of 2026-10-28; upstream has none). Leaving it out would credit about 90,000 lines to upstream. If anyone else commits, add their address to `config.json` before their first PR.
+- **Team authors.** A blamed line counts as team when its commit's author email matches `/thong|nikethai|canvilled|huyminh|huynguyen|noreply@anthropic\.com/i` **and** the commit is not reachable from any pinned upstream baseline. Every other line counts as upstream.
+  - `noreply@anthropic.com` is the author of commits Claude made for the team: 352 on the fork as of 2026-10-28. Leaving it out would credit about 90,000 lines to upstream.
+  - Upstream has two commits from that address, `2168dd3d` and `a01fe3f9`, on side branches that none of the pinned baselines reach. The reachability check keeps them upstream if a later baseline ever includes them.
+  - If anyone else commits, add their address to `config.json` before their first PR.
 - **Clean bar.** A file is clean when it has 0 upstream blame lines under `git blame -w -M -C -C` and 0 copy-check matches, apart from boilerplate hashes listed in `scripts/provenance/allowlist.txt`.
+- **PR gate (ratchet).** A PR may not add upstream-derived code. Many files stay upstream-derived until their own WP rewrites them, and earlier WPs still have to edit them: Task 1 touches `package.json`, and every WP rewires callers in other packages. So the gate checks each changed file against the PR's merge base with `main`, not against the clean bar. It fails when:
+  - a file added by the PR is not clean;
+  - a file that was clean at the merge base is no longer clean;
+  - a file that was already flagged has more upstream blame lines, or more copy-matched lines, than at the merge base.
+
+  Editing or shrinking a flagged file passes, because edited lines are credited to their new author. Whether a WP is finished is checked separately, with `--summary`, when the WP's rows are at 0.
 - **Clean-room rule.** The implementer of a WP must not open the files listed for that WP in `files.csv`, their git history, or the upstream repo. They work from the WP spec and the public interfaces of clean modules only. Only the spec writer reads the upstream files, and the spec contains no code.
 - **AI implementers.** Give the agent only the WP spec, `AGENTS.md` and the clean modules it calls. Never paste an upstream file into the prompt and never ask it to "rewrite this file". The upstream repo is public and may be in model training data, which is why the scanner runs on every PR.
 - **Allowed carry-overs.** Only functional identifiers needed so existing user data still loads may be kept: storage keys, settings and session JSON field names, provider IDs, IPC command names. Each WP spec lists them under "Compatibility boundary". Anything not listed is renamed or redesigned.
@@ -50,7 +59,7 @@ generated: { by: claude/opus-5.5, at: 2026-10-17T13:50:00+07:00 }
 ## Review Focus
 
 1. **Existing installs.** Settings, sessions, blobs and provider keys written by the current release must still load after the stores and platform packages are replaced. This is pinned by a snapshot round-trip test in Task 7.
-2. **An AI implementer reproducing upstream code from memory.** Every PR must fail CI if the scanner finds an upstream match in a changed file. This is pinned in Task 1.
+2. **An AI implementer reproducing upstream code from memory.** Every PR must fail CI if it adds upstream-derived lines, whether in a new file or an existing one. It must still pass when it only rewires an upstream-derived caller. Both are pinned by the ratchet tests in Task 1.
 3. **Missing translations after the i18n rebuild.** If a key is missing, the user sees the raw key instead of text. Every `t()` key used in source must exist in English and in every shipped locale. This is pinned in Task 14.
 4. **Platform drift.** Desktop, web and mobile must keep the same storage and blob behaviour after the platform rewrite. One contract suite runs against all three implementations, pinned in Task 8.
 5. **Custom provider configs.** An existing OpenAI-compatible custom provider must keep its base URL, model list and key after the provider rewrite. This is pinned by a fixture test in Task 9.
@@ -67,7 +76,7 @@ Each WP task names its files, its spec path, its compatibility boundary and any 
 - [ ] **Switch and delete.** Point the callers at the new module and delete every file of the WP in the same PR. Then:
   - Run `pnpm check && pnpm lint && pnpm test`; all should PASS.
   - For UI WPs, also run `pnpm build:web` and open the affected screens in `pnpm dev`.
-- [ ] **Scan.** Run `pnpm provenance --changed --fail`. It should exit 0 and report no upstream or mixed files among those changed. If a hit is boilerplate, add its hash and a reason to `allowlist.txt`; the reviewer signs off on each entry.
+- [ ] **Scan.** Run `pnpm provenance --changed --fail`. It should exit 0: every new file is clean, and no changed file gained upstream lines (the PR gate above). Then run `pnpm provenance --summary`; the WP's rows should be at 0. If a hit is boilerplate, add its hash and a reason to `allowlist.txt`; the reviewer signs off on each entry.
 - [ ] **Commit** with the trailers above, then move the WP's Backlog card to Done using the `backlog` CLI.
 
 ---
@@ -87,12 +96,14 @@ Each WP task names its files, its spec path, its compatibility boundary and any 
   - `shingleHashes(lines, k = 4): { from: number; to: number; hash: string }[]`
   - `buildCorpus(repo: string, refs: string[]): Promise<Map<string, Set<string>>>`
   - `matchFile(text: string, corpus): { significant: number; matched: number; sources: string[] }`
-  - `blameFile(repo, ref, path, teamPattern: RegExp): Promise<{ team: number; upstream: number }>`
+  - `blameFile(repo, ref, path, teamPattern: RegExp, baselineRefs: string[]): Promise<{ team: number; upstream: number }>`
   - `classify(r: { identical: boolean; team: number; upstream: number; significant: number; matched: number }): 'identical' | 'upstream' | 'mixed' | 'trace' | 'clean'`
+  - `ratchet(base: FileResult | null, head: FileResult): { ok: boolean; reason?: string }`. `base` is the file at the merge base, or `null` for a file the PR adds; `FileResult` holds the classification and its counts.
 - CLI flags:
   - `--ref <ref>` (default `HEAD`)
-  - `--paths <glob…>` or `--changed` (files changed against `origin/main`)
-  - `--fail` (exit 1 if any non-clean, non-allowlisted file)
+  - `--paths <glob…>`
+  - `--changed`: files changed against the merge base with `origin/main`, each scanned at both ends and judged by `ratchet`
+  - `--fail`: exit 1 on any failure. With `--changed` that means a ratchet failure; otherwise, any non-clean, non-allowlisted file.
   - `--csv <out>`
   - `--summary` (counts per WP, using `files.csv` for the mapping)
   - `--all` (turn off the `config.json` exclusions; used for the baseline regression)
@@ -112,13 +123,22 @@ Each WP task names its files, its spec path, its compatibility boundary and any 
     - All zero gives `'clean'`.
     - Share is `max(upstream / (team + upstream), matched / significant)`. Thresholds: ≥ 0.8 is upstream, ≥ 0.1 is mixed.
   - **Baseline regression** (skipped when the `fe801920` or `0ac6385a` object is missing): `--ref 2e3a77ce --all` reproduces the 2026-10-28 audit's class counts over all 2,437 files: identical 268, upstream 226, mixed 169, trace 297, clean 1,477.
-  - **Team pattern:** a line authored by `noreply@anthropic.com` counts as team.
+  - **Team pattern:**
+    - A line authored by `noreply@anthropic.com` on the fork counts as team.
+    - A line whose commit is reachable from a baseline ref counts as upstream, even when its author matches the team pattern.
+  - **Ratchet:**
+    - A new file with 4 upstream lines fails.
+    - A clean file that gains an upstream match fails.
+    - A mixed file whose import line is rewired passes.
+    - A mixed file that gains 4 copy-matched lines fails.
+    - A mixed file that loses lines passes.
 - [ ] **Step 2: Run the tests.** `pnpm test -- scripts/provenance`; expect FAIL because the module is not found.
 - [ ] **Step 3: Implement `scan.mjs` and `cli.mjs`.**
-  - Blame uses `git blame -w -M -C -C --line-porcelain` and counts `author-mail` lines.
+  - Blame uses `git blame -w -M -C -C --line-porcelain`. It reads each line's commit and `author-mail`, and checks the commit against the baselines with `git merge-base --is-ancestor`, cached per commit.
   - Identical files are detected by blob SHA membership in `git rev-list --objects fe801920 0ac6385a`.
   - The corpus covers every text blob in the trees of the three pinned baseline refs, filtered by extension: `ts tsx js jsx mjs cjs mts css scss rs json html astro svelte yml yaml sh md kt swift`.
-  - `config.json` holds the team pattern, the pinned refs and the path exclusions (lock files, `LICENSE`, `NOTICE`, `docs/archive/`). `--all` turns off only the path exclusions. Binaries and lock files are never blamed.
+  - `config.json` holds the team pattern, the pinned refs and the path exclusions: every `pnpm-lock.yaml` and `Cargo.lock`, plus `LICENSE`, `NOTICE` and `docs/archive/`. `--all` turns off only the path exclusions.
+  - Binaries and files ending in `.lock` are never blamed. `ios/App/Podfile.lock` is therefore in scope but always classed clean. The audit counts depend on this, so keep it as is.
   - Run file blames 8 in parallel. A full blame of `main` takes about 15 minutes on 2 cores, so `--changed` is what CI runs.
 - [ ] **Step 4: Run the tests.** `pnpm test -- scripts/provenance`; expect PASS. Then run `pnpm provenance --ref 2e3a77ce --summary`; it should print 16 WPs whose totals match the table in the 2026-10-28 audit (951 files, 79,699 lines).
 - [ ] **Step 5: CI.**
@@ -169,11 +189,16 @@ Each WP task names its files, its spec path, its compatibility boundary and any 
 - 17 unused provider PNGs in `static/icons/providers/`
 - `static/wechat_qrcode.png`
 
-The usage check resolves `@/`, `@shared/` and relative imports in `src/`. It does not read build or test config, so `index.ejs`, `index.web.ejs`, `setupTests.ts`, `test.tsx` and `static/_headers` may still be wired up from `vite.renderer.config.mts`, `vitest.config.mts` or the web build. Step 3 catches those.
+The usage check resolves `@/`, `@shared/` and relative imports in `src/`. A separate check of build and test config, scripts and workflows found no references to `index.ejs`, `index.web.ejs`, `setupTests.ts`, `test.tsx` or `static/_headers`: Vite uses `index.html`, and Vitest has `setupFiles: []`.
+
+Some tests keep lists of file paths and will fail once those files are deleted. `components/ui/sheetInventory.test.ts` lists `knowledge-base/RemoteRetryModal.tsx`, and a comment in `storage/exportFilter.test.ts` names `AdvancedSettingTab.tsx`.
 
 - [ ] **Step 1: Delete in one pass.** `git rm` every WP00 path.
 - [ ] **Step 2: Build.** Run `pnpm check && pnpm build:web && pnpm test`.
-- [ ] **Step 3: Restore what is still used.** For each import error, restore that one file and change its WP in `files.csv` to the matching topic WP. Re-run Step 2 until it passes.
+- [ ] **Step 3: Restore what is still used, update what only lists it.**
+  - For each import error, restore that one file and change its WP in `files.csv` to the matching topic WP.
+  - For a test that fails only because a path list or comment names a deleted file, remove the entry, such as the `RemoteRetryModal.tsx` line in `sheetInventory.test.ts`. Run `git grep` for each deleted file name to find these.
+  - Re-run Step 2 until it passes.
 - [ ] **Step 4: Dev routes (maintainer decision).** `src/renderer/routes/dev/*` holds 5 identical upstream files and 1 upstream file, about 1,040 lines; they are listed under WP09. The redesign also added `dev/design-system.tsx`, which is a trace only. Delete the upstream ones unless the maintainer keeps Dev tools in Advanced; if they are kept, they stay in Task 13.
 - [ ] **Step 5: Scan and commit.** Run `pnpm provenance --summary`; WP00 should show 0 files. Commit with `chore: remove unused upstream code and assets`.
 
@@ -314,7 +339,7 @@ The largest are:
 - `InputBox/InputBox.tsx`, `chat/Message.tsx`, `Markdown.tsx`, `chat/MessageList.tsx`, `ActionMenu.tsx`
 - `modals/MessageEdit.tsx`, `ModelEdit.tsx`
 
-The redesign edited most of this UI in place rather than replacing it. Of the 206 files listed on 2026-10-17, 192 are still flagged.
+The redesign edited most of this UI in place rather than replacing it. Of the 206 files listed under these packages on 2026-10-17, 191 are still flagged (13,824 lines). One more, `static/Block.css` (109 lines), moved in from WP00 because the app uses it again.
 
 It also added 52 new files here. Most are trace only, but two copy real upstream code:
 - `routes/new.tsx` (131 lines, from upstream's `routes/index.tsx`)
