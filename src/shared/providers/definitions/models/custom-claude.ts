@@ -47,12 +47,12 @@ export default class CustomClaude extends AbstractAISDKModel {
 
   protected getCallSettings(options: CallChatCompletionOptions): CallSettings {
     const isModelSupportReasoning = this.isSupportReasoning()
-    let providerOptions = {} as { anthropic: AnthropicProviderOptions }
+    let providerOptions: CallSettings['providerOptions'] = {}
     if (isModelSupportReasoning) {
       providerOptions = {
         anthropic: {
           ...(options.providerOptions?.claude || {}),
-        },
+        } satisfies AnthropicProviderOptions,
       }
     }
 
