@@ -49,6 +49,22 @@ describe('parsePlanSteps', () => {
     expect(parsePlanSteps('- A\n- B\n\n**Notes**\n- n1')).toEqual(['A', 'B'])
     expect(parsePlanSteps('1. A\n2. B\nRisks:\n3. r1')).toEqual(['A', 'B'])
   })
+  it('reads the steps of every section, as in the walk: two headings with bullets under each', () => {
+    const text = '## Prepare\n- Pick a date\n- Book the room\n- Make a list\n\n## On the day\n- Set up\n- Greet guests'
+    expect(parsePlanSteps(text)).toEqual(['Pick a date', 'Book the room', 'Make a list', 'Set up', 'Greet guests'])
+    expect(parsePlanSteps('**Phase 1**\n1. A\n2. B\n**Phase 2**\n3. C')).toEqual(['A', 'B', 'C'])
+  })
+  it('lets each section use its own list kind', () => {
+    expect(parsePlanSteps('## One\n1. A\n## Two\n- B')).toEqual(['A', 'B'])
+  })
+  it('skips Risks, Notes, Assumptions, Questions and Out of scope sections wherever they are', () => {
+    const text =
+      '## Assumptions\n- x\n## Plan\n1. A\n## Risks and mitigations\n- r1\n## Then\n1. B\n## Open questions\n- q1\n## Out of scope\n- o1'
+    expect(parsePlanSteps(text)).toEqual(['A', 'B'])
+  })
+  it('a section ends at prose after a blank line; the next heading starts the next one', () => {
+    expect(parsePlanSteps('## One\n- A\n\nWhy this order.\n- not a step\n\n## Two\n- B')).toEqual(['A', 'B'])
+  })
   it('stops at prose after a blank line, and at a list of the other kind', () => {
     expect(parsePlanSteps('- A\n- B\n\nThen we ship.\n- C')).toEqual(['A', 'B'])
     expect(parsePlanSteps('1. A\n2. B\n- touched: a.ts')).toEqual(['A', 'B'])

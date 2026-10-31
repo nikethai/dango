@@ -18,30 +18,40 @@ const HEADING_LINE = /^\s{0,3}#{1,6}\s/
 const FENCE_LINE = /^\s*(```|~~~)/
 /** A section label such as "Risks:", "**Notes**" or "**Risks:**" on a line of its own. */
 const LABEL_LINE = /^\s*(?:\*\*[^*]+\*\*:?|__[^_]+__:?|[^\s].*:)\s*$/
+/** Sections whose lists are not steps: "## Risks", "**Notes**", "Open questions:", "Out of scope". */
+const NOT_STEPS_SECTION =
+  /^[\s#*_]*(?:open |key |known |potential )?(?:risks?|notes?|assumptions?|questions?|out of scope)\b/i
 
 type ParsedSteps = { steps: string[]; stepLines: Set<number> }
 
 /**
- * The steps are the top-level items of the plan's first list, at most 20:
- * - The first item line (outside code fences, indent 0–3) opens the list and fixes its indent and kind: numbered
- *   ("1." / "1)") or bulleted ("-", "*", "+").
+ * The steps are the top-level items of each section's first list, at most 20 in all:
+ * - A heading or a section label ("**Phase 2**", "Then:") on a line of its own starts a section. Sections about
+ *   risks, notes, assumptions, questions or what is out of scope have no steps.
+ * - In a section, the first item line (outside code fences, indent 0–3) opens its list and fixes its indent and kind:
+ *   numbered ("1." / "1)") or bulleted ("-", "*", "+").
  * - Items of the same kind at that indent (one extra space allowed) are steps. Deeper lines (nested bullets,
  *   continuation text, indented code) and blank lines belong to the current step.
- * - The list ends at a heading, a code fence, a section label ("Risks:", "**Notes**"), an item of the other kind at
- *   the list's indent, or a non-item line at the list's indent that follows a blank line (prose after the list).
- *   Such a line straight after an item line is a lazy continuation of that item.
+ * - The section's list ends at a code fence, an item of the other kind at the list's indent, or a non-item line at the
+ *   list's indent that follows a blank line (prose after the list); only the next section can add steps again. Such a
+ *   line straight after an item line is a lazy continuation of that item.
  */
 function parseSteps(planText: string): ParsedSteps {
   const steps: string[] = []
   const stepLines = new Set<number>()
   const lines = planText.split(/\r?\n/)
   let list: { indent: number; numbered: boolean } | null = null
+  /** The current section may still add steps: not a Risks/Notes section, and its list has not ended. */
+  let open = true
   let inFence = false
   let afterBlank = false
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (FENCE_LINE.test(line)) {
-      if (list && indentOf(line) <= list.indent + 1) break
+      if (!inFence && list && indentOf(line) <= list.indent + 1) {
+        list = null
+        open = false
+      }
       inFence = !inFence
       continue
     }
@@ -51,23 +61,30 @@ function parseSteps(planText: string): ParsedSteps {
       continue
     }
     const item = ITEM_LINE.exec(line)
-    if (!list) {
-      if (item) list = { indent: indentOf(line), numbered: /\d/.test(item[2]) }
-      else continue
-    }
     const indent = indentOf(line)
-    const topLevel = indent <= list.indent + 1
-    if (topLevel && HEADING_LINE.test(line)) break
-    if (topLevel && item) {
-      if (/\d/.test(item[2]) !== list.numbered) break
-      const step = item[3].trim()
-      if (step) {
-        steps.push(step)
-        stepLines.add(i)
-        if (steps.length === MAX_PLAN_STEPS) break
+    const topLevel = !list || indent <= list.indent + 1
+    if (topLevel && !item && (HEADING_LINE.test(line) || LABEL_LINE.test(line))) {
+      list = null
+      open = !NOT_STEPS_SECTION.test(line)
+      afterBlank = false
+      continue
+    }
+    if (open && !list && item) list = { indent, numbered: /\d/.test(item[2]) }
+    if (open && list && topLevel) {
+      if (item && /\d/.test(item[2]) !== list.numbered) {
+        list = null
+        open = false
+      } else if (item) {
+        const step = item[3].trim()
+        if (step) {
+          steps.push(step)
+          stepLines.add(i)
+          if (steps.length === MAX_PLAN_STEPS) break
+        }
+      } else if (afterBlank && !ANY_ITEM_LINE.test(line)) {
+        list = null
+        open = false
       }
-    } else if (topLevel && !ANY_ITEM_LINE.test(line)) {
-      if (afterBlank || LABEL_LINE.test(line)) break
     }
     afterBlank = false
   }
