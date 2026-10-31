@@ -29,6 +29,15 @@ function header(headers: Record<string, string> | undefined, name: string): stri
   return undefined
 }
 
+function headerRecord(headers: Headers | Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!(headers instanceof Headers)) return headers
+  const record: Record<string, string> = {}
+  headers.forEach((value, key) => {
+    record[key] = value
+  })
+  return record
+}
+
 /** `retry-after-ms` (OpenAI, Azure) wins over `retry-after` when both are sent. */
 function retryAfterFromHeaders(headers: Record<string, string> | undefined, now: number): number | undefined {
   const ms = header(headers, 'retry-after-ms')?.trim()
@@ -36,6 +45,22 @@ function retryAfterFromHeaders(headers: Record<string, string> | undefined, now:
     return Math.max(MIN_RETRY_AFTER_MS, Math.round(Number(ms)))
   }
   return parseRetryAfter(header(headers, 'retry-after'), now)
+}
+
+/**
+ * The `ApiError` for a non-OK response read by Dango's own fetch (web, desktop native HTTP, mobile), keeping its HTTP
+ * status and Retry-After wait. The message stays `Status Code N`, which the 5xx retry check reads.
+ */
+export function apiErrorFromResponse(
+  status: number,
+  headers: Headers | Record<string, string> | undefined,
+  responseBody: string | undefined,
+  now = Date.now()
+): ApiError {
+  return new ApiError(`Status Code ${status}`, responseBody, {
+    status,
+    retryAfterMs: retryAfterFromHeaders(headerRecord(headers), now),
+  })
 }
 
 /**

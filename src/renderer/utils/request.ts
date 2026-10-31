@@ -1,6 +1,7 @@
 import { createDesktopAwareFetch, hasDesktopHttpTransport } from '@shared/utils/desktop-http-fetch'
 import platform, { isCapacitorMobile } from '@/platform'
 import { ApiError, BaseError, NetworkError } from '../../shared/models/errors'
+import { apiErrorFromResponse } from '../../shared/models/retry-after'
 import { CHATBOX_CLOUD_ENABLED } from '../../shared/product'
 import { isLocalHost } from '../../shared/utils/network_utils'
 import { handleMobileRequest } from './mobile-request'
@@ -40,7 +41,6 @@ async function retryRequest<T>(fn: () => Promise<T>, retry: number, url: string)
   throw requestError || new Error('Unknown error')
 }
 
-
 function buildHeaders(options: RequestOptions, url: string): Headers {
   const headers = new Headers(options.headers)
   // Do not overwrite Content-Type if caller already set one (e.g. form-urlencoded)
@@ -78,7 +78,7 @@ async function doRequest(url: string, options: RequestOptions): Promise<Response
       })
       if (!res.ok) {
         const err = await res.text().catch(() => null)
-        throw new ApiError(`Status Code ${res.status}`, err ?? undefined)
+        throw apiErrorFromResponse(res.status, res.headers, err ?? undefined)
       }
       return res
     }
@@ -102,7 +102,7 @@ async function doRequest(url: string, options: RequestOptions): Promise<Response
     const res = await fetch(requestUrl, { method, headers, body, signal })
     if (!res.ok) {
       const err = await res.text().catch(() => null)
-      throw new ApiError(`Status Code ${res.status}`, err ?? undefined)
+      throw apiErrorFromResponse(res.status, res.headers, err ?? undefined)
     }
     return res
   }

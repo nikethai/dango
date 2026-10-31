@@ -1,6 +1,6 @@
 import { CapacitorHttp } from '@capacitor/core'
 import { createNativeReadableStream } from '@/native/stream-http'
-import { ApiError } from '../../shared/models/errors'
+import { apiErrorFromResponse } from '../../shared/models/retry-after'
 
 function shouldUseNativeStream(url: string, method: string, body?: RequestInit['body']): boolean {
   if (method.toUpperCase() !== 'POST' || typeof body !== 'string' || body.length === 0) {
@@ -82,7 +82,7 @@ export async function handleMobileRequest(
   const rawData = typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
   // Treat status 0 or < 200 as errors, in addition to >= 400
   if (response.status === 0 || response.status < 200 || response.status >= 400) {
-    throw new ApiError(`Status Code ${response.status}`, rawData)
+    throw apiErrorFromResponse(response.status, response.headers, rawData)
   }
   const responseData = rawData
 
