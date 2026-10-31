@@ -4,6 +4,13 @@ import platform from '@/platform'
 
 type ChangeRow = { changeId: string; status: string; label: string }
 
+/** Workspace errors arrive as `CODE: detail`; people see a sentence, never the code. */
+function sourceControlErrorText(message: string, t: (key: string) => string): string {
+  const code = /^([A-Z][A-Z_]*):/.exec(message)?.[1]
+  if (code === 'FEATURE_DISABLED' || code === 'SCM_DISABLED') return t("Source Control isn't available yet.")
+  return t("Couldn't load Source Control. Try again later.")
+}
+
 export function SourceControlView({ capabilityId }: { capabilityId: string }) {
   const { t } = useTranslation()
   const [branch, setBranch] = useState<string>('')
@@ -25,7 +32,7 @@ export function SourceControlView({ capabilityId }: { capabilityId: string }) {
         setChanges(status.changes || [])
       })
       .catch((err: Error) => {
-        if (!cancelled) setError(err.message)
+        if (!cancelled) setError(sourceControlErrorText(err?.message ?? '', t))
       })
     return () => {
       cancelled = true
@@ -35,7 +42,11 @@ export function SourceControlView({ capabilityId }: { capabilityId: string }) {
   return (
     <section aria-label={t('Source Control')} className="source-control-view">
       {error ? <p>{error}</p> : null}
-      {branch ? <p>{t('Branch')}: {branch}</p> : null}
+      {branch ? (
+        <p>
+          {t('Branch')}: {branch}
+        </p>
+      ) : null}
       <ul>
         {changes.map((change) => (
           <li key={change.changeId}>
