@@ -97,12 +97,14 @@ function isSwarmWorkerTurn(m: Message): boolean {
  * reasoning line until new answer text exists, then "Writing the answer…". When generating ends: the answer once, else
  * "Stopped before answering."; then final and silent forever. Final with empty text (nothing to say) when the turn
  * failed (ModelErrorNotice's role="alert" says the error in plain words) or is a Swarm plan or task turn (the captain
- * still answers, even after Stop).
+ * still answers, even after Stop). `live`: the turn is still registered as running (Thinking and Stop show), so a
+ * stored message that briefly reads as not generating is not yet stopped.
  */
 export function nextAnnouncement(
   m: Message,
   s: AnnouncerState,
-  now: number
+  now: number,
+  live = false
 ): { text: string; state: AnnouncerState } | null {
   if (s.final) return null
   if (!m.generating) {
@@ -110,6 +112,7 @@ export function nextAnnouncement(
     if (m.error?.trim() || m.errorCode !== undefined || isSwarmWorkerTurn(m)) return { text: '', state }
     const answer = answerText(m)
     if (answer) return { text: answer, state }
+    if (live) return null
     return { text: t('Stopped before answering.'), state }
   }
   if (s.lastSpokenAt !== null && now - s.lastSpokenAt < THINKING_ANNOUNCE_MS) return null

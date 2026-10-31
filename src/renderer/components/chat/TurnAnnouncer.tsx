@@ -46,7 +46,7 @@ export function TurnAnnouncer({ message }: { message?: Message }): JSX.Element {
       if (!m) return
       // The live start can be registered after the message appears; the spoken seconds follow the visible timer.
       if (stateRef.current.startedAt === undefined) stateRef.current.startedAt = liveStart(m)
-      const next = nextAnnouncement(m, stateRef.current, Date.now())
+      const next = nextAnnouncement(m, stateRef.current, Date.now(), getLiveGenerationStartedAt(m.id) !== undefined)
       if (!next) return
       stateRef.current = next.state
       if (next.text) setText(next.text)
