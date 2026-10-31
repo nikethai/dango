@@ -23,7 +23,7 @@ import {
 } from '@shared/agent-room'
 import { createMessage, type Message } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
-import { type AgentMeta, resolveAgentMeta } from '@/packages/agents'
+import { type AgentMeta, loadSavedAgents, resolveAgentMeta } from '@/packages/agents'
 import * as chatStore from '../chatStore'
 import * as scrollActions from '../scrollActions'
 import { generate } from './generation'
@@ -336,6 +336,8 @@ export async function runAgentRoomDiscussion(
   }
 ): Promise<void> {
   clearTeamRoomState(sessionId)
+  // Speaker names and prompts below are looked up synchronously; saved agents load asynchronously.
+  await loadSavedAgents()
 
   const roomIds = await applyRoomMembership(sessionId, params.mentionedAgentIds)
   const speakers = resolveSpeakers(roomIds, params.mentionedAgentIds)
@@ -571,18 +573,13 @@ export async function runAgentRoomSwarm(
 /**
  * On-demand Team answer (synthesis) after a completed discussion.
  */
-export async function requestTeamAnswer(
-  sessionId: string,
-  params?: { truncateTokenLimit?: number }
-): Promise<void> {
+export async function requestTeamAnswer(sessionId: string, params?: { truncateTokenLimit?: number }): Promise<void> {
   const pending = (await import('./team-room-state')).getTeamRoomActions()
   const session = await chatStore.getSession(sessionId)
   if (!session) return
 
   const speakers =
-    pending?.sessionId === sessionId
-      ? pending.speakers
-      : resolveSpeakers(normalizeSessionAgentIds(session), undefined)
+    pending?.sessionId === sessionId ? pending.speakers : resolveSpeakers(normalizeSessionAgentIds(session), undefined)
 
   if (speakers.length < 2) return
 
@@ -625,10 +622,7 @@ export async function requestTeamAnswer(
 /**
  * Extra discuss round after a completed discussion (capped).
  */
-export async function keepDiscussing(
-  sessionId: string,
-  params?: { truncateTokenLimit?: number }
-): Promise<void> {
+export async function keepDiscussing(sessionId: string, params?: { truncateTokenLimit?: number }): Promise<void> {
   const { getTeamRoomActions } = await import('./team-room-state')
   const pending = getTeamRoomActions()
   if (!pending || pending.sessionId !== sessionId) return

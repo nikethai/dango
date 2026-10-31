@@ -18,6 +18,40 @@ export type AgentMeta = {
 }
 
 /**
+ * Saved agents, resolved. Once mounted, the storage atom holds its load promise, which hooks unwrap but
+ * `getDefaultStore().get` returns as is; this keeps the resolved list for synchronous lookups.
+ */
+let savedAgents: CopilotDetail[] = []
+let watchingSavedAgents = false
+
+function rememberSavedAgents(value: unknown) {
+  void Promise.resolve(value)
+    .then((list) => {
+      if (Array.isArray(list)) savedAgents = list
+    })
+    .catch(() => {})
+}
+
+function watchSavedAgents() {
+  if (watchingSavedAgents) return
+  watchingSavedAgents = true
+  const store = getDefaultStore()
+  store.sub(myCopilotsAtom, () => rememberSavedAgents(store.get(myCopilotsAtom)))
+}
+
+/** Waits for the saved agents to load; call before a lookup that must see them (generation, labels). */
+export async function loadSavedAgents(): Promise<CopilotDetail[]> {
+  try {
+    watchSavedAgents()
+    const list = await getDefaultStore().get(myCopilotsAtom)
+    if (Array.isArray(list)) savedAgents = list
+  } catch {
+    // jotai store unavailable (tests / early boot)
+  }
+  return savedAgents
+}
+
+/**
  * Full agent detail for prompts/settings. Returns null only when completely unknown.
  */
 export function getAgentDetailById(id: string | undefined | null): CopilotDetail | null {
@@ -27,8 +61,9 @@ export function getAgentDetailById(id: string | undefined | null): CopilotDetail
   if (builtin) return builtin
 
   try {
+    watchSavedAgents()
     const stored = getDefaultStore().get(myCopilotsAtom)
-    const list = Array.isArray(stored) ? stored : []
+    const list = Array.isArray(stored) ? stored : savedAgents
     const found = list.find((c) => c.id === id)
     if (found) return found
   } catch {
