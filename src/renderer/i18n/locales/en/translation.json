@@ -1989,5 +1989,8 @@
   "Delete import": "Delete import",
   "This removes {{count}} imported conversations from Dango and can't be undone. Chats you continued from them stay._one": "This removes {{count}} imported conversation from Dango and can't be undone. Chats you continued from them stay.",
   "This removes {{count}} imported conversations from Dango and can't be undone. Chats you continued from them stay._other": "This removes {{count}} imported conversations from Dango and can't be undone. Chats you continued from them stay.",
-  "Web and outside tools are off because this chat holds device-only mail.": "Web and outside tools are off because this chat holds device-only mail."
+  "Web and outside tools are off because this chat holds device-only mail.": "Web and outside tools are off because this chat holds device-only mail.",
+  "Publish": "Publish",
+  "Publish this page to the web?": "Publish this page to the web?",
+  "Dango will upload this HTML to EdgeOne Pages, a hosting service run by Tencent, and give you a link. Anyone with the link can open the page.": "Dango will upload this HTML to EdgeOne Pages, a hosting service run by Tencent, and give you a link. Anyone with the link can open the page."
 }

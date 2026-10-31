@@ -371,6 +371,12 @@ interface BlockCodeCollapsedStateContextType {
 }
 
 // Create the Context
+/**
+ * Whether code blocks may offer "Publish Webpage". MessageList turns it off in chats that hold device-only text
+ * (ADR 0016: nothing from such a chat leaves the device). Default on.
+ */
+export const CodePublishContext = createContext(true)
+
 const BlockCodeCollapsedStateContext = createContext<BlockCodeCollapsedStateContextType | undefined>(undefined)
 
 // Provider Props type
@@ -504,9 +510,10 @@ const BlockCode = memo(
     const languageName = useMemo(() => language.toUpperCase(), [language])
     const isRenderableCode = useMemo(() => isRenderableCodeLanguage(language), [language])
     const [deploying, setDeploying] = useState(false)
+    const publishAllowed = useContext(CodePublishContext)
     const canDeploy = useMemo(
-      () => isRenderableCode && String(children).trim().length > 0,
-      [children, isRenderableCode]
+      () => publishAllowed && isRenderableCode && String(children).trim().length > 0,
+      [children, isRenderableCode, publishAllowed]
     )
 
     const icon = useMemo(() => CodeIcons[languageName] || IconCode, [languageName])
@@ -536,6 +543,10 @@ const BlockCode = memo(
         event.stopPropagation()
         event.preventDefault()
         if (!canDeploy) {
+          return
+        }
+        // The upload goes to a third-party host, so it always asks first.
+        if ((await NiceModal.show('publish-webpage-confirm')) !== true) {
           return
         }
         setDeploying(true)
