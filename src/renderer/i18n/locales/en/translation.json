@@ -1992,5 +1992,8 @@
   "Web and outside tools are off because this chat holds device-only mail.": "Web and outside tools are off because this chat holds device-only mail.",
   "Source Control isn't available yet.": "Source Control isn't available yet.",
   "Couldn't load Source Control. Try again later.": "Couldn't load Source Control. Try again later.",
-  "The model wrote a tool request as text. Dango hid it and ran nothing.": "The model wrote a tool request as text. Dango hid it and ran nothing."
+  "The model wrote a tool request as text. Dango hid it and ran nothing.": "The model wrote a tool request as text. Dango hid it and ran nothing.",
+  "Publish": "Publish",
+  "Publish this page to the web?": "Publish this page to the web?",
+  "Dango will upload this HTML to EdgeOne Pages, a hosting service run by Tencent, and give you a link. Anyone with the link can open the page.": "Dango will upload this HTML to EdgeOne Pages, a hosting service run by Tencent, and give you a link. Anyone with the link can open the page."
 }

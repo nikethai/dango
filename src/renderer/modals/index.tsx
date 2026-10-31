@@ -14,6 +14,7 @@ import ImportedConversationView from './ImportedConversationView'
 import JsonViewer from './JsonViewer'
 import MessageEdit from './MessageEdit'
 import ModelEdit from './ModelEdit'
+import PublishWebpageConfirm from './PublishWebpageConfirm'
 import ReportContent from './ReportContent'
 import RewriteSheet from './RewriteSheet'
 import SessionSettings from './SessionSettings'
@@ -42,3 +43,4 @@ NiceModal.register('report-content', ReportContent)
 NiceModal.register('model-edit', ModelEdit)
 NiceModal.register('thread-name-edit', ThreadNameEdit)
 NiceModal.register('edgeone-deploy-success', EdgeOneDeploySuccess)
+NiceModal.register('publish-webpage-confirm', PublishWebpageConfirm)

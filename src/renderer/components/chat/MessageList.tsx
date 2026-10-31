@@ -34,6 +34,7 @@ import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { cn } from '@/lib/utils'
 import { getShowThinking, scopeKindOf } from '@/packages/chat-settings'
 import { isPlanModeOn, planContinueState, planModeToggleShown } from '@/packages/plan/planSteps'
+import { chatHoldsLocalOnly } from '@/packages/pm-pilot/local-only-chat'
 import { thinkingOpenByDefault } from '@/packages/thinking/thinking'
 import { platformCapabilities } from '@/platform'
 import * as atoms from '@/stores/atoms'
@@ -56,7 +57,7 @@ import { motionScrollBehavior } from '@/utils/scrollBehavior'
 import ActionMenu from '../ActionMenu'
 import { ErrorBoundary } from '../common/ErrorBoundary'
 import { ScalableIcon } from '../common/ScalableIcon'
-import { BlockCodeCollapsedStateProvider } from '../Markdown'
+import { BlockCodeCollapsedStateProvider, CodePublishContext } from '../Markdown'
 import EmptyThreadState, { firstChatChipsShown } from './EmptyThreadState'
 import Message from './Message'
 import SummaryMessage from './SummaryMessage'
@@ -135,6 +136,8 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const allMessages = useMemo(() => {
     return getAllMessageList(currentSession).filter((message) => message.role !== 'system')
   }, [currentSession])
+  // ADR 0016: a chat holding device-only text offers no "Publish Webpage" upload.
+  const publishAllowed = useMemo(() => !chatHoldsLocalOnly(allMessages), [allMessages])
   // A Swarm run shows as one item: its answer with "Worked with" below, or the live card while it runs.
   const swarmFold = useMemo(() => foldSwarmRuns(allMessages), [allMessages])
   const currentMessageList = swarmFold.visible
@@ -266,154 +269,156 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   return (
     <div className={cn('w-full h-full mx-auto', props.className)}>
       <BlockCodeCollapsedStateProvider defaultCollapsed={!!settingsStore.getState().autoCollapseCodeBlock}>
-        <div className="overflow-hidden h-full relative" ref={messageListRef}>
-          {threadEmpty ? (
-            <EmptyThreadState
-              sessionName={currentSession.name}
-              onPickStarter={handlePickStarter}
-              scopeName={scope?.name}
-              scopeKind={scope ? scopeKindOf(scope) : null}
-              compact={alignToBottom || isSmallScreen}
-              showSuggestions={firstChatChipsShown({ sessionType: currentSession.type, composerHasDraft })}
-            />
-          ) : (
-            <Virtuoso
-              // Full session reserves gutter so layout does not jump; quick chat is
-              // narrow — stable gutter + any min-content overflow shows a useless X bar.
-              style={alignToBottom ? undefined : { scrollbarGutter: 'stable' }}
-              className={cn(
-                platformType === 'win32' && 'scrollbar-custom',
-                alignToBottom && 'message-list-scroller--no-x'
-              )}
-              data={currentMessageList}
-              ref={virtuoso}
-              // Identity by message id so append/stream does not recycle the wrong row.
-              computeItemKey={(_index, msg) => msg.id}
-              // Stick to bottom while user is already there. Prefer 'auto' always — 'smooth'
-              // restarts every paint and feels cheap. Fixed work-strip height keeps deltas small.
-              followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
-              atBottomStateChange={handleAtBottomStateChange}
-              atBottomThreshold={72}
-              alignToBottom={alignToBottom}
-              {...(sessionScrollPositionCache.has(currentSession.id) && !alignToBottom
-                ? {
-                    restoreStateFrom: sessionScrollPositionCache.get(currentSession.id),
-                    // (legacy comment)
-                    initialScrollTop: sessionScrollPositionCache.get(currentSession.id)?.scrollTop,
-                  }
-                : {
-                    initialTopMostItemIndex: Math.max(0, currentMessageList.length - 1),
-                  })}
-              // Keep overscan/itemHeight stable — flipping them on generating→idle remeasures the thread.
-              increaseViewportBy={{ top: 200, bottom: 260 }}
-              defaultItemHeight={100}
-              skipAnimationFrameInResizeObserver={isStreaming}
-              itemContent={(index, msg) => {
-                const prevMsg = index > 0 ? currentMessageList[index - 1] : undefined
-                const nextMsg = currentMessageList[index + 1]
-                const isTeamDiscussRole = isTeamRoomCompactRole(msg)
-                const prevIsTeamDiscussRole = isTeamRoomCompactRole(prevMsg)
-                const nextIsTeamDiscussRole = isTeamRoomCompactRole(nextMsg)
-                const discussionGroupStart = Boolean(isTeamDiscussRole && !prevIsTeamDiscussRole)
-                const discussionGroupEnd = Boolean(isTeamDiscussRole && !nextIsTeamDiscussRole)
-                const isCompactRoomTurn = isTeamDiscussRole
-                const swarmRun = swarmFold.anchorOf[msg.id] ? swarmFold.runs[swarmFold.anchorOf[msg.id]] : undefined
-                // Only the run that is running right now gets the live card (an earlier stopped run never does).
-                const swarmCard = swarmRun ? (
-                  swarmLive?.runId === swarmRun.runId ? (
-                    <SwarmLiveCard sessionId={currentSession.id} runId={swarmRun.runId} />
-                  ) : (
-                    <SwarmWorkedWith run={swarmRun} />
-                  )
-                ) : null
-                const forkNavIds = [
-                  ...(forksMovedTo[msg.id] ?? []),
-                  ...((currentSession.messageForksHash?.[msg.id]?.lists.length ?? 0) > 1 ? [msg.id] : []),
-                ]
-                return (
-                  <Stack
-                    key={msg.id}
-                    gap={0}
-                    className={cn(
-                      'chat-col',
-                      index === 0 && 'pt-2',
-                      isCompactRoomTurn &&
-                        'bg-[var(--chatbox-background-secondary,#16161a)]/35 border-x border-[var(--chatbox-border-primary,#2a2a32)] px-2',
-                      discussionGroupStart && 'mt-1 rounded-t-lg border-t pt-2',
-                      discussionGroupEnd && 'mb-1 rounded-b-lg border-b pb-2'
-                    )}
-                  >
-                    {currentThreadHash[msg.id] && (
-                      <ThreadLabel thread={currentThreadHash[msg.id]} sessionId={currentSession.id} />
-                    )}
-                    <ErrorBoundary name={`message-item`}>
-                      {swarmRun && swarmRun.answerId !== msg.id ? (
-                        swarmCard
-                      ) : msg.isSummary ? (
-                        <SummaryMessage
-                          msg={msg}
-                          className={index === 0 ? 'pt-4' : index === currentMessageList.length - 1 ? '!pb-4' : ''}
-                          isLatestSummary={msg.id === latestSummaryMessageId}
-                          onDelete={() => removeMessage(currentSession.id, msg.id)}
-                          sessionId={currentSession.id}
-                        />
-                      ) : (
-                        <Message
-                          id={msg.id}
-                          msg={msg}
-                          sessionId={currentSession.id}
-                          sessionType={currentSession.type || 'chat'}
-                          className={cn(
-                            index === 0 ? 'pt-4' : index === currentMessageList.length - 1 ? '!pb-4' : '',
-                            isCompactRoomTurn && '!pt-1 !pb-1'
-                          )}
-                          collapseThreshold={msg.role === 'system' ? 150 : undefined}
-                          buttonGroup={
-                            // Quick chat (alignToBottom): no per-message chrome / More menu
-                            alignToBottom
-                              ? 'none'
-                              : index === currentMessageList.length - 1 && msg.role === 'assistant'
-                                ? 'always'
-                                : 'auto'
-                          }
-                          assistantAvatarKey={currentSession.assistantAvatarKey}
-                          sessionPicUrl={currentSession.picUrl}
-                          discussionGroupStart={discussionGroupStart}
-                          showFollowUpSuggestions={msg.id === latestAssistantMessageId}
-                          thinkingDefaultOpen={thinkingDefaultOpen}
-                          planTouchesFiles={planTouchesFiles}
-                          latestPlan={msg.id === latestPlanMessageId}
-                          planContinue={planContinueFor(msg.id)}
-                          onTurnOnPlanMode={turnOnPlanModeOffered ? onTurnOnPlanMode : undefined}
-                        />
-                      )}
-                      {swarmRun && swarmRun.answerId === msg.id ? swarmCard : null}
-                    </ErrorBoundary>
-                    {forkNavIds.map((forkId) => {
-                      const forks = currentSession.messageForksHash?.[forkId]
-                      return forks ? (
-                        <Flex key={forkId} justify="flex-end" mt={4} pr="md" mr="md" className="self-end">
-                          <ForkNav sessionId={currentSession.id} msgId={forkId} forks={forks} />
-                        </Flex>
-                      ) : null
+        <CodePublishContext.Provider value={publishAllowed}>
+          <div className="overflow-hidden h-full relative" ref={messageListRef}>
+            {threadEmpty ? (
+              <EmptyThreadState
+                sessionName={currentSession.name}
+                onPickStarter={handlePickStarter}
+                scopeName={scope?.name}
+                scopeKind={scope ? scopeKindOf(scope) : null}
+                compact={alignToBottom || isSmallScreen}
+                showSuggestions={firstChatChipsShown({ sessionType: currentSession.type, composerHasDraft })}
+              />
+            ) : (
+              <Virtuoso
+                // Full session reserves gutter so layout does not jump; quick chat is
+                // narrow — stable gutter + any min-content overflow shows a useless X bar.
+                style={alignToBottom ? undefined : { scrollbarGutter: 'stable' }}
+                className={cn(
+                  platformType === 'win32' && 'scrollbar-custom',
+                  alignToBottom && 'message-list-scroller--no-x'
+                )}
+                data={currentMessageList}
+                ref={virtuoso}
+                // Identity by message id so append/stream does not recycle the wrong row.
+                computeItemKey={(_index, msg) => msg.id}
+                // Stick to bottom while user is already there. Prefer 'auto' always — 'smooth'
+                // restarts every paint and feels cheap. Fixed work-strip height keeps deltas small.
+                followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
+                atBottomStateChange={handleAtBottomStateChange}
+                atBottomThreshold={72}
+                alignToBottom={alignToBottom}
+                {...(sessionScrollPositionCache.has(currentSession.id) && !alignToBottom
+                  ? {
+                      restoreStateFrom: sessionScrollPositionCache.get(currentSession.id),
+                      // (legacy comment)
+                      initialScrollTop: sessionScrollPositionCache.get(currentSession.id)?.scrollTop,
+                    }
+                  : {
+                      initialTopMostItemIndex: Math.max(0, currentMessageList.length - 1),
                     })}
-                  </Stack>
-                )
-              }}
-            />
-          )}
-          {!threadEmpty && !atBottom && !alignToBottom ? (
-            <button
-              type="button"
-              className="thread-jump-latest"
-              onClick={handleJumpToLatest}
-              aria-label={t('Jump to latest')}
-            >
-              <IconArrowDown size={15} stroke={1.75} aria-hidden />
-              <span>{t('Latest')}</span>
-            </button>
-          ) : null}
-        </div>
+                // Keep overscan/itemHeight stable — flipping them on generating→idle remeasures the thread.
+                increaseViewportBy={{ top: 200, bottom: 260 }}
+                defaultItemHeight={100}
+                skipAnimationFrameInResizeObserver={isStreaming}
+                itemContent={(index, msg) => {
+                  const prevMsg = index > 0 ? currentMessageList[index - 1] : undefined
+                  const nextMsg = currentMessageList[index + 1]
+                  const isTeamDiscussRole = isTeamRoomCompactRole(msg)
+                  const prevIsTeamDiscussRole = isTeamRoomCompactRole(prevMsg)
+                  const nextIsTeamDiscussRole = isTeamRoomCompactRole(nextMsg)
+                  const discussionGroupStart = Boolean(isTeamDiscussRole && !prevIsTeamDiscussRole)
+                  const discussionGroupEnd = Boolean(isTeamDiscussRole && !nextIsTeamDiscussRole)
+                  const isCompactRoomTurn = isTeamDiscussRole
+                  const swarmRun = swarmFold.anchorOf[msg.id] ? swarmFold.runs[swarmFold.anchorOf[msg.id]] : undefined
+                  // Only the run that is running right now gets the live card (an earlier stopped run never does).
+                  const swarmCard = swarmRun ? (
+                    swarmLive?.runId === swarmRun.runId ? (
+                      <SwarmLiveCard sessionId={currentSession.id} runId={swarmRun.runId} />
+                    ) : (
+                      <SwarmWorkedWith run={swarmRun} />
+                    )
+                  ) : null
+                  const forkNavIds = [
+                    ...(forksMovedTo[msg.id] ?? []),
+                    ...((currentSession.messageForksHash?.[msg.id]?.lists.length ?? 0) > 1 ? [msg.id] : []),
+                  ]
+                  return (
+                    <Stack
+                      key={msg.id}
+                      gap={0}
+                      className={cn(
+                        'chat-col',
+                        index === 0 && 'pt-2',
+                        isCompactRoomTurn &&
+                          'bg-[var(--chatbox-background-secondary,#16161a)]/35 border-x border-[var(--chatbox-border-primary,#2a2a32)] px-2',
+                        discussionGroupStart && 'mt-1 rounded-t-lg border-t pt-2',
+                        discussionGroupEnd && 'mb-1 rounded-b-lg border-b pb-2'
+                      )}
+                    >
+                      {currentThreadHash[msg.id] && (
+                        <ThreadLabel thread={currentThreadHash[msg.id]} sessionId={currentSession.id} />
+                      )}
+                      <ErrorBoundary name={`message-item`}>
+                        {swarmRun && swarmRun.answerId !== msg.id ? (
+                          swarmCard
+                        ) : msg.isSummary ? (
+                          <SummaryMessage
+                            msg={msg}
+                            className={index === 0 ? 'pt-4' : index === currentMessageList.length - 1 ? '!pb-4' : ''}
+                            isLatestSummary={msg.id === latestSummaryMessageId}
+                            onDelete={() => removeMessage(currentSession.id, msg.id)}
+                            sessionId={currentSession.id}
+                          />
+                        ) : (
+                          <Message
+                            id={msg.id}
+                            msg={msg}
+                            sessionId={currentSession.id}
+                            sessionType={currentSession.type || 'chat'}
+                            className={cn(
+                              index === 0 ? 'pt-4' : index === currentMessageList.length - 1 ? '!pb-4' : '',
+                              isCompactRoomTurn && '!pt-1 !pb-1'
+                            )}
+                            collapseThreshold={msg.role === 'system' ? 150 : undefined}
+                            buttonGroup={
+                              // Quick chat (alignToBottom): no per-message chrome / More menu
+                              alignToBottom
+                                ? 'none'
+                                : index === currentMessageList.length - 1 && msg.role === 'assistant'
+                                  ? 'always'
+                                  : 'auto'
+                            }
+                            assistantAvatarKey={currentSession.assistantAvatarKey}
+                            sessionPicUrl={currentSession.picUrl}
+                            discussionGroupStart={discussionGroupStart}
+                            showFollowUpSuggestions={msg.id === latestAssistantMessageId}
+                            thinkingDefaultOpen={thinkingDefaultOpen}
+                            planTouchesFiles={planTouchesFiles}
+                            latestPlan={msg.id === latestPlanMessageId}
+                            planContinue={planContinueFor(msg.id)}
+                            onTurnOnPlanMode={turnOnPlanModeOffered ? onTurnOnPlanMode : undefined}
+                          />
+                        )}
+                        {swarmRun && swarmRun.answerId === msg.id ? swarmCard : null}
+                      </ErrorBoundary>
+                      {forkNavIds.map((forkId) => {
+                        const forks = currentSession.messageForksHash?.[forkId]
+                        return forks ? (
+                          <Flex key={forkId} justify="flex-end" mt={4} pr="md" mr="md" className="self-end">
+                            <ForkNav sessionId={currentSession.id} msgId={forkId} forks={forks} />
+                          </Flex>
+                        ) : null
+                      })}
+                    </Stack>
+                  )
+                }}
+              />
+            )}
+            {!threadEmpty && !atBottom && !alignToBottom ? (
+              <button
+                type="button"
+                className="thread-jump-latest"
+                onClick={handleJumpToLatest}
+                aria-label={t('Jump to latest')}
+              >
+                <IconArrowDown size={15} stroke={1.75} aria-hidden />
+                <span>{t('Latest')}</span>
+              </button>
+            ) : null}
+          </div>
+        </CodePublishContext.Provider>
       </BlockCodeCollapsedStateProvider>
     </div>
   )
