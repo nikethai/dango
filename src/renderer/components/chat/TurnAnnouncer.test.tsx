@@ -74,6 +74,29 @@ describe('TurnAnnouncer', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
+  it('never says "Stopped before answering." while the turn is still live (Thinking and Stop showing)', () => {
+    markSessionGenerationLive('s1', 'a1')
+    const m = live('reading')
+    const { container, rerender } = render(<TurnAnnouncer message={m} />)
+    const el = region(container)
+    act(() => {
+      vi.advanceTimersByTime(1_000)
+    })
+    // The stored message briefly reads as not generating while the live turn is still registered.
+    rerender(<TurnAnnouncer message={{ ...m, generating: false }} />)
+    act(() => {
+      vi.advanceTimersByTime(10_000)
+    })
+    expect(el.textContent).not.toBe('Stopped before answering.')
+
+    // The turn really ends with no answer: now it is said.
+    clearSessionGenerationLive('s1', 'a1')
+    act(() => {
+      vi.advanceTimersByTime(1_000)
+    })
+    expect(el.textContent).toBe('Stopped before answering.')
+  })
+
   it('says nothing for a turn that had already finished when the chat opened', () => {
     const old: Message = { id: 'a0', role: 'assistant', contentParts: [{ type: 'text', text: 'An old answer' }] }
     const { container } = render(<TurnAnnouncer message={old} />)
