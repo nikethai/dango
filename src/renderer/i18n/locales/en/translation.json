@@ -1989,5 +1989,6 @@
   "Delete import": "Delete import",
   "This removes {{count}} imported conversations from Dango and can't be undone. Chats you continued from them stay._one": "This removes {{count}} imported conversation from Dango and can't be undone. Chats you continued from them stay.",
   "This removes {{count}} imported conversations from Dango and can't be undone. Chats you continued from them stay._other": "This removes {{count}} imported conversations from Dango and can't be undone. Chats you continued from them stay.",
-  "Web and outside tools are off because this chat holds device-only mail.": "Web and outside tools are off because this chat holds device-only mail."
+  "Web and outside tools are off because this chat holds device-only mail.": "Web and outside tools are off because this chat holds device-only mail.",
+  "The model wrote a tool request as text. Dango hid it and ran nothing.": "The model wrote a tool request as text. Dango hid it and ran nothing."
 }
