@@ -22,8 +22,36 @@ describe('slash tokens', () => {
     expect(getActiveCommandSlashQuery('/rev\nmore')).toBe(null)
   })
 
+  it('does not treat a /word followed by another / as a command', () => {
+    expect(extractCommandNamesFromText('/tmp/alpha-beta and /review/notes')).toEqual([])
+  })
+
   it('strips slash tokens', () => {
-    expect(stripCommandSlashTokens('/review the PR')).toMatch(/the PR/i)
+    expect(stripCommandSlashTokens('/review the PR', ['review'])).toBe('the PR')
+  })
+})
+
+describe('stripCommandSlashTokens keeps what is not a command', () => {
+  const names = ['review', 'tmp', 'usr', 'fix-issue']
+
+  it('keeps file paths, even when a command shares a segment name', () => {
+    expect(stripCommandSlashTokens('Repeat exactly: /tmp/alpha-beta /usr/local/bin', names)).toBe(
+      'Repeat exactly: /tmp/alpha-beta /usr/local/bin'
+    )
+  })
+
+  it('keeps URLs and fractions', () => {
+    expect(stripCommandSlashTokens('see https://example.com/a/b, scored 5/7', names)).toBe(
+      'see https://example.com/a/b, scored 5/7'
+    )
+  })
+
+  it('keeps a /word that names no command', () => {
+    expect(stripCommandSlashTokens('use /foo here', names)).toBe('use /foo here')
+  })
+
+  it('strips only the real command among other slashes', () => {
+    expect(stripCommandSlashTokens('/fix-issue in /tmp/a.txt', names)).toBe('in /tmp/a.txt')
   })
 })
 

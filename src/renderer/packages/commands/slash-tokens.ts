@@ -5,8 +5,8 @@
 
 import { fuzzyScoreSkill } from '@/packages/skills'
 
-/** Matches /command-name tokens at word boundaries (not // or ://) */
-export const COMMAND_SLASH_TOKEN_RE = /(?:^|[\s([{])\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)/gi
+/** Matches /command-name tokens at word boundaries (not // or ://, and never a path segment like /tmp/x) */
+export const COMMAND_SLASH_TOKEN_RE = /(?:^|[\s([{])\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?![a-z0-9/-])/gi
 
 export function extractCommandNamesFromText(text: string): string[] {
   const names: string[] = []
@@ -21,13 +21,14 @@ export function extractCommandNamesFromText(text: string): string[] {
   return names
 }
 
-/** Remove /command-name tokens; keep surrounding text clean. */
-export function stripCommandSlashTokens(text: string): string {
+/** Remove /command-name tokens that name a known command; paths, URLs and other /words stay. */
+export function stripCommandSlashTokens(text: string, commandNames: Iterable<string>): string {
+  const known = new Set(Array.from(commandNames, (name) => name.toLowerCase()))
   return text
-    .replace(/(?:^|[\s([{])\/([a-z][a-z0-9]*(?:-[a-z0-9]+)*)/gi, (full, _name, offset, source) => {
+    .replace(COMMAND_SLASH_TOKEN_RE, (full, name: string) => {
+      if (!known.has(name.toLowerCase())) return full
       // Keep the boundary char if present
-      const boundary = full[0] === '/' ? '' : full[0]
-      return boundary
+      return full[0] === '/' ? '' : full[0]
     })
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/ *\n */g, '\n')

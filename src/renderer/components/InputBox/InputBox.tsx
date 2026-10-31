@@ -1703,8 +1703,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
             }
           }
 
-          // Commands still strip: /foo is a lead-in draft, not conversational mention prose
-          let cleanedText = stripCommandSlashTokens(rawText)
+          // Known commands still strip: /foo is a lead-in draft, not conversational mention prose
+          let cleanedText = stripCommandSlashTokens(rawText, nameToCommand.keys())
 
           // Agents: chips + inline @slug tokens
           const agentMatchables = allAgents.map((a) => ({ id: a.id, name: a.name }))
