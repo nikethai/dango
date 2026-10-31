@@ -601,6 +601,23 @@ describe('wrapToolsWithApproval with the real risk engine', () => {
     expect(execute).toHaveBeenCalledTimes(1)
   })
 
+  it('an MCP write_file asks every time with no Always, and an old grant for it is ignored (flow 7)', async () => {
+    getScopeGrantMock.mockReturnValue({
+      toolName: 'mcp__filesystem__write_file',
+      riskTier: ToolRiskTier.MEDIUM,
+      grantedAt: 1,
+    })
+    requestToolPermissionMock.mockResolvedValue('always')
+    const execute = vi.fn(async () => ({ ok: true }))
+    const tools = { mcp__filesystem__write_file: { description: 'Create a new file or overwrite one', execute } }
+    const tool = wrapToolsWithApproval('sess-1', tools as never, { scopeId: 's1' }).mcp__filesystem__write_file as Exec
+    await tool.execute({ path: '/tmp/test-dir/notes.txt', content: 'hi' }, {})
+    await tool.execute({ path: '/tmp/test-dir/notes.txt', content: 'hi' }, {})
+    expect(requestToolPermissionMock).toHaveBeenCalledTimes(2)
+    expect(requestToolPermissionMock.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ allowAlways: false }))
+    expect(addScopeGrantMock).not.toHaveBeenCalled()
+  })
+
   it('a tool named read_video_url that is not a Dango built-in asks', async () => {
     requestToolPermissionMock.mockResolvedValue('deny')
     const execute = vi.fn(async () => ({ ok: true }))

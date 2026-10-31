@@ -25,6 +25,23 @@ const ALWAYS_ASKS_WORDS = new Set([
   'checkout',
   'transfer',
 ])
+/** A change word next to a file word marks a tool that changes files: `write_file`, `create_directory`, `moveFile`. */
+const FILE_CHANGE_WORDS = new Set([
+  'write',
+  'edit',
+  'create',
+  'move',
+  'rename',
+  'overwrite',
+  'append',
+  'modify',
+  'update',
+  'patch',
+  'copy',
+  'save',
+  'replace',
+])
+const FILE_WORDS = new Set(['file', 'files', 'directory', 'directories', 'dir', 'dirs', 'folder', 'folders'])
 const SEND_WORDS = new Set(['send', 'reply'])
 const POSTED_WORDS = new Set(['message', 'messages', 'msg', 'comment', 'reply', 'status', 'tweet'])
 const COMMAND_LIKE_PATTERN = /exec|command|shell|terminal/i
@@ -170,14 +187,21 @@ export function offersReadOnlyCommandGrant(toolName: string, description?: strin
   return isShellCommandTool(toolName, description) && !alwaysAsksByEffect(toolName)
 }
 
-/** Tools that send, delete, pay, or change workspace files: they ask every time, even for a harmless call. */
+/** `write_file`, `mcp__filesystem__move_file`, `create_directory`, `mkdir`; never `read_file` or `create_issue`. */
+function changesFiles(toolName: string): boolean {
+  const words = nameWords(toolName)
+  if (words.includes('mkdir')) return true
+  return words.some((word) => FILE_CHANGE_WORDS.has(word)) && words.some((word) => FILE_WORDS.has(word))
+}
+
+/** Tools that send, delete, pay, or change files (MCP ones too): they ask every time, even for a harmless call. */
 export function alwaysAsksByEffect(toolName: string): boolean {
-  if (isSensitiveToolName(toolName) || isSendLike(toolName)) return true
+  if (isSensitiveToolName(toolName) || isSendLike(toolName) || changesFiles(toolName)) return true
   return nameWords(toolName).some((word) => ALWAYS_ASKS_WORDS.has(word))
 }
 
 /**
- * Tools that never offer Always and never use a grant, whatever Trust says: send, delete, pay and workspace-file
+ * Tools that never offer Always and never use a grant, whatever Trust says: send, delete, pay and file-changing
  * tools, and tools that run commands or code (no list of destructive commands is complete).
  */
 export function alwaysAsks(toolName: string, description?: string): boolean {

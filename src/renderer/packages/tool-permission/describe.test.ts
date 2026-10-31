@@ -186,6 +186,38 @@ describe('alwaysAsks / canAlways / toolLabel', () => {
     }
   })
 
+  it('always asks for tools that write, create, move or edit files, MCP ones included (flow 7)', () => {
+    for (const name of [
+      'write_file',
+      'mcp__filesystem__write_file',
+      'edit_file',
+      'move_file',
+      'create_directory',
+      'writeFile',
+      'rename_folder',
+      'mkdir',
+    ]) {
+      expect(alwaysAsks(name), name).toBe(true)
+      expect(canAlways(name, ToolRiskTier.MEDIUM), name).toBe(false)
+    }
+  })
+
+  it('keeps Always for tools that only read files, or change things that are not files', () => {
+    for (const name of [
+      'read_file',
+      'mcp__filesystem__read_text_file',
+      'list_directory',
+      'directory_tree',
+      'get_file_info',
+      'search_files',
+      'list_allowed_directories',
+      'create_issue',
+      'update_task',
+    ]) {
+      expect(alwaysAsks(name), name).toBe(false)
+    }
+  })
+
   it('offers Always unless the tool always asks or is critical', () => {
     expect(canAlways('browser_click', ToolRiskTier.HIGH)).toBe(true)
     expect(canAlways('browser_click', ToolRiskTier.CRITICAL)).toBe(false)
