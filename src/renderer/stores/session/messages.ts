@@ -257,7 +257,8 @@ export async function submitNewUserMessage(
   } else if (speakers.length >= 1 && earlyAssistantInserted) {
     // Label the answering agent on the assistant bubble (built-in + custom agents); with Swarm off it is the first speaker.
     const speakerId = speakers[0]
-    const { resolveAgentMeta } = await import('@/packages/agents')
+    const { loadSavedAgents, resolveAgentMeta } = await import('@/packages/agents')
+    await loadSavedAgents()
     const meta = resolveAgentMeta(speakerId)
     newAssistantMsg = {
       ...newAssistantMsg,

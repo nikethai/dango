@@ -27,7 +27,7 @@ import i18next from 'i18next'
 import { getDefaultStore } from 'jotai'
 import { createModelDependencies } from '@/adapters'
 import { getLogger } from '@/lib/utils'
-import { getAgentDetailById } from '@/packages/agents'
+import { getAgentDetailById, loadSavedAgents } from '@/packages/agents'
 import * as appleAppStore from '@/packages/apple_app_store'
 import { buildCommandContextBlocks, resolveCommandActivations } from '@/packages/commands'
 import { buildContextForAI } from '@/packages/context-management'
@@ -705,6 +705,8 @@ export async function generate(
 
   // Overlay agent/copilot model settings. Prefer explicit speaker → message.agentId → room primary.
   const speakerAgentId = options?.speakerAgentId ?? targetMsg.agentId ?? session.agentIds?.[0] ?? session.copilotId
+  // Saved agents load asynchronously; their prompt and settings are read synchronously below.
+  if (speakerAgentId) await loadSavedAgents()
   const copilotOverrides = getCopilotSettings(speakerAgentId)
   const overlaidSettings: SessionSettings = copilotOverrides
     ? {

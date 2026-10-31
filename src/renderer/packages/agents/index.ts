@@ -13,6 +13,7 @@ export {
 export {
   agentAccentColor,
   getAgentDetailById,
+  loadSavedAgents,
   resolveAgentMeta,
   type AgentMeta,
 } from './resolve-agent-meta'
