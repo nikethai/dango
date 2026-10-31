@@ -33,7 +33,8 @@ export function openChatHit(sessionId: string, messageId?: string): void {
       import('@/stores/scrollActions'),
     ])
     const needsSwitch = getDefaultStore().get(currentSessionIdAtom) !== sessionId
-    if (needsSwitch) switchCurrentSession(sessionId)
+    // Always switch: it also navigates, and the last-open chat may be behind another page such as Review.
+    switchCurrentSession(sessionId)
     if (!messageId) return
 
     const tryScroll = async (attempt = 0, maxAttempts = 10): Promise<void> => {
