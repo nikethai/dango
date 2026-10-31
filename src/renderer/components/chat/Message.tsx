@@ -19,6 +19,7 @@ import {
   type SessionType,
 } from '@shared/types'
 import { getMessageText } from '@shared/utils/message'
+import { hideToolCallMarkup } from '@shared/utils/tool-call-markup'
 import {
   IconArrowDown,
   IconBrain,
@@ -135,6 +136,7 @@ const PlanCard = isAgentEnabled ? lazy(() => import('../plan/PlanCard')) : null
 import FollowUpSuggestions from '../search/FollowUpSuggestions'
 import { SourceCardList } from '../search/SourceCardList'
 import { LocalOnlyToolsNote } from './LocalOnlyToolsNote'
+import { ToolCallMarkupNote } from './ToolCallMarkupNote'
 import { MessageActionRow } from './MessageActionRow'
 import { MessageAttachmentGrid } from './MessageAttachmentGrid'
 import MessageStatuses from './MessageLoading'
@@ -928,13 +930,13 @@ const _Message: FC<Props> = (props) => {
                           generating={msg.generating}
                           citations={msg.citations}
                         >
-                          {group.part.text || ''}
+                          {hideToolCallMarkup(group.part.text || '')}
                         </Markdown>
                       ) : (
                         <div className="break-words whitespace-pre-line">
                           {needCollapse && isCollapsed
-                            ? `${group.part.text.slice(0, collapseThreshold)}...`
-                            : group.part.text}
+                            ? `${hideToolCallMarkup(group.part.text).slice(0, collapseThreshold)}...`
+                            : hideToolCallMarkup(group.part.text)}
                           {needCollapse && isCollapsed && CollapseButton}
                         </div>
                       )}
@@ -1054,6 +1056,7 @@ const _Message: FC<Props> = (props) => {
           {needCollapse && !isCollapsed && CollapseButton}
           {msg.citations?.length ? <SourceCardList citations={msg.citations} /> : null}
           <LocalOnlyToolsNote msg={msg} />
+          <ToolCallMarkupNote msg={msg} />
           {msg.role === 'assistant' && !msg.generating ? (
             <KnowledgeProposalCard sessionId={sessionId} messageId={msg.id} />
           ) : null}
