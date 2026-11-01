@@ -1,6 +1,7 @@
+import type { BackgroundJob } from '@shared/types/background'
 import type { ConnectedSource, SourceDraft, SourceKind } from '@shared/types/sources'
 import i18n from '@/i18n'
-import { registerFixHandler, startJob } from '@/packages/background'
+import { listJobs, registerFixHandler, runJobFix, startJob, subscribeBackgroundJobs } from '@/packages/background'
 import { getSourceKind, type SourceChoice } from './kinds'
 import { addSource, getSource, loadSources, SourceRuleError, sourcesStore } from './store'
 
@@ -142,21 +143,72 @@ export function registerSourceFixHandlers(): void {
   // TASK-20: a local-only source (ADR 0003) accepts only a model that runs on this device; with a usable cloud model
   // it opens default models so the user picks a local one. Dango never switches models by itself.
   registerFixHandler('choose-model', async (job) => {
-    const [{ settingsStore }, { lastUsedModelStore }, { backgroundModelChoice, hasUsableModel, isLocalModelIn }] =
-      await Promise.all([
-        import('@/stores/settingsStore'),
-        import('@/stores/lastUsedModelStore'),
-        import('./model-check'),
-      ])
-    const settings = settingsStore.getState().getSettings()
-    const lastUsed = lastUsedModelStore.getState().chat
-    const usable = hasUsableModel(settings, lastUsed)
-    const source = await sourceOfJob(job.sourceId)
-    const allowed = !source?.localOnly || isLocalModelIn(settings, backgroundModelChoice(settings, lastUsed))
+    const { usable, allowed } = await modelFixState(job)
     if (usable && allowed) return true
     // Loaded on demand: it reaches the router, which pulls in every route.
     const { openConfiguration } = await import('@/components/sources/openConfiguration')
     await openConfiguration(usable ? '/settings/default-models' : '/settings/provider')
     return false
+  })
+  void watchModelReady().catch((e) => console.warn('[sources] Could not watch for a ready model', e))
+}
+
+async function modelStores() {
+  const [{ settingsStore }, { lastUsedModelStore }, check] = await Promise.all([
+    import('@/stores/settingsStore'),
+    import('@/stores/lastUsedModelStore'),
+    import('./model-check'),
+  ])
+  return { settingsStore, lastUsedModelStore, ...check }
+}
+
+/** Whether the choose-model fix works now: a usable model, and a local one when the source stays on this device. */
+async function modelFixState(job: BackgroundJob): Promise<{ usable: boolean; allowed: boolean }> {
+  const { settingsStore, lastUsedModelStore, backgroundModelChoice, hasUsableModel, isLocalModelIn } =
+    await modelStores()
+  const settings = settingsStore.getState().getSettings()
+  const lastUsed = lastUsedModelStore.getState().chat
+  const usable = hasUsableModel(settings, lastUsed)
+  const source = await sourceOfJob(job.sourceId)
+  const allowed = !source?.localOnly || isLocalModelIn(settings, backgroundModelChoice(settings, lastUsed))
+  return { usable, allowed }
+}
+
+/**
+ * Closes every choose-model Needs you entry whose fix works now, by running that fix (which then opens nothing): the
+ * entry closes as done and the job runs again.
+ */
+export async function closeReadyModelEntries(): Promise<void> {
+  const waiting = listJobs().filter((j) => j.status === 'needs-you' && j.fix?.action === 'choose-model')
+  for (const job of waiting) {
+    const { usable, allowed } = await modelFixState(job)
+    if (usable && allowed) await runJobFix(job.id)
+  }
+}
+
+/**
+ * "No model is set up" closes by itself as soon as a model is ready (maintainer ruling 2026-11-01): checked when the
+ * background model changes or becomes usable, and once when stored jobs first load. Only those changes trigger it, so
+ * a job that fails again waits for the next change instead of re-running in a loop.
+ */
+async function watchModelReady(): Promise<void> {
+  const { settingsStore, lastUsedModelStore, backgroundModelChoice, hasUsableModel } = await modelStores()
+  const close = () => void closeReadyModelEntries().catch((e) => console.warn('[sources] Could not close entry', e))
+  let last = ''
+  const onModelChange = () => {
+    const settings = settingsStore.getState().getSettings()
+    const lastUsed = lastUsedModelStore.getState().chat
+    const usable = hasUsableModel(settings, lastUsed)
+    const key = JSON.stringify([backgroundModelChoice(settings, lastUsed), usable])
+    if (key === last) return
+    last = key
+    if (usable) close()
+  }
+  onModelChange()
+  settingsStore.subscribe(onModelChange)
+  lastUsedModelStore.subscribe(onModelChange)
+  const stopFirstLoad = subscribeBackgroundJobs(() => {
+    stopFirstLoad()
+    close()
   })
 }

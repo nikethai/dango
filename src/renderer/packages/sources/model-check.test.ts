@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isLocalModel, isLocalModelIn, providerHost } from './model-check'
+import { hasUsableModel, isLocalModel, isLocalModelIn, providerHost } from './model-check'
 
 const local = (providerId: string, host: string, modelId = 'llama3') => isLocalModel({ providerId, host, modelId })
 
@@ -110,5 +110,35 @@ describe('providerHost', () => {
     ] as never
     expect(providerHost({ customProviders }, 'c1')).toBe('http://h:1')
     expect(providerHost(undefined, 'nope')).toBe('')
+  })
+})
+
+describe('hasUsableModel', () => {
+  const custom = { id: 'c1', name: 'Fake', type: 'openai', isCustom: true }
+  const settings = (over: Record<string, unknown>) => ({ providers: {}, customProviders: [custom], ...over }) as never
+
+  it('needs the chosen model ready: its provider set up and still listing it', () => {
+    const providers = { c1: { apiHost: 'http://h:1', models: [{ modelId: 'm1' }] } }
+    expect(hasUsableModel(settings({ providers, defaultChatModel: { provider: 'c1', model: 'm1' } }))).toBe(true)
+    // The model was removed from the provider, or the provider has no models at all.
+    expect(hasUsableModel(settings({ providers, defaultChatModel: { provider: 'c1', model: 'gone' } }))).toBe(false)
+    expect(hasUsableModel(settings({ defaultChatModel: { provider: 'c1', model: 'm1' } }))).toBe(false)
+    expect(hasUsableModel(settings({ providers }))).toBe(false)
+  })
+
+  it('keeps background order: the last-used model counts only when no default is set', () => {
+    const providers = { c1: { apiHost: 'http://h:1', models: [{ modelId: 'm1' }] } }
+    const lastUsed = { provider: 'c1', modelId: 'm1' }
+    expect(hasUsableModel(settings({ providers }), lastUsed)).toBe(true)
+    expect(hasUsableModel(settings({ providers, defaultChatModel: { provider: 'c1', model: 'gone' } }), lastUsed)).toBe(
+      false
+    )
+  })
+
+  it('never counts ComfyUI, which only makes pictures', () => {
+    const providers = { comfyui: { models: [{ modelId: 'sdxl' }] } }
+    expect(hasUsableModel(settings({ providers, defaultChatModel: { provider: 'comfyui', model: 'sdxl' } }))).toBe(
+      false
+    )
   })
 })
