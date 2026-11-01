@@ -24,3 +24,15 @@ describe('the composer sends the text it has when Enter is pressed (finding 12)'
     expect(handleSubmitBody()).not.toContain('preConstructedMessage.message')
   })
 })
+
+describe('the composer says when it is offline (finding 18)', () => {
+  test('a model that needs the internet is blocked while offline, as in Quick Chat', () => {
+    expect(inputBox).toMatch(/const offlineBlocked = !online && !!model && !reachableOffline\(model, providers\)/)
+    expect(handleSubmitBody()).toMatch(/needGenerating && offlineBlocked/)
+  })
+
+  test('the notice uses Quick Chat\'s sentence and a Retry that reads the connection again', () => {
+    expect(inputBox).toContain(`t("You're offline. {{model}} needs a connection to answer."`)
+    expect(inputBox).toMatch(/onClick=\{recheckOnline\}/)
+  })
+})

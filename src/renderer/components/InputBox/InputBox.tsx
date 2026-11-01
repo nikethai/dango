@@ -37,6 +37,7 @@ import { exportRoomPack } from '@/stores/roomPack'
 import useInputBoxHistory from '@/hooks/useInputBoxHistory'
 import { useKnowledgeBase } from '@/hooks/useKnowledgeBase'
 import { useMessageInput } from '@/hooks/useMessageInput'
+import { useOnline } from '@/hooks/useOnline'
 import { useProviders } from '@/hooks/useProviders'
 import { useIsSmallScreen } from '@/hooks/useScreenChange'
 import { useScopes } from '@/hooks/useScopes'
@@ -154,6 +155,7 @@ import { CompressionModal } from '../common/CompressionModal'
 import { ScalableIcon } from '../common/ScalableIcon'
 import ProviderImageIcon from '../icons/ProviderImageIcon'
 import ModelSelector from '../ModelSelector'
+import { reachableOffline } from '../quick-chat/quickChatState'
 import AgentPicker, { filterAgents } from './AgentPicker'
 import { FileMiniCard, ImageMiniCard, LinkMiniCard } from './Attachments'
 import CommandPicker, { buildCommandPickerItems, type CommandPickerItem } from './CommandPicker'
@@ -679,6 +681,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
     )
     // No model, a removed provider or model, or a missing ability: the notice names the fix on every layout.
     const showReadinessNotice = !readinessAllowsSend(modelReadiness)
+    // Offline with a model that needs the internet: say so before sending, as Quick Chat does (finding 18).
+    const [online, recheckOnline] = useOnline()
+    const offlineBlocked = !online && !!model && !reachableOffline(model, providers)
+    const showOfflineNotice = offlineBlocked && !showReadinessNotice
     // One message at a time: the readiness notice already says the model can't analyze the video.
     const showNonVisionVideoBanner =
       hasVideoAttachments && !modelSupportsVision && !visionBannerDismissed && !showReadinessNotice
@@ -1607,6 +1613,9 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         const skipsTools = answerWithoutTools && modelReadiness.capability === 'tool_use'
         // The notice above the composer names the fix; nothing to send until it is chosen.
         if (needGenerating && !skipsTools) return
+      } else if (needGenerating && offlineBlocked) {
+        // The offline notice above the composer says why; the draft stays.
+        return
       } else if (!readinessAllowsSend(modelReadiness)) {
         // error tip
         if (!model) {
@@ -3217,6 +3226,20 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                 }
                 onSelectModel={onSelectModel}
               />
+            )}
+
+            {showOfflineNotice && (
+              // Visual only, like Quick Chat's line: the chat page keeps to its allow-listed live regions.
+              <div className="dg-model-error">
+                <p className="dg-model-error__sentence dg-type-callout">
+                  {t("You're offline. {{model}} needs a connection to answer.", { model: modelSelectorDisplayText })}
+                </p>
+                <div className="dg-model-error__actions">
+                  <button type="button" className="dg-btn" onClick={recheckOnline}>
+                    {t('Retry')}
+                  </button>
+                </div>
+              </div>
             )}
 
             {/* Toolbar row — mock .bar (rail bg + send on the right) */}
