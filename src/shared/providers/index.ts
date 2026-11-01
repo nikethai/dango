@@ -1,3 +1,4 @@
+import { ProviderAPIError } from '../models/errors'
 import type { ModelInterface } from '../models/types'
 import type { Config, ProviderModelInfo, SessionSettings, Settings } from '../types'
 import type { ModelDependencies } from '../types/adapters'
@@ -31,6 +32,7 @@ import {
   getSystemProviders,
   hasProvider,
 } from './registry'
+import { isProviderSetUp } from './provider-credentials'
 import type { CreateModelConfig, ProviderDefinition, ProviderDefinitionInput } from './types'
 import { createCustomProviderModel } from './utils'
 
@@ -112,8 +114,13 @@ export function getModel(
   console.debug('getModel (registry)', settings.provider, settings.modelId)
 
   const provider = settings.provider
-  if (!provider) {
-    throw new Error('Model provider must not be empty.')
+  // Only a provider the user set up answers: no model, or one whose provider is gone, never falls back to another.
+  const defaultModelCount = provider ? (getProviderDefinition(provider)?.defaultSettings?.models?.length ?? 0) : 0
+  if (!provider || !isProviderSetUp(provider, globalSettings, defaultModelCount)) {
+    throw new ProviderAPIError(
+      `No model is set up${provider ? ` (provider ${provider})` : ''}.`,
+      ProviderAPIError.codeNameMap.model_not_set_up
+    )
   }
 
   // Check if provider is registered in the new registry

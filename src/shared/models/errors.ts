@@ -245,6 +245,12 @@ export class ProviderAPIError extends BaseError {
       i18nKey:
         'You have selected Exa as the search provider, but an API key has not been entered yet. Please <OpenExtensionSettingButton>click here to open Settings</OpenExtensionSettingButton> and enter your API key, or choose a different search provider.',
     },
+    model_not_set_up: {
+      name: 'model_not_set_up',
+      code: 20038,
+      i18nKey:
+        'No model is set up for this. Please <OpenSettingButton>open Settings</OpenSettingButton> and choose a model.',
+    },
     model_not_support_tool_use: {
       name: 'model_not_support_tool_use',
       code: 20026,

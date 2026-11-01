@@ -5,6 +5,7 @@ import {
   getModelReadiness,
   isOcrModelSet,
   modelMeetsNeeds,
+  readinessAllowsSend,
   turnNeedsTools,
   usableChatModel,
   usablePictureModel,
@@ -210,5 +211,17 @@ describe('usablePictureModel', () => {
     })
     expect(usablePictureModel({ provider: 'openai', modelId: 'gpt-image-1' }, providers)).toBeUndefined()
     expect(usablePictureModel(undefined, providers)).toBeUndefined()
+  })
+})
+
+describe('readinessAllowsSend', () => {
+  test('only a ready model sends, on every layout', () => {
+    expect(readinessAllowsSend({ status: 'ready', providerId: 'a', modelId: 'm1' })).toBe(true)
+    expect(readinessAllowsSend({ status: 'setup-required' })).toBe(false)
+    expect(readinessAllowsSend({ status: 'provider-unavailable', providerId: 'gone' })).toBe(false)
+    expect(readinessAllowsSend({ status: 'model-unavailable', providerId: 'a', modelId: 'old' })).toBe(false)
+    expect(
+      readinessAllowsSend({ status: 'capability-required', providerId: 'a', modelId: 'm1', capability: 'vision' })
+    ).toBe(false)
   })
 })

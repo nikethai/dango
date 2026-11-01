@@ -37,6 +37,43 @@ describe('before-send estimates', () => {
   })
 })
 
+// A custom provider with the model listed: what the model picker calls set up.
+const setUpTestProvider = {
+  customProviders: [{ id: 'test-provider', name: 'Test', type: 'openai', isCustom: true }],
+  providers: { 'test-provider': { models: [{ modelId: 'test-model' }] } },
+}
+
+describe('message actions without a ready model', () => {
+  const chat = (settings: Session['settings']) =>
+    ({
+      id: 's1',
+      name: 'Chat',
+      type: 'chat',
+      settings,
+      messages: [text('u1', 'user', 'hi'), text('a1', 'assistant', 'hello')],
+    }) as Session
+
+  it('Redo does not run in a chat without a model', async () => {
+    settingsStore.setState(setUpTestProvider as never)
+    h.session = chat({})
+    await expect(requestBeforeSend('s1', { kind: 'redo', messageId: 'a1' })).resolves.toBe(false)
+  })
+
+  it('Redo does not run on a model whose provider was removed', async () => {
+    settingsStore.setState(setUpTestProvider as never)
+    h.session = chat({ provider: 'custom-provider-gone', modelId: 'm1' })
+    await expect(requestBeforeSend('s1', { kind: 'redo', messageId: 'a1' })).resolves.toBe(false)
+  })
+
+  it('edit-and-resend does not run in a chat without a model', async () => {
+    settingsStore.setState(setUpTestProvider as never)
+    h.session = chat({})
+    await expect(requestBeforeSend('s1', { kind: 'edit-resend', messageId: 'u1', text: 'hi again' })).resolves.toBe(
+      false
+    )
+  })
+})
+
 describe('message-action cost estimate', () => {
   let unregister: (() => void) | undefined
   afterEach(() => {
@@ -50,6 +87,7 @@ describe('message-action cost estimate', () => {
     settingsStore.setState({
       costWarningUsd: 1,
       usagePricingOverrides: { 'test-provider': { 'test-model': { input: 1000, output: 0, cachedInput: 0 } } },
+      ...setUpTestProvider,
     } as never)
     h.session = {
       id: 's1',

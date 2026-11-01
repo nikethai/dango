@@ -86,7 +86,7 @@ import {
 } from '@/packages/skills'
 import { formatBytesForDisplay, formatDurationForDisplay, getVideoLimits } from '@/packages/video'
 import { isWebSearchConfigured } from '@/packages/web-search/is-configured'
-import platform, { platformCapabilities } from '@/platform'
+import platform from '@/platform'
 import storage from '@/storage'
 import { StorageKeyGenerator } from '@/storage/StoreStorage'
 import * as atoms from '@/stores/atoms'
@@ -108,7 +108,13 @@ import { useUIStore } from '@/stores/uiStore'
 import { delay } from '@/utils'
 import { decideClipboardPaste, extractClipboardNonImageFiles, imagePayloadFingerprint } from '@/utils/clipboardImages'
 import { getModelDisplayName } from '@/utils/modelDisplayName'
-import { attachmentsNeedVision, getModelReadiness, isOcrModelSet, turnNeedsTools } from '@/utils/modelReadiness'
+import {
+  attachmentsNeedVision,
+  getModelReadiness,
+  isOcrModelSet,
+  readinessAllowsSend,
+  turnNeedsTools,
+} from '@/utils/modelReadiness'
 import { trackEvent } from '@/utils/track'
 import { CHATBOX_BUILD_PLATFORM } from '@/variables'
 import type {
@@ -671,9 +677,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       () => getModelReadiness(model, providers, { requiresVision, requiresTools }),
       [model, providers, requiresVision, requiresTools]
     )
-    const showReadinessNotice =
-      modelReadiness.status !== 'ready' &&
-      (platformCapabilities.isMobileLayout || modelReadiness.status === 'capability-required')
+    // No model, a removed provider or model, or a missing ability: the notice names the fix on every layout.
+    const showReadinessNotice = !readinessAllowsSend(modelReadiness)
     // One message at a time: the readiness notice already says the model can't analyze the video.
     const showNonVisionVideoBanner =
       hasVideoAttachments && !modelSupportsVision && !visionBannerDismissed && !showReadinessNotice
@@ -744,10 +749,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       return compactionUIStateMap[currentSessionId]?.status === 'running'
     }, [compactionUIStateMap, currentSessionId, isNewSession])
 
-    // A missing ability blocks on every layout (its notice shows the fix); setup/unavailable stay mobile-only.
-    const isModelReadinessBlocking =
-      modelReadiness.status === 'capability-required' ||
-      (platformCapabilities.isMobileLayout && modelReadiness.status !== 'ready')
+    // Nothing sends without a ready model, on every layout (the notice shows the fix).
+    const isModelReadinessBlocking = !readinessAllowsSend(modelReadiness)
     // While generating (or sticky race window), button is always Stop and always clickable.
     // Never key Stop on empty-draft (old: generating && disableSubmit) — that flipped Send mid-turn.
     const showStop = Boolean(generating || stickyStop)
@@ -1604,7 +1607,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         const skipsTools = answerWithoutTools && modelReadiness.capability === 'tool_use'
         // The notice above the composer names the fix; nothing to send until it is chosen.
         if (needGenerating && !skipsTools) return
-      } else if (platformCapabilities.isMobileLayout && modelReadiness.status !== 'ready') {
+      } else if (!readinessAllowsSend(modelReadiness)) {
         // error tip
         if (!model) {
           // (legacy comment)
