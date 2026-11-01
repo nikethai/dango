@@ -483,8 +483,12 @@ export function createBrowserToolSet(opts: BrowserAgentToolOptions): { descripti
 export async function stopBrowserSession(sessionId: string, runId?: string) {
   releaseBrowserLock(sessionId, runId)
   try {
-    await platform.browserSessionStop?.(sessionId)
-    browserAgentUiStore.getState().setStatus(sessionId, {
+    const res = (await platform.browserSessionStop?.(sessionId)) as { stopped?: boolean } | undefined
+    // Every Stop calls this. A chat that never used the browser has no status, and writing one would open the
+    // browser panel (finding 1): only a browser that was running, or a chat that already shows it, gets the update.
+    const ui = browserAgentUiStore.getState()
+    if (res?.stopped !== true && !ui.bySession[sessionId]) return
+    ui.setStatus(sessionId, {
       running: false,
       url: null,
       lastTool: 'session:stop',

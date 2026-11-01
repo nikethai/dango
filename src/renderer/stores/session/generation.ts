@@ -1589,7 +1589,12 @@ export async function generate(
         }
 
         // Thought-only / dropped SSE still errors. Model tool-calls are visible work, not empty.
-        const emptyCompletionError = buildEmptyCompletionError(finalContentParts, streamResult.finishReason)
+        // A Stop is not an error: an abort resolves with what streamed so far, often nothing when Stop comes before the
+        // first word, and the turn reads "Stopped before answering." (finding 1).
+        const stoppedByUser = stoppedDuringStream || wasGenerationCancelled(sessionId, targetMsg.id)
+        const emptyCompletionError = stoppedByUser
+          ? undefined
+          : buildEmptyCompletionError(finalContentParts, streamResult.finishReason)
 
         // Paint answer + generating=false first — never block the "done" state on image-flow I/O.
         clearGenerationCancel(sessionId, targetMsg.id)

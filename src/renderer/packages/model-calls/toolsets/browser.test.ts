@@ -32,12 +32,15 @@ vi.mock('@/stores/settingsStore', () => ({
   },
 }))
 
+const uiMock = vi.hoisted(() => ({
+  bySession: {} as Record<string, unknown>,
+  setStatus: vi.fn(),
+  patchStatus: vi.fn(),
+}))
+
 vi.mock('@/stores/browserAgentUiStore', () => ({
   browserAgentUiStore: {
-    getState: () => ({
-      setStatus: vi.fn(),
-      patchStatus: vi.fn(),
-    }),
+    getState: () => uiMock,
   },
 }))
 
@@ -49,6 +52,7 @@ import {
   shouldForceBrowserSnapshot,
   getLastBrowserTool,
   getLastBrowserObservationEmbedded,
+  stopBrowserSession,
 } from './browser'
 
 type ExecTool<A = object> = { execute: (a: A) => Promise<unknown> }
@@ -170,5 +174,31 @@ describe('createBrowserToolSet', () => {
     const snap = asExec(set.tools.browser_snapshot)
     await snap.execute({})
     expect(platformMock.browserSessionStart).toHaveBeenCalled()
+  })
+})
+
+describe('stopBrowserSession (every Stop calls it)', () => {
+  beforeEach(() => {
+    uiMock.bySession = {}
+    uiMock.setStatus.mockClear()
+  })
+
+  it('leaves a chat that never used the browser without a status, so no browser panel opens (finding 1)', async () => {
+    platformMock.browserSessionStop.mockResolvedValueOnce({ stopped: false, reason: 'not_running' } as never)
+    await stopBrowserSession('chat-1')
+    expect(uiMock.setStatus).not.toHaveBeenCalled()
+  })
+
+  it('records the stop when a browser was running', async () => {
+    platformMock.browserSessionStop.mockResolvedValueOnce({ stopped: true })
+    await stopBrowserSession('chat-1')
+    expect(uiMock.setStatus).toHaveBeenCalledWith('chat-1', expect.objectContaining({ lastTool: 'session:stop' }))
+  })
+
+  it('updates a chat that already shows the browser', async () => {
+    uiMock.bySession = { 'chat-1': { running: true, url: 'https://example.com', lastTool: 'navigate', error: null } }
+    platformMock.browserSessionStop.mockResolvedValueOnce({ stopped: false, reason: 'not_running' } as never)
+    await stopBrowserSession('chat-1')
+    expect(uiMock.setStatus).toHaveBeenCalledWith('chat-1', expect.objectContaining({ running: false }))
   })
 })
