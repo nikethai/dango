@@ -176,10 +176,14 @@ async function modelFixState(job: BackgroundJob): Promise<{ usable: boolean; all
 
 /**
  * Closes every choose-model Needs you entry whose fix works now, by running that fix (which then opens nothing): the
- * entry closes as done and the job runs again.
+ * entry closes as done and the job runs again. A job a newer run of its source and kind superseded is skipped: its
+ * entry was dismissed, and the newer job is the one that waits.
  */
 export async function closeReadyModelEntries(): Promise<void> {
-  const waiting = listJobs().filter((j) => j.status === 'needs-you' && j.fix?.action === 'choose-model')
+  const jobs = listJobs()
+  const superseded = (job: BackgroundJob) =>
+    jobs.some((j) => j.sourceId === job.sourceId && j.kind === job.kind && j.startedAt > job.startedAt)
+  const waiting = jobs.filter((j) => j.status === 'needs-you' && j.fix?.action === 'choose-model' && !superseded(j))
   for (const job of waiting) {
     const { usable, allowed } = await modelFixState(job)
     if (usable && allowed) await runJobFix(job.id)
