@@ -96,6 +96,12 @@ describe('settings section titles, badges and row titles are sentence case in En
     'Mermaid',
     'Whisper',
     'yt-dlp',
+    'Claude',
+    'DashScope',
+    'QwenCloud',
+    'Singapore',
+    // OpenAI's Responses API
+    'Responses',
   ])
   // 'Screen Recording' is the macOS privacy permission's own name
   const PROPER_PHRASES = new Set(['Google Custom Search', 'Screen Recording'])
@@ -182,6 +188,37 @@ describe('settings section titles, badges and row titles are sentence case in En
     expect(keys.has('Model Provider')).toBe(true)
     expect(keys.has('General Settings')).toBe(true)
     expect(keys.size).toBeGreaterThan(20)
+    expect(offendersIn(keys)).toEqual([])
+  })
+
+  // option labels on settings screens: `label: t('...')` in select / segmented data, and label={t('...')} on a
+  // Radio, Checkbox or Switch
+  const optionKeys = () => {
+    const keys = new Map<string, string>()
+    const settingsFiles = tsxFiles.filter((file) =>
+      ['src/renderer/routes/settings/', 'src/renderer/components/settings/'].some((dir) =>
+        file.startsWith(resolve(process.cwd(), dir))
+      )
+    )
+    for (const file of settingsFiles) {
+      const source = readFileSync(file, 'utf8')
+      const where = file.replace(`${process.cwd()}/`, '')
+      for (const call of source.matchAll(/\blabel:\s*t\('([^']+)'\)/g)) {
+        keys.set(call[1], where)
+      }
+      for (const tag of source.matchAll(/<(?:Radio|Checkbox|Switch)\b((?:=>|[^>])*)>/g)) {
+        for (const call of tag[1].matchAll(/\blabel=\{t\('([^']+)'\)\}/g)) {
+          keys.set(call[1], where)
+        }
+      }
+    }
+    return keys
+  }
+
+  test('settings option labels are sentence case', () => {
+    const keys = optionKeys()
+    expect(keys.has('Light Mode')).toBe(true)
+    expect(keys.has('Home Page')).toBe(true)
     expect(offendersIn(keys)).toEqual([])
   })
 
