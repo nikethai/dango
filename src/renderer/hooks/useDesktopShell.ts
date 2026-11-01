@@ -121,8 +121,10 @@ export function useDesktopShell() {
       void platform.setQuickWindowAlwaysOnTop?.(state.quickWindowAlwaysOnTop !== false)
     }
 
-    // Route when shell asks (quick window load)
-    const unsubNav = platform.onShellNavigate?.((path) => {
+    // Route when shell asks (quick window load). `/quick` is only ever for the quick window: listeners hear events sent
+    // to any window, and following it in the main window would leave it showing the Quick Chat panel.
+    const unsubNav = platform.onShellNavigate?.(async (path) => {
+      if (path === '/quick' && (await platform.getWindowLabel?.()) !== 'quick') return
       void router.navigate({ to: path })
     })
 

@@ -14,6 +14,7 @@ const shell = vi.hoisted(() => ({
   screenshot: undefined as Handler<unknown> | undefined,
   clipboard: undefined as Handler<unknown> | undefined,
   navigate: undefined as Handler<string> | undefined,
+  shellNavigate: undefined as Handler<string> | undefined,
   blobs: new Map<string, string>(),
   navigations: [] as unknown[],
 }))
@@ -37,6 +38,10 @@ vi.mock('@/platform', () => ({
     },
     onNavigate: (cb: Handler<string>) => {
       shell.navigate = cb
+      return () => {}
+    },
+    onShellNavigate: (cb: Handler<string>) => {
+      shell.shellNavigate = cb
       return () => {}
     },
   },
@@ -101,6 +106,7 @@ describe('useDesktopShell in the quick window', () => {
     shell.screenshot = undefined
     shell.clipboard = undefined
     shell.navigate = undefined
+    shell.shellNavigate = undefined
     shell.blobs.clear()
     shell.navigations = []
     getDefaultStore().set(atoms.quickPendingCaptureAtom, emptyCapture())
@@ -227,5 +233,34 @@ describe('useDesktopShell in the quick window', () => {
       await shell.navigate?.('/admin')
     })
     expect(shell.navigations).toEqual([{ to: '/settings/provider' }])
+  })
+})
+
+describe('shell:navigate to /quick', () => {
+  beforeEach(() => {
+    shell.navigations = []
+  })
+  afterEach(() => cleanup())
+
+  it('takes the quick window to Quick Chat', async () => {
+    shell.label = 'quick'
+    renderHook(() => useDesktopShell())
+    await act(async () => {})
+    shell.navigations = []
+    await act(async () => {
+      await shell.shellNavigate?.('/quick')
+    })
+    expect(shell.navigations).toEqual([{ to: '/quick' }])
+  })
+
+  it('never turns the main window into Quick Chat', async () => {
+    shell.label = 'main'
+    renderHook(() => useDesktopShell())
+    await act(async () => {})
+    shell.navigations = []
+    await act(async () => {
+      await shell.shellNavigate?.('/quick')
+    })
+    expect(shell.navigations).toEqual([])
   })
 })

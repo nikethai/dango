@@ -147,8 +147,9 @@ pub fn ensure_quick_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .build()
         .map_err(|err| format!("failed to create quick window: {err}"))?;
 
-    // Navigate frontend to compact route after load
-    let _ = window.emit("shell:navigate", json!("/quick"));
+    // Navigate the quick window to its compact route after load. Only the quick window: a plain emit reaches every
+    // window, and the main window would turn into Quick Chat.
+    let _ = window.emit_to(QUICK_LABEL, "shell:navigate", json!("/quick"));
 
     Ok(window)
 }
@@ -158,8 +159,8 @@ pub fn show_quick(app: &AppHandle) -> Result<(), String> {
     hide_main(app);
     let window = ensure_quick_window(app)?;
     show_window(&window);
-    let _ = window.emit("shell:navigate", json!("/quick"));
-    let _ = window.emit("shell:quick-shown", json!({}));
+    let _ = window.emit_to(QUICK_LABEL, "shell:navigate", json!("/quick"));
+    let _ = window.emit_to(QUICK_LABEL, "shell:quick-shown", json!({}));
     Ok(())
 }
 
