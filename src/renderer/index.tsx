@@ -205,6 +205,11 @@ initializeApp()
       initMemorySyncBootstrap()
     })
 
+    // A default chat model whenever the choice is obvious (main window only; non-blocking)
+    void import('./setup/default_model')
+      .then(({ initDefaultModelWatch }) => initDefaultModelWatch())
+      .catch((error) => console.warn('[models] Could not watch for a default model', error))
+
     // Background syncs and reviews (main window only; non-blocking)
     void import('./setup/background_jobs')
       .then(({ initBackgroundJobs }) => initBackgroundJobs())
