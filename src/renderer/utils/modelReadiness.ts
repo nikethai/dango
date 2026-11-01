@@ -1,4 +1,4 @@
-import type { ProviderInfo, ProviderModelInfo } from '@shared/types'
+import { ModelProviderEnum, type ProviderInfo, type ProviderModelInfo } from '@shared/types'
 
 export type SelectedModel = { provider: string; modelId: string }
 
@@ -83,4 +83,36 @@ export function getModelReadiness(
   }
 
   return { status: 'ready', providerId: selectedModel.provider, modelId: selectedModel.modelId }
+}
+
+const isReady = (model: SelectedModel | undefined, providers: ProviderInfo[]): model is SelectedModel =>
+  getModelReadiness(model, providers).status === 'ready'
+
+/**
+ * The model a new chat starts on: the default chat model if it is ready, else the last-used one if it is ready, else
+ * none (the chat then asks for a model; nothing falls back to a provider the user did not set up). ComfyUI only makes
+ * pictures, so it never counts for chat. `providers` are the set-up ones (`chatProvidersFromSettings`).
+ */
+export function usableChatModel(
+  choice: { defaultChatModel?: { provider: string; model: string }; lastUsedChat?: SelectedModel },
+  providers: ProviderInfo[]
+): SelectedModel | undefined {
+  const chat = providers.filter((p) => p.id !== ModelProviderEnum.ComfyUI)
+  const preferred = choice.defaultChatModel
+    ? { provider: choice.defaultChatModel.provider, modelId: choice.defaultChatModel.model }
+    : undefined
+  if (isReady(preferred, chat)) return preferred
+  if (isReady(choice.lastUsedChat, chat))
+    return { provider: choice.lastUsedChat.provider, modelId: choice.lastUsedChat.modelId }
+  return undefined
+}
+
+/** The model a new picture chat starts on: the last-used picture model if it is ready, else none. */
+export function usablePictureModel(
+  lastUsedPicture: SelectedModel | undefined,
+  providers: ProviderInfo[]
+): SelectedModel | undefined {
+  return isReady(lastUsedPicture, providers)
+    ? { provider: lastUsedPicture.provider, modelId: lastUsedPicture.modelId }
+    : undefined
 }

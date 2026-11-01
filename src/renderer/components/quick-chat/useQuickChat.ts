@@ -25,7 +25,7 @@ import { getAllMessageList, initEmptyChatSession } from '@/stores/sessionHelpers
 import { settingsStore, useSettingsStore } from '@/stores/settingsStore'
 import { toolApprovalStore } from '@/stores/toolApprovalStore'
 import { getModelDisplayName } from '@/utils/modelDisplayName'
-import { getModelReadiness, type SelectedModel } from '@/utils/modelReadiness'
+import { getModelReadiness, type SelectedModel, usableChatModel } from '@/utils/modelReadiness'
 import { readQuickSessionSnapshot, resolveQuickSessionId, writeQuickSessionSnapshot } from '@/utils/quickSession'
 import type { QuickChatPanelProps } from './QuickChatPanel'
 import {
@@ -170,9 +170,8 @@ export function useQuickChat(): UseQuickChat {
     if (session?.settings?.provider && session.settings.modelId) {
       return { provider: session.settings.provider, modelId: session.settings.modelId }
     }
-    if (defaultChatModel) return { provider: defaultChatModel.provider, modelId: defaultChatModel.model }
-    return lastUsedChat ? { provider: lastUsedChat.provider, modelId: lastUsedChat.modelId } : undefined
-  }, [session?.settings?.provider, session?.settings?.modelId, defaultChatModel, lastUsedChat])
+    return usableChatModel({ defaultChatModel, lastUsedChat }, providers)
+  }, [session?.settings?.provider, session?.settings?.modelId, defaultChatModel, lastUsedChat, providers])
 
   const readiness = useMemo(() => getModelReadiness(model, providers), [model, providers])
   const local = useMemo(() => reachableOffline(model, providers), [model, providers])

@@ -233,18 +233,16 @@ export function getDefaultPrompt() {
   return 'You are a helpful assistant.'
 }
 
+/** Defaults under a chat's own settings. No model: a chat uses only the model saved with it (or asks for one). */
 export function chatSessionSettings(): SessionSettings {
   return {
-    provider: ModelProviderEnum.OpenAI,
-    modelId: 'gpt-4o',
     maxContextMessageCount: Number.MAX_SAFE_INTEGER,
   }
 }
 
+/** Defaults under a picture chat's own settings. No model, as for chats. */
 export function pictureSessionSettings(): SessionSettings {
   return {
-    provider: ModelProviderEnum.OpenAI,
-    modelId: 'gpt-image-1',
     imageGenerateNum: 1,
     dalleStyle: 'vivid',
   }

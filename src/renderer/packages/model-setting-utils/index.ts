@@ -1,7 +1,6 @@
 import { getProviderDefinition, getSystemProviders } from '@shared/providers'
 import {
   type ModelProvider,
-  ModelProviderEnum,
   type ModelProviderType,
   type SessionSettings,
   type SessionType,
@@ -21,8 +20,14 @@ export function getModelSettingUtil(
   return new CustomProviderSettingUtil(aiProvider, customProviderType)
 }
 
-export function getModelDisplayName(settings: SessionSettings, globalSettings: Settings, sessionType: SessionType) {
-  const provider = settings.provider ?? ModelProviderEnum.OpenAI
+export function getModelDisplayName(
+  settings: SessionSettings,
+  globalSettings: Settings,
+  sessionType: SessionType
+): Promise<string> {
+  // No model chosen: no name (never another provider's).
+  const provider = settings.provider
+  if (!provider) return Promise.resolve('')
   const model = settings.modelId ?? ''
 
   const registryProviders = getSystemProviders()

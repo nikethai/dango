@@ -28,7 +28,8 @@ import { getLogger } from '../lib/utils'
 import { migrateSession, sortSessions } from '../utils/session-utils'
 import { currentSessionIdAtom } from './atoms'
 import { cleanupSessionAtomCache } from './atoms/throttleWriteSessionAtom'
-import { lastUsedModelStore } from './lastUsedModelStore'
+import { getModelReadiness } from '../utils/modelReadiness'
+import { newSessionModel, setUpProviders } from './newChatModel'
 import queryClient from './queryClient'
 import { getSessionMeta } from './sessionHelpers'
 import { settingsStore, useSettingsStore } from './settingsStore'
@@ -185,12 +186,12 @@ export async function createSession(newSession: Omit<Session, 'id'>, previousId?
   ) {
     throw new Error('Imported records cannot use native session APIs')
   }
-  const { chat: lastUsedChatModel, picture: lastUsedPictureModel } = lastUsedModelStore.getState()
   const session = {
     ...newSession,
     id: uuidv4(),
     settings: {
-      ...(newSession.type === 'picture' ? lastUsedPictureModel : lastUsedChatModel),
+      // A session created without a model gets one that is set up now, or none (it then asks).
+      ...newSessionModel(newSession.type === 'picture' ? 'picture' : 'chat'),
       ...newSession.settings,
     },
   }
@@ -383,19 +384,19 @@ function mergeDefaultSessionSettings(session: Session): SessionSettings {
     return merged
   }
 
-  // legacy cloud service provider is disabled in this build; remap legacy sessions.
-  if (session.type === 'picture') {
-    return {
-      ...merged,
-      provider: ModelProviderEnum.OpenAI,
-      modelId: 'gpt-image-1',
-    }
+  // legacy cloud service provider is disabled in this build; remap legacy sessions to OpenAI only when OpenAI is set
+  // up, otherwise leave them without a model so the chat asks for one.
+  const remapped =
+    session.type === 'picture'
+      ? { provider: ModelProviderEnum.OpenAI, modelId: 'gpt-image-1' }
+      : {
+          provider: ModelProviderEnum.OpenAI,
+          modelId: !merged.modelId || merged.modelId.startsWith('chatboxai-') ? 'gpt-4o' : merged.modelId,
+        }
+  if (getModelReadiness(remapped, setUpProviders()).status === 'ready') {
+    return { ...merged, ...remapped }
   }
-  return {
-    ...merged,
-    provider: ModelProviderEnum.OpenAI,
-    modelId: merged.modelId?.startsWith('chatboxai-') ? 'gpt-4o' : merged.modelId,
-  }
+  return { ...merged, provider: undefined, modelId: undefined }
 }
 // session settings is copied from global settings when session is created, so no need to merge global settings here
 export function useSessionSettings(sessionId: string | null) {

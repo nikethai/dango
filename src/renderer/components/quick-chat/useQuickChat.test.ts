@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   sessions: new Map<string, Session>(),
   created: 0,
   providers: [] as unknown[],
+  settings: {} as Record<string, unknown>,
   scopes: [] as { id: string; name: string }[],
   caps: { supportsDesktopOnlySettings: true },
   shown: undefined as undefined | (() => void),
@@ -56,7 +57,7 @@ vi.mock('@/stores/sessionHelpers', () => ({
 }))
 vi.mock('@/stores/settingsStore', () => ({
   settingsStore: { persist: { rehydrate: () => h.rehydrateSettings() } },
-  useSettingsStore: (select: (s: Record<string, unknown>) => unknown) => select({}),
+  useSettingsStore: (select: (s: Record<string, unknown>) => unknown) => select(h.settings),
 }))
 vi.mock('@/hooks/useProviders', () => ({ useProviders: () => ({ providers: h.providers }) }))
 vi.mock('@/hooks/useScopes', () => ({
@@ -97,6 +98,7 @@ beforeEach(() => {
   h.sessions.clear()
   h.created = 0
   h.providers = [openai]
+  h.settings = {}
   h.scopes = [
     { id: 'acme', name: 'Acme Co' },
     { id: 'dango', name: 'Dango app' },
@@ -175,6 +177,17 @@ describe('useQuickChat', () => {
       sessionId: 'chat-1',
       lastScopeId: 'acme',
     })
+  })
+
+  it('a default whose provider was removed falls back to the usable last-used model', async () => {
+    h.settings = { defaultChatModel: { provider: 'custom-provider-gone', model: 'm1' } }
+    const { result } = await renderQuick()
+
+    await ask(result, 'hello')
+
+    expect(chatStore.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ settings: expect.objectContaining({ provider: 'openai', modelId: 'gpt-4o' }) })
+    )
   })
 
   it('Esc keeps the chat and the stream', async () => {
