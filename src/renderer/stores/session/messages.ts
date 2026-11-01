@@ -318,6 +318,10 @@ export async function submitNewUserMessage(
       status: [],
     }
     if (earlyAssistantInserted) {
+      // The turn was marked live above; a failure before generate() (no model, Web Search refused) must drop it,
+      // or Stop stays next to the error (finding 4).
+      const { clearSessionGenerationLive } = await import('./session-live-generation')
+      clearSessionGenerationLive(sessionId, newAssistantMsg.id)
       await modifyMessage(sessionId, newAssistantMsg)
     } else if (needGenerating && !isMultiAgentRoom) {
       await insertMessage(sessionId, newAssistantMsg)

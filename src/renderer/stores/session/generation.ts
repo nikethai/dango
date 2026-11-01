@@ -692,6 +692,8 @@ export async function generate(
   const configs = await platform.getConfig()
   if (!session || !settings) {
     await releaseExecutionPhase()
+    // The send path marked this turn live before calling generate(); nothing will clear it after this return.
+    clearSessionGenerationLive(sessionId, targetMsg.id)
     // A caller that marked the message generating (Run plan, Continue) must not leave it spinning.
     if (session && targetMsg.generating) {
       try {
