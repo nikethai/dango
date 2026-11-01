@@ -9,7 +9,12 @@
  *   402         insufficient_quota
  *   429-<n>     rate limited with Retry-After: <n>
  *   400-context context_length_exceeded
- * Without a mode (http://127.0.0.1:<port>/v1) it behaves as `ok`.
+ *   slow-<n>    waits n seconds before the first word, then streams slowly (time to press Stop)
+ *   drip-<ms>   streams at once, one 16-character piece every <ms> (a long run that never goes quiet)
+ *   empty       finishes without any text
+ *   drop        streams half the answer, then closes the connection without finishing
+ * Without a mode (http://127.0.0.1:<port>/v1) it behaves as `ok`. In every answering mode, Dango's fact-extraction
+ * and contradiction-check calls get structured replies (see `replyText`).
  *
  * Logs one line per request with booleans only: whether each marker string (MARKERS, comma separated)
  * appears in a system message or anywhere in the request. Message bodies are never logged.
@@ -73,8 +78,42 @@ function chunk(id, delta, finishReason = null) {
   })}\n\n`
 }
 
-function answer(res, body) {
-  const text = `Echo: ${lastUserText(body)}`
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function systemText(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : []
+  return messages
+    .filter((m) => m.role === 'system' || m.role === 'developer')
+    .map((m) => textOf(m.content))
+    .join('\n')
+}
+
+/**
+ * Answers Dango's own background calls so knowledge flows can be driven without a real model:
+ * - fact extraction: every `REMEMBER: <fact>` line in the excerpt becomes a fact;
+ * - contradiction check: a saved statement contradicts the new one when they match once digits are ignored.
+ * Anything else gets the echo. A multi-line message is echoed on its own lines, so a list stays a list.
+ */
+function replyText(body) {
+  const system = systemText(body)
+  const user = lastUserText(body)
+  if (system.startsWith('You extract durable long-term memories')) {
+    // The echo repeats the line in the assistant's turn, so each fact once.
+    const texts = new Set([...user.matchAll(/REMEMBER:\s*(.+)/g)].map((m) => m[1].trim()))
+    const facts = [...texts].map((content) => ({ content, tags: [], scope: 'global' }))
+    return JSON.stringify({ facts })
+  }
+  if (system.startsWith('You compare a new statement')) {
+    const saved = JSON.parse(user.match(/Saved statements:\n(.*)\n\nNew statement:/s)?.[1] ?? '[]')
+    const next = JSON.parse(user.split('New statement:\n')[1] ?? '""')
+    const shape = (s) => s.replace(/\d+/g, '#').trim().toLowerCase()
+    return JSON.stringify({ contradicts: saved.filter((s) => s.text !== next && shape(s.text) === shape(next)).map((s) => s.id) })
+  }
+  return user.includes('\n') ? `Echo:\n${user}` : `Echo: ${user}`
+}
+
+async function answer(res, body, { delayMs = 0, pieceDelayMs = 0, empty = false, drop = false } = {}) {
+  const text = empty ? '' : replyText(body)
   const id = `chatcmpl-fake-${Date.now()}`
   const usage = { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
   if (!body?.stream) {
@@ -90,7 +129,18 @@ function answer(res, body) {
   }
   res.writeHead(200, { ...CORS, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' })
   res.write(chunk(id, { role: 'assistant', content: '' }))
-  for (const piece of text.match(/.{1,16}/gs) ?? []) res.write(chunk(id, { content: piece }))
+  if (delayMs) await sleep(delayMs)
+  const pieces = text.match(/.{1,16}/gs) ?? []
+  for (const [i, piece] of pieces.entries()) {
+    if (res.destroyed) return
+    if (drop && i >= Math.ceil(pieces.length / 2)) {
+      res.destroy()
+      return
+    }
+    res.write(chunk(id, { content: piece }))
+    if (pieceDelayMs) await sleep(pieceDelayMs)
+  }
+  if (res.destroyed) return
   res.write(chunk(id, {}, 'stop'))
   res.write(
     `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', model: MODEL, choices: [], usage })}\n\n`
@@ -118,6 +168,12 @@ function handleCompletion(res, mode, body) {
       "This model's maximum context length was exceeded."
     )
   }
+  const slow = mode.match(/^slow-(\d+)$/)
+  if (slow) return answer(res, body, { delayMs: Number(slow[1]) * 1000, pieceDelayMs: 300 })
+  const drip = mode.match(/^drip-(\d+)$/)
+  if (drip) return answer(res, body, { delayMs: 1000, pieceDelayMs: Number(drip[1]) })
+  if (mode === 'empty') return answer(res, body, { empty: true })
+  if (mode === 'drop') return answer(res, body, { drop: true })
   return answer(res, body)
 }
 
@@ -149,11 +205,16 @@ const server = createServer((req, res) => {
       return sendError(res, 400, 'invalid_request_error', 'invalid_json', 'Body is not JSON.')
     }
     const markers = MARKERS.length ? ` ${markerReport(body)}` : ''
-    console.log(`${new Date().toISOString()} ${mode} POST chat stream=${Boolean(body.stream)}${markers}`)
+    // Text parts per user message ("s" = a plain string), to see how merged turns arrive.
+    const userParts = (Array.isArray(body.messages) ? body.messages : [])
+      .filter((m) => m.role === 'user')
+      .map((m) => (Array.isArray(m.content) ? m.content.length : 's'))
+      .join(',')
+    console.log(`${new Date().toISOString()} ${mode} POST chat stream=${Boolean(body.stream)} user=[${userParts}]${markers}`)
     handleCompletion(res, mode, body)
   })
 })
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`fake provider on http://127.0.0.1:${PORT}/v1 (modes: ok, 401, 402, 429-<n>, 400-context)`)
+  console.log(`fake provider on http://127.0.0.1:${PORT}/v1 (modes: ok, 401, 402, 429-<n>, 400-context, slow-<n>, drip-<ms>, empty, drop)`)
 })
