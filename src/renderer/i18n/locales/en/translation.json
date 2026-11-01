@@ -1372,6 +1372,7 @@
   "Scope: {{name}}": "Scope: {{name}}",
   "Scope: None": "Scope: None",
   "Unknown scope": "Unknown scope",
+  "Replaced: \"{{old}}\"": "Replaced: \"{{old}}\"",
   "Saved: \"{{old}}\"": "Saved: \"{{old}}\"",
   "Dismissed \"{{text}}\"": "Dismissed \"{{text}}\"",
   "Answer": "Answer",

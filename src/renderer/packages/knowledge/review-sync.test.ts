@@ -2,7 +2,7 @@ import type { KnowledgeConflict, KnowledgeProposal } from '@shared/types/knowled
 import type { Scope } from '@shared/types/scope'
 import { EVERYWHERE_SCOPE_ID } from '@shared/types/scope'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { addReviewEntry, setReviewEntryState } from '@/packages/review'
+import { addReviewEntry, setReviewEntryState, updateReviewEntry } from '@/packages/review'
 import { _resetInitForTests, initKnowledge } from './init'
 import { startReviewSync } from './review-sync'
 import {
@@ -23,7 +23,8 @@ vi.mock('i18next', () => ({
 vi.mock('./review/register', () => ({ registerKnowledgeRenderers: () => () => undefined }))
 vi.mock('@/packages/review', () => ({
   addReviewEntry: vi.fn(async () => undefined),
-  setReviewEntryState: vi.fn(async () => undefined),
+  setReviewEntryState: vi.fn(async (match: { ref: { type: string; id: string } }) => ({ id: `e-${match.ref.id}` })),
+  updateReviewEntry: vi.fn(async () => undefined),
 }))
 
 const proposal = (over: Partial<KnowledgeProposal> = {}): KnowledgeProposal => ({
@@ -55,6 +56,7 @@ beforeEach(() => {
   _resetScopesForTests()
   vi.mocked(addReviewEntry).mockClear()
   vi.mocked(setReviewEntryState).mockClear()
+  vi.mocked(updateReviewEntry).mockClear()
   stop = startReviewSync()
 })
 
@@ -204,6 +206,49 @@ describe('review sync', () => {
     expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'proposal', id: 'p-1' } }, 'done')
     expect(setReviewEntryState).toHaveBeenCalledTimes(2)
     expect(addReviewEntry).not.toHaveBeenCalled()
+    // The Done entry no longer says the old statement is saved (finding 20).
+    expect(updateReviewEntry).toHaveBeenCalledTimes(1)
+    expect(updateReviewEntry).toHaveBeenCalledWith('e-c-1', { text: 'Launch is 13 Nov', sub: 'Replaced: "Launch is 6 Nov"' })
+  })
+
+  it('conflict resolved by keeping the saved statement → its Done entry reads that statement, no sub-line', async () => {
+    const item = await makeItem({ text: 'Launch is 6 Nov' })
+    await commitKnowledge((d) => {
+      d.items.push(item)
+      d.proposals.push(proposal({ conflictsWith: ['k1'] }))
+      d.conflicts.push(conflict())
+    })
+    vi.mocked(updateReviewEntry).mockClear()
+    // The shape Keep this (saved statement) commits: the proposal becomes an item superseded by the winner.
+    const lost = await makeItem({ id: 'k2', text: 'Launch is 13 Nov', proposalId: 'p-1' })
+    await commitKnowledge((d) => {
+      d.items.push({ ...lost, status: 'superseded', supersededBy: 'k1' })
+      d.proposals = []
+      d.conflicts[0].state = 'resolved'
+      d.conflicts[0].resolvedAt = 3_000
+    })
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'conflict', id: 'c-1' } }, 'done')
+    expect(updateReviewEntry).toHaveBeenCalledWith('e-c-1', { text: 'Launch is 6 Nov', sub: undefined })
+  })
+
+  it('conflict resolved by keeping both → the Done entry keeps "Saved", which is still true', async () => {
+    const item = await makeItem({ text: 'Launch is 6 Nov' })
+    await commitKnowledge((d) => {
+      d.items.push(item)
+      d.proposals.push(proposal({ conflictsWith: ['k1'] }))
+      d.conflicts.push(conflict())
+    })
+    vi.mocked(updateReviewEntry).mockClear()
+    const both = await makeItem({ id: 'k2', text: 'Launch is 13 Nov', proposalId: 'p-1', condition: 'for the US' })
+    await commitKnowledge((d) => {
+      d.items.push(both)
+      d.items[0].condition = 'for the US'
+      d.proposals = []
+      d.conflicts[0].state = 'resolved'
+      d.conflicts[0].resolvedAt = 3_000
+    })
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'conflict', id: 'c-1' } }, 'done')
+    expect(updateReviewEntry).not.toHaveBeenCalled()
   })
 
   it('initKnowledge called twice → one listener', async () => {

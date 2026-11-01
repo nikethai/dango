@@ -1,8 +1,8 @@
-import type { KnowledgeState } from '@shared/types/knowledge'
+import type { KnowledgeConflict, KnowledgeItem, KnowledgeState } from '@shared/types/knowledge'
 import type { ReviewEntryInput, ReviewRef, ReviewState } from '@shared/types/review'
 import { t } from 'i18next'
 import { getLogger } from '@/lib/utils'
-import { addReviewEntry, setReviewEntryState } from '@/packages/review'
+import { addReviewEntry, setReviewEntryState, updateReviewEntry } from '@/packages/review'
 import { type CommitResult, onKnowledgeCommit } from './store'
 import { quote } from './text'
 
@@ -10,12 +10,32 @@ const log = getLogger('knowledge')
 
 // `reopen`: the entry may have been closed while the record stayed open (a proposal behind a conflict),
 // so reopen it by ref before refreshing it, rather than adding a second one next to it.
+// `patch`: what a closed entry should read instead of its open text (a resolved conflict).
 type Target =
   | { entry: ReviewEntryInput; state: 'open'; reopen: boolean }
-  | { ref: ReviewRef; state: Exclude<ReviewState, 'open'> }
+  | { ref: ReviewRef; state: Exclude<ReviewState, 'open'>; patch?: Pick<ReviewEntryInput, 'text' | 'sub'> }
 
 const proposalRef = (id: string): ReviewRef => ({ type: 'proposal', id })
 const conflictRef = (id: string): ReviewRef => ({ type: 'conflict', id })
+
+/**
+ * What a resolved conflict's Done entry reads: the statement that stands, since the open conflict's
+ * `Saved: "<old>"` is no longer true once the new statement replaced it. Keeping a saved statement stores the
+ * proposal as an item superseded by the winner; keeping the new one supersedes the old item; keeping both changes
+ * nothing (the old statement is still saved).
+ */
+function resolvedPatch(c: KnowledgeConflict, after: KnowledgeState, items: Map<string, KnowledgeItem>) {
+  const fromProposal = after.items.find((i) => i.proposalId === c.proposalId)
+  if (fromProposal?.status === 'superseded') {
+    const winner = items.get(fromProposal.supersededBy ?? '')
+    return winner ? { text: winner.text, sub: undefined } : undefined
+  }
+  const old = items.get(c.itemIds[0])
+  if (fromProposal && old?.status === 'superseded') {
+    return { text: fromProposal.text, sub: t('Replaced: "{{old}}"', { old: quote(old.text) }) }
+  }
+  return undefined
+}
 
 /** What the Review entry for each touched proposal and conflict should be after this commit. */
 function targetsFor(result: CommitResult, after: KnowledgeState, before: KnowledgeState): Target[] {
@@ -46,7 +66,8 @@ function targetsFor(result: CommitResult, after: KnowledgeState, before: Knowled
       continue
     }
     if (c.state === 'resolved') {
-      targets.push({ ref: conflictRef(id), state: 'done' })
+      const patch = resolvedPatch(c, after, items)
+      targets.push({ ref: conflictRef(id), state: 'done', ...(patch ? { patch } : {}) })
       continue
     }
     if (c.state === 'dismissed') {
@@ -97,7 +118,8 @@ function targetsFor(result: CommitResult, after: KnowledgeState, before: Knowled
 
 async function apply(target: Target): Promise<void> {
   if (target.state !== 'open') {
-    await setReviewEntryState({ ref: target.ref }, target.state)
+    const closed = await setReviewEntryState({ ref: target.ref }, target.state)
+    if (closed && target.patch) await updateReviewEntry(closed.id, target.patch)
     return
   }
   // A revert brings a record back, and a proposal whose conflict closed comes out from behind it: reopen
