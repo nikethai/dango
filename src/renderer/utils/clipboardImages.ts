@@ -8,6 +8,8 @@ export type ClipboardPasteDecision = {
   images: File[]
   /** Plain text to insert once after image handling (if any). */
   plainText: string | null
+  /** The pasted text when it is long enough to attach as a file instead (`plainText` is then null). */
+  longText: string | null
   /** True when paste contained any image file representation. */
   hasImages: boolean
   /**
@@ -157,6 +159,7 @@ export function decideClipboardPaste(
   return {
     images,
     plainText: textOut,
+    longText: isLongText ? plainText : null,
     hasImages,
     shouldPreventDefault,
   }
