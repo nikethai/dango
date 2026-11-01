@@ -116,3 +116,11 @@ export function usablePictureModel(
     ? { provider: lastUsedPicture.provider, modelId: lastUsedPicture.modelId }
     : undefined
 }
+
+/**
+ * Whether the composer may send with this readiness, on every layout: only a ready model sends. (A model that lacks an
+ * ability can still answer without tools through its notice; that path checks `capability-required` itself.)
+ */
+export function readinessAllowsSend(readiness: ModelReadiness): boolean {
+  return readiness.status === 'ready'
+}

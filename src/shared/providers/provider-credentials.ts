@@ -1,5 +1,5 @@
 import { ModelProviderEnum } from '../types/provider'
-import type { ProviderBaseInfo, ProviderSettings } from '../types'
+import type { ProviderBaseInfo, ProviderSettings, Settings } from '../types'
 
 /**
  * True when the provider has usable credentials for chat:
@@ -53,4 +53,24 @@ export function isProviderListedInSettings(
     return false
   }
   return false
+}
+
+/**
+ * Whether the user has set up this provider: a custom provider they created, a built-in one with a key or sign-in, or
+ * a local one with models (OpenClaw and ComfyUI count with their default models, as in the model picker). Model calls
+ * refuse any other provider, so nothing is sent to a provider the user never chose.
+ */
+export function isProviderSetUp(
+  providerId: string,
+  settings: Pick<Settings, 'providers' | 'customProviders'>,
+  defaultModelCount = 0
+): boolean {
+  if (settings.customProviders?.some((p) => p.id === providerId)) return true
+  const providerSettings = settings.providers?.[providerId]
+  if (hasProviderCredentials(providerSettings)) return true
+  if (!LOCAL_PROVIDER_IDS.has(providerId)) return false
+  if (providerSettings?.models?.length) return true
+  return (
+    (providerId === ModelProviderEnum.OpenClaw || providerId === ModelProviderEnum.ComfyUI) && defaultModelCount > 0
+  )
 }

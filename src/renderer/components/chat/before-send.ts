@@ -169,20 +169,29 @@ export async function requestBeforeSend(sessionId: string, action: MessageAction
       ? { provider: session.settings.provider, modelId: session.settings.modelId }
       : undefined
   const model = action.kind === 'redo-with-model' ? action.model : chatModel
-  if (!model) return true
+  // No model, or one whose provider or model is gone: nothing runs (never a fallback provider).
+  if (!model) {
+    toastActions.add(t('Choose a model to start chatting.'))
+    return false
+  }
   const modelName = getModelDisplayName(providers, model) || model.modelId
 
-  if (action.kind !== 'redo-with-model') {
-    const needs = turnAbilityNeeds(session, action.messageId, { ocrReady: isOcrModelSet(settings) })
-    const readiness = getModelReadiness(model, providers, needs)
-    if (readiness.status === 'capability-required') {
-      toastActions.add(
-        readiness.capability === 'tool_use'
-          ? t("{{model}} can't use tools.", { model: modelName })
-          : t('This model cannot analyze attachments. Choose a vision model.')
-      )
-      return false
-    }
+  const needs =
+    action.kind === 'redo-with-model'
+      ? {}
+      : turnAbilityNeeds(session, action.messageId, { ocrReady: isOcrModelSet(settings) })
+  const readiness = getModelReadiness(model, providers, needs)
+  if (readiness.status === 'capability-required') {
+    toastActions.add(
+      readiness.capability === 'tool_use'
+        ? t("{{model}} can't use tools.", { model: modelName })
+        : t('This model cannot analyze attachments. Choose a vision model.')
+    )
+    return false
+  }
+  if (readiness.status !== 'ready') {
+    toastActions.add(t('Choose an available model before sending.'))
+    return false
   }
 
   const roomSize = session.agentIds?.length ?? 0
