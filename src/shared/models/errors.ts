@@ -201,13 +201,13 @@ export class ProviderAPIError extends BaseError {
       name: 'model_not_support_web_browsing',
       code: 20021,
       i18nKey:
-        'The {{model}} API itself does not support web browsing. Supported models: {{supported_web_browsing_models}}',
+        "{{model}} can't search the web because it doesn't use tools. Turn off Web Search in the + menu, or choose a model that uses tools.",
     },
     model_not_support_web_browsing_2: {
       name: 'model_not_support_web_browsing_2',
       code: 20022,
       i18nKey:
-        'The {{model}} API itself does not support web browsing. Supported models: {{supported_web_browsing_models}}',
+        "{{model}} can't search the web because it doesn't use tools. Turn off Web Search in the + menu, or choose a model that uses tools.",
     },
     no_search_result: {
       name: 'no_search_result',

@@ -49,14 +49,13 @@ const REPEATING_ERROR_CODES = new Set([10003, 10005])
  */
 function LegacySentence({ i18nKey, model }: { i18nKey: string; model?: string }) {
   const { t } = useTranslation()
-  const supported = 'gemini-2.0-flash(API), perplexity API'
   if (!/<\w+>/.test(i18nKey)) {
-    return <>{t(i18nKey, { model, supported_web_browsing_models: supported })}</>
+    return <>{t(i18nKey, { model })}</>
   }
   return (
     <Trans
       i18nKey={i18nKey}
-      values={{ model: (model ?? '').replace(/[<>]/g, ''), supported_web_browsing_models: supported }}
+      values={{ model: (model ?? '').replace(/[<>]/g, '') }}
       components={{
         OpenSettingButton: <SettingsLink onClick={() => navigateToSettings()} />,
         OpenExtensionSettingButton: <SettingsLink onClick={() => navigateToSettings('/web-search')} />,

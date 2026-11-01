@@ -1764,6 +1764,7 @@
   "Start a new chat with a summary": "Start a new chat with a summary",
   "Couldn't reach {{host}}.": "Couldn't reach {{host}}.",
   "{{model}} sent no reply.": "{{model}} sent no reply.",
+  "{{model}} can't search the web because it doesn't use tools. Turn off Web Search in the + menu, or choose a model that uses tools.": "{{model}} can't search the web because it doesn't use tools. Turn off Web Search in the + menu, or choose a model that uses tools.",
   "{{provider}} returned an error.": "{{provider}} returned an error.",
   "Show details": "Show details",
   "Hide details": "Hide details",
