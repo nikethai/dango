@@ -1623,6 +1623,15 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         return
       }
 
+      // Built from this render's input, not the effect-built atom: that is one render behind when Enter lands
+      // right after the text does, and would send an empty message (finding 12).
+      const userMessage = sessionHelpers.constructUserMessage(
+        messageInput,
+        pictureKeys,
+        preConstructedMessage.preprocessedFiles,
+        preConstructedMessage.preprocessedLinks
+      )
+
       // CS1: a send that may cost more than the user's limit asks first. Only here, before sending —
       // a run that has started is never interrupted. Cancel leaves the draft as it is.
       if (needGenerating && model) {
@@ -1634,7 +1643,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           inputTokens: isCalculating
             ? estimateInputTokens([
                 ...(currentSession?.messages ?? []),
-                ...(preConstructedMessage.message ? [preConstructedMessage.message] : []),
+                userMessage,
               ])
             : totalTokens,
           maxOutputTokens: currentSessionMergedSettings?.maxTokens,
@@ -1653,15 +1662,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
         setStickyStop(false)
       }, 4000)
       try {
-        // Use the already constructed message
-        if (!preConstructedMessage.message) {
-          console.error('No constructed message available')
-          setStickyStop(false)
-          return
-        }
-
         // Sample video frames for vision models right before send
-        let constructedMessage = preConstructedMessage.message
+        let constructedMessage = userMessage
         if (answerWithoutTools) {
           constructedMessage = { ...constructedMessage, toolsOff: true }
         }
