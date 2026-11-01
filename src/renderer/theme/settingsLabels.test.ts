@@ -138,7 +138,7 @@ describe('settings section titles, badges and row titles are sentence case in En
       return true
     }
     const words = text.split(/\s+/)
-    if (!/^[A-Z]/.test(words[0]) && !PROPER.has(words[0])) {
+    if (!/^[A-Z0-9]/.test(words[0]) && !PROPER.has(words[0])) {
       return false
     }
     return words.slice(1).every((word) => {
@@ -154,6 +154,35 @@ describe('settings section titles, badges and row titles are sentence case in En
     expect(keys.has('Advanced')).toBe(true)
     expect(keys.has('Default Chat Model')).toBe(true)
     expect(keys.has('Search Provider')).toBe(true)
+  })
+
+  const offendersIn = (keys: Map<string, string>) =>
+    [...keys].filter(([key]) => !isSentenceCase(en[key] ?? key)).map(([key, file]) => `${en[key] ?? key} (${file})`)
+
+  // the settings nav (ITEMS labels in route.tsx, also the breadcrumb) and each page's <SettingsPageHeader title>
+  const navAndPageKeys = () => {
+    const keys = new Map<string, string>()
+    const route = 'src/renderer/routes/settings/route.tsx'
+    for (const call of read(route).matchAll(/\blabel: '([^']+)'/g)) {
+      keys.set(call[1], route)
+    }
+    for (const file of tsxFiles) {
+      const source = readFileSync(file, 'utf8')
+      for (const tag of source.matchAll(/<SettingsPageHeader\b((?:=>|[^>])*)>/g)) {
+        for (const call of tag[1].matchAll(/\btitle=\{t\('([^']+)'\)\}/g)) {
+          keys.set(call[1], file.replace(`${process.cwd()}/`, ''))
+        }
+      }
+    }
+    return keys
+  }
+
+  test('settings nav items and page titles are sentence case', () => {
+    const keys = navAndPageKeys()
+    expect(keys.has('Model Provider')).toBe(true)
+    expect(keys.has('General Settings')).toBe(true)
+    expect(keys.size).toBeGreaterThan(20)
+    expect(offendersIn(keys)).toEqual([])
   })
 
   test('every English value is sentence case', () => {
