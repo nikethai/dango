@@ -221,6 +221,17 @@ describe('ModelErrorNotice', () => {
     expect(container.textContent).toContain('<strong>x</strong>')
   })
 
+  it('a model without tool use under Web Search says how to fix it, with no list of old models (finding 2)', () => {
+    for (const errorCode of [20021, 20022]) {
+      const { container } = render(<ModelErrorNotice msg={failed({ errorCode, model: 'Fake D' })} sessionId="s1" />)
+      expect(container.textContent).toContain(
+        "Fake D can't search the web because it doesn't use tools. Turn off Web Search in the + menu, or choose a model that uses tools."
+      )
+      expect(container.textContent).not.toMatch(/gemini-2\.0-flash|perplexity|Supported models/)
+      cleanup()
+    }
+  })
+
   it('errors that would only repeat offer no Retry', () => {
     for (const errorCode of [10003, 10005, 20014, 20025]) {
       const { container } = render(<ModelErrorNotice msg={failed({ errorCode })} sessionId="s1" />)
