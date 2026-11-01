@@ -262,7 +262,7 @@ describe('background job runner', () => {
     expect(handler).toHaveBeenCalledTimes(1)
   })
 
-  it('starting a source and kind again closes the open entry of its needs-you job', async () => {
+  it('starting a source and kind again dismisses the open entry of its needs-you job', async () => {
     registerJobHandler('sync', async () => {
       await Promise.resolve()
       throw new NeedsUserError('sign in again', { action: 'reconnect', label: 'Sign in again' })
@@ -274,7 +274,8 @@ describe('background job runner', () => {
     const next = gmail()
     expect(next.id).not.toBe(old.id)
     await flush()
-    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'job', id: old.id } }, 'done')
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'job', id: old.id } }, 'dismissed')
+    expect(setReviewEntryState).not.toHaveBeenCalledWith({ ref: { type: 'job', id: old.id } }, 'done')
   })
 
   it('paused: nothing starts until unpaused', async () => {
@@ -695,7 +696,7 @@ describe('background job runner: one job per source, fixes and resolver', () => 
     expect(stored().filter((j) => j.sourceId === 'src1' && j.status === 'running')).toHaveLength(1)
   })
 
-  it('startJob before load still closes the entry of a stored needs-you job', async () => {
+  it('startJob before load still dismisses the entry of a stored needs-you job', async () => {
     memory.set(KEY, [
       {
         id: 'stuck',
@@ -717,7 +718,7 @@ describe('background job runner: one job per source, fixes and resolver', () => 
     })
     gmail()
     await settle()
-    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'job', id: 'stuck' } }, 'done')
+    expect(setReviewEntryState).toHaveBeenCalledWith({ ref: { type: 'job', id: 'stuck' } }, 'dismissed')
   })
 
   it('a throwing fix handler counts as cancelled', async () => {
