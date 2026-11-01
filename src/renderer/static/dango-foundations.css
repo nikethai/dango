@@ -192,3 +192,14 @@
   align-items: flex-start;
   justify-content: space-between;
 }
+
+/* The statement and its source line wrap; Keep this keeps its width (finding 19). */
+.dango-conflict__statement > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dango-conflict__statement > .dg-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
