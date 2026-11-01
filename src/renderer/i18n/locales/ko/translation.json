@@ -746,7 +746,6 @@
   "show message token usage": "메시지 토큰 사용량 표시",
   "show message word count": "메시지 단어 수 표시",
   "show model name": "모델 이름 표시",
-  "Show/Hide the Application Window": "애플리케이션 창 표시/숨기기",
   "Show/Hide the Search Dialog": "검색 대화 상자 표시/숨기기",
   "Showing {{loaded}} of {{total}} chunks": "{{total}}개 중 {{loaded}}개 청크 표시 중",
   "Showing first {{count}} chunks": "처음 {{count}}개 청크 표시",

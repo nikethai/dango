@@ -109,7 +109,7 @@ export function ShortcutConfig(props: {
   const { t } = useTranslation()
   const items: ShortcutDataItem[] = [
     {
-      label: t('Show/Hide the Application Window'),
+      label: t('Show or hide Quick Chat'),
       name: 'quickToggle',
       keys: shortcuts.quickToggle,
       options: shortcutToggleWindowValues,

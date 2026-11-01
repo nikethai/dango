@@ -746,7 +746,6 @@
   "show message token usage": "Показать использование токенов в сообщении",
   "show message word count": "Показать количество слов в сообщении",
   "show model name": "Показать название модели",
-  "Show/Hide the Application Window": "Показать/скрыть окно приложения",
   "Show/Hide the Search Dialog": "Показать/скрыть диалог поиска",
   "Showing {{loaded}} of {{total}} chunks": "Показано {{loaded}} из {{total}} фрагментов",
   "Showing first {{count}} chunks": "Показаны первые {{count}} фрагментов",

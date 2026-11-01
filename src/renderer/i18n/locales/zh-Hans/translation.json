@@ -752,7 +752,6 @@
   "show message token usage": "显示消息的 token 消耗",
   "show message word count": "显示消息的字数统计",
   "show model name": "显示模型名称",
-  "Show/Hide the Application Window": "显示/隐藏应用窗口",
   "Show/Hide the Search Dialog": "显示/隐藏搜索弹窗",
   "Showing {{loaded}} of {{total}} chunks": "显示 {{loaded}} / {{total}} 分块",
   "Showing first {{count}} chunks": "显示前 {{count}} 分块",

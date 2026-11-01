@@ -746,7 +746,6 @@
   "show message token usage": "メッセージのトークン使用状況を表示",
   "show message word count": "メッセージの単語数を表示",
   "show model name": "モデル名を表示",
-  "Show/Hide the Application Window": "アプリケーションウィンドウの表示/非表示",
   "Show/Hide the Search Dialog": "検索ダイアログの表示/非表示",
   "Showing {{loaded}} of {{total}} chunks": "{{total}}個中{{loaded}}個のチャンクを表示中",
   "Showing first {{count}} chunks": "最初の {{count}} チャンクを表示中",

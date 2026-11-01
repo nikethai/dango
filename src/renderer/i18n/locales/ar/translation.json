@@ -745,7 +745,6 @@
   "show message token usage": "عرض استخدام الرموز في الرسالة",
   "show message word count": "عرض عدد كلمات الرسالة",
   "show model name": "عرض اسم النموذج",
-  "Show/Hide the Application Window": "إظهار/إخفاء نافذة التطبيق",
   "Show/Hide the Search Dialog": "إظهار/إخفاء مربع الحوار الخاص بالبحث",
   "Showing {{loaded}} of {{total}} chunks": "عرض {{loaded}} من {{total}} أجزاء",
   "Showing first {{count}} chunks": "إظهار أول {{count}} أجزاء",
