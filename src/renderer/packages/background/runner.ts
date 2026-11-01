@@ -216,8 +216,8 @@ async function needsYou(job: BackgroundJob, reason: string, fix: JobFix): Promis
   ])
 }
 
-function closeEntry(id: string): Promise<void> {
-  return safely('Closing the entry', () => setReviewEntryState({ ref: jobRef(id) }, 'done'))
+function closeEntry(id: string, state: 'done' | 'dismissed' = 'done'): Promise<void> {
+  return safely('Closing the entry', () => setReviewEntryState({ ref: jobRef(id) }, state))
 }
 
 export function registerJobHandler(kind: BackgroundJob['kind'], handler: JobHandler): void {
@@ -272,14 +272,17 @@ export function startJob(input: {
   return job
 }
 
-/** A new run supersedes the Needs you entry of the latest earlier job for the same source and kind (R15). */
+/**
+ * A new run supersedes the Needs you entry of the latest earlier job for the same source and kind (R15). The entry is
+ * dismissed, not done: its failure was not fixed, and only the newest failure shows in Review.
+ */
 function closeSupersededEntry(job: BackgroundJob): void {
   let latest: BackgroundJob | undefined
   for (const j of jobsStore.getState().jobs) {
     if (j.id === job.id || !sameSlot(j, job) || j.startedAt > job.startedAt) continue
     if (!latest || j.startedAt > latest.startedAt) latest = j
   }
-  if (latest?.status === 'needs-you') void closeEntry(latest.id)
+  if (latest?.status === 'needs-you') void closeEntry(latest.id, 'dismissed')
 }
 
 /**
