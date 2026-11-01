@@ -394,7 +394,24 @@ export const QuickChatPanel = forwardRef(function QuickChatPanel(
             />
           ) : null}
         </span>
-        <span style={{ flexGrow: 1, alignSelf: 'stretch' }} data-tauri-drag-region />
+        {/* The model that answers here: a reopened chat keeps its own model, so the default may differ. */}
+        <span
+          className="dg-qc__model"
+          title={modelName || undefined}
+          data-tauri-drag-region
+          style={{
+            flex: '1 1 0',
+            minWidth: 0,
+            alignSelf: 'stretch',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            color: 'var(--dango-muted)',
+            fontSize: 12,
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{modelName}</span>
+        </span>
         {generating && !waitingForFirstToken && onStop ? (
           <button type="button" className="dg-btn dg-btn--ghost" onClick={onStop}>
             {t('Stop')}

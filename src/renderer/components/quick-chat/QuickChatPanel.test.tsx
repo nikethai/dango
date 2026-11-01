@@ -114,6 +114,14 @@ describe('QuickChatPanel', () => {
     expect(container.querySelector('.dg.dg-qc.dg-qc--window')).toBeTruthy()
   })
 
+  it('names the model that answers in the foot', () => {
+    const { container } = render(<QuickChatPanel {...props({ modelName: 'Fake B (fake-model)' })} />)
+    const foot = container.querySelector('.dg-qc__foot') as HTMLElement
+    const caption = foot.querySelector('.dg-qc__model') as HTMLElement
+    expect(caption.textContent).toBe('Fake B (fake-model)')
+    expect(caption.getAttribute('title')).toBe('Fake B (fake-model)')
+  })
+
   it('answered with chips', () => {
     const msg = answer('The answer', { citations: citations(5), knowledgeIds: ['k1'] })
     expect(usedKnowledgeCount(msg)).toBe(1)
