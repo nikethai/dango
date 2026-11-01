@@ -6,6 +6,8 @@ import {
   isOcrModelSet,
   modelMeetsNeeds,
   turnNeedsTools,
+  usableChatModel,
+  usablePictureModel,
 } from './modelReadiness'
 
 const model = (modelId: string, capabilities: ProviderModelInfo['capabilities'] = []): ProviderModelInfo => ({
@@ -153,5 +155,60 @@ describe('attachmentsNeedVision', () => {
     expect(isOcrModelSet({ ocrModel: { provider: 'openai', model: 'gpt-4o' } })).toBe(true)
     expect(isOcrModelSet({ ocrModel: { provider: 'openai', model: '' } })).toBe(false)
     expect(isOcrModelSet({})).toBe(false)
+  })
+})
+
+describe('usableChatModel', () => {
+  const providers = [
+    provider('a', [model('m1')]),
+    provider('b', [model('m2')]),
+    provider('comfyui', [model('txt2img')]),
+  ]
+
+  test('prefers the default when it is ready', () => {
+    expect(
+      usableChatModel(
+        { defaultChatModel: { provider: 'a', model: 'm1' }, lastUsedChat: { provider: 'b', modelId: 'm2' } },
+        providers
+      )
+    ).toEqual({ provider: 'a', modelId: 'm1' })
+  })
+
+  test('uses the last-used model when the default provider was removed', () => {
+    expect(
+      usableChatModel(
+        { defaultChatModel: { provider: 'gone', model: 'm1' }, lastUsedChat: { provider: 'b', modelId: 'm2' } },
+        providers
+      )
+    ).toEqual({ provider: 'b', modelId: 'm2' })
+  })
+
+  test('returns nothing when neither is ready', () => {
+    expect(
+      usableChatModel(
+        {
+          defaultChatModel: { provider: 'a', model: 'removed' },
+          lastUsedChat: { provider: 'openai', modelId: 'gpt-4o' },
+        },
+        providers
+      )
+    ).toBeUndefined()
+    expect(usableChatModel({}, providers)).toBeUndefined()
+  })
+
+  test('never picks ComfyUI for chat', () => {
+    expect(usableChatModel({ lastUsedChat: { provider: 'comfyui', modelId: 'txt2img' } }, providers)).toBeUndefined()
+  })
+})
+
+describe('usablePictureModel', () => {
+  test('keeps the last-used picture model only when it is ready', () => {
+    const providers = [provider('comfyui', [model('txt2img')])]
+    expect(usablePictureModel({ provider: 'comfyui', modelId: 'txt2img' }, providers)).toEqual({
+      provider: 'comfyui',
+      modelId: 'txt2img',
+    })
+    expect(usablePictureModel({ provider: 'openai', modelId: 'gpt-image-1' }, providers)).toBeUndefined()
+    expect(usablePictureModel(undefined, providers)).toBeUndefined()
   })
 })

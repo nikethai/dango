@@ -52,6 +52,7 @@ import {
   TOKEN_CACHE_KEYS,
 } from '../../shared/types'
 import { lastUsedModelStore } from './lastUsedModelStore'
+import { newSessionModel } from './newChatModel'
 import { getPlatformDefaultDocumentParser, settingsStore } from './settingsStore'
 
 const log = getLogger('session-helpers')
@@ -837,7 +838,6 @@ export function mergeSettings(
 
 export function initEmptyChatSession(): Omit<Session, 'id'> {
   const settings = settingsStore.getState().getSettings()
-  const { chat: lastUsedChatModel } = lastUsedModelStore.getState()
   const globalSessionDefaults = SessionSettingsSchema.parse(settings)
   const newSession: Omit<Session, 'id'> = {
     name: 'Untitled',
@@ -848,12 +848,7 @@ export function initEmptyChatSession(): Omit<Session, 'id'> {
       temperature: settings.temperature || undefined,
       topP: settings.topP || undefined,
       providerOptions: globalSessionDefaults.providerOptions,
-      ...(settings.defaultChatModel
-        ? {
-            provider: settings.defaultChatModel.provider,
-            modelId: settings.defaultChatModel.model,
-          }
-        : lastUsedChatModel),
+      ...newSessionModel('chat'),
     },
   }
   if (settings.defaultPrompt && newSession.settings?.provider !== ModelProviderEnum.OpenClaw) {
@@ -863,14 +858,12 @@ export function initEmptyChatSession(): Omit<Session, 'id'> {
 }
 
 export function initEmptyPictureSession(): Omit<Session, 'id'> {
-  const { picture: lastUsedPictureModel } = lastUsedModelStore.getState()
-
   return {
     name: 'Untitled',
     type: 'picture',
     messages: [createMessage('system', i18n.t('Image Creator Intro') || '')],
     settings: {
-      ...lastUsedPictureModel,
+      ...newSessionModel('picture'),
     },
   }
 }

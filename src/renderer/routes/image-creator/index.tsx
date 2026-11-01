@@ -230,7 +230,8 @@ function ImageCreatorPage() {
   >([])
   const [showHistory, setShowHistory] = useState(true)
   const [showMobileHistory, setShowMobileHistory] = useState(false)
-  const [selectedProvider, setSelectedProvider] = useState<string>(ModelProviderEnum.OpenAI)
+  // No provider until one that is set up is picked (the last-used one, or the first image model below).
+  const [selectedProvider, setSelectedProvider] = useState<string>('')
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [selectedRatio, setSelectedRatio] = useState<string>('auto')
   const [showModelDrawer, setShowModelDrawer] = useState(false)
@@ -357,7 +358,7 @@ function ImageCreatorPage() {
   }, [])
 
   const handleSubmit = useCallback(async () => {
-    if (!prompt.trim()) return
+    if (!prompt.trim() || !selectedProvider || !selectedModel) return
 
     try {
       // Collect all unique source record IDs from reference images (DAG support)
@@ -387,6 +388,7 @@ function ImageCreatorPage() {
 
   const handleQuickPromptSubmit = useCallback(
     async (quickPrompt: string) => {
+      if (!selectedProvider || !selectedModel) return
       try {
         await createAndGenerate({
           prompt: quickPrompt,
@@ -508,6 +510,11 @@ function ImageCreatorPage() {
 
   useEffect(() => {
     if (imageModelGroups.length === 0) {
+      // Nothing set up makes pictures: keep no model, so nothing is sent to a provider the user did not set up.
+      if (selectedProvider || selectedModel) {
+        setSelectedProvider('')
+        setSelectedModel('')
+      }
       return
     }
     const hasSelectedModel = imageModelGroups.some(
