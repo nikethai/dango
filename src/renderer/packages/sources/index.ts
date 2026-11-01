@@ -19,6 +19,7 @@ export {
   draftWasDiscarded,
   MCP_SOURCE_OPTION,
   pickSource,
+  closeReadyModelEntries,
   registerSourceFixHandlers,
   syncJobLabel,
 } from './connect'

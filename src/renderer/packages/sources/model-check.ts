@@ -1,8 +1,9 @@
 import { getSystemProviders } from '@shared/providers'
-import { isProviderListedInSettings } from '@shared/providers/provider-credentials'
 import type { Settings } from '@shared/types'
 import { ModelProviderEnum } from '@shared/types/provider'
 import { normalizeOpenAIApiHostAndPath } from '@shared/utils/llm_utils'
+import { chatProvidersFromSettings } from '@/hooks/useProviders'
+import { getModelReadiness } from '@/utils/modelReadiness'
 
 type ChatModel = { provider: string; modelId: string }
 
@@ -83,10 +84,14 @@ export function backgroundModelChoice(settings: Settings, lastUsedChat?: ChatMod
   return chosen?.provider && chosen.modelId ? chosen : null
 }
 
-/** True when that model's provider is set up (credentials, or a local or custom provider with models). */
+/**
+ * True when that model is ready (`getModelReadiness`): its provider is set up and still lists it. ComfyUI only makes
+ * pictures, so it never counts.
+ */
 export function hasUsableModel(settings: Settings, lastUsedChat?: ChatModel): boolean {
-  const chosen = backgroundModelChoice(settings, lastUsedChat)
-  if (!chosen) return false
-  const base = [...getSystemProviders(), ...(settings.customProviders ?? [])].find((p) => p.id === chosen.provider)
-  return !!base && isProviderListedInSettings(base, settings.providers?.[chosen.provider])
+  const chosen = backgroundModelChoice(settings, lastUsedChat) ?? undefined
+  const providers = chatProvidersFromSettings(settings.providers, settings.customProviders).filter(
+    (p) => p.id !== ModelProviderEnum.ComfyUI
+  )
+  return getModelReadiness(chosen, providers).status === 'ready'
 }

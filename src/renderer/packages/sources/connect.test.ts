@@ -4,7 +4,7 @@ import type { ConnectedSource, SourceDraft, SourceKind } from '@shared/types/sou
 import type { WorkspaceDescriptor } from '@shared/types/workspace'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
-import { NeedsUserError, registerFixHandler, startJob } from '@/packages/background'
+import { listJobs, NeedsUserError, registerFixHandler, runJobFix, startJob } from '@/packages/background'
 import { completeConnectorOAuth, startConnectorOAuth } from '@/packages/integrations'
 import platform from '@/platform'
 import { router } from '@/router'
@@ -14,6 +14,7 @@ import {
   _resetSourcesForTests,
   addSource,
   BACKGROUND_REVIEW_LINE,
+  closeReadyModelEntries,
   connectSource,
   discardSourceDraft,
   draftWasDiscarded,
@@ -36,6 +37,7 @@ const h = vi.hoisted(() => {
     failRead: false,
     accounts,
     settings: {} as Record<string, unknown>,
+    modelListeners: [] as (() => void)[],
     removeAccount: null as unknown as (id: string) => Promise<void>,
   }
 })
@@ -84,7 +86,9 @@ vi.mock('@/packages/background', async () => {
     NeedsUserError,
     startJob: vi.fn((input: Partial<BackgroundJob>) => ({ ...input, id: `job-${++n}` })),
     registerFixHandler: vi.fn(),
-    listJobs: vi.fn(() => []),
+    listJobs: vi.fn((): BackgroundJob[] => []),
+    runJobFix: vi.fn(async () => undefined),
+    subscribeBackgroundJobs: vi.fn(() => () => undefined),
     stopJob: vi.fn(async () => undefined),
     setJobSourceResolver: vi.fn(),
   }
@@ -121,10 +125,16 @@ vi.mock('@/utils/oauth-local-callback', () => ({
   canUseLocalOAuthCallback: () => true,
 }))
 vi.mock('@/stores/settingsStore', () => ({
-  settingsStore: { getState: () => ({ getSettings: () => h.settings }) },
+  settingsStore: {
+    getState: () => ({ getSettings: () => h.settings }),
+    subscribe: (cb: () => void) => {
+      h.modelListeners.push(cb)
+      return () => undefined
+    },
+  },
 }))
 vi.mock('@/stores/lastUsedModelStore', () => ({
-  lastUsedModelStore: { getState: () => ({ chat: undefined }) },
+  lastUsedModelStore: { getState: () => ({ chat: undefined }), subscribe: () => () => undefined },
 }))
 vi.mock('@/router', () => ({ router: { navigate: vi.fn(async () => undefined) } }))
 
@@ -194,6 +204,7 @@ beforeEach(() => {
   h.failRead = false
   h.accounts.length = 0
   h.settings = {}
+  h.modelListeners.length = 0
   _resetSourcesForTests()
   _resetSourceKindsForTests()
   registerBuiltinSourceKinds()
@@ -641,6 +652,10 @@ describe('documents', () => {
 })
 
 describe('fix handlers', () => {
+  const CLOUD = {
+    defaultChatModel: { provider: 'openai', model: 'gpt-4o' },
+    providers: { openai: { apiKey: 'sk-test' } },
+  }
   const handlerFor = (action: string) => {
     const call = vi.mocked(registerFixHandler).mock.calls.find(([a]) => a === action)
     return call?.[1] as (job: BackgroundJob) => Promise<boolean>
@@ -718,6 +733,50 @@ describe('fix handlers', () => {
     }
     expect(await chooseModel(job({ sourceId: source.id }))).toBe(true)
     expect(router.navigate).not.toHaveBeenCalled()
+  })
+
+  it('closes choose-model entries by itself once the fix works, opening nothing', async () => {
+    const local = await addSource({
+      kind: 'gmail',
+      scopeId: 'acme',
+      label: 'jo@agency.com',
+      backgroundReview: false,
+      localOnly: true,
+      config: { accountId: 'acc1' },
+    })
+    const fix = { action: 'choose-model' as const, label: 'Choose a model' }
+    vi.mocked(listJobs).mockReturnValue([
+      job({ id: 'cloud-ok', fix }),
+      job({ id: 'local-only', sourceId: local.id, fix }),
+      job({ id: 'other-fix', fix: { action: 'reconnect', label: 'Sign in again' } }),
+      job({ id: 'running', status: 'running', fix }),
+    ])
+    // No usable model: nothing runs.
+    await closeReadyModelEntries()
+    expect(runJobFix).not.toHaveBeenCalled()
+
+    h.settings = CLOUD
+    await closeReadyModelEntries()
+    expect(vi.mocked(runJobFix).mock.calls).toEqual([['cloud-ok']])
+    expect(router.navigate).not.toHaveBeenCalled()
+  })
+
+  it('checks again only when the background model changes or becomes usable', async () => {
+    vi.mocked(listJobs).mockReturnValue([job({ fix: { action: 'choose-model', label: 'Choose a model' } })])
+    registerSourceFixHandlers()
+    await vi.waitFor(() => expect(h.modelListeners).toHaveLength(1))
+    const changed = async () => {
+      h.modelListeners[0]()
+      await new Promise((r) => setTimeout(r, 0))
+    }
+    await changed()
+    expect(runJobFix).not.toHaveBeenCalled()
+    h.settings = CLOUD
+    await changed()
+    expect(runJobFix).toHaveBeenCalledTimes(1)
+    // Another settings change with the same ready model does not re-run a job that failed again.
+    await changed()
+    expect(runJobFix).toHaveBeenCalledTimes(1)
   })
 })
 
