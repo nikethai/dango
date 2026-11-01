@@ -1763,6 +1763,7 @@
   "This chat is too long for {{model}}.": "This chat is too long for {{model}}.",
   "Start a new chat with a summary": "Start a new chat with a summary",
   "Couldn't reach {{host}}.": "Couldn't reach {{host}}.",
+  "{{model}} sent no reply.": "{{model}} sent no reply.",
   "{{provider}} returned an error.": "{{provider}} returned an error.",
   "Show details": "Show details",
   "Hide details": "Hide details",

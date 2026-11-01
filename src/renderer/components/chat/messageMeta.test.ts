@@ -28,4 +28,10 @@ describe('formatAnswerMeta', () => {
   it('falls back to the output token count', () => {
     expect(formatAnswerMeta({ tokenCount: 12 })).toBe('12 tokens')
   })
+
+  it('a failed turn shows no token count (finding 5)', () => {
+    expect(formatAnswerMeta({ model: 'GPT-5', tokenCount: 20, durationMs: 1_000, error: 'API Error' })).toBe(
+      'GPT-5 · 1 s'
+    )
+  })
 })

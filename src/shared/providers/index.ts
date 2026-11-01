@@ -152,7 +152,7 @@ export function getModel(
 
   if (providerBaseInfo.isCustom) {
     const formattedApiPath = providerSetting.apiPath || providerBaseInfo.defaultSettings?.apiPath || ''
-    return createCustomProviderModel(
+    const customModel = createCustomProviderModel(
       {
         settings,
         globalSettings,
@@ -166,6 +166,11 @@ export function getModel(
       providerBaseInfo.type,
       dependencies
     )
+    // Error details name the provider as the user did, not "Custom OpenAI" (finding 5).
+    if (providerBaseInfo.name) {
+      ;(customModel as { displayName?: string }).displayName = providerBaseInfo.name
+    }
+    return customModel
   }
 
   throw new Error(`Cannot find model with provider: ${settings.provider}`)

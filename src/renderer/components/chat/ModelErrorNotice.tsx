@@ -151,6 +151,10 @@ export function ModelErrorNotice(props: { msg: Message; sessionId: string }) {
       sentence = t("Couldn't reach {{host}}.", { host })
       fix = retry
       break
+    case 'empty':
+      sentence = t('{{model}} sent no reply.', { model: msg.model || provider })
+      fix = retry
+      break
     case 'rate-limit':
       // ER3: retried on schedule, then a Needs you entry. Stop or a new send cancels the wait: plain Retry then.
       if (msg.errorExtra?.rateLimitGaveUp === true) {

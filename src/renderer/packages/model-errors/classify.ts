@@ -11,6 +11,7 @@ export type ModelErrorKind =
   | 'rate-limit'
   | 'too-long'
   | 'network'
+  | 'empty'
   | 'provider'
 
 const INVALID_KEY_PATTERN = /invalid[_ ]?api[_ ]?key|incorrect api key|unauthori[sz]ed|authentication/i
@@ -85,6 +86,7 @@ export function classifyModelError(msg: Pick<Message, 'error' | 'errorCode' | 'e
   const code = msg.errorCode
 
   if (msg.errorExtra?.kind === 'budget') return 'budget'
+  if (msg.errorExtra?.kind === 'empty') return 'empty'
 
   const rateLimited = status === 429 || (responseBody !== undefined && RATE_LIMIT_BODY_PATTERN.test(responseBody))
   const contextCheck = rateLimited ? isExplicitContextLengthError : isContextLengthError
