@@ -746,7 +746,6 @@
   "show message token usage": "Afficher l'utilisation des jetons du message",
   "show message word count": "Afficher le nombre de mots du message",
   "show model name": "Afficher le nom du modèle",
-  "Show/Hide the Application Window": "Afficher/Masquer la fenêtre de l'application",
   "Show/Hide the Search Dialog": "Afficher/Masquer la boîte de dialogue de recherche",
   "Showing {{loaded}} of {{total}} chunks": "Affichage de {{loaded}} sur {{total}} blocs",
   "Showing first {{count}} chunks": "Affichage des premiers {{count}} fragments",
