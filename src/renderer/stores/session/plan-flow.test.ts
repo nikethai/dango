@@ -411,6 +411,28 @@ describe('plan flow end to end (scripted model)', () => {
     expect(failed.error).toContain('aborted')
   })
 
+  test('a Stop before the first word leaves the turn stopped, not a provider error (finding 1)', async () => {
+    const a1 = seedChat()
+    h.script.push(
+      step([], {
+        during: async () => {
+          await stopSessionGeneration('s1', storedMessage('a1'))
+        },
+      })
+    )
+    await generate('s1', a1, { operationType: 'send_message' })
+    const stopped = storedMessage('a1')
+    expect(stopped.generating).toBe(false)
+    expect(stopped.error).toBeUndefined()
+  })
+
+  test('an empty reply with no Stop is still an error', async () => {
+    const a1 = seedChat()
+    h.script.push(step([]))
+    await generate('s1', a1, { operationType: 'send_message' })
+    expect(storedMessage('a1').error).toBeTruthy()
+  })
+
   test('with plan mode off, a send in an agent chat answers directly and proposes no plan', async () => {
     const a1 = seedChat()
     h.script.push(step([text('Done: the docs are tidy.')]))
