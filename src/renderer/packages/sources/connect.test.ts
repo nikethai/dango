@@ -750,6 +750,9 @@ describe('fix handlers', () => {
       job({ id: 'local-only', sourceId: local.id, fix }),
       job({ id: 'other-fix', fix: { action: 'reconnect', label: 'Sign in again' } }),
       job({ id: 'running', status: 'running', fix }),
+      // Superseded by a newer run of the same source and kind: its entry was dismissed, so it stays as it is.
+      job({ id: 'old-run', sourceId: 'src-a', startedAt: 1, fix }),
+      job({ id: 'new-run', sourceId: 'src-a', startedAt: 2, fix }),
     ])
     // No usable model: nothing runs.
     await closeReadyModelEntries()
@@ -757,7 +760,7 @@ describe('fix handlers', () => {
 
     h.settings = CLOUD
     await closeReadyModelEntries()
-    expect(vi.mocked(runJobFix).mock.calls).toEqual([['cloud-ok']])
+    expect(vi.mocked(runJobFix).mock.calls).toEqual([['cloud-ok'], ['new-run']])
     expect(router.navigate).not.toHaveBeenCalled()
   })
 
