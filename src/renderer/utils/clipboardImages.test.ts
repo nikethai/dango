@@ -150,6 +150,17 @@ describe('decideClipboardPaste', () => {
     expect(decision.shouldPreventDefault).toBe(true)
     // long text-as-file: do not also insert inline
     expect(decision.plainText).toBeNull()
+    // …but hand the text over, so the caller can make the file from it (finding 27)
+    expect(decision.longText).toBe(long)
+  })
+
+  it('leaves short text inline, with no file text', () => {
+    const decision = decideClipboardPaste(makeDataTransfer({ plainText: 'short' }), {
+      pasteLongTextAsAFile: true,
+      longTextThreshold: 3000,
+    })
+    expect(decision.plainText).toBe('short')
+    expect(decision.longText).toBeNull()
   })
 })
 

@@ -2724,7 +2724,8 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       const nonImageFiles = extractClipboardNonImageFiles(data)
       const plain = decision.plainText ?? ''
       const trimmed = plain.trim()
-      const isLongText = pasteLongTextAsAFile && trimmed.length > 3000
+      // decideClipboardPaste nulls plainText for long text, so the file is made from longText (finding 27).
+      const isLongText = decision.longText !== null
       const isUrlPaste =
         !decision.hasImages && !isLongText && (trimmed.startsWith('http://') || trimmed.startsWith('https://'))
 
@@ -2751,7 +2752,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
 
       if (isLongText) {
         filesToInsert.push(
-          new File([plain], `pasted_text_${attachments?.length || 0}.txt`, {
+          new File([decision.longText ?? ''], `pasted_text_${attachments?.length || 0}.txt`, {
             type: 'text/plain',
           })
         )
