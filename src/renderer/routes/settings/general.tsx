@@ -16,7 +16,9 @@ import { SettingsPageHeader } from '@/components/settings/SettingsPageHeader'
 import { SettingsPrefRow } from '@/components/settings/SettingsPrefRow'
 import { SettingsSection } from '@/components/settings/SettingsSection'
 import { languageNameMap, languages } from '@/i18n/locales'
+import { notificationPermissionView } from '@/packages/notifications/system-settings'
 import { DEFAULT_NOTIFICATIONS_CONFIG } from '@/packages/notifications/types'
+import { getOS } from '@/packages/navigator'
 import platform, { platformCapabilities } from '@/platform'
 import storage, { StorageKey } from '@/storage'
 import { settingsExportData, settingsImportEntries, stripSyncSecrets } from '@/storage/exportFilter'
@@ -25,6 +27,7 @@ import { exportHistoryTransferFile, importHistoryTransferFile } from '@/stores/h
 import { importRoomPack } from '@/stores/roomPack'
 import { migrateOnData } from '@/stores/migration'
 import { useSettingsStore } from '@/stores/settingsStore'
+import * as toastActions from '@/stores/toastActions'
 
 export const Route = createFileRoute('/settings/general')({
   component: RouteComponent,
@@ -303,14 +306,28 @@ function SystemNotificationsSection() {
     patchNotifications({ enabled: false })
   }
 
-  const permissionLabel =
-    permission === 'granted'
-      ? t('Permission granted')
-      : permission === 'denied'
-        ? t('Permission denied')
-        : permission === 'unsupported'
-          ? t('Not supported on this platform')
-          : t('Permission not requested')
+  const permissionView = notificationPermissionView({
+    desktop: platform.type === 'desktop',
+    os: getOS(),
+    permission,
+  })
+
+  const openSystemSettings = () => {
+    if (permissionView.settingsUrl) void platform.openLink(permissionView.settingsUrl)
+  }
+
+  const sendTestNotification = async () => {
+    try {
+      await platform.showSystemNotification({
+        title: 'Dango',
+        // No click data: clicking the test opens nothing (a kind would take the user to Review).
+        body: t('Notifications work. This is what Dango sends when something needs you.'),
+      })
+      toastActions.add(t('Test notification sent. If nothing appeared, your system is blocking Dango.'))
+    } catch {
+      toastActions.add(t('Could not send a test notification.'))
+    }
+  }
 
   return (
     <SettingsCard divided>
@@ -329,17 +346,31 @@ function SystemNotificationsSection() {
       />
       <SettingsPrefRow
         title={t('Permission')}
-        description={permissionLabel}
+        description={t(permissionView.label)}
         control={
-          <Button
-            size="xs"
-            variant="light"
-            disabled={permission === 'unsupported' || permission === 'granted' || permissionBusy}
-            loading={permissionBusy}
-            onClick={() => void onToggleEnabled(true)}
-          >
-            {t('Request permission')}
-          </Button>
+          <Flex gap="xs" wrap="wrap" justify="flex-end">
+            {permissionView.settingsUrl ? (
+              <Button size="xs" variant="light" onClick={openSystemSettings}>
+                {t('Open System Settings')}
+              </Button>
+            ) : null}
+            {permissionView.canTest ? (
+              <Button size="xs" variant="light" onClick={() => void sendTestNotification()}>
+                {t('Send a test notification')}
+              </Button>
+            ) : null}
+            {permissionView.canRequest ? (
+              <Button
+                size="xs"
+                variant="light"
+                disabled={permissionBusy}
+                loading={permissionBusy}
+                onClick={() => void onToggleEnabled(true)}
+              >
+                {t('Request permission')}
+              </Button>
+            ) : null}
+          </Flex>
         }
       />
       <SettingsPrefRow
