@@ -13,6 +13,12 @@ describe('Welcome onboarding mobile layout', () => {
     expect(welcome).toContain("classNames={{ item: 'whitespace-normal' }}")
   })
 
+  test('does not silence the focus ring on its buttons', () => {
+    const welcome = readSource('src/renderer/modals/Welcome.tsx')
+
+    expect(welcome).not.toMatch(/outline-none|outline:\s*['"]?none/)
+  })
+
   test('keeps each bullet on the first line of its label when the label wraps', () => {
     const welcome = readSource('src/renderer/modals/Welcome.tsx')
     const list = welcome.slice(welcome.indexOf('<List'), welcome.indexOf('<List.Item>'))

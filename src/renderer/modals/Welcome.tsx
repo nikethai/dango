@@ -58,7 +58,7 @@ const Welcome = NiceModal.create(() => {
               size="lg"
               h={54}
               radius="md"
-              classNames={{ root: '!outline-none', label: 'flex flex-col items-center justify-center' }}
+              classNames={{ label: 'flex flex-col items-center justify-center' }}
               onClick={() => {
                 navigateToSettings('/provider')
                 modal.resolve('setup')
