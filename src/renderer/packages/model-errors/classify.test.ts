@@ -12,6 +12,16 @@ const apiError = (status?: number, responseBody?: string, extra: Partial<ErrorFi
 })
 
 describe('classifyModelError', () => {
+  it('a dropped or idled-out connection is a network error, whatever wraps it (findings 5, 26)', () => {
+    expect(classifyModelError({ error: 'Load failed' })).toBe('network')
+    expect(classifyModelError({ error: 'API Error: Error from Fake E: TypeError: Load failed' })).toBe('network')
+    expect(classifyModelError({ error: 'API Error: Error from Fake E: Error: Network Error: Failed to fetch' })).toBe(
+      'network'
+    )
+    expect(classifyModelError({ error: 'The network connection was lost.' })).toBe('network')
+    expect(classifyModelError({ error: 'API Error: Error from OpenAI: Internal server error' })).toBe('provider')
+  })
+
   it('an empty reply is its own kind, not a provider error (finding 5)', () => {
     expect(
       classifyModelError({ error: 'The model finished without a visible reply.', errorExtra: { kind: 'empty' } })

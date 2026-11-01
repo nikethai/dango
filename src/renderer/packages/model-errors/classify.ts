@@ -17,6 +17,12 @@ export type ModelErrorKind =
 const INVALID_KEY_PATTERN = /invalid[_ ]?api[_ ]?key|incorrect api key|unauthori[sz]ed|authentication/i
 
 /**
+ * A request that never got an answer: Dango's own NetworkError, and the bare fetch failures browsers throw when a
+ * connection drops or idles out (WebKit's "Load failed" after about 60 s of silence on desktop, finding 26).
+ */
+const NETWORK_PATTERN = /Network Error|Load failed|Failed to fetch|NetworkError|network connection was lost/i
+
+/**
  * Detects if an error message indicates a context length exceeded error from various AI providers.
  */
 export function isContextLengthError(errorText: string | null | undefined): boolean {
@@ -108,7 +114,7 @@ export function classifyModelError(msg: Pick<Message, 'error' | 'errorCode' | 'e
     return 'invalid-key'
   }
 
-  if (error.startsWith('Network Error') || code === 10002) return 'network'
+  if (NETWORK_PATTERN.test(error) || code === 10002) return 'network'
   return 'provider'
 }
 
