@@ -28,14 +28,14 @@ function answerTokens(msg: Pick<Message, 'usage' | 'tokenCount'>): number | unde
   return msg.tokenCount || undefined
 }
 
-/** The answer's meta line: model · tokens · time, each part only when known. */
+/** The answer's meta line: model · tokens · time, each part only when known. A failed turn shows no token count. */
 export function formatAnswerMeta(
-  msg: Pick<Message, 'model' | 'usage' | 'tokenCount' | 'durationMs'>,
+  msg: Pick<Message, 'model' | 'usage' | 'tokenCount' | 'durationMs' | 'error'>,
   t?: TFunction
 ): string {
   const parts: string[] = []
   if (msg.model) parts.push(msg.model)
-  const tokens = answerTokens(msg)
+  const tokens = msg.error ? undefined : answerTokens(msg)
   if (tokens !== undefined) parts.push(formatTokenCount(tokens, t))
   if (msg.durationMs !== undefined) parts.push(formatDangoDuration(msg.durationMs))
   return parts.join(' · ')

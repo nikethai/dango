@@ -1625,6 +1625,8 @@ export async function generate(
           searchProvider: streamResult.searchProvider ?? targetMsg.searchProvider,
           groundingMetadata: streamResult.groundingMetadata ?? targetMsg.groundingMetadata,
           error: emptyCompletionError,
+          // The notice says the model sent no reply, not that the provider failed (finding 5).
+          errorExtra: emptyCompletionError ? { ...targetMsg.errorExtra, kind: 'empty' } : targetMsg.errorExtra,
           // Only a finished answer shows how long it took; an empty completion is an error (R11).
           durationMs: emptyCompletionError ? undefined : Date.now() - runStartedAt,
         }

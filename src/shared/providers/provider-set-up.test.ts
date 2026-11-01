@@ -36,4 +36,10 @@ describe('getModel', () => {
   it('refuses a provider the user never set up, such as OpenAI without a key', () => {
     expect(() => call('openai')).toThrow(expect.objectContaining({ code: 20038 }))
   })
+
+  it("names a custom provider's model after the provider, for error text (finding 5)", () => {
+    const model = call('custom-provider-a') as { name: string; displayName?: string }
+    expect(model.displayName).toBe('A')
+    expect(model.name).toBe('Custom OpenAI')
+  })
 })

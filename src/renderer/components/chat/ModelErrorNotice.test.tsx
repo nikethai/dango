@@ -84,6 +84,12 @@ const cases: Array<{ name: string; msg: Message; sentence: string; button: strin
     button: 'Retry',
   },
   {
+    name: 'empty reply',
+    msg: failed({ error: 'The model finished without a visible reply.', errorCode: undefined }, { kind: 'empty' }),
+    sentence: 'GPT-5 sent no reply.',
+    button: 'Retry',
+  },
+  {
     name: 'provider',
     msg: failed({}, { status: 500, responseBody: 'Internal server error' }),
     sentence: 'OpenAI returned an error.',
@@ -147,7 +153,7 @@ describe('ModelErrorNotice', () => {
   })
 
   it('Retry retries the failed answer', async () => {
-    const msg = cases[4].msg
+    const msg = (cases.find((c) => c.name === 'provider') as (typeof cases)[number]).msg
     render(<ModelErrorNotice msg={msg} sessionId="s1" />)
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     await waitFor(() => expect(retryFailedMessage).toHaveBeenCalledWith('s1', msg))
@@ -160,7 +166,8 @@ describe('ModelErrorNotice', () => {
   })
 
   it('keeps the raw detail behind Show details, with Copy', () => {
-    render(<ModelErrorNotice msg={cases[4].msg} sessionId="s1" />)
+    const provider = cases.find((c) => c.name === 'provider') as (typeof cases)[number]
+    render(<ModelErrorNotice msg={provider.msg} sessionId="s1" />)
     expect(screen.queryByText(/Internal server error/)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Show details' }))
     expect(screen.getByText(/Internal server error/)).toBeTruthy()

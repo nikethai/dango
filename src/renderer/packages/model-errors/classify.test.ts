@@ -12,6 +12,12 @@ const apiError = (status?: number, responseBody?: string, extra: Partial<ErrorFi
 })
 
 describe('classifyModelError', () => {
+  it('an empty reply is its own kind, not a provider error (finding 5)', () => {
+    expect(
+      classifyModelError({ error: 'The model finished without a visible reply.', errorExtra: { kind: 'empty' } })
+    ).toBe('empty')
+  })
+
   it('too long: context length in the error or the body', () => {
     expect(classifyModelError(apiError(400, '{"error":{"code":"context_length_exceeded"}}'))).toBe('too-long')
     expect(

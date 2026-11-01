@@ -134,6 +134,8 @@ function normalizeUsage(usage?: LanguageModelUsage): LanguageModelUsage | undefi
 
 export default abstract class AbstractAISDKModel implements ModelInterface {
   public name = 'AI SDK Model'
+  /** The name people gave the provider (a custom provider's own name), for error text; `name` stays the SDK's id. */
+  public displayName?: string
   public injectDefaultMetadata = true
   public modelId = ''
 
@@ -467,7 +469,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
   private handleError(error: unknown, context: string = ''): never {
     // streamText retries in-request, then wraps the last failed call in a RetryError: keep its status and Retry-After.
     if (APICallError.isInstance(error) || (RetryError.isInstance(error) && APICallError.isInstance(error.lastError))) {
-      throw apiErrorFromCallError(error, `${this.name}${context}`)
+      throw apiErrorFromCallError(error, `${this.displayName ?? this.name}${context}`)
     }
     if (error instanceof ApiError) {
       throw error
@@ -475,7 +477,7 @@ export default abstract class AbstractAISDKModel implements ModelInterface {
     if (error instanceof ProviderAPIError) {
       throw error
     }
-    throw new ApiError(`Error from ${this.name}${context}: ${error}`)
+    throw new ApiError(`Error from ${this.displayName ?? this.name}${context}: ${error}`)
   }
 
   /**
