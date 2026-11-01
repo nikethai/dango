@@ -5,6 +5,7 @@ import { useAtom, useSetAtom } from 'jotai'
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
+import { useOnline } from '@/hooks/useOnline'
 import { useProviders } from '@/hooks/useProviders'
 import { reloadScopes, useScopes } from '@/hooks/useScopes'
 import { navigateToSettings } from '@/modals/Settings'
@@ -94,7 +95,7 @@ export function useQuickChat(): UseQuickChat {
   const [scopeId, setScopeId] = useState<string | null>(null)
   const [question, setQuestion] = useState('')
   const [rewrite, setRewrite] = useState<{ option: WritingStyle | null; text: string } | null>(null)
-  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine))
+  const [online, recheckOnline] = useOnline()
   // Changes each time the panel is shown and settled; the panel then puts focus in the input.
   const [focusKey, setFocusKey] = useState(0)
   const { session } = useSession(sessionId)
@@ -146,17 +147,6 @@ export function useQuickChat(): UseQuickChat {
     })
     return () => unsubscribe?.()
   }, [loadSnapshot])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const update = () => setOnline(navigator.onLine)
-    window.addEventListener('online', update)
-    window.addEventListener('offline', update)
-    return () => {
-      window.removeEventListener('online', update)
-      window.removeEventListener('offline', update)
-    }
-  }, [])
 
   // Captured clipboard text prefills the question once; pictures wait in the atom until the send.
   useEffect(() => {
@@ -281,8 +271,8 @@ export function useQuickChat(): UseQuickChat {
       })
       return
     }
-    setOnline(navigator.onLine)
-  }, [sessionId, rawAnswer])
+    recheckOnline()
+  }, [sessionId, rawAnswer, recheckOnline])
 
   // Stop runs here: the stream lives in this window's renderer, so only this window can abort it.
   const onStop = useCallback(() => {
