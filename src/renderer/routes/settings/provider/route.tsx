@@ -123,7 +123,8 @@ export function RouteComponent() {
   }
 
   return (
-    <Flex h="100%" w="100%">
+    // Takes the height left under the settings tabs, so the list's footer (Add) stays in the window
+    <Flex flex="1 1 0" mih={0} w="100%">
       {(!isSmallScreen || routerState.location.pathname === '/settings/provider') && (
         <ProviderList
           providers={providers}

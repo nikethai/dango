@@ -145,7 +145,11 @@ export function SettingsRoot() {
         </Stack>
       )}
       {!(isSmallScreen && routerState.location.pathname === '/settings') && (
-        <Box flex="1 1 auto" miw={0} className="overflow-auto settings-content bg-[var(--chatbox-background-primary)]">
+        <Box
+          flex="1 1 auto"
+          miw={0}
+          className="overflow-auto flex flex-col settings-content bg-[var(--chatbox-background-primary)]"
+        >
           {entry && <SettingsTabs entry={entry} pathname={pathname} />}
           <Outlet />
         </Box>
