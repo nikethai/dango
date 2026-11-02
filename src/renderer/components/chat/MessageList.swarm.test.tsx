@@ -191,3 +191,21 @@ describe('MessageList: Swarm runs fold into one answer', () => {
     expect(screen.queryByText(/Worked with/)).toBeNull()
   })
 })
+
+describe('MessageList: fork switchers on hidden messages', () => {
+  it('shows the switcher of a fork on the system prompt under the first question (editing the first question)', () => {
+    const system = { id: 'sys', role: 'system', contentParts: [{ type: 'text', text: 'Be brief' }] } as MessageType
+    const forks = {
+      sys: {
+        position: 1,
+        lists: [
+          { id: 'l1', messages: [] },
+          { id: 'l2', messages: [] },
+        ],
+        createdAt: 1,
+      },
+    }
+    renderList(chat([system, user('u1')], { messageForksHash: forks }))
+    expect(screen.getByText('2 / 2')).toBeTruthy()
+  })
+})
