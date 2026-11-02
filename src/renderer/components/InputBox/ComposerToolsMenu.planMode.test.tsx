@@ -167,3 +167,15 @@ describe('ComposerToolsMenu desktop Mode section (S1)', () => {
     expect(within(menu).getByRole('switch', { name: 'Plan mode' })).toBeTruthy()
   })
 })
+
+describe('ComposerToolsMenu Web Search switch', () => {
+  it('is named on desktop and in the phone drawer', async () => {
+    for (const small of [false, true]) {
+      h.smallScreen = small
+      renderMenu({ webBrowsingMode: true })
+      const toggle = (await screen.findByRole('switch', { name: 'Web Search' })) as HTMLInputElement
+      expect(toggle.checked).toBe(true)
+      cleanup()
+    }
+  })
+})
