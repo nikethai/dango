@@ -1,12 +1,6 @@
 import * as Sentry from '@sentry/react'
 import { getModel } from '@shared/models'
-import {
-  AIProviderNoImplementedPaintError,
-  ApiError,
-  BaseError,
-  NetworkError,
-  ProviderAPIError,
-} from '@shared/models/errors'
+import { AIProviderNoImplementedPaintError, ApiError, BaseError, NetworkError } from '@shared/models/errors'
 import { createMessage, type Message } from '@shared/types'
 import { countMessageWords } from '@shared/utils/message'
 import { createModelDependencies } from '@/adapters'
@@ -14,13 +8,11 @@ import { checkSessionOverflowFast } from '@/packages/context-management'
 import { getModelDisplayName } from '@/packages/model-setting-utils'
 import { isPlanModeOn } from '@/packages/plan/planSteps'
 import { estimateTokensFromMessages } from '@/packages/token'
-import platform from '@/platform'
 import * as chatStore from '../chatStore'
 import { getAllMessageList } from '../sessionHelpers'
 import { settingsStore } from '../settingsStore'
 import { messageQueueStore } from './messageQueue'
 import { cancelRateLimitRetry, resolveRateLimitNeedsYouAfterRoomRun } from './rate-limit-retry'
-import { getSessionWebBrowsing } from './session-web-browsing'
 
 /**
  * (legacy comment removed)
@@ -180,8 +172,6 @@ export async function submitNewUserMessage(
   params.onUserMessageReady?.()
 
   const { newUserMsg, needGenerating } = params
-  const webBrowsing = getSessionWebBrowsing(sessionId, settings.provider)
-
   // Pin optimistic assistant ASAP so the thread never looks dead while room setup runs.
   // Multi-agent rooms create their own assistant rows — we remove this placeholder if needed.
   let newAssistantMsg = createMessage('assistant', '')
@@ -271,11 +261,10 @@ export async function submitNewUserMessage(
   try {
     // (legacy comment removed)
     // (legacy comment removed)
+    // Fails here, with the typed error, when no model is ready. A model that cannot use tools sends without Web Search
+    // on every platform (streamText skips the search), so the web build no longer refuses it.
     const dependencies = await createModelDependencies()
-    const model = getModel(settings, globalSettings, { uuid: '' }, dependencies)
-    if (webBrowsing && platform.type === 'web' && !model.isSupportToolUse()) {
-      throw ProviderAPIError.fromCodeName('model_not_support_web_browsing_2', 'model_not_support_web_browsing_2')
-    }
+    getModel(settings, globalSettings, { uuid: '' }, dependencies)
 
     // Files and links are now preprocessed in InputBox with storage keys, so no need to process them here
     // Just verify they have storage keys

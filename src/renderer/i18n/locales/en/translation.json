@@ -876,6 +876,7 @@
   "This license key has reached the activation limit": "This license key has reached the activation limit",
   "This license key has reached the activation limit, <a>click here</a> to manage license and devices to deactivate old devices.": "This license key has reached the activation limit, <a>click here</a> to manage license and devices to deactivate old devices.",
   "This license key has reached the activation limit.": "This license key has reached the activation limit.",
+  "This model can't search the web": "This model can't search the web",
   "This model does not support tool use": "This model does not support tool use",
   "This model does not support vision": "This model does not support vision",
   "This server enables LLMs to retrieve and process content from web pages, converting HTML to markdown for easier consumption.": "This server enables LLMs to retrieve and process content from web pages, converting HTML to markdown for easier consumption.",

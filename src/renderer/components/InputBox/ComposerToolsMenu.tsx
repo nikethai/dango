@@ -47,6 +47,8 @@ export type ComposerToolsMenuProps = {
   sessionType: string
   webBrowsingMode: boolean
   webSearchConfigured: boolean
+  /** The chat's model cannot use tools, so a send does not search the web (7.3): the switch shows off, with why. */
+  webSearchUnsupported?: boolean
   onWebBrowsingChange: (enabled: boolean) => void
   agentMode: boolean
   onToggleAgentMode?: () => void
@@ -94,6 +96,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
   sessionType,
   webBrowsingMode,
   webSearchConfigured,
+  webSearchUnsupported = false,
   onWebBrowsingChange,
   agentMode,
   onToggleAgentMode,
@@ -163,9 +166,17 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
     }
   }, [workspaceModalOpen, workspaceRoot])
 
+  const webSearchOn = webBrowsingMode && !webSearchUnsupported
+  const webSearchDisabled = webSearchUnsupported || (!webSearchConfigured && !webBrowsingMode)
+  const webSearchHint = webSearchUnsupported
+    ? t("This model can't search the web")
+    : webSearchConfigured
+      ? undefined
+      : t('Configure in Settings')
+
   const badgeActive = useMemo(() => {
     return (
-      (!webBrowsingMode && webSearchConfigured) ||
+      (!webBrowsingMode && webSearchConfigured && !webSearchUnsupported) ||
       agentMode ||
       Boolean(workspaceRoot) ||
       Boolean(browserArmed) ||
@@ -177,6 +188,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
   }, [
     webBrowsingMode,
     webSearchConfigured,
+    webSearchUnsupported,
     agentMode,
     workspaceRoot,
     browserArmed,
@@ -394,28 +406,28 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
                     <Menu.Item
                       leftSection={<IconWorldWww size={16} stroke={1.5} />}
                       closeMenuOnClick={false}
-                      disabled={!webSearchConfigured && !webBrowsingMode}
+                      disabled={webSearchDisabled}
                       rightSection={
                         <Switch
                           size="xs"
-                          checked={webBrowsingMode}
+                          checked={webSearchOn}
                           aria-label={t('Web Search')}
-                          disabled={!webSearchConfigured && !webBrowsingMode}
+                          disabled={webSearchDisabled}
                           onChange={(e) => onWebBrowsingChange(e.currentTarget.checked)}
                           onClick={(e) => e.stopPropagation()}
                         />
                       }
                       onClick={() => {
-                        if (webSearchConfigured || webBrowsingMode) {
+                        if (!webSearchDisabled) {
                           onWebBrowsingChange(!webBrowsingMode)
                         }
                       }}
                     >
                       <Flex direction="column" gap={2}>
                         <Text size="sm">{t('Web Search')}</Text>
-                        {!webSearchConfigured && (
+                        {webSearchHint && (
                           <Text size="xs" c="dimmed">
-                            {t('Configure in Settings')}
+                            {webSearchHint}
                           </Text>
                         )}
                       </Flex>
@@ -711,28 +723,28 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
             <Menu.Item
               leftSection={<IconWorldWww size={16} stroke={1.5} />}
               closeMenuOnClick={false}
-              disabled={!webSearchConfigured && !webBrowsingMode}
+              disabled={webSearchDisabled}
               rightSection={
                 <Switch
                   size="xs"
-                  checked={webBrowsingMode}
+                  checked={webSearchOn}
                   aria-label={t('Web Search')}
-                  disabled={!webSearchConfigured && !webBrowsingMode}
+                  disabled={webSearchDisabled}
                   onChange={(e) => onWebBrowsingChange(e.currentTarget.checked)}
                   onClick={(e) => e.stopPropagation()}
                 />
               }
               onClick={() => {
-                if (webSearchConfigured || webBrowsingMode) {
+                if (!webSearchDisabled) {
                   onWebBrowsingChange(!webBrowsingMode)
                 }
               }}
             >
               <Flex direction="column" gap={2}>
                 <Text size="sm">{t('Web Search')}</Text>
-                {!webSearchConfigured && (
+                {webSearchHint && (
                   <Text size="xs" c="dimmed">
-                    {t('Configure in Settings')}
+                    {webSearchHint}
                   </Text>
                 )}
               </Flex>

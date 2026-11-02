@@ -704,12 +704,12 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       return (providerInfo?.models || providerInfo?.defaultSettings?.models)?.find((m) => m.modelId === model.modelId)
     }, [providers, model])
 
-    // Check if model supports tool use for files
-    const { data: modelSupportToolUseForFile = false } = useQuery({
+    // Which tools the model can use: files, and web search (a model without it sends with no search, 7.3)
+    const { data: modelToolUse } = useQuery({
       queryKey: ['model-tool-capability', model?.provider, model?.modelId],
       queryFn: async () => {
         if (!model?.provider || !model?.modelId) {
-          return false
+          return { readFile: false, webBrowsing: true }
         }
 
         try {
@@ -724,16 +724,21 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
           }
 
           const modelInstance = getModel(settings, globalSettings, configs, dependencies)
-          return modelInstance.isSupportToolUse('read-file')
+          return {
+            readFile: modelInstance.isSupportToolUse('read-file'),
+            webBrowsing: modelInstance.isSupportToolUse('web-browsing'),
+          }
         } catch (e) {
           console.debug('useModelToolCapability: failed to check capability', e)
-          return false
+          return { readFile: false, webBrowsing: true }
         }
       },
       enabled: !!(model?.provider && model?.modelId),
       staleTime: 5 * 60 * 1000,
       gcTime: 10 * 60 * 1000,
     })
+    const modelSupportToolUseForFile = modelToolUse?.readFile ?? false
+    const webSearchUnsupported = modelToolUse?.webBrowsing === false
 
     // Calculate token counts using unified cache layer
     const globalSettings = useSettingsStore((state) => state)
@@ -3263,6 +3268,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   sessionType={sessionType}
                   webBrowsingMode={webBrowsingMode}
                   webSearchConfigured={webSearchConfigured}
+                  webSearchUnsupported={webSearchUnsupported}
                   onWebBrowsingChange={(enabled) => {
                     setWebBrowsingMode(enabled)
                     dom.focusMessageInput()
