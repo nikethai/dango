@@ -4,6 +4,7 @@ import {
   resolveSettingsEntryPath,
   resolveSettingsExit,
   resolveSettingsExitTarget,
+  settingsOpenerHref,
 } from './settings-navigation'
 
 describe('getSettingsParentPath', () => {
@@ -87,5 +88,24 @@ describe('resolveSettingsEntryPath', () => {
     expect(resolveSettingsEntryPath('/mcp')).toBe('/settings/mcp')
     expect(resolveSettingsEntryPath('chat')).toBe('/settings/chat')
     expect(resolveSettingsEntryPath('/provider/openai')).toBe('/settings/provider/openai')
+  })
+})
+
+describe('settingsOpenerHref', () => {
+  it('returns to the page Settings was opened from, with its tab', () => {
+    expect(settingsOpenerHref({ pathname: '/scope/s1', href: '/scope/s1?tab=knowledge' })).toBe(
+      '/scope/s1?tab=knowledge'
+    )
+    expect(settingsOpenerHref({ pathname: '/', href: '/' })).toBe('/')
+  })
+
+  it('leaves a chat and the new-chat draft to resolveSettingsExit, which checks the chat still exists', () => {
+    expect(settingsOpenerHref({ pathname: '/session/deleted', href: '/session/deleted' })).toBeNull()
+    expect(settingsOpenerHref({ pathname: '/new', href: '/new' })).toBeNull()
+  })
+
+  it('has nothing to return to on cold entry', () => {
+    expect(settingsOpenerHref(undefined)).toBeNull()
+    expect(settingsOpenerHref({ pathname: '/settings/provider', href: '/settings/provider' })).toBeNull()
   })
 })

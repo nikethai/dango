@@ -1,8 +1,13 @@
 import { getDefaultStore } from 'jotai'
-import { router } from '@/router'
+import { getLastLocationOutsideSettings, router } from '@/router'
 import { currentSessionIdAtom } from '@/stores/atoms'
 import { sessionExistsInStorage } from '@/stores/chatStore'
-import { getSettingsParentPath, resolveSettingsEntryPath, resolveSettingsExit } from '@/utils/settings-navigation'
+import {
+  getSettingsParentPath,
+  resolveSettingsEntryPath,
+  resolveSettingsExit,
+  settingsOpenerHref,
+} from '@/utils/settings-navigation'
 
 export { getSettingsParentPath }
 
@@ -17,10 +22,15 @@ export function navigateToSettings(path?: string) {
 }
 
 /**
- * Leave settings and return to the last chat session, or home if none.
- * Prefer this over history.back() so deep links and cold entry always exit cleanly.
+ * Leave settings and return to the page it was opened from; from a chat (or on cold entry), the last chat session,
+ * or home if none. Prefer this over history.back() so deep links and cold entry always exit cleanly.
  */
 export async function closeSettings() {
+  const openerHref = settingsOpenerHref(getLastLocationOutsideSettings())
+  if (openerHref) {
+    void router.navigate({ href: openerHref })
+    return
+  }
   const store = getDefaultStore()
   const sessionId = store.get(currentSessionIdAtom)
   const target = await resolveSettingsExit(sessionId, sessionExistsInStorage)
