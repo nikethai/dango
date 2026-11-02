@@ -45,6 +45,7 @@ import { navigateToSettings } from '@/modals/Settings'
 import type { GatewayCommandInfo } from '@/openclaw/gateway'
 import {
   extractAgentSlugsFromText,
+  extractSettledAgentSlugsFromText,
   getActiveAgentAtQuery,
   matchAgentBySlug,
   replaceActiveAgentAtWithToken,
@@ -1041,10 +1042,10 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
       [messageInput, sessionType]
     )
 
-    /** Agents already tagged in the draft (inline @slug + picker selections). */
+    /** Agents already tagged in the draft (inline @slug + picker selections), not the @partial being typed. */
     const draftMentionedAgentIds = useMemo(() => {
       const ids = new Set(selectedAgents.map((a) => a.id))
-      for (const slug of extractAgentSlugsFromText(messageInput)) {
+      for (const slug of extractSettledAgentSlugsFromText(messageInput)) {
         const matched = matchAgentBySlug(
           allAgents.map((a) => ({ id: a.id, name: a.name })),
           slug

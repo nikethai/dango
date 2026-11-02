@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   extractAgentSlugsFromText,
+  extractSettledAgentSlugsFromText,
   fuzzyScoreAgent,
   getActiveAgentAtQuery,
   matchAgentBySlug,
@@ -70,5 +71,11 @@ describe('agent at-tokens', () => {
     expect(
       stripAgentTokenFromText('@alice hi', { id: 'a1', name: 'Alice' })
     ).toBe('hi')
+  })
+
+  it('leaves out the @partial still being typed from settled mentions', () => {
+    expect(extractSettledAgentSlugsFromText('ask @Task')).toEqual([])
+    expect(extractSettledAgentSlugsFromText('@code-assistant and @Task')).toEqual(['code-assistant'])
+    expect(extractSettledAgentSlugsFromText('@task-planner please')).toEqual(['task-planner'])
   })
 })
