@@ -15,6 +15,22 @@ export function getSettingsParentPath(pathname: string): string | null {
   return `/${parts.slice(0, -1).join('/')}`
 }
 
+/** Whether `pathname` is a page under Settings. */
+export function isSettingsPath(pathname: string): boolean {
+  return pathname === '/settings' || pathname.startsWith('/settings/')
+}
+
+/**
+ * The page closing Settings returns to: the last page outside Settings, with its search (a scope's tab). A chat or the
+ * new-chat draft is left to `resolveSettingsExit`, which checks the chat still exists; null when Settings was the
+ * first page (cold entry).
+ */
+export function settingsOpenerHref(opener: { pathname: string; href: string } | undefined): string | null {
+  if (!opener || isSettingsPath(opener.pathname)) return null
+  if (opener.pathname === '/new' || opener.pathname.startsWith('/session/')) return null
+  return opener.href
+}
+
 /** Resolve where leaving settings should land given the cached session and storage validation result. */
 export function resolveSettingsExitTarget(
   sessionId: string | null | undefined,
