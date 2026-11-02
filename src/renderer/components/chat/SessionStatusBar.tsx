@@ -32,7 +32,10 @@ export type SessionStatusBarProps = {
   }
   settings?: SessionSettings
   generating?: boolean
+  /** Used for usage lookups only; never shown. */
   providerId?: string
+  /** The provider's display name, shown next to the model. */
+  providerName?: string
   sessionId?: string
   /**
    * Session settings.memoryAutoSave. When false, status shows auto-save off
@@ -61,16 +64,16 @@ function lastAssistantModel(messages: Message[]): string | undefined {
 }
 
 /** Prefer human model name; avoid "xAI · xAI Grok…" style duplication. */
-function formatModelTitle(model: string, providerId?: string): string {
-  if (!providerId || providerId === '—') return model
+export function formatModelTitle(model: string, providerName?: string): string {
+  if (!providerName || providerName === '—') return model
   const modelLower = model.toLowerCase()
-  const providerLower = providerId.toLowerCase()
+  const providerLower = providerName.toLowerCase()
   if (modelLower.includes(providerLower)) return model
   // Common case: provider "xAI" + model "Grok 4.5" → keep "Grok 4.5" only (provider is in picker)
   if (providerLower === 'xai' || providerLower === 'openai' || providerLower === 'anthropic') {
     return model
   }
-  return `${providerId} · ${model}`
+  return `${providerName} · ${model}`
 }
 
 const SessionStatusBar: FC<SessionStatusBarProps> = ({
@@ -80,6 +83,7 @@ const SessionStatusBar: FC<SessionStatusBarProps> = ({
   settings,
   generating,
   providerId,
+  providerName,
   sessionId,
   memoryAutoSave,
   empty = false,
@@ -157,7 +161,7 @@ const SessionStatusBar: FC<SessionStatusBarProps> = ({
   const totalTokens = metrics ? metrics.totalInputTokens + metrics.totalOutputTokens : 0
   const hasUsage = Boolean(metrics && metrics.messagesWithUsage > 0)
 
-  const modelTitle = useMemo(() => formatModelTitle(activeModelLabel, providerId), [activeModelLabel, providerId])
+  const modelTitle = useMemo(() => formatModelTitle(activeModelLabel, providerName), [activeModelLabel, providerName])
   const { status: providerUsage } = useProviderUsageStatus(compact ? undefined : providerId, '30d')
   const budgetState = useUsageBudgetState(compact ? undefined : providerId)
 

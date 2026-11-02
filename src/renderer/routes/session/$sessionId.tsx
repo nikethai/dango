@@ -254,6 +254,7 @@ function RouteComponent() {
     }
   }, [currentSession?.settings?.provider, currentSession?.settings?.modelId])
   const modelDisplayName = useMemo(() => getModelDisplayName(providers, model), [model, providers])
+  const providerName = useMemo(() => providers.find((p) => p.id === model?.provider)?.name, [model, providers])
 
   const isOpenClawProvider = currentSession?.settings?.provider === ModelProviderEnum.OpenClaw
   const [showSessionPanel, setShowSessionPanel] = useState(false)
@@ -414,6 +415,7 @@ function RouteComponent() {
               model={model}
               settings={currentSession.settings}
               providerId={model?.provider}
+              providerName={providerName}
               generating={isGenerating}
               sessionId={currentSession.id}
               memoryAutoSave={currentSession.settings?.memoryAutoSave}
