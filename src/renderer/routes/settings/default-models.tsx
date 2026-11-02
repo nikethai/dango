@@ -64,6 +64,7 @@ export function RouteComponent() {
                 }}
               >
                 <ModelSelectContent
+                  label={t('Default Chat Model')}
                   autoText={t('Auto (Use Last Used)')!}
                   provider={settings.defaultChatModel?.provider}
                   model={settings.defaultChatModel?.model}
@@ -98,6 +99,7 @@ export function RouteComponent() {
                 }
               >
                 <ModelSelectContent
+                  label={t('Default Thread Naming Model')}
                   autoText={t('Auto (Use Chat Model)')!}
                   provider={settings.threadNamingModel?.provider}
                   model={settings.threadNamingModel?.model}
@@ -132,6 +134,7 @@ export function RouteComponent() {
                 }
               >
                 <ModelSelectContent
+                  label={t('Search Term Construction Model')}
                   autoText={t('Auto (Use Chat Model)')!}
                   provider={settings.searchTermConstructionModel?.provider}
                   model={settings.searchTermConstructionModel?.model}
@@ -167,6 +170,7 @@ export function RouteComponent() {
                 }
               >
                 <ModelSelectContent
+                  label={t('OCR Model')}
                   autoText={t('None')!}
                   provider={settings.ocrModel?.provider}
                   model={settings.ocrModel?.model}
@@ -191,8 +195,8 @@ export function RouteComponent() {
 
 const ModelSelectContent = forwardRef<
   HTMLButtonElement,
-  { provider?: string; model?: string; autoText?: string; onClick?: () => void }
->(({ provider, model, autoText, onClick }, ref) => {
+  { label: string; provider?: string; model?: string; autoText?: string; onClick?: () => void }
+>(({ label, provider, model, autoText, onClick }, ref) => {
   const { t } = useTranslation()
   const customProviders = useSettingsStore((state) => state.customProviders)
   const providers = useSettingsStore((state) => state.providers)
@@ -217,6 +221,7 @@ const ModelSelectContent = forwardRef<
       c="chatbox-tertiary"
       w={280}
       className="settings-model-trigger border-solid border border-chatbox-border-primary cursor-pointer"
+      aria-label={`${label}: ${displayText}`}
       onClick={onClick}
     >
       <Text span flex={1} className="text-left" lineClamp={1}>

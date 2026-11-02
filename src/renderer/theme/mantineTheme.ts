@@ -91,7 +91,8 @@ const INPUT_BORDER = 'var(--dango-control-border)'
 const INPUT_COLOR = 'var(--dango-ink)'
 const INPUT_PLACEHOLDER = 'var(--dango-muted)'
 
-export const createDangoMantineTheme = (scale = 1) =>
+/** closeLabel names every Modal's close button; the root passes it translated. */
+export const createDangoMantineTheme = (scale = 1, closeLabel = 'Close') =>
   createTheme({
     /** Dango shell — system UI font, tight radii, green brand; all colours/fonts via CSS tokens */
     scale,
@@ -379,6 +380,7 @@ export const createDangoMantineTheme = (scale = 1) =>
           radius: 'md',
           padding: 'md',
           shadow: 'xl',
+          closeButtonProps: { 'aria-label': closeLabel },
           overlayProps: {
             backgroundOpacity: 0.62,
             blur: 2,

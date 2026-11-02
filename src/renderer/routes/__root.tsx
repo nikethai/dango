@@ -26,6 +26,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import { createRootRoute, Outlet, useLocation, useRouterState } from '@tanstack/react-router'
 import { useSetAtom } from 'jotai'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { navigateToSettings } from '@/modals/Settings'
 import { FIRST_RUN_PATH, useFirstRunGate } from '@/packages/first-run'
 import { registerFirstRunOpener } from '@/packages/first-run/opener'
@@ -303,7 +304,8 @@ export const Route = createRootRoute({
     const _theme = useTheme()
     const fontSize = useSettingsStore((state) => state.fontSize)
     const scale = fontSize / 14
-    const mantineTheme = useMemo(() => createDangoMantineTheme(scale), [scale])
+    const { t } = useTranslation()
+    const mantineTheme = useMemo(() => createDangoMantineTheme(scale, t('Close')), [scale, t])
 
     // Brand accent is locked to the Dango design tokens (green). Do not apply user accentColor overrides.
 

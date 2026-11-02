@@ -448,6 +448,7 @@ function ForkNav(props: { sessionId: string; msgId: string; forks: NonNullable<S
         size={20}
         radius="xl"
         color={flash ? 'chatbox-secondary' : 'chatbox-tertiary'}
+        aria-label={t('Previous version')}
         onClick={() => void switchFork(sessionId, msgId, 'prev')}
       >
         <IconChevronLeft />
@@ -481,6 +482,7 @@ function ForkNav(props: { sessionId: string; msgId: string; forks: NonNullable<S
         size={20}
         radius="xl"
         color={flash ? 'chatbox-secondary' : 'chatbox-tertiary'}
+        aria-label={t('Next version')}
         onClick={() => switchFork(sessionId, msgId, 'next')}
       >
         <IconChevronRight />

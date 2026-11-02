@@ -399,6 +399,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
                         <Switch
                           size="xs"
                           checked={webBrowsingMode}
+                          aria-label={t('Web Search')}
                           disabled={!webSearchConfigured && !webBrowsingMode}
                           onChange={(e) => onWebBrowsingChange(e.currentTarget.checked)}
                           onClick={(e) => e.stopPropagation()}
@@ -430,6 +431,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
                         <Switch
                           size="xs"
                           checked={Boolean(browserArmed)}
+                          aria-label={t('Dango Browser')}
                           disabled={!browserMasterEnabled}
                           onChange={(e) => onBrowserArmedChange?.(e.currentTarget.checked)}
                           onClick={(e) => e.stopPropagation()}
@@ -714,6 +716,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
                 <Switch
                   size="xs"
                   checked={webBrowsingMode}
+                  aria-label={t('Web Search')}
                   disabled={!webSearchConfigured && !webBrowsingMode}
                   onChange={(e) => onWebBrowsingChange(e.currentTarget.checked)}
                   onClick={(e) => e.stopPropagation()}

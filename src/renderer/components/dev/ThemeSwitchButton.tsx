@@ -35,7 +35,7 @@ export const ThemeSwitchButton: FC<ActionIconProps> = (props) => {
 
   return (
     <Tooltip label={getThemeLabel()}>
-      <ActionIcon variant="subtle" size="lg" onClick={cycleTheme} {...props}>
+      <ActionIcon variant="subtle" size="lg" onClick={cycleTheme} aria-label={getThemeLabel()} {...props}>
         {getThemeIcon()}
       </ActionIcon>
     </Tooltip>
