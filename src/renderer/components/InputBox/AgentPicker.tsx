@@ -24,6 +24,15 @@ export function agentPickerBlurb(agent: AgentDetail): string {
   return `${sp > 36 ? cut.slice(0, sp) : cut}…`
 }
 
+/** 2 when the name starts with the query, 1 when the name holds it, 0 for a blurb or fuzzy match. */
+function nameMatchTier(name: string, query: string): number {
+  if (!query) return 0
+  const lower = name.toLowerCase()
+  if (lower.startsWith(query)) return 2
+  return fuzzyScoreAgent(name, query) >= 80 ? 1 : 0
+}
+
+/** Agents matching `query`, name matches first: `@Task` picks Task Planner, not an agent whose blurb mentions a task. */
 export function filterAgents(agents: AgentDetail[], query: string) {
   const normalizedQuery = query.trim().toLowerCase()
   return agents
@@ -31,11 +40,12 @@ export function filterAgents(agents: AgentDetail[], query: string) {
       const haystack = [agent.name, agentPickerBlurb(agent)].join(' ')
       return {
         agent,
+        tier: nameMatchTier(agent.name, normalizedQuery),
         score: fuzzyScoreAgent(haystack, normalizedQuery),
       }
     })
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score || a.agent.name.localeCompare(b.agent.name))
+    .sort((a, b) => b.tier - a.tier || b.score - a.score || a.agent.name.localeCompare(b.agent.name))
     .map((item) => item.agent)
 }
 
