@@ -1,5 +1,10 @@
 import { ActionIcon, Tooltip } from '@mantine/core'
-import type { WorkspaceDescriptor, WorkspaceListEntry } from '@shared/types/workspace'
+import {
+  type WorkspaceDescriptor,
+  type WorkspaceListEntry,
+  type WorkspaceSuiteCapabilities,
+  WorkspaceSuiteCapabilitiesSchema,
+} from '@shared/types/workspace'
 import { IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -14,6 +19,18 @@ import { ProjectExportDialog } from './ProjectExportDialog'
 import { ExplorerFileRow, ProjectExplorerTree } from './ProjectExplorerTree'
 import { QuickRunPanel } from './QuickRunPanel'
 import { SourceControlView } from './SourceControlView'
+
+type PanelTab = 'files' | 'scm' | 'review' | 'run'
+
+/** Tabs past Files show only when the native side reports them ready; builds compile them off. */
+function availableTabs(suite: WorkspaceSuiteCapabilities | null): PanelTab[] {
+  const ready = (entry?: { state: string }) => entry?.state === 'ready'
+  const tabs: PanelTab[] = ['files']
+  if (ready(suite?.scm)) tabs.push('scm')
+  if (ready(suite?.staging)) tabs.push('review')
+  if (ready(suite?.wasi)) tabs.push('run')
+  return tabs
+}
 
 function folderLabel(displayPath?: string) {
   if (!displayPath) return ''
@@ -40,13 +57,37 @@ export function ProjectContextPanel({
   const [openDirs, setOpenDirs] = useState<Record<string, boolean>>({})
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<Array<{ relativePath: string }>>([])
-  const [tab, setTab] = useState<'files' | 'scm' | 'review' | 'run'>('files')
+  const [selectedTab, setTab] = useState<PanelTab>('files')
+  const [suite, setSuite] = useState<WorkspaceSuiteCapabilities | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [changeSetId, setChangeSetId] = useState(() => getStagedChangeSetId(sessionId) || '')
   const attached = useUIStore((s) => s.projectContextDrafts[sessionId])
   const attachedPaths = useMemo(() => new Set((attached ?? []).map((e) => e.relativePath)), [attached])
 
   const ready = descriptor?.status === 'ready' && Boolean(descriptor.capabilityId)
+  const tabs = availableTabs(suite)
+  const tab = tabs.includes(selectedTab) ? selectedTab : 'files'
+  const tabLabels: Record<PanelTab, string> = {
+    files: t('Files'),
+    scm: t('Source Control'),
+    review: t('Change Review'),
+    run: t('Quick Local Run'),
+  }
+
+  useEffect(() => {
+    let alive = true
+    // Until this answers, or if it fails (web), only Files shows
+    platform
+      .getWorkspaceSuiteCapabilities?.()
+      .then((raw) => {
+        const parsed = WorkspaceSuiteCapabilitiesSchema.safeParse(raw)
+        if (alive && parsed.success) setSuite(parsed.data)
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
 
   useEffect(() => {
     const sync = () => setChangeSetId(getStagedChangeSetId(sessionId) || '')
@@ -172,20 +213,15 @@ export function ProjectContextPanel({
           <div className="project-explorer-root" title={descriptor?.displayPath}>
             {folderLabel(descriptor?.displayPath)}
           </div>
-          <div className="project-explorer-tabs" role="tablist">
-            <button type="button" role="tab" aria-selected={tab === 'files'} onClick={() => setTab('files')}>
-              {t('Files')}
-            </button>
-            <button type="button" role="tab" aria-selected={tab === 'scm'} onClick={() => setTab('scm')}>
-              {t('Source Control')}
-            </button>
-            <button type="button" role="tab" aria-selected={tab === 'review'} onClick={() => setTab('review')}>
-              {t('Change Review')}
-            </button>
-            <button type="button" role="tab" aria-selected={tab === 'run'} onClick={() => setTab('run')}>
-              {t('Quick Local Run')}
-            </button>
-          </div>
+          {tabs.length > 1 ? (
+            <div className="project-explorer-tabs" role="tablist">
+              {tabs.map((id) => (
+                <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+                  {tabLabels[id]}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {tab === 'files' ? (
             <>
               <button type="button" className="project-explorer-open" onClick={() => setExportOpen(true)}>
