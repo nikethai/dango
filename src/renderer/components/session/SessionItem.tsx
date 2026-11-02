@@ -126,6 +126,7 @@ function SessionItem(props: Props) {
             variant="transparent"
             size={24}
             color={session.starred ? 'chatbox-brand' : 'chatbox-tertiary'}
+            aria-label={t('More')}
             className={clsx(
               'active:scale-[0.96] transition-transform shrink-0',
               isSmallScreen || session.starred || menuOpened ? '' : 'group-hover/session-item:visible invisible'
