@@ -69,6 +69,7 @@ const TokenCountMenu: FC<Props> = ({
             <Switch
               size="xs"
               checked={autoCompactionEnabled}
+              aria-label={t('Auto Compaction')}
               disabled={!contextWindowKnown || isCompacting}
               onChange={(e) => onAutoCompactionChange(e.currentTarget.checked)}
             />
