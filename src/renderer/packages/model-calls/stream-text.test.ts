@@ -238,11 +238,8 @@ vi.mock('./toolsets/task-tracking', () => ({
 }))
 
 vi.mock('./tools', () => ({
-  combinedSearchByPromptEngineering: vi.fn(),
   constructMessagesWithKnowledgeBaseResults: vi.fn(),
-  constructMessagesWithSearchResults: vi.fn(),
   knowledgeBaseSearchByPromptEngineering: vi.fn(),
-  searchByPromptEngineering: vi.fn(),
 }))
 
 function createTestModel(chatImpl: NonNullable<ModelInterface['chat']>, supportToolUse = true): ModelInterface {
@@ -1099,11 +1096,9 @@ describe('streamText web search on a local-only turn (S13)', () => {
     expect(Object.keys(seen[1])).toEqual(expect.arrayContaining(['web_search', 'parse_link', 'read_file']))
   })
 
-  it('does no prompt-engineered search or native grounding for a local model in a chat holding local-only text', async () => {
+  it('does no web search or native grounding for a local model in a chat holding local-only text', async () => {
     loadPmToolSetMock.mockResolvedValue(null)
     const { streamText } = await import('./stream-text')
-    const tools = await import('./tools')
-    vi.mocked(tools.searchByPromptEngineering).mockClear()
     const { chat, seen } = toolsSeen()
     const messages = () => [createMessage('user', 'Price?'), localOnlyRecall(), createMessage('user', 'And now?')]
     await streamText(createTestModel(chat, false), {
@@ -1112,8 +1107,8 @@ describe('streamText web search on a local-only turn (S13)', () => {
       sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'test-model' },
       onResultChangeWithCancel: vi.fn(),
     })
-    expect(tools.searchByPromptEngineering).not.toHaveBeenCalled()
     expect(chat).toHaveBeenCalledTimes(1)
+    expect(seen[0].web_search).toBeUndefined()
 
     await streamText(createTestModel(chat), {
       messages: messages(),
@@ -1264,5 +1259,46 @@ describe('streamText outside tools on a local-only turn (D2)', () => {
       onResultChangeWithCancel: vi.fn(),
     })
     expect(noTools.localOnlyToolsOff).toBe(true)
+  })
+})
+
+describe('streamText Web Search and a model that cannot use tools (7.3)', () => {
+  const toolsSeen = () => {
+    const seen: Record<string, unknown>[] = []
+    const chat = vi.fn((_messages, options) => {
+      seen.push({ ...(options.tools ?? {}) })
+      return Promise.resolve({ contentParts: [], text: 'done' } as StreamTextResult)
+    })
+    return { chat, seen }
+  }
+
+  beforeEach(() => {
+    loadPmToolSetMock.mockReset().mockResolvedValue(null)
+  })
+
+  it('answers in one call, with no search, when the model cannot use tools', async () => {
+    const { streamText } = await import('./stream-text')
+    const { chat, seen } = toolsSeen()
+    await streamText(createTestModel(chat, false), {
+      messages: [createMessage('user', 'What changed today?')],
+      webBrowsing: true,
+      sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'test-model' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(chat).toHaveBeenCalledTimes(1)
+    expect(seen[0].web_search).toBeUndefined()
+  })
+
+  it('still offers web search to a model that uses tools', async () => {
+    const { streamText } = await import('./stream-text')
+    const { chat, seen } = toolsSeen()
+    await streamText(createTestModel(chat), {
+      messages: [createMessage('user', 'What changed today?')],
+      webBrowsing: true,
+      sessionSettings: { provider: ModelProviderEnum.Ollama, modelId: 'test-model' },
+      onResultChangeWithCancel: vi.fn(),
+    })
+    expect(chat).toHaveBeenCalledTimes(1)
+    expect(seen[0].web_search).toBeDefined()
   })
 })

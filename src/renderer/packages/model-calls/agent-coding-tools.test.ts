@@ -195,11 +195,8 @@ vi.mock('./toolsets/web-search', () => ({
 }))
 
 vi.mock('./tools', () => ({
-  combinedSearchByPromptEngineering: vi.fn(),
   constructMessagesWithKnowledgeBaseResults: vi.fn(),
-  constructMessagesWithSearchResults: vi.fn(),
   knowledgeBaseSearchByPromptEngineering: vi.fn(),
-  searchByPromptEngineering: vi.fn(),
 }))
 
 vi.mock('@/platform', () => ({

@@ -167,3 +167,30 @@ describe('ComposerToolsMenu desktop Mode section (S1)', () => {
     expect(within(menu).getByRole('switch', { name: 'Plan mode' })).toBeTruthy()
   })
 })
+
+describe.each([
+  ['desktop menu', false],
+  ['small-screen drawer', true],
+])('ComposerToolsMenu Web Search with a model that cannot use tools (%s)', (_name, small) => {
+  beforeEach(() => {
+    h.smallScreen = small
+  })
+
+  it('shows Web Search off and disabled, with the reason, even when the chat has it on', async () => {
+    const props = renderMenu({ webBrowsingMode: true, webSearchUnsupported: true })
+    const row = (await screen.findAllByRole('menuitem')).find((i) => i.textContent?.startsWith('Web Search'))
+    expect(row?.textContent).toContain("This model can't search the web")
+    const toggle = within(row as HTMLElement).getByRole('switch') as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+    expect(toggle.disabled).toBe(true)
+    fireEvent.click(row as HTMLElement)
+    expect(props.onWebBrowsingChange).not.toHaveBeenCalled()
+  })
+
+  it('leaves Web Search as it was for a model that uses tools', async () => {
+    renderMenu({ webBrowsingMode: true })
+    const row = (await screen.findAllByRole('menuitem')).find((i) => i.textContent?.startsWith('Web Search'))
+    expect(row?.textContent).not.toContain("can't search the web")
+    expect((within(row as HTMLElement).getByRole('switch') as HTMLInputElement).checked).toBe(true)
+  })
+})

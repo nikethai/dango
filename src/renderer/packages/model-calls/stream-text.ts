@@ -51,13 +51,7 @@ import type {
 import { mcpController } from '../mcp/controller'
 import { convertToModelMessages, injectModelSystemPrompt } from './message-utils'
 import { imageOCR } from './preprocess'
-import {
-  combinedSearchByPromptEngineering,
-  constructMessagesWithKnowledgeBaseResults,
-  constructMessagesWithSearchResults,
-  knowledgeBaseSearchByPromptEngineering,
-  searchByPromptEngineering,
-} from './tools'
+import { constructMessagesWithKnowledgeBaseResults, knowledgeBaseSearchByPromptEngineering } from './tools'
 import {
   createBrowserToolSet,
   getLastBrowserObservationEmbedded,
@@ -215,10 +209,7 @@ async function handleSearchResult(
   }
   onResultChange({ contentParts: [toolCallPart] })
 
-  const messagesWithResults =
-    result.type === 'knowledge_base' || toolName === 'query_knowledge_base'
-      ? constructMessagesWithKnowledgeBaseResults(messages, result.searchResults)
-      : constructMessagesWithSearchResults(messages, result.searchResults)
+  const messagesWithResults = constructMessagesWithKnowledgeBaseResults(messages, result.searchResults)
 
   const chatResult = await model.chat(
     await convertToModelMessages(messagesWithResults, {
@@ -561,8 +552,8 @@ export async function streamText(
   const turnIsLocalOnly = localOnlyTurn({ holdsLocalOnly, cloudModel, clientRecallOffered: pmToolSet !== null })
   // S13: no web search, link reading or grounding on a turn that may read local-only text: a query or URL the model
   // writes would carry that text to the search provider or the site.
-  const searchWeb = Boolean(webBrowsing) && !turnIsLocalOnly
-  const webNotSupported = searchWeb && !model.isSupportToolUse('web-browsing')
+  // A model that cannot use tools answers without searching: no hidden prompt-engineered search call first (7.3).
+  const searchWeb = Boolean(webBrowsing) && !turnIsLocalOnly && model.isSupportToolUse('web-browsing')
   // ADR 0016: the answer says so when the web toggle was on, or outside tools are removed below.
   let localOnlyToolsOff = turnIsLocalOnly && Boolean(webBrowsing)
   const mcpTools = wrapToolsWithApproval(sessionId, mcpController.getAvailableTools(), { scopeId })
@@ -731,7 +722,7 @@ Do not open with repeated web searches when personal memory may apply.
     }
   }
 
-  if (searchWeb && !webNotSupported && !useGeminiGrounding) {
+  if (searchWeb && !useGeminiGrounding) {
     toolSetInstructions += websearchToolSet.description
   }
 
@@ -875,95 +866,24 @@ Do not open with repeated web searches when personal memory may apply.
       includeAssistantReasoning,
     })
 
-    // 3. handle model not support tool use scenarios
-    if (kbNotSupported || webNotSupported) {
-      // (legacy comment removed)
-      if (kbNotSupported && webNotSupported) {
-        // infoParts.push({
-        //   type: 'info',
-        //   text: t(
-        //     'Current model {{modelName}} does not support tool use, using prompt for knowledge base and web search',
-        //     {
-        //       modelName: model.modelId,
-        //     }
-        //   ),
-        // })
+    // 3. a model that cannot use tools searches the knowledge base by prompt
+    if (kbNotSupported) {
+      const callResult = await knowledgeBaseSearchByPromptEngineering(model, params.messages, knowledgeBase.id)
 
-        const callResult = await combinedSearchByPromptEngineering(
+      return {
+        ...(await handleSearchResult(
+          callResult || { query: '', searchResults: [] },
+          'query_knowledge_base',
           model,
-          params.messages,
-          knowledgeBase.id,
-          controller.signal
-        )
-        const toolName = callResult.type === 'knowledge_base' ? 'query_knowledge_base' : 'web_search'
-        return {
-          ...(await handleSearchResult(
-            callResult,
-            toolName,
-            model,
-            messages,
-            coreMessages,
-            controller,
-            onResultChange,
-            { ...params, includeAssistantReasoning },
-            dependencies
-          )),
-          knowledgeIds,
-          localOnlyToolsOff,
-        }
-      }
-      // (legacy comment removed)
-      else if (kbNotSupported) {
-        // infoParts.push({
-        //   type: 'info',
-        //   text: t('Current model {{modelName}} does not support tool use, using prompt for knowledge base', {
-        //     modelName: model.modelId,
-        //   }),
-        // })
-
-        const callResult = await knowledgeBaseSearchByPromptEngineering(model, params.messages, knowledgeBase.id)
-
-        return {
-          ...(await handleSearchResult(
-            callResult || { query: '', searchResults: [] },
-            'query_knowledge_base',
-            model,
-            messages,
-            coreMessages,
-            controller,
-            onResultChange,
-            { ...params, includeAssistantReasoning },
-            dependencies
-          )),
-          knowledgeIds,
-          localOnlyToolsOff,
-        }
-      }
-      // (legacy comment removed)
-      else if (webNotSupported) {
-        // infoParts.push({
-        //   type: 'info',
-        //   text: t('Current model {{modelName}} does not support tool use, using prompt for web search', {
-        //     modelName: model.modelId,
-        //   }),
-        // })
-
-        const callResult = await searchByPromptEngineering(model, params.messages, controller.signal)
-        return {
-          ...(await handleSearchResult(
-            callResult || { query: '', searchResults: [] },
-            'web_search',
-            model,
-            messages,
-            coreMessages,
-            controller,
-            onResultChange,
-            { ...params, includeAssistantReasoning },
-            dependencies
-          )),
-          knowledgeIds,
-          localOnlyToolsOff,
-        }
+          messages,
+          coreMessages,
+          controller,
+          onResultChange,
+          { ...params, includeAssistantReasoning },
+          dependencies
+        )),
+        knowledgeIds,
+        localOnlyToolsOff,
       }
     }
 
