@@ -83,6 +83,14 @@ export function extractAgentSlugsFromText(text: string): string[] {
 }
 
 /**
+ * Slugs of the @agent tokens already written in `text`, without the one still being typed at the end: a partial
+ * `@Task` would otherwise prefix-match Task Planner and drop it from the picker as already mentioned.
+ */
+export function extractSettledAgentSlugsFromText(text: string): string[] {
+  return extractAgentSlugsFromText(getActiveAgentAtQuery(text) === null ? text : stripActiveAgentAtToken(text))
+}
+
+/**
  * Remove a completed @agent token (by slug or agent id) from draft text.
  * Used when the user removes a room member so the composer chip does not linger.
  */

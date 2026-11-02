@@ -1,6 +1,7 @@
 export {
   AGENT_AT_TOKEN_RE,
   extractAgentSlugsFromText,
+  extractSettledAgentSlugsFromText,
   fuzzyScoreAgent,
   getActiveAgentAtQuery,
   matchAgentBySlug,
