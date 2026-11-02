@@ -76,6 +76,7 @@ describe('ProjectContextPanel tabs', () => {
     await waitFor(() => expect(h.capabilities).toHaveBeenCalled())
     expect(screen.queryByRole('tablist')).toBeNull()
     expect(screen.getByPlaceholderText('Search files')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Export safe snapshot' })).toBeNull()
   })
 
   it('shows only Files when the capabilities cannot be read', async () => {
@@ -83,6 +84,13 @@ describe('ProjectContextPanel tabs', () => {
     renderPanel()
     await waitFor(() => expect(h.capabilities).toHaveBeenCalled())
     expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Export safe snapshot' })).toBeNull()
+  })
+
+  it('offers Export safe snapshot only when export is ready', async () => {
+    h.capabilities.mockResolvedValue({ export: entry('ready') })
+    renderPanel()
+    expect(await screen.findByRole('button', { name: 'Export safe snapshot' })).toBeTruthy()
   })
 
   it('adds a tab for each ready feature', async () => {

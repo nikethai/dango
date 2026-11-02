@@ -22,13 +22,14 @@ import { SourceControlView } from './SourceControlView'
 
 type PanelTab = 'files' | 'scm' | 'review' | 'run'
 
+const isReady = (entry?: { state: string }) => entry?.state === 'ready'
+
 /** Tabs past Files show only when the native side reports them ready; builds compile them off. */
 function availableTabs(suite: WorkspaceSuiteCapabilities | null): PanelTab[] {
-  const ready = (entry?: { state: string }) => entry?.state === 'ready'
   const tabs: PanelTab[] = ['files']
-  if (ready(suite?.scm)) tabs.push('scm')
-  if (ready(suite?.staging)) tabs.push('review')
-  if (ready(suite?.wasi)) tabs.push('run')
+  if (isReady(suite?.scm)) tabs.push('scm')
+  if (isReady(suite?.staging)) tabs.push('review')
+  if (isReady(suite?.wasi)) tabs.push('run')
   return tabs
 }
 
@@ -66,6 +67,7 @@ export function ProjectContextPanel({
 
   const ready = descriptor?.status === 'ready' && Boolean(descriptor.capabilityId)
   const tabs = availableTabs(suite)
+  const canExport = isReady(suite?.export)
   const tab = tabs.includes(selectedTab) ? selectedTab : 'files'
   const tabLabels: Record<PanelTab, string> = {
     files: t('Files'),
@@ -224,10 +226,12 @@ export function ProjectContextPanel({
           ) : null}
           {tab === 'files' ? (
             <>
-              <button type="button" className="project-explorer-open" onClick={() => setExportOpen(true)}>
-                {t('Export safe snapshot')}
-              </button>
-              {exportOpen && descriptor?.capabilityId ? (
+              {canExport ? (
+                <button type="button" className="project-explorer-open" onClick={() => setExportOpen(true)}>
+                  {t('Export safe snapshot')}
+                </button>
+              ) : null}
+              {canExport && exportOpen && descriptor?.capabilityId ? (
                 <ProjectExportDialog capabilityId={descriptor.capabilityId} onClose={() => setExportOpen(false)} />
               ) : null}
               <input
