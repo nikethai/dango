@@ -78,7 +78,12 @@ export default function ThreadHistoryDrawer({ session }: { session: Session }) {
         <Text size="md" fw={600}>
           {t('Thread History')}
         </Text>
-        <ActionIcon variant="transparent" color="chatbox-primary" onClick={() => setShowDrawer(false)}>
+        <ActionIcon
+          variant="transparent"
+          color="chatbox-primary"
+          aria-label={t('Close')}
+          onClick={() => setShowDrawer(false)}
+        >
           <ScalableIcon icon={IconX} size={20} />
         </ActionIcon>
       </Flex>
