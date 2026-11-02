@@ -70,6 +70,8 @@ export function ProviderList({ providers, onAddCustomProvider, onImportProvider,
   const routerState = useRouterState()
   const providersMap = useSettingsStore((s) => s.providers)
   const [addOpen, setAddOpen] = useState(false)
+  // Off when the menu closes into a dialog, so focus stays in the dialog instead of returning to Add
+  const [returnFocusOnClose, setReturnFocusOnClose] = useState(true)
   const [query, setQuery] = useState('')
 
   const selectedProviderId = useMemo(() => {
@@ -120,11 +122,13 @@ export function ProviderList({ providers, onAddCustomProvider, onImportProvider,
   }
 
   const handleCustom = () => {
+    setReturnFocusOnClose(false)
     closeAdd()
     onAddCustomProvider()
   }
 
   const handleImport = () => {
+    setReturnFocusOnClose(false)
     closeAdd()
     onImportProvider()
   }
@@ -213,14 +217,17 @@ export function ProviderList({ providers, onAddCustomProvider, onImportProvider,
           withinPortal
           middlewares={{ flip: true, shift: true, size: true }}
           trapFocus
-          returnFocus
+          returnFocus={returnFocusOnClose}
         >
           <Popover.Target>
             <Button
               variant="outline"
               fullWidth
               leftSection={<ScalableIcon icon={IconPlus} />}
-              onClick={() => setAddOpen((v) => !v)}
+              onClick={() => {
+                setReturnFocusOnClose(true)
+                setAddOpen((v) => !v)
+              }}
               aria-expanded={addOpen}
             >
               {t('Add')}

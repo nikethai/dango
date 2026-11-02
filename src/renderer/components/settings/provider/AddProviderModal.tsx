@@ -1,4 +1,4 @@
-import { Button, Stack, Text, TextInput } from '@mantine/core'
+import { Button, Stack, TextInput } from '@mantine/core'
 import { ModelProviderType } from '@shared/types'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
@@ -23,14 +23,21 @@ export function AddProviderModal({ opened, onClose }: AddProviderModalProps) {
   const customProviders = useSettingsStore((s) => s.customProviders)
   const [newProviderName, setNewProviderName] = useState('')
   const [newProviderMode, setNewProviderMode] = useState<ModelProviderType>(ModelProviderType.OpenAI)
+  // "Name is required" shows only after a save with an empty name
+  const [triedEmptySave, setTriedEmptySave] = useState(false)
 
   useEffect(() => {
+    if (opened) setTriedEmptySave(false)
     if (opened && isSmallScreen) {
       blurActiveElement()
     }
   }, [opened, isSmallScreen])
 
   const handleAddProvider = () => {
+    if (!newProviderName.trim()) {
+      setTriedEmptySave(true)
+      return
+    }
     const pid = `custom-provider-${uuidv4()}`
     setSettings({
       customProviders: [
@@ -55,15 +62,22 @@ export function AddProviderModal({ opened, onClose }: AddProviderModalProps) {
   return (
     <AdaptiveModal size="sm" opened={opened} onClose={onClose} centered title={t('Add provider')}>
       <Stack gap="xs">
-        <Text>{t('Name')}</Text>
         <TextInput
+          label={t('Name')}
           value={newProviderName}
           onChange={(e) => setNewProviderName(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              handleAddProvider()
+            }
+          }}
           required
-          error={!newProviderName.trim() ? t('Name is required') : ''}
+          data-autofocus={isSmallScreen ? undefined : true}
+          error={triedEmptySave && !newProviderName.trim() ? t('Name is required') : ''}
         />
-        <Text>{t('API Mode')}</Text>
         <AdaptiveSelect
+          label={t('API Mode')}
           value={newProviderMode}
           classNames={{ dropdown: 'pointer-events-auto' }}
           onChange={(value) => setNewProviderMode(value as ModelProviderType)}
@@ -88,7 +102,7 @@ export function AddProviderModal({ opened, onClose }: AddProviderModalProps) {
         />
         <AdaptiveModal.Actions>
           <AdaptiveModal.CloseButton onClick={onClose} />
-          <Button onClick={handleAddProvider} disabled={!newProviderName.trim()}>
+          <Button onClick={handleAddProvider}>
             {t('Add')}
           </Button>
         </AdaptiveModal.Actions>
