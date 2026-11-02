@@ -139,14 +139,16 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
   const swarmFold = useMemo(() => foldSwarmRuns(allMessages), [allMessages])
   const currentMessageList = swarmFold.visible
   const swarmLive = useSwarmLive(currentSession.id)
-  // A fork made on a folded turn (Redo of an answer forks at the turn before it) keeps its switcher on the run's item.
+  // A fork made on a hidden message keeps its switcher on the next shown one: a folded Swarm turn (Redo of an answer
+  // forks at the turn before it) moves it to the run's item, and the system prompt (editing the first question forks
+  // there) to the first question.
   const forksMovedTo = useMemo(() => {
     const moved: Record<string, string[]> = {}
     const forks = currentSession.messageForksHash
-    if (!forks || currentMessageList === allMessages) return moved
+    if (!forks) return moved
     const visibleIds = new Set(currentMessageList.map((m) => m.id))
     let pending: string[] = []
-    for (const m of allMessages) {
+    for (const m of getAllMessageList(currentSession)) {
       if (visibleIds.has(m.id)) {
         if (pending.length > 0) {
           moved[m.id] = pending
@@ -157,7 +159,7 @@ const MessageList = forwardRef<MessageListRef, MessageListProps>((props, ref) =>
       }
     }
     return moved
-  }, [allMessages, currentMessageList, currentSession.messageForksHash])
+  }, [currentSession, currentMessageList])
 
   const latestSummaryMessageId = useMemo(() => {
     for (let i = currentMessageList.length - 1; i >= 0; i--) {
