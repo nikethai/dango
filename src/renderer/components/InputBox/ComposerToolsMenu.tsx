@@ -26,7 +26,7 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import { Link } from '@tanstack/react-router'
-import { type FC, type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type FC, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
 import { useKnowledgeBases } from '@/hooks/knowledge-base'
@@ -128,6 +128,16 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
   const [opened, setOpened] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [menuMaxHeight, setMenuMaxHeight] = useState<number | undefined>(undefined)
+  // The composer sits at the bottom of the window and the menu opens upward from the trigger, so the usable
+  // height is the space above the trigger (not the viewport height). Measured at open time.
+  const onMenuChange = (next: boolean) => {
+    if (next && triggerRef.current) {
+      setMenuMaxHeight(Math.max(240, triggerRef.current.getBoundingClientRect().top - 16))
+    }
+    setOpened(next)
+  }
   const closeTools = () => setOpened(false)
   const memoryNode = typeof memorySlot === 'function' ? memorySlot({ closeTools }) : memorySlot
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false)
@@ -201,6 +211,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
 
   const plusButton = (
     <UnstyledButton
+      ref={triggerRef}
       className={cn(toolbarButtonClass, composerToolbarButtonClass(isSmallScreen))}
       aria-label={t('Tools and attachments')}
       aria-expanded={opened}
@@ -659,7 +670,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
     <>
       <Menu
         opened={opened}
-        onChange={setOpened}
+        onChange={onMenuChange}
         trigger="click"
         position="top-start"
         shadow="md"
@@ -670,7 +681,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
         transitionProps={{ transition: 'pop', duration: 160 }}
       >
         <Menu.Target>{plusButton}</Menu.Target>
-        <Menu.Dropdown className="composer-tools-menu max-h-[70dvh] overflow-y-auto">
+        <Menu.Dropdown className="composer-tools-menu overflow-y-auto" style={{ maxHeight: menuMaxHeight }}>
           <Menu.Label fw={600}>{t('Attach')}</Menu.Label>
           <Menu.Item
             leftSection={<IconPhoto size={16} stroke={1.5} />}
