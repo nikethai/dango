@@ -670,7 +670,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
         transitionProps={{ transition: 'pop', duration: 160 }}
       >
         <Menu.Target>{plusButton}</Menu.Target>
-        <Menu.Dropdown className="composer-tools-menu">
+        <Menu.Dropdown className="composer-tools-menu max-h-[70dvh] overflow-y-auto">
           <Menu.Label fw={600}>{t('Attach')}</Menu.Label>
           <Menu.Item
             leftSection={<IconPhoto size={16} stroke={1.5} />}
