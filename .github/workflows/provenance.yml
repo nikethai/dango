@@ -1,0 +1,39 @@
+# Upstream provenance gate (docs/specs/2026-10-17-clean-room-relicense.md, Task 1).
+# A PR may not add upstream-derived code: every changed file is scanned at the merge base and at the head, and
+# the job fails when a new file is not clean, a clean file stops being clean, or a flagged file gains upstream
+# blame lines or copy-matched lines. Editing or shrinking a flagged file passes.
+name: Provenance
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: provenance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  provenance:
+    name: Provenance
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      # Full history: blame needs every commit, and the merge base must be reachable.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Version comes from package.json packageManager (do not also set version:).
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      # The pinned upstream baselines. fe801920, the fork point, is already in this repo's history.
+      - name: Fetch upstream baselines
+        run: git fetch --no-tags https://github.com/chatboxai/chatbox.git 0ac6385ae1ff5bf778777826da3c5edcd55b61b8 40cbd8745c33ed67affc0854a9b59f244919fe5e
+
+      # The scanner uses only Node built-ins, so no pnpm install is needed.
+      - name: Provenance gate
+        run: pnpm provenance --changed --fail

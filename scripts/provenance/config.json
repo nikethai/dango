@@ -1,0 +1,35 @@
+{
+  "teamPattern": "thong|nikethai|canvilled|huyminh|huynguyen|noreply@anthropic\\.com",
+  "baselines": [
+    "fe80192097fb5e6b32b0a6ac671361e0283cdd74",
+    "40cbd8745c33ed67affc0854a9b59f244919fe5e",
+    "0ac6385ae1ff5bf778777826da3c5edcd55b61b8"
+  ],
+  "identicalHistory": ["fe80192097fb5e6b32b0a6ac671361e0283cdd74", "0ac6385ae1ff5bf778777826da3c5edcd55b61b8"],
+  "upstreamRepo": "https://github.com/chatboxai/chatbox.git",
+  "corpusExtensions": [
+    "ts",
+    "tsx",
+    "js",
+    "jsx",
+    "mjs",
+    "cjs",
+    "mts",
+    "css",
+    "scss",
+    "rs",
+    "json",
+    "html",
+    "astro",
+    "svelte",
+    "yml",
+    "yaml",
+    "sh",
+    "md",
+    "kt",
+    "swift"
+  ],
+  "exclude": ["(^|/)pnpm-lock\\.yaml$", "(^|/)Cargo\\.lock$", "^LICENSE$", "^NOTICE$", "^docs/archive/"],
+  "workPackages": "docs/research/2026-10-28-upstream-provenance-after-redesign/files.csv",
+  "parallel": 8
+}

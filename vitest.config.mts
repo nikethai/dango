@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
       ...loadEnv(mode, process.cwd(), ''),
       NODE_ENV: 'test',
     },
-    include: ['src/**/*.{test,spec}.{ts,tsx}', 'test/integration/**/*.{test,spec}.{ts,tsx}'],
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'test/integration/**/*.{test,spec}.{ts,tsx}', 'scripts/**/*.test.mjs'],
     exclude: ['node_modules', 'dist', 'release'],
     setupFiles: [],
     testTimeout: 10000,

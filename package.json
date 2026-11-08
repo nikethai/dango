@@ -12,6 +12,7 @@
     "backlog:browser": "node ./scripts/backlog-browser.mjs",
     "whats-changed": "tsx scripts/whats-changed.ts",
     "tray-icons:render": "node scripts/render-tray-icons.mjs",
+    "provenance": "node scripts/provenance/cli.mjs",
     "build": "pnpm tauri:build",
     "build:renderer": "vite build --config vite.renderer.config.mts",
     "build:web": "cross-env CHATBOX_BUILD_PLATFORM=web vite build --config vite.renderer.config.mts && pnpm run delete-sourcemaps",

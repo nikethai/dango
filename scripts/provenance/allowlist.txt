@@ -1,0 +1,4 @@
+# Shingle hashes the copy check ignores: boilerplate that is not protectable on its own.
+# One entry per line: <16-hex hash>  <reason>. The reviewer signs off on each entry.
+# A hash is the first 16 hex characters of the md5 of 4 normalised significant lines joined with "\n"
+# (see normalizeLines and shingleHashes in scan.mjs).

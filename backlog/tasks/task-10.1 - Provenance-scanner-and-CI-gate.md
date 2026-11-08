@@ -1,10 +1,11 @@
 ---
 id: TASK-10.1
 title: Provenance scanner and CI gate
-status: Proposed
-assignee: []
+status: Now
+assignee:
+  - '@claude'
 created_date: 2026-10-17 07:24
-updated_date: '2026-10-29T15:46:00Z'
+updated_date: '2026-11-08T14:50:00Z'
 labels:
   - licensing
 dependencies: []
@@ -31,3 +32,15 @@ Every later step needs one repeatable definition of "clean", and a way to stop n
 - [ ] #4 A pull_request workflow runs pnpm provenance --changed --fail as a ratchet against the merge base: it fails when a new file is not clean, a clean file stops being clean, or a flagged file gains upstream blame or copy-matched lines, and passes when a flagged file is only rewired or shrunk
 - [ ] #5 Tags provenance-baseline-2026-10-17 (3f7c2725) and provenance-baseline-2026-10-28 (2e3a77ce) exist on origin
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Fetch the pinned upstream baselines (0ac6385a, 40cbd874) and unshallow the clone so blame sees full history.
+2. Write scripts/provenance/scan.test.mjs first: normalisation, shingles, matching, classification, team pattern (temp git repo), ratchet, and the 2e3a77ce baseline regression (opt-in, skipped without the upstream objects).
+3. Implement scan.mjs (normalizeLines, shingleHashes, buildCorpus, matchFile, blameFile, classify, ratchet, scanRef) and cli.mjs (--ref, --paths, --changed, --fail, --csv, --summary, --all), plus config.json and allowlist.txt.
+4. Calibrate against the 2026-10-28 files.csv per file until --ref 2e3a77ce --all gives identical 268, upstream 226, mixed 169, trace 297, clean 1,477, and --summary matches the WP table.
+5. Add pnpm provenance, the vitest include, and .github/workflows/provenance.yml (pull_request, fetch-depth 0, fetch baselines, pnpm provenance --changed --fail).
+6. Tag provenance-baseline-2026-10-17 (3f7c2725) and provenance-baseline-2026-10-28 (2e3a77ce) and push the tags.
+7. pnpm test, check, lint; commit build(provenance): add upstream provenance scanner and PR gate.
+<!-- SECTION:PLAN:END -->
