@@ -3,14 +3,15 @@ id: TASK-10.4
 title: 'WP13: rewrite build config and tooling'
 status: Proposed
 assignee: []
-created_date: '2026-10-17 07:24'
+created_date: 2026-10-17 07:24
+updated_date: '2026-10-28T08:13:00Z'
 labels:
   - licensing
 dependencies:
   - TASK-10.1
 documentation:
-  - docs/research/2026-10-17-upstream-provenance/files.csv
   - docs/specs/2026-10-17-clean-room-relicense.md
+  - docs/research/2026-10-28-upstream-provenance-after-redesign/files.csv
 parent_task_id: TASK-10
 type: chore
 ordinal: 15000

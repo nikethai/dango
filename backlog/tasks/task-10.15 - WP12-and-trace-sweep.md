@@ -3,7 +3,8 @@ id: TASK-10.15
 title: WP12 and trace sweep
 status: Proposed
 assignee: []
-created_date: '2026-10-17 07:24'
+created_date: 2026-10-17 07:24
+updated_date: '2026-10-28T08:14:00Z'
 labels:
   - licensing
 dependencies:
@@ -20,8 +21,8 @@ dependencies:
   - TASK-10.13
   - TASK-10.14
 documentation:
-  - docs/research/2026-10-17-upstream-provenance/files.csv
   - docs/specs/2026-10-17-clean-room-relicense.md
+  - docs/research/2026-10-28-upstream-provenance-after-redesign/files.csv
 parent_task_id: TASK-10
 type: chore
 ordinal: 26000
@@ -30,7 +31,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Most upstream tests (69 files, about 13k lines) disappear with their modules in the earlier packages. What is left, including the integration test harness, needs rebuilding or deleting. The 153 trace files (about 1k lines, mostly boilerplate blame credits to upstream) are reviewed one by one: each flagged line is rewritten, or allowlisted with a reason (plan Task 15).
+WP12 holds 155 test files on 2026-10-28 (about 13.4k upstream lines). The old upstream tests mostly disappear with their modules in the earlier packages. What is left, including the integration test harness, needs rebuilding or deleting. 295 files are trace only (about 1.5k lines); most are new redesign tests that copied a few render helpers from ThreadHistoryDrawer.test.tsx and MessageList.test.tsx. Replace those helpers with one clean shared test helper; review every other flagged line and rewrite it, or allowlist it with a reason (plan Task 15).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
