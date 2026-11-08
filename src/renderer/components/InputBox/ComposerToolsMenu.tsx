@@ -26,7 +26,7 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import { Link } from '@tanstack/react-router'
-import { type FC, type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type FC, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Drawer } from 'vaul'
 import { useKnowledgeBases } from '@/hooks/knowledge-base'
@@ -128,6 +128,17 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
   const { t } = useTranslation()
   const isSmallScreen = useIsSmallScreen()
   const [opened, setOpened] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [menuMaxHeight, setMenuMaxHeight] = useState<number | undefined>(undefined)
+  // The composer sits at the bottom of the window and the menu opens upward from the trigger, so the usable
+  // height is the space above the trigger (not the viewport height). Measured at open time, kept at 240px or more,
+  // and capped at 28rem (448px) like the globals.css dropdown rule this inline value overrides.
+  const onMenuChange = (next: boolean) => {
+    if (next && triggerRef.current) {
+      setMenuMaxHeight(Math.min(448, Math.max(240, triggerRef.current.getBoundingClientRect().top - 16)))
+    }
+    setOpened(next)
+  }
   const closeTools = () => setOpened(false)
   const memoryNode = typeof memorySlot === 'function' ? memorySlot({ closeTools }) : memorySlot
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false)
@@ -201,6 +212,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
 
   const plusButton = (
     <UnstyledButton
+      ref={triggerRef}
       className={cn(toolbarButtonClass, composerToolbarButtonClass(isSmallScreen))}
       aria-label={t('Tools and attachments')}
       aria-expanded={opened}
@@ -329,6 +341,200 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
       </>
     ) : null
 
+  // Tools: web search, Browser / Computer arms, MCP extensions, knowledge bases. Shared by the sheet and the desktop menu.
+  const toolsSection = (
+    <>
+      {(showWeb || showMcp || showKb) && (
+        <>
+          <Menu.Divider />
+          <Menu.Label fw={600}>{t('Tools')}</Menu.Label>
+        </>
+      )}
+
+      {showWeb && (
+        <Menu.Item
+          leftSection={<IconWorldWww size={16} stroke={1.5} />}
+          closeMenuOnClick={false}
+          disabled={!webSearchConfigured && !webBrowsingMode}
+          rightSection={
+            <Switch
+              size="xs"
+              checked={webBrowsingMode}
+              disabled={!webSearchConfigured && !webBrowsingMode}
+              onChange={(e) => onWebBrowsingChange(e.currentTarget.checked)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          }
+          onClick={() => {
+            if (webSearchConfigured || webBrowsingMode) {
+              onWebBrowsingChange(!webBrowsingMode)
+            }
+          }}
+        >
+          <Flex direction="column" gap={2}>
+            <Text size="sm">{t('Web Search')}</Text>
+            {!webSearchConfigured && (
+              <Text size="xs" c="dimmed">
+                {t('Configure in Settings')}
+              </Text>
+            )}
+          </Flex>
+        </Menu.Item>
+      )}
+
+      {showBrowserArm && (
+        <Menu.Item
+          leftSection={<IconBrowser size={16} stroke={1.5} />}
+          closeMenuOnClick={false}
+          disabled={!browserMasterEnabled}
+          rightSection={
+            <Switch
+              size="xs"
+              checked={Boolean(browserArmed)}
+              disabled={!browserMasterEnabled}
+              onChange={(e) => onBrowserArmedChange?.(e.currentTarget.checked)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          }
+          onClick={() => {
+            if (browserMasterEnabled) onBrowserArmedChange?.(!browserArmed)
+          }}
+        >
+          <Flex direction="column" gap={2}>
+            <Text size="sm">{t('Dango Browser')}</Text>
+            <Text size="xs" c="dimmed">
+              {browserMasterEnabled
+                ? t('Isolated browser (not your personal Chrome)')
+                : t('Enable in Settings → Browser Agent')}
+            </Text>
+          </Flex>
+        </Menu.Item>
+      )}
+
+      {showComputerArm && (
+        <Menu.Item
+          leftSection={<IconDeviceDesktop size={16} stroke={1.5} />}
+          closeMenuOnClick={false}
+          disabled={!computerMasterEnabled}
+          rightSection={
+            <Switch
+              size="xs"
+              checked={Boolean(computerArmed)}
+              disabled={!computerMasterEnabled}
+              onChange={(e) => onComputerArmedChange?.(e.currentTarget.checked)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          }
+          onClick={() => {
+            if (computerMasterEnabled) onComputerArmedChange?.(!computerArmed)
+          }}
+        >
+          <Flex direction="column" gap={2}>
+            <Text size="sm">{t('Computer Use')}</Text>
+            <Text size="xs" c="dimmed">
+              {computerMasterEnabled
+                ? t('Screen observe / act with approvals')
+                : t('Enable in Settings → Computer Use')}
+            </Text>
+          </Flex>
+        </Menu.Item>
+      )}
+
+      {showMcp && (
+        <>
+          <Flex justify="space-between" align="center" px="sm" pt="xs">
+            <Text size="xs" fw={600} c="dimmed" style={{ letterSpacing: '-0.01em' }}>
+              {t('Extensions')}
+              {mcpEnabledCount > 0 ? ` · ${mcpEnabledCount}` : ''}
+            </Text>
+            <ActionIcon
+              variant="subtle"
+              size={22}
+              onClick={() => {
+                setOpened(false)
+                navigateToSettings('/mcp')
+              }}
+              aria-label={t('Extension settings')}
+            >
+              <ScalableIcon icon={IconSettings2} size={14} color="var(--chatbox-tint-tertiary)" />
+            </ActionIcon>
+          </Flex>
+          {BUILTIN_MCP_SERVERS.map((server) => (
+            <McpServerRow
+              key={server.id}
+              id={server.id}
+              name={server.name}
+              enabled={mcp.enabledBuiltinServers.includes(server.id)}
+              onEnabledChange={onMcpEnabledChange}
+            />
+          ))}
+          {mcpServers.map((server) => (
+            <McpServerRow
+              key={server.id}
+              id={server.id}
+              name={server.name}
+              enabled={server.enabled}
+              onEnabledChange={onMcpEnabledChange}
+            />
+          ))}
+          {!mcpServers.length && !mcp.enabledBuiltinServers.length && (
+            <Menu.Item component={Link} to="/settings/mcp" onClick={() => setOpened(false)}>
+              {t('Connect an extension')}
+            </Menu.Item>
+          )}
+        </>
+      )}
+
+      {showKb && (
+        <>
+          <Flex justify="space-between" align="center" px="sm" pt="xs">
+            <Text size="xs" fw={600} c="dimmed" style={{ letterSpacing: '-0.01em' }}>
+              {t('Knowledge')}
+            </Text>
+            <ActionIcon
+              variant="subtle"
+              size={22}
+              component={Link}
+              to="/settings/knowledge-base"
+              onClick={() => setOpened(false)}
+              aria-label={t('Knowledge Base Settings')}
+            >
+              <ScalableIcon icon={IconVocabulary} size={14} color="var(--chatbox-tint-tertiary)" />
+            </ActionIcon>
+          </Flex>
+          {knowledgeBases?.map((kb) => (
+            <Menu.Item
+              key={kb.id}
+              leftSection={<IconFile size={14} stroke={1.5} />}
+              rightSection={
+                kb.id === knowledgeBaseId ? <IconCheck size={14} color="var(--chatbox-tint-brand)" /> : null
+              }
+              onClick={() => {
+                if (kb.id === knowledgeBaseId) {
+                  onSelectKnowledgeBase?.(null)
+                } else {
+                  onSelectKnowledgeBase?.(kb)
+                }
+              }}
+            >
+              <Text size="sm" c={kb.id === knowledgeBaseId ? 'chatbox-brand' : undefined}>
+                {kb.name}
+              </Text>
+            </Menu.Item>
+          ))}
+          {knowledgeBases?.length === 0 && (
+            <Menu.Item component={Link} to="/settings/knowledge-base" onClick={() => setOpened(false)}>
+              {t('Create')}
+            </Menu.Item>
+          )}
+          {knowledgeBaseId != null && (
+            <Menu.Item onClick={() => onSelectKnowledgeBase?.(null)}>{t('Clear selection')}</Menu.Item>
+          )}
+        </>
+      )}
+    </>
+  )
+
   if (isSmallScreen) {
     return (
       <>
@@ -383,194 +589,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
                     </>
                   ) : null}
 
-                  {(showWeb || showMcp || showKb) && (
-                    <>
-                      <Menu.Divider />
-                      <Menu.Label fw={600}>{t('Tools')}</Menu.Label>
-                    </>
-                  )}
-
-                  {showWeb && (
-                    <Menu.Item
-                      leftSection={<IconWorldWww size={16} stroke={1.5} />}
-                      closeMenuOnClick={false}
-                      disabled={!webSearchConfigured && !webBrowsingMode}
-                      rightSection={
-                        <Switch
-                          size="xs"
-                          checked={webBrowsingMode}
-                          disabled={!webSearchConfigured && !webBrowsingMode}
-                          onChange={(e) => onWebBrowsingChange(e.currentTarget.checked)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      }
-                      onClick={() => {
-                        if (webSearchConfigured || webBrowsingMode) {
-                          onWebBrowsingChange(!webBrowsingMode)
-                        }
-                      }}
-                    >
-                      <Flex direction="column" gap={2}>
-                        <Text size="sm">{t('Web Search')}</Text>
-                        {!webSearchConfigured && (
-                          <Text size="xs" c="dimmed">
-                            {t('Configure in Settings')}
-                          </Text>
-                        )}
-                      </Flex>
-                    </Menu.Item>
-                  )}
-
-                  {showBrowserArm && (
-                    <Menu.Item
-                      leftSection={<IconBrowser size={16} stroke={1.5} />}
-                      closeMenuOnClick={false}
-                      disabled={!browserMasterEnabled}
-                      rightSection={
-                        <Switch
-                          size="xs"
-                          checked={Boolean(browserArmed)}
-                          disabled={!browserMasterEnabled}
-                          onChange={(e) => onBrowserArmedChange?.(e.currentTarget.checked)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      }
-                      onClick={() => {
-                        if (browserMasterEnabled) onBrowserArmedChange?.(!browserArmed)
-                      }}
-                    >
-                      <Flex direction="column" gap={2}>
-                        <Text size="sm">{t('Dango Browser')}</Text>
-                        <Text size="xs" c="dimmed">
-                          {browserMasterEnabled
-                            ? t('Isolated browser (not your personal Chrome)')
-                            : t('Enable in Settings → Browser Agent')}
-                        </Text>
-                      </Flex>
-                    </Menu.Item>
-                  )}
-
-                  {showComputerArm && (
-                    <Menu.Item
-                      leftSection={<IconDeviceDesktop size={16} stroke={1.5} />}
-                      closeMenuOnClick={false}
-                      disabled={!computerMasterEnabled}
-                      rightSection={
-                        <Switch
-                          size="xs"
-                          checked={Boolean(computerArmed)}
-                          disabled={!computerMasterEnabled}
-                          onChange={(e) => onComputerArmedChange?.(e.currentTarget.checked)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      }
-                      onClick={() => {
-                        if (computerMasterEnabled) onComputerArmedChange?.(!computerArmed)
-                      }}
-                    >
-                      <Flex direction="column" gap={2}>
-                        <Text size="sm">{t('Computer Use')}</Text>
-                        <Text size="xs" c="dimmed">
-                          {computerMasterEnabled
-                            ? t('Screen observe / act with approvals')
-                            : t('Enable in Settings → Computer Use')}
-                        </Text>
-                      </Flex>
-                    </Menu.Item>
-                  )}
-
-                  {showMcp && (
-                    <>
-                      <Flex justify="space-between" align="center" px="sm" pt="xs">
-                        <Text size="xs" fw={600} c="dimmed" style={{ letterSpacing: '-0.01em' }}>
-                          {t('Extensions')}
-                          {mcpEnabledCount > 0 ? ` · ${mcpEnabledCount}` : ''}
-                        </Text>
-                        <ActionIcon
-                          variant="subtle"
-                          size={22}
-                          onClick={() => {
-                            setOpened(false)
-                            navigateToSettings('/mcp')
-                          }}
-                          aria-label={t('Extension settings')}
-                        >
-                          <ScalableIcon icon={IconSettings2} size={14} color="var(--chatbox-tint-tertiary)" />
-                        </ActionIcon>
-                      </Flex>
-                      {BUILTIN_MCP_SERVERS.map((server) => (
-                        <McpServerRow
-                          key={server.id}
-                          id={server.id}
-                          name={server.name}
-                          enabled={mcp.enabledBuiltinServers.includes(server.id)}
-                          onEnabledChange={onMcpEnabledChange}
-                        />
-                      ))}
-                      {mcpServers.map((server) => (
-                        <McpServerRow
-                          key={server.id}
-                          id={server.id}
-                          name={server.name}
-                          enabled={server.enabled}
-                          onEnabledChange={onMcpEnabledChange}
-                        />
-                      ))}
-                      {!mcpServers.length && !mcp.enabledBuiltinServers.length && (
-                        <Menu.Item component={Link} to="/settings/mcp" onClick={() => setOpened(false)}>
-                          {t('Connect an extension')}
-                        </Menu.Item>
-                      )}
-                    </>
-                  )}
-
-                  {showKb && (
-                    <>
-                      <Flex justify="space-between" align="center" px="sm" pt="xs">
-                        <Text size="xs" fw={600} c="dimmed" style={{ letterSpacing: '-0.01em' }}>
-                          {t('Knowledge')}
-                        </Text>
-                        <ActionIcon
-                          variant="subtle"
-                          size={22}
-                          component={Link}
-                          to="/settings/knowledge-base"
-                          onClick={() => setOpened(false)}
-                          aria-label={t('Knowledge Base Settings')}
-                        >
-                          <ScalableIcon icon={IconVocabulary} size={14} color="var(--chatbox-tint-tertiary)" />
-                        </ActionIcon>
-                      </Flex>
-                      {knowledgeBases?.map((kb) => (
-                        <Menu.Item
-                          key={kb.id}
-                          leftSection={<IconFile size={14} stroke={1.5} />}
-                          rightSection={
-                            kb.id === knowledgeBaseId ? <IconCheck size={14} color="var(--chatbox-tint-brand)" /> : null
-                          }
-                          onClick={() => {
-                            if (kb.id === knowledgeBaseId) {
-                              onSelectKnowledgeBase?.(null)
-                            } else {
-                              onSelectKnowledgeBase?.(kb)
-                            }
-                          }}
-                        >
-                          <Text size="sm" c={kb.id === knowledgeBaseId ? 'chatbox-brand' : undefined}>
-                            {kb.name}
-                          </Text>
-                        </Menu.Item>
-                      ))}
-                      {knowledgeBases?.length === 0 && (
-                        <Menu.Item component={Link} to="/settings/knowledge-base" onClick={() => setOpened(false)}>
-                          {t('Create')}
-                        </Menu.Item>
-                      )}
-                      {knowledgeBaseId != null && (
-                        <Menu.Item onClick={() => onSelectKnowledgeBase?.(null)}>{t('Clear selection')}</Menu.Item>
-                      )}
-                    </>
-                  )}
+                  {toolsSection}
 
                   {modeSection}
 
@@ -652,7 +671,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
     <>
       <Menu
         opened={opened}
-        onChange={setOpened}
+        onChange={onMenuChange}
         trigger="click"
         position="top-start"
         shadow="md"
@@ -663,7 +682,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
         transitionProps={{ transition: 'pop', duration: 160 }}
       >
         <Menu.Target>{plusButton}</Menu.Target>
-        <Menu.Dropdown className="composer-tools-menu">
+        <Menu.Dropdown className="composer-tools-menu" style={{ maxHeight: menuMaxHeight }}>
           <Menu.Label fw={600}>{t('Attach')}</Menu.Label>
           <Menu.Item
             leftSection={<IconPhoto size={16} stroke={1.5} />}
@@ -699,42 +718,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
               <div className="composer-tools-memory-slot px-1 pb-1">{memoryNode}</div>
             </>
           ) : null}
-          {(showWeb || showMcp || showKb) && (
-            <>
-              <Menu.Divider />
-              <Menu.Label fw={600}>{t('Tools')}</Menu.Label>
-            </>
-          )}
-          {showWeb && (
-            <Menu.Item
-              leftSection={<IconWorldWww size={16} stroke={1.5} />}
-              closeMenuOnClick={false}
-              disabled={!webSearchConfigured && !webBrowsingMode}
-              rightSection={
-                <Switch
-                  size="xs"
-                  checked={webBrowsingMode}
-                  disabled={!webSearchConfigured && !webBrowsingMode}
-                  onChange={(e) => onWebBrowsingChange(e.currentTarget.checked)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              }
-              onClick={() => {
-                if (webSearchConfigured || webBrowsingMode) {
-                  onWebBrowsingChange(!webBrowsingMode)
-                }
-              }}
-            >
-              <Flex direction="column" gap={2}>
-                <Text size="sm">{t('Web Search')}</Text>
-                {!webSearchConfigured && (
-                  <Text size="xs" c="dimmed">
-                    {t('Configure in Settings')}
-                  </Text>
-                )}
-              </Flex>
-            </Menu.Item>
-          )}
+          {toolsSection}
           {modeSection}
           <Menu.Divider />
           <Menu.Label fw={600}>{t('Chat')}</Menu.Label>
