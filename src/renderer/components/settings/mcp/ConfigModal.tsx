@@ -122,7 +122,9 @@ const ConfigForm: FC<{
 
   return (
     <form ref={formRef} onSubmit={form.onSubmit(handleSubmit)}>
-      <Stack gap="md">
+      {/* Fixed-height scroll region: the test result scrolls inside it, so the footer below never moves.
+          (A max-height alone would still let the footer drift until the content reached the cap.) */}
+      <Stack gap="md" data-testid="mcp-config-fields" style={{ height: 'min(60vh, 28rem)', overflowY: 'auto' }}>
         <TextInput label={t('Name')} data-autofocus required {...form.getInputProps('name')} />
         <Radio.Group
           required
@@ -167,6 +169,8 @@ const ConfigForm: FC<{
           </>
         )}
         {testingResult && <TestingResult result={testingResult} />}
+      </Stack>
+      <Stack gap="md" mt="md">
         <Group justify="space-between">
           {props.mode === 'edit' ? (
             <Popover opened={deletePopoverOpened} onChange={setDeletePopoverOpened} withArrow>

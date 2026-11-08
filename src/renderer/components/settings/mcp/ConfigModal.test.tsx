@@ -90,4 +90,18 @@ describe('MCP ConfigModal Save gate', () => {
     await screen.findByText('read_file')
     await waitFor(() => expect(isLocked()).toBe(false))
   })
+
+  it('keeps the Test/Save footer outside the scrolling field region', async () => {
+    serverState.fail = true
+    renderModal()
+    await screen.findByRole('dialog')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test' }))
+    const result = await screen.findByText('connect ECONNREFUSED')
+
+    const fields = screen.getByTestId('mcp-config-fields')
+    expect(fields.contains(result)).toBe(true)
+    expect(fields.contains(screen.getByRole('button', { name: 'Test' }))).toBe(false)
+    expect(fields.contains(saveButton())).toBe(false)
+  })
 })
