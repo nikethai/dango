@@ -62,6 +62,12 @@ export function AdaptiveModal({
           <Drawer.Overlay className="fixed inset-0 bg-chatbox-background-mask-overlay" />
           <Drawer.Content
             {...drawerContentProps}
+            // vaul cancels Radix's initial focus (autoFocus=false), leaving the focus trap without an anchor so Tab
+            // escapes to the page behind. Focus the sheet itself: Tab then cycles inside it, and no soft keyboard opens.
+            onOpenAutoFocus={(e) => {
+              e.preventDefault()
+              ;(e.currentTarget as HTMLElement | null)?.focus()
+            }}
             className="flex flex-col h-fit fixed bottom-0 left-0 right-0 outline-none bg-chatbox-background-primary rounded-t-lg"
           >
             <Drawer.Handle />

@@ -3,7 +3,7 @@
  */
 
 import { MantineProvider } from '@mantine/core'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
 import { AdaptiveModal } from './AdaptiveModal'
 
@@ -150,5 +150,13 @@ describe('AdaptiveModal mobile dialog semantics', () => {
     expect(title.classList.contains('sr-only')).toBe(true)
     expect(dialog.getAttribute('aria-labelledby')).toBe(title.id)
     expect(dialog.getAttribute('aria-describedby')).toBeNull()
+  })
+
+  it('moves focus into the sheet on open so Tab stays trapped inside it', async () => {
+    renderMobileModal({ ariaLabel: 'Welcome to Dango' })
+
+    const dialog = screen.getByRole('dialog', { name: 'Welcome to Dango' })
+
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
   })
 })
