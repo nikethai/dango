@@ -42,7 +42,7 @@ const ThreadNameEdit = NiceModal.create((props: { sessionId: string; threadId: s
 
   return (
     <AdaptiveModal opened={modal.visible} onClose={onClose} centered title={t('Edit Thread Name')}>
-      <Input autoFocus={!isSmallScreen} placeholder="Thread Name" value={threadName} onChange={onContentInput} />
+      <Input autoFocus={!isSmallScreen} placeholder="Thread name" value={threadName} onChange={onContentInput} />
 
       <AdaptiveModal.Actions>
         <AdaptiveModal.CloseButton onClick={onClose} />

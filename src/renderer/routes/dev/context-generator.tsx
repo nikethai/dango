@@ -194,7 +194,7 @@ function ContextGeneratorPage() {
         <Group justify="space-between" align="center">
           <div>
             <Group gap="xs" mb="xs">
-              <Title order={2}>Context Generator</Title>
+              <Title order={2}>Context generator</Title>
               <Badge variant="light" color="blue">
                 Dev Tool
               </Badge>
@@ -207,23 +207,23 @@ function ContextGeneratorPage() {
 
         <Paper withBorder shadow="xs" radius="md" p="md">
           <Stack gap="md">
-            <Title order={4}>Generation Settings</Title>
+            <Title order={4}>Generation settings</Title>
 
             <Group gap="lg" align="flex-end">
               <Select
-                label="Generation Mode"
+                label="Generation mode"
                 value={generationMode}
                 onChange={(v) => setGenerationMode((v as 'count' | 'tokens') || 'count')}
                 data={[
-                  { value: 'count', label: 'By Message Count' },
-                  { value: 'tokens', label: 'By Target Tokens' },
+                  { value: 'count', label: 'By message count' },
+                  { value: 'tokens', label: 'By target tokens' },
                 ]}
                 w={200}
               />
 
               {generationMode === 'count' ? (
                 <NumberInput
-                  label="Number of Messages"
+                  label="Number of messages"
                   value={messageCount}
                   onChange={(v) => setMessageCount(typeof v === 'number' ? v : 10)}
                   min={1}
@@ -232,7 +232,7 @@ function ContextGeneratorPage() {
                 />
               ) : (
                 <NumberInput
-                  label="Target Token Count"
+                  label="Target token count"
                   value={targetTokens}
                   onChange={(v) => setTargetTokens(typeof v === 'number' ? v : 4000)}
                   min={100}
@@ -243,7 +243,7 @@ function ContextGeneratorPage() {
               )}
 
               <Select
-                label="Message Length"
+                label="Message length"
                 value={lengthPreset}
                 onChange={(v) => setLengthPreset((v as MessageLengthPreset) || 'medium')}
                 data={[
@@ -256,7 +256,7 @@ function ContextGeneratorPage() {
               />
 
               <Switch
-                label="Include System Prompt"
+                label="Include system prompt"
                 checked={includeSystemPrompt}
                 onChange={(e) => setIncludeSystemPrompt(e.currentTarget.checked)}
               />

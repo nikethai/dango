@@ -140,7 +140,7 @@ export function RouteComponent() {
   return (
     <SettingsPage>
       <SettingsPageHeader
-        title={t('Web Search')}
+        title={t('Web search providers')}
         description={t('Choose how the assistant looks up live information on the web.')}
       />
 
@@ -162,7 +162,7 @@ export function RouteComponent() {
               <AdaptiveSelect
                 comboboxProps={{ withinPortal: true, withArrow: true }}
                 data={[
-                  { value: 'bing', label: 'Bing Search (Free)' },
+                  { value: 'bing', label: 'Bing search (free)' },
                   { value: 'duckduckgo', label: 'DuckDuckGo Search (Free)' },
                   { value: 'serper', label: 'Serper (Google Search API)' },
                   { value: 'google', label: 'Google Custom Search API' },

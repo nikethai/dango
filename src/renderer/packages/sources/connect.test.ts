@@ -561,17 +561,17 @@ describe('OAuth kinds', () => {
     expect(getSource(off.sourceId)?.backgroundReview).toBe(false)
   })
 
-  it('a missing OAuth client ID becomes a translated error that points at Integrations', async () => {
+  it('a missing OAuth client ID becomes a translated error that points at Accounts', async () => {
     vi.mocked(startConnectorOAuth).mockRejectedValue(
       new Error(
-        'OAuth client ID is required. Add your app client id under Advanced, or set it in Integrations settings.'
+        'OAuth client ID is required. Add your app client id under Advanced, or set it in Settings → Accounts.'
       )
     )
     const error = await pickSource('gmail').catch((e) => e)
     expect(error).toBeInstanceOf(OAuthClientIdError)
     expect(isOAuthClientIdError(error)).toBe(true)
-    expect(error.message).toBe('Add an OAuth client ID in Integrations.')
-    expect(error.actionLabel).toBe('Open Integrations')
+    expect(error.message).toBe('Add an OAuth client ID in Settings → Accounts.')
+    expect(error.actionLabel).toBe('Open Accounts')
     expect(error.to).toBe('/settings/integrations')
   })
 

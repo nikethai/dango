@@ -115,7 +115,7 @@ export function DocumentParserSettings({ showTitle = true }: DocumentParserSetti
     <>
       {showTitle && (
         <SettingsPageHeader
-          title={t('Document Parser')}
+          title={t('Document parser')}
           description={t('How attachments are parsed before they reach the model.')}
         />
       )}

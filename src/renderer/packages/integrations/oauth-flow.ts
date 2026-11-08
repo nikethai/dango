@@ -38,7 +38,7 @@ export async function startConnectorOAuth(options: {
     ''
   if (!clientId && connector.oauth.requiresClientId) {
     throw new Error(
-      'OAuth client ID is required. Add your app client id under Advanced, or set it in Integrations settings.'
+      'OAuth client ID is required. Add your app client id under Advanced, or set it in Settings → Accounts.'
     )
   }
   const redirectUri =

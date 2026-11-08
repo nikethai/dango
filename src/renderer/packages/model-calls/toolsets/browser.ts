@@ -82,7 +82,7 @@ async function ensureSession(opts: BrowserAgentToolOptions) {
   if (!settings.enabled) {
     return {
       error: 'NOT_ENABLED',
-      message: 'Browser agent is disabled. Enable it in Settings → Browser Agent, then arm this chat.',
+      message: 'Browser agent is disabled. Enable it in Settings → Browser agent, then arm this chat.',
     }
   }
 

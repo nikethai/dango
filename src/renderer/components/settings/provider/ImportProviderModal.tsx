@@ -181,7 +181,7 @@ export function ImportProviderModal({ opened, onClose, importedConfig, existingP
         {/* Form fields */}
         <Box>
           <Flex gap="md" mb="md">
-            <ReadOnlyInput label="Provider Name" value={providerName} style={{ flex: 1 }} />
+            <ReadOnlyInput label="Provider name" value={providerName} style={{ flex: 1 }} />
             <ReadOnlyInput label="ID" value={providerId} style={{ flex: 1 }} />
           </Flex>
 
@@ -192,7 +192,7 @@ export function ImportProviderModal({ opened, onClose, importedConfig, existingP
             </Flex>
           )}
 
-          <ReadOnlyInput label="API Key" value={apiKey} mb="md" />
+          <ReadOnlyInput label="API key" value={apiKey} mb="md" />
 
           {/* Model list */}
           {importedConfig?.models && importedConfig.models.length > 0 && (

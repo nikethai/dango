@@ -132,7 +132,7 @@ function StorageViewerPage() {
           <div>
             <Group gap="xs" mb="xs">
               <IconDatabase size={22} />
-              <Title order={2}>Storage Explorer</Title>
+              <Title order={2}>Storage explorer</Title>
               <Badge variant="light" color="blue">
                 {entries.length} entries
               </Badge>
@@ -240,7 +240,7 @@ function StorageViewerPage() {
         <Paper withBorder shadow="xs" radius="md" p="md">
           <Group gap="xs" mb="md">
             <IconFile size={18} />
-            <Text fw={600}>Blob Store</Text>
+            <Text fw={600}>Blob store</Text>
             <Badge color="gray" variant="light">
               {blobKeys.length}
             </Badge>

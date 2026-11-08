@@ -279,7 +279,7 @@ describe('message actions are checked before sending (cost and abilities)', () =
   it('Reply Again Below over the limit asks; Cancel does not generate', async () => {
     chat.session = chatWith(PRICEY)
     renderMessage(question)
-    fireEvent.click(await screen.findByRole('button', { name: 'Reply Again Below' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Reply again below' }))
     await screen.findByRole('dialog', { name: /This run may cost about/ })
     act(() => fireEvent.click(screen.getByRole('button', { name: 'Cancel' })))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
@@ -289,7 +289,7 @@ describe('message actions are checked before sending (cost and abilities)', () =
   it('Reply Again Below with Agent Mode on and a model without tools does not run', async () => {
     chat.session = chatWith(NO_TOOLS, { agentMode: true })
     renderMessage(question)
-    fireEvent.click(await screen.findByRole('button', { name: 'Reply Again Below' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Reply again below' }))
     await waitFor(() => expect(toastActions.add).toHaveBeenCalledWith(expect.stringContaining("can't use tools.")))
     expect(generateMore).not.toHaveBeenCalled()
   })

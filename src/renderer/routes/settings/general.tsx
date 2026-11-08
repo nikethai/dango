@@ -37,7 +37,7 @@ export function RouteComponent() {
   return (
     <SettingsPage>
       <SettingsPageHeader
-        title={t('General Settings')}
+        title={t('General')}
         description={t('Language, theme, data, and system preferences for Dango.')}
       />
 

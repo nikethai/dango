@@ -31,7 +31,7 @@ export function IntegrationsSettingsPage() {
   return (
     <SettingsPage>
       <SettingsPageHeader
-        title={t('Integrations')}
+        title={t('Accounts')}
         description={t('Connected accounts for AI tools — multi-account, defaults, secure secrets.')}
         actions={
           accounts.length > 0 ? (

@@ -39,7 +39,7 @@ export function resolveAccount(catalog: IntegrationsCatalog, ctx: ResolveContext
       return {
         ok: false,
         code: 'not_found',
-        message: 'Selected account was not found. Pick another in Integrations or chat chips.',
+        message: 'Selected account was not found. Pick another in Settings → Accounts or chat chips.',
       }
     }
 
@@ -48,7 +48,7 @@ export function resolveAccount(catalog: IntegrationsCatalog, ctx: ResolveContext
       return {
         ok: false,
         code: 'disabled',
-        message: 'Selected account is disabled or revoked. Reconnect it in Integrations.',
+        message: 'Selected account is disabled or revoked. Reconnect it in Settings → Accounts.',
         candidates: matched,
       }
     }
@@ -64,7 +64,7 @@ export function resolveAccount(catalog: IntegrationsCatalog, ctx: ResolveContext
       return {
         ok: false,
         code: 'needs_reauth',
-        message: `Reconnect “${account.label}” in Integrations.`,
+        message: `Reconnect “${account.label}” in Settings → Accounts.`,
         candidates: [account],
       }
     }
@@ -78,7 +78,7 @@ export function resolveAccount(catalog: IntegrationsCatalog, ctx: ResolveContext
     return {
       ok: false,
       code: 'not_connected',
-      message: `No connected account for ${name}. Connect one in Settings → Integrations.`,
+      message: `No connected account for ${name}. Connect one in Settings → Accounts.`,
     }
   }
 
@@ -88,7 +88,7 @@ export function resolveAccount(catalog: IntegrationsCatalog, ctx: ResolveContext
       return {
         ok: false,
         code: 'needs_reauth',
-        message: `Reconnect “${account.label}” in Integrations.`,
+        message: `Reconnect “${account.label}” in Settings → Accounts.`,
         candidates: [account],
       }
     }
@@ -102,7 +102,7 @@ export function resolveAccount(catalog: IntegrationsCatalog, ctx: ResolveContext
       return {
         ok: false,
         code: 'needs_reauth',
-        message: `Reconnect “${account.label}” in Integrations.`,
+        message: `Reconnect “${account.label}” in Settings → Accounts.`,
         candidates: [account],
       }
     }

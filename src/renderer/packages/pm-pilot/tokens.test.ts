@@ -77,7 +77,7 @@ describe('getFreshToken', () => {
 
     expect(result.ok).toBe(false)
     if (result.ok) return
-    expect(result.message).toMatch(/Reconnect in Integrations/)
+    expect(result.message).toMatch(/Reconnect in Settings → Accounts/)
     expect(markStatus).toHaveBeenCalledWith('acc-1', 'needs_reauth', result.message)
   })
 
