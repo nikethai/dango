@@ -5,7 +5,7 @@ status: Now
 assignee:
   - '@claude'
 created_date: 2026-10-17 07:24
-updated_date: '2026-11-08T14:50:00Z'
+updated_date: '2026-11-08T15:22:00Z'
 labels:
   - licensing
 dependencies: []
@@ -26,9 +26,9 @@ Every later step needs one repeatable definition of "clean", and a way to stop n
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 pnpm provenance classifies files as identical, upstream, mixed, trace or clean using blame -w -M -C -C plus 4-line copy matching against the pinned baseline refs (fe801920, 40cbd874, 0ac6385a)
-- [ ] #2 Run with --ref 2e3a77ce --all, it reproduces the 2026-10-28 audit counts: identical 268, upstream 226, mixed 169, trace 297, clean 1,477
-- [ ] #3 The team author pattern in config.json includes noreply@anthropic.com, and a line whose commit is reachable from a baseline counts as upstream whatever its author
+- [x] #1 pnpm provenance classifies files as identical, upstream, mixed, trace or clean using blame -w -M -C -C plus 4-line copy matching against the pinned baseline refs (fe801920, 40cbd874, 0ac6385a)
+- [x] #2 Run with --ref 2e3a77ce --all, it reproduces the 2026-10-28 audit counts: identical 268, upstream 226, mixed 169, trace 297, clean 1,477
+- [x] #3 The team author pattern in config.json includes noreply@anthropic.com, and a line whose commit is reachable from a baseline counts as upstream whatever its author
 - [ ] #4 A pull_request workflow runs pnpm provenance --changed --fail as a ratchet against the merge base: it fails when a new file is not clean, a clean file stops being clean, or a flagged file gains upstream blame or copy-matched lines, and passes when a flagged file is only rewired or shrunk
 - [ ] #5 Tags provenance-baseline-2026-10-17 (3f7c2725) and provenance-baseline-2026-10-28 (2e3a77ce) exist on origin
 <!-- AC:END -->
@@ -44,3 +44,21 @@ Every later step needs one repeatable definition of "clean", and a way to stop n
 6. Tag provenance-baseline-2026-10-17 (3f7c2725) and provenance-baseline-2026-10-28 (2e3a77ce) and push the tags.
 7. pnpm test, check, lint; commit build(provenance): add upstream provenance scanner and PR gate.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented scripts/provenance (scan.mjs, cli.mjs, config.json, allowlist.txt, scan.test.mjs), pnpm provenance, the vitest include and .github/workflows/provenance.yml.
+
+Evidence:
+- Full scan at 2e3a77ce --all: identical 268, upstream 226, mixed 169, trace 297, clean 1,477. Compared file by file with the 2026-10-28 files.csv: 0 class, 0 blame-count and 0 line-estimate mismatches across all 2,284 in-scope files.
+- pnpm provenance --ref 2e3a77ce --summary prints the 16 WPs of the audit table: 951 files, 79,699 lines.
+- PROVENANCE_REGRESSION=1 vitest run scripts/provenance: 21 passed, regression 512 s.
+- pnpm provenance --changed --fail on this branch passes (new files clean; package.json and vitest.config.mts edited but no upstream lines added).
+- Throwaway commit authored as noreply@anthropic.com: a new file with upstream code, upstream lines appended to flagged parser.ts and to clean settingsNavModel.ts all FAIL (new file upstream; copy-matched 37 to 65; clean to mixed), exit 1.
+- pnpm test: only tray-icons.test.ts fails (sharp not installable here, same as main); pnpm check 36, pnpm lint 9, unchanged.
+
+Deviation: the baseline regression test is opt-in (PROVENANCE_REGRESSION=1) as well as skipped without the upstream objects, so pnpm test stays fast where the upstream refs are fetched.
+
+Open: AC #4 is verified locally only; check it after the workflow runs on a PR. AC #5: pushing the tags from this session was refused (HTTP 403 on tag refs); the maintainer pushes them.
+<!-- SECTION:NOTES:END -->
