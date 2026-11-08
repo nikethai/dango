@@ -131,10 +131,11 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const [menuMaxHeight, setMenuMaxHeight] = useState<number | undefined>(undefined)
   // The composer sits at the bottom of the window and the menu opens upward from the trigger, so the usable
-  // height is the space above the trigger (not the viewport height). Measured at open time.
+  // height is the space above the trigger (not the viewport height). Measured at open time, kept at 240px or more,
+  // and capped at 28rem (448px) like the globals.css dropdown rule this inline value overrides.
   const onMenuChange = (next: boolean) => {
     if (next && triggerRef.current) {
-      setMenuMaxHeight(Math.max(240, triggerRef.current.getBoundingClientRect().top - 16))
+      setMenuMaxHeight(Math.min(448, Math.max(240, triggerRef.current.getBoundingClientRect().top - 16)))
     }
     setOpened(next)
   }
@@ -681,7 +682,7 @@ const ComposerToolsMenu: FC<ComposerToolsMenuProps> = ({
         transitionProps={{ transition: 'pop', duration: 160 }}
       >
         <Menu.Target>{plusButton}</Menu.Target>
-        <Menu.Dropdown className="composer-tools-menu overflow-y-auto" style={{ maxHeight: menuMaxHeight }}>
+        <Menu.Dropdown className="composer-tools-menu" style={{ maxHeight: menuMaxHeight }}>
           <Menu.Label fw={600}>{t('Attach')}</Menu.Label>
           <Menu.Item
             leftSection={<IconPhoto size={16} stroke={1.5} />}

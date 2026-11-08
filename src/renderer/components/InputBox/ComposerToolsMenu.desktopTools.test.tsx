@@ -57,6 +57,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   h.flags.mcp = true
   h.flags.knowledgeBase = true
 })
@@ -113,5 +114,21 @@ describe('ComposerToolsMenu desktop tools rows', () => {
     expect(menu.textContent).not.toContain('Computer Use')
     expect(menu.textContent).not.toContain('Extensions')
     expect(menu.textContent).not.toContain('Knowledge')
+  })
+
+  it('caps the menu height at 28rem in a tall window', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 2000 } as DOMRect)
+    renderDesktopMenu()
+    const menu = await screen.findByRole('menu')
+
+    expect(menu.style.maxHeight).toBe('448px')
+  })
+
+  it('keeps a 240px floor when there is little space above the trigger', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 100 } as DOMRect)
+    renderDesktopMenu()
+    const menu = await screen.findByRole('menu')
+
+    expect(menu.style.maxHeight).toBe('240px')
   })
 })
