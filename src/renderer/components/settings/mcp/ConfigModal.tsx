@@ -34,7 +34,7 @@ const TestingResult: FC<{ result: ConnectionTestingResult }> = ({ result }) => {
   if (result.error) {
     return (
       <Paper withBorder p="md" mt="md">
-        <Text size="sm" c="chatbox-error" className="whitespace-pre-line overflow-x-auto">
+        <Text size="sm" c="chatbox-error" className="whitespace-pre-line break-words [overflow-wrap:anywhere]">
           {result.error.message}
         </Text>
         {result.error.message.includes('ENOENT') && result.config.transport.type === 'stdio' && (
@@ -166,6 +166,7 @@ const ConfigForm: FC<{
             />
           </>
         )}
+        {testingResult && <TestingResult result={testingResult} />}
         <Group justify="space-between">
           {props.mode === 'edit' ? (
             <Popover opened={deletePopoverOpened} onChange={setDeletePopoverOpened} withArrow>
@@ -207,7 +208,7 @@ const ConfigForm: FC<{
             <Button variant="outline" onClick={testConnection} loading={testing} disabled={testing}>
               {t('Test')}
             </Button>
-            {props.mode === 'edit' || testingResult ? (
+            {props.mode === 'edit' || (testingResult && !testingResult.error) ? (
               <Button type="submit">{t('Save')}</Button>
             ) : (
               <Tooltip label={t('Please test before saving')} withArrow zIndex={3000}>
@@ -218,7 +219,6 @@ const ConfigForm: FC<{
             )}
           </Group>
         </Group>
-        {testingResult && <TestingResult result={testingResult} />}
       </Stack>
     </form>
   )
