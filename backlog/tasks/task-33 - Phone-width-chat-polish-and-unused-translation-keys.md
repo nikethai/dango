@@ -3,8 +3,8 @@ id: TASK-33
 title: Phone-width chat polish and unused translation keys
 status: Ideas
 assignee: []
-created_date: '2026-10-19 18:31'
-updated_date: '2026-10-21 05:31'
+created_date: 2026-10-19 18:31
+updated_date: '2026-11-08T15:34:00Z'
 labels:
   - design
 dependencies: []
@@ -29,4 +29,6 @@ At 375 px the last message's floating action row sits half behind the composer, 
 Slice 06c review: five en keys used by 6b's ComposerToolsMenu Mode section are missing from en/translation.json (fallback shows English, harmless).
 
 Slice 09 (phone layout): at 375 px the sidebar no longer opens on load (no sidebar at phone; bottom tab bar instead) and the action row clears the composer in a short chat. Still open: the composer's model name truncates to one letter, the thinking-level chevron overlaps its label, and the scope pill and model chips are under 44 px.
+
+2026-11-08 board check (main da41b5f): still open after #117 (sentence-case labels). en/translation.json still has the unused 'Export Chat' and 'Delete Current Session' keys and mixes Summarise and Summarize (two each); the phone-width model-name truncation, thinking chevron overlap and sub-44 px scope pill and model chips are unchanged.
 <!-- SECTION:NOTES:END -->
