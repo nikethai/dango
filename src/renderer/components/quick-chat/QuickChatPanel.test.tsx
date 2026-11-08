@@ -109,7 +109,7 @@ describe('QuickChatPanel', () => {
     expect(foot.hasAttribute('data-tauri-drag-region')).toBe(true)
     expect(within(foot).getByText('Esc').className).toContain('dg-kbd')
     expect(within(foot).getByRole('button', { name: 'Rewrite' })).toBeTruthy()
-    const cont = within(foot).getByRole('button', { name: 'Continue in Chat' }) as HTMLButtonElement
+    const cont = within(foot).getByRole('button', { name: 'Continue in chat' }) as HTMLButtonElement
     expect(cont.disabled).toBe(true)
     expect(container.querySelector('.dg.dg-qc.dg-qc--window')).toBeTruthy()
   })
@@ -125,7 +125,7 @@ describe('QuickChatPanel', () => {
     expect(screen.getByText('From approved knowledge').className).toContain('dg-chip--green')
     fireEvent.click(screen.getByRole('button', { name: 'Source 2' }))
     expect(h.openLink).toHaveBeenCalledWith('https://example.com/2')
-    expect((screen.getByRole('button', { name: 'Continue in Chat' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'Continue in chat' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('shows the device-only line under a finished answer whose web and outside tools were off', () => {

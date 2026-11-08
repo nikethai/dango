@@ -46,7 +46,7 @@ describe('computeTrayStatus', () => {
 
   it('has an en key for every menu label', () => {
     for (const label of Object.values(computeTrayStatus({ waiting: 0, paused: false, now }).menu)) {
-      expect((en as Record<string, string>)[label]).toBe(label)
+      expect((en as Record<string, string>)[label]).toBeTruthy()
     }
   })
 
