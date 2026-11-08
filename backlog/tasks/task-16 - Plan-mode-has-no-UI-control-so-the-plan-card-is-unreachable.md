@@ -1,10 +1,10 @@
 ---
 id: TASK-16
-title: 'Plan mode has no UI control, so the plan card is unreachable'
+title: Plan mode has no UI control, so the plan card is unreachable
 status: Ideas
 assignee: []
-created_date: '2026-10-18 15:43'
-updated_date: '2026-10-20 00:02'
+created_date: 2026-10-18 15:43
+updated_date: '2026-11-08T15:34:00Z'
 labels: []
 dependencies: []
 type: feature
@@ -30,4 +30,6 @@ No component or route in the app writes planMode (settings.planMode / session.se
 Maintainer, 2026-10-18: users should be able to turn plan mode on; the slice is the agent's choice; add an end-to-end test if possible. Decision: slice 06b (chat actions, composer) owns it — a plan-mode toggle for agent chats in the composer, plus an end-to-end test of the plan flow (proposed → Run plan → running → Stop → Continue → finished → one Change in Review) driven through generate() with a scripted fake model, since no real model or API key is available in the build container. A real-model check stays a manual step.
 
 Slice 06b (feat/redesign-06b-chat-actions-errors): Tools menu gets a Mode section on desktop and small screens (Agent Mode, Plan mode, Project folder); one writer setChatPlanMode/turnOnChatPlanMode; stopped plan card offers 'Turn on plan mode'; stores/session/plan-flow.test.ts drives proposed → Run plan → running → Stop → Continue → finished → one Change through generate() with a scripted model. AC #2 is checked once the PR merges; AC #3 (real model) stays a manual step in the PR.
+
+2026-11-08 board check (main da41b5f): AC #1 and #2 shipped in slice 06b (#105). stores/session/plan-flow.test.ts still passes (scripted model). Only AC #3 is left: one manual run of a plan against a real streaming model.
 <!-- SECTION:NOTES:END -->
