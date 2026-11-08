@@ -33,7 +33,7 @@ const TestingResult: FC<{ result: ConnectionTestingResult }> = ({ result }) => {
   const { t } = useTranslation()
   if (result.error) {
     return (
-      <Paper withBorder p="md" mt="md">
+      <Paper withBorder p="md" className="max-h-48 overflow-y-auto">
         <Text size="sm" c="chatbox-error" className="whitespace-pre-line break-words [overflow-wrap:anywhere]">
           {result.error.message}
         </Text>
@@ -46,7 +46,7 @@ const TestingResult: FC<{ result: ConnectionTestingResult }> = ({ result }) => {
     )
   }
   return (
-    <Paper withBorder p="md" mt="md">
+    <Paper withBorder p="md" className="max-h-48 overflow-y-auto">
       <Text fw="bold" mb="sm">
         {t('Tools')}
       </Text>
@@ -240,7 +240,6 @@ export const ConfigModal: FC<Props> = (props) => {
       opened={!!props.config}
       onClose={props.onClose}
       title={props.mode === 'edit' ? t('Edit MCP Server') : t('Add MCP Server')}
-      centered
       overlayProps={{ backgroundOpacity: 0.35, blur: 7 }}
     >
       {props.mode && props.config && (
