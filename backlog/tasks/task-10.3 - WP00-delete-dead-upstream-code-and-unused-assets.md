@@ -4,7 +4,7 @@ title: 'WP00: delete dead upstream code and unused assets'
 status: Proposed
 assignee: []
 created_date: 2026-10-17 07:24
-updated_date: '2026-10-29T15:46:00Z'
+updated_date: '2026-11-08T13:12:00Z'
 labels:
   - licensing
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 14000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The 2026-10-28 audit found 65 upstream files (about 3.0k lines) that nothing in src/ imports: old setting tabs, index.ejs, components/ui/command.tsx and other files the redesign stopped using, unused icon components and 17 provider PNGs. Deleting them is the cheapest progress. The usage check resolves imports but does not read build or test config, so a few files (index.ejs, setupTests.ts, test.tsx) may still be wired up; those move to their topic WP. Whether the dev routes are kept is a maintainer decision (plan Task 3).
+The 2026-10-28 audit found 67 upstream files (about 3.0k lines) that nothing uses: old setting tabs, index.ejs, components/ui/command.tsx and other files the redesign stopped using, unused icon components, 17 provider PNGs, and the Electron leftovers assets/installer.nsh and assets/entitlements.mac.plist, which the Tauri build does not read. Deleting them is the cheapest progress. The usage check resolves imports but does not read build or test config, so a few files (index.ejs, setupTests.ts, test.tsx) may still be wired up; those move to their topic WP. Whether the dev routes are kept is a maintainer decision (plan Task 3).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

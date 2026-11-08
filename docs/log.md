@@ -2,6 +2,13 @@
 
 Newest first. Add a line when you create, accept, supersede or move a decision, spec or research note.
 
+## 2026-11-08
+* **Update**: [clean-room rewrite and relicensing plan](specs/2026-10-17-clean-room-relicense.md) and [upstream provenance after the redesign](research/2026-10-28-upstream-provenance-after-redesign.md), checked against `main` after PRs #111 and #113–#117:
+  - `assets/installer.nsh` and `assets/entitlements.mac.plist` move from WP09 to WP00: they are Electron leftovers the Tauri build does not read, so Task 3 deletes them instead of Task 5 rewriting them. `assets/assets.d.ts` moves from WP09 to WP13. WP00 is now 67 files, WP09 165, WP13 19, and the UI packages 241; the total is still 951.
+  - Task 5 deletes the old `assets/icon*` files outright, since PR #111 put the Dango icon in `src-tauri/icons`.
+  - Task 14 names the three tests that read today's English keys (sidebar translations, settings labels, English sentence case) and keeps sentence case for the new copy.
+  - The research note gets a dated correction and a list of what changed on `main` since the audit. TASK-10.3, 10.5 and 10.13 are updated to match; 10.5 also had the WP14 count wrong (68, now 75).
+
 ## 2026-10-29
 * **Update**: [clean-room rewrite and relicensing plan](specs/2026-10-17-clean-room-relicense.md) and [upstream provenance after the redesign](research/2026-10-28-upstream-provenance-after-redesign.md), after an independent review of PR #112:
   - The PR gate is now a ratchet against the merge base. A PR fails if it adds a non-clean file, makes a clean file non-clean, or adds upstream lines to a flagged file. Rewiring callers in flagged files passes. The old rule, "fail any changed non-clean file", would have blocked every WP that edits callers.

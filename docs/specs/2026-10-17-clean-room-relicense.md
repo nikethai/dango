@@ -177,7 +177,7 @@ Each WP task names its files, its spec path, its compatibility boundary and any 
 
 ### Task 3: WP00 — delete dead upstream code
 
-**Files:** the 65 rows with `work_package = WP00` in `files.csv` (2,955 lines). The largest are:
+**Files:** the 67 rows with `work_package = WP00` in `files.csv` (3,008 lines). The largest are:
 - `pages/SettingDialog/AdvancedSettingTab.tsx`
 - `index.ejs`
 - `storage/SQLiteImageGenerationStorage.ts`
@@ -188,6 +188,7 @@ Each WP task names its files, its spec path, its compatibility boundary and any 
 - 9 unused icon components
 - 17 unused provider PNGs in `static/icons/providers/`
 - `static/wechat_qrcode.png`
+- `assets/installer.nsh` and `assets/entitlements.mac.plist`, leftovers from the old Electron build that `src-tauri/tauri.conf.json` does not read
 
 The usage check resolves `@/`, `@shared/` and relative imports in `src/`. A separate check of build and test config, scripts and workflows found no references to `index.ejs`, `index.web.ejs`, `setupTests.ts`, `test.tsx` or `static/_headers`: Vite uses `index.html`, and Vitest has `setupFiles: []`.
 
@@ -209,6 +210,7 @@ Some tests keep lists of file paths and will fail once those files are deleted. 
 - `vite.renderer.config.mts`, which is mixed
 - `.npmrc`, `.gitattributes`, `postcss.config.js`, `i18next-parser.config.mjs`, `pnpm-workspace.yaml`
 - `patches/libsql@0.5.22.patch`, `scripts/delete-source-maps.cjs`
+- `assets/assets.d.ts`, the type declarations for `*.svg` and `*.png` imports
 - To delete: `.eslintrc.js`, `.eslintignore`, `.prettierrc` (the repo uses Biome) and `script/translate.mjs` (replaced in Task 14)
 
 **Interfaces:** the config must produce the same build outputs, the same path aliases (`@/*` → `src/renderer/*`, `@shared/*` → `src/shared/*`) and the same env-var surface. Rename the `CHATBOX_*` vars to `DANGO_*`, keeping the old names as fallbacks for one release.
@@ -222,9 +224,8 @@ Some tests keep lists of file paths and will fail once those files are deleted. 
 **Files:** the WP14 and WP15 rows, except the `.github` templates already replaced in Task 2.
 
 - [ ] **Step 1: Assets.**
-  - Old app icons: `assets/icon*.png`, `icon.svg`, `iconTemplate*`. Delete them if `src-tauri/icons` is the live set, which is clean; otherwise replace them with the Dango icon.
+  - Old app icons: `assets/icon*.png`, `icon.svg`, `iconTemplate*`. Delete them. Since PR #111, `src-tauri/icons` is the live set and holds the Dango icon, and nothing in the build reads the old files (see `assets/logo-design/2026-10-16-redesign/README.md`).
   - Third-party brand logos: re-download each from the brand's official press kit or another permissively licensed source, and record the source in `src/renderer/static/logos/SOURCES.md`.
-  - `assets/installer.nsh` and `entitlements.mac.plist`: write fresh from the Tauri docs.
 - [ ] **Step 2: Docs.**
   - Rewrite these from the current code: `docs/adding-new-provider.md` and `docs/adding-provider.md` (merge into one), `docs/testing.md`, `ERROR_HANDLING.md`, `README.md` and `test/cases/*.md`.
   - Delete `docs/session-module-split-plan.md` (identical upstream), `scripts/ralph/*` and `team-sharing/*` (upstream self-hosting kit).
@@ -329,9 +330,9 @@ The new `migration` supports data from the last release built before `2e3a77ce` 
 
 ### Task 13: WP07, WP09, WP10 — UI left after the redesign
 
-**Files:** 244 files and about 14,300 upstream lines in total:
+**Files:** 241 files and about 14,300 upstream lines in total:
 - **WP07 settings:** 56 rows, 3,369 lines
-- **WP09 chat UI and components:** 168 rows, 9,574 lines
+- **WP09 chat UI and components:** 165 rows, 9,486 lines
 - **WP10 modals:** 20 rows, 1,400 lines
 
 The largest are:
@@ -339,7 +340,7 @@ The largest are:
 - `InputBox/InputBox.tsx`, `chat/Message.tsx`, `Markdown.tsx`, `chat/MessageList.tsx`, `ActionMenu.tsx`
 - `modals/MessageEdit.tsx`, `ModelEdit.tsx`
 
-The redesign edited most of this UI in place rather than replacing it. Of the 206 files listed under these packages on 2026-10-17, 191 are still flagged (13,824 lines). One more, `static/Block.css` (109 lines), moved in from WP00 because the app uses it again.
+The redesign edited most of this UI in place rather than replacing it. Of the 206 files listed under these packages on 2026-10-17, 188 are still flagged (13,736 lines), not counting three Electron build files in `assets/` that now sit in WP00 and WP13. One more, `static/Block.css` (109 lines), moved in from WP00 because the app uses it again.
 
 It also added 52 new files here. Most are trace only, but two copy real upstream code:
 - `routes/new.tsx` (131 lines, from upstream's `routes/index.tsx`)
@@ -362,6 +363,11 @@ It also added 52 new files here. Most are trace only, but two copy real upstream
 - `for-key-scan.ts` is no longer imported, so it is deleted with WP00 in Task 3
 
 This runs after Task 13, so the keys that only old UI used are already gone.
+
+Three existing tests read today's English-sentence keys and must move to the structured keys in Step 2:
+- `src/renderer/components/settings/settingsNavModel.i18n.test.ts` checks that every sidebar `label:` is translated in `ja`, `zh-Hans` and `zh-Hant`.
+- `src/renderer/theme/settingsLabels.test.ts` checks that settings titles, nav labels and option labels are sentence case in English.
+- `src/renderer/i18n/englishSentenceCase.test.ts` checks that every short English label is sentence case. Keep this rule for the new copy: since PR #117, English UI text is sentence case, and settings pages are named the way the sidebar names them.
 
 **Interfaces:**
 - Keys become structured IDs, such as `settings.general.title`, written fresh per screen.

@@ -4,7 +4,7 @@ title: 'WP14 and WP15: replace upstream assets, docs and repo meta'
 status: Proposed
 assignee: []
 created_date: 2026-10-17 07:24
-updated_date: '2026-10-28T08:13:00Z'
+updated_date: '2026-11-08T13:12:00Z'
 labels:
   - licensing
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 16000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The audit found 68 asset files identical to upstream (old app icons, third-party brand logos, installer script) and 27 docs or meta files (provider how-tos, testing doc, README parts, the team-sharing kit, ralph scripts). docs/archive holds 6 upstream-text files; the maintainer decides between deleting them and listing them as an exception (plan Task 5).
+The 2026-10-28 audit found 75 asset files identical to upstream (old app icons, third-party brand logos, code-language icons) and 27 docs or meta files (provider how-tos, testing doc, README parts, the team-sharing kit, ralph scripts). The old app icons in assets/ are simply deleted: since PR #111 the build uses the Dango icon in src-tauri/icons. docs/archive holds 6 upstream-text files; the maintainer decides between deleting them and listing them as an exception (plan Task 5).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -42,15 +42,15 @@ On 2026-10-17 the figures were 799 files and about 80,100 lines. The upstream li
 | clean | none of the above | 1,333 | 1,477 |
 | **total** | | **2,284** | **2,437** |
 
-**The redesign edited old files more than it replaced them.** Only 14 files from the 2026-10-17 list are gone, and only 4 more are now clean. Settings, chat UI and modals (WP07, WP09 and WP10) went from 206 files and 15,430 lines to 244 files and 14,343 lines:
-- 191 of the old files are still flagged, with 13,824 lines between them. The other 15 dropped off: 12 were deleted or are now clean, and 3 moved to WP00.
+**The redesign edited old files more than it replaced them.** Only 14 files from the 2026-10-17 list are gone, and only 4 more are now clean. Settings, chat UI and modals (WP07, WP09 and WP10) went from 206 files and 15,430 lines to 241 files and 14,255 lines:
+- 188 of the old files are still flagged, with 13,736 lines between them. The other 18 dropped off: 12 were deleted or are now clean, 3 moved to WP00, and 3 Electron build files moved out of WP09 (see [Correction](#correction-2026-11-08)).
 - 1 file moved in from WP00: `static/Block.css` (109 lines), which the app uses again.
 - 52 new files joined, almost all of them traces, with 410 lines between them.
-- That makes 191 + 1 + 52 = 244 files and 13,824 + 109 + 410 = 14,343 lines.
+- That makes 188 + 1 + 52 = 241 files and 13,736 + 109 + 410 = 14,255 lines.
 
 | Work package | Files | Est. upstream lines | New since 10-17 | Change from 10-17 |
 |---|---:|---:|---:|---|
-| WP00 dead code and unused assets (delete) | 65 | 2,955 | 0 | 76 → 65 files |
+| WP00 dead code and unused assets (delete) | 67 | 3,008 | 0 | 76 → 67 files (+2 Electron files from WP09) |
 | WP01 i18n: locales, changelogs, English copy | 20 | 14,166 | 0 | ≈ |
 | WP02 token estimation and context management | 19 | 3,138 | 0 | +1 file from WP00 |
 | WP03 providers and model layer | 86 | 6,919 | 2 | ≈ |
@@ -59,11 +59,11 @@ On 2026-10-17 the figures were 799 files and about 80,100 lines. The upstream li
 | WP06 feature packages | 76 | 6,546 | 16 | ≈ |
 | WP07 settings UI | 56 | 3,369 | 10 | 46 → 56 files |
 | WP08 image creator | 12 | 1,707 | 0 | unchanged |
-| WP09 chat UI and components (includes dev routes) | 168 | 9,574 | 41 | 10,606 → 9,574 lines |
+| WP09 chat UI and components (includes dev routes) | 165 | 9,486 | 41 | 10,606 → 9,486 lines |
 | WP10 modals | 20 | 1,400 | 1 | 22 → 20 files |
 | WP11 shared utilities and hooks | 53 | 3,495 | 1 | ≈ |
 | WP12 tests and fixtures | 155 | 13,449 | 90 | 69 → 155 files |
-| WP13 build config and tooling | 18 | 1,073 | 0 | unchanged |
+| WP13 build config and tooling | 19 | 1,108 | 0 | +1 file from WP09 (`assets/assets.d.ts`) |
 | WP14 images, icons, fonts | 75 | binary | 0 | 68 → 75 files (+20 from WP00, −13 to WP00) |
 | WP15 docs, repo meta, templates | 27 | 2,171 | 0 | unchanged |
 | **total** | **951** | **79,699** | **170** | |
@@ -101,6 +101,20 @@ There are also two settings files with 1–2 blame-only lines (`settingsNavAvail
 - **Tests.** 5,362 passed, 74 skipped. The first run failed one file, `tray-icons.test.ts`, because the scan's install skipped `sharp`'s native build. It passed after `pnpm rebuild sharp`.
 - **Type-check and lint.** `pnpm check` reports 36 errors and `pnpm lint` 9. The [known issues](2026-10-19-redesign-known-issues.md) baseline is 37 and 9.
 - **Not checked:** CI results and open PRs on GitHub.
+
+## Correction (2026-11-08)
+
+Three identical upstream files in `assets/` were filed under WP09 (chat UI) by the 2026-10-17 path rules, and this audit kept that mapping. `files.csv` and the tables above now place them by what they are:
+- `assets/installer.nsh` (43 lines) and `assets/entitlements.mac.plist` (10 lines) move to WP00. They are leftovers from the old Electron build: `src-tauri/tauri.conf.json` reads neither, and nothing else in the repo refers to them.
+- `assets/assets.d.ts` (35 lines) moves to WP13. It is still compiled through `tsconfig.json` and declares the types of `*.svg` and `*.png` imports.
+
+The total is unchanged: 951 files and 79,699 lines.
+
+## Changes on `main` since this audit
+
+The counts above are for `2e3a77ce`. The plan measures again before each UI and sweep task, so later changes to `main` only shift the numbers. By 2026-11-08, `main` had gained:
+- PR #111, which put the Dango app icon in `src-tauri/icons`, the set the build uses. The old `assets/icon*` files are still there but nothing reads them, so Task 5 deletes them.
+- PRs #113 to #117 (AI SDK update, MCP Save gate, Tools menu, sidebar translations, sentence-case copy). They edited 48 flagged files, mostly locale files and settings UI, and deleted none.
 
 ## Limits
 
