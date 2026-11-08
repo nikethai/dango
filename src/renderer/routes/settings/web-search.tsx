@@ -162,7 +162,7 @@ export function RouteComponent() {
               <AdaptiveSelect
                 comboboxProps={{ withinPortal: true, withArrow: true }}
                 data={[
-                  { value: 'bing', label: 'Bing Search (Free)' },
+                  { value: 'bing', label: 'Bing search (free)' },
                   { value: 'duckduckgo', label: 'DuckDuckGo Search (Free)' },
                   { value: 'serper', label: 'Serper (Google Search API)' },
                   { value: 'google', label: 'Google Custom Search API' },

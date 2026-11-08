@@ -56,7 +56,7 @@ export const defaultSessionsForEN: Session[] = [
   },
   {
     id: 'e22ab364-4681-4e24-aaba-461ed0fccfd3',
-    name: 'Travel Guide (Example)',
+    name: 'Travel guide (example)',
     type: 'chat',
     picUrl: 'https://static.chatboxai.app/copilot-avatar/travel.png',
     messages: [
@@ -85,7 +85,7 @@ export const defaultSessionsForEN: Session[] = [
   },
   {
     id: '55d92e88-02af-4c3b-a378-aa0a1970abb1',
-    name: 'Social Media Influencer (Example)',
+    name: 'Social media influencer (example)',
     type: 'chat',
     picUrl: 'https://static.chatboxai.app/copilot-avatar/twitter.png',
     messages: [
@@ -114,7 +114,7 @@ export const defaultSessionsForEN: Session[] = [
   },
   {
     id: '35df5a96-b612-406a-985b-3ab4d2c481ff',
-    name: 'Software Developer (Example)',
+    name: 'Software developer (example)',
     type: 'chat',
     picUrl: 'https://static.chatboxai.app/copilot-avatar/programmer.png',
     messages: [
@@ -221,7 +221,7 @@ export const defaultSessionsForCN: Session[] = defaultSessionsForEN
 
 export const imageCreatorSessionForEN: Session = {
   id: 'chatbox-chat-demo-image-creator',
-  name: 'Image Creator (Example)',
+  name: 'Image creator (example)',
   type: 'picture',
   starred: true,
   settings: {
@@ -334,7 +334,7 @@ Let's make art!`,
 
 export const artifactSessionEN: Session = {
   id: 'chatbox-chat-demo-artifact-1-en',
-  name: 'Snake Game (Artifact Example)',
+  name: 'Snake game (artifact example)',
   type: 'chat',
   picUrl: 'https://download.chatboxai.app/image-demo/snake_game.png',
   messages: [

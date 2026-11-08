@@ -118,7 +118,7 @@ async function captureForModel(opts: ComputerToolOptions, displayId?: string): P
     return { error: 'UNSUPPORTED_PLATFORM', message: 'Computer use is desktop-only.' }
   }
   if (!computerSettings().enabled) {
-    return { error: 'NOT_ENABLED', message: 'Computer use is disabled in Settings → Computer Use.' }
+    return { error: 'NOT_ENABLED', message: 'Computer use is disabled in Settings → Computer use.' }
   }
   if (!opts.visionSupported) {
     return {
@@ -173,7 +173,7 @@ async function captureForModel(opts: ComputerToolOptions, displayId?: string): P
     return {
       error: permissionLike ? 'PERMISSION_DENIED' : 'CAPTURE_FAILED',
       message: permissionLike
-        ? `${message} Fix: System Settings → Privacy & Security → Screen Recording → enable Dango (App Store build), fully quit, relaunch, then Recheck in Settings → Computer Use.`
+        ? `${message} Fix: System Settings → Privacy & Security → Screen Recording → enable Dango (App Store build), fully quit, relaunch, then Recheck in Settings → Computer use.`
         : message,
     }
   }
@@ -475,7 +475,7 @@ export function createComputerToolSet(opts: ComputerToolOptions): { description:
         if (!isAppAllowedByAllowlist(input.name, allowlist)) {
           const denied = {
             error: 'ALLOWLIST_DENIED',
-            message: `“${input.name}” is not in the Computer Use app allowlist (${allowlist.join(', ') || 'empty'}).`,
+            message: `“${input.name}” is not in the computer use app allowlist (${allowlist.join(', ') || 'empty'}).`,
           }
           traj(opts.sessionId, 'computer_open_app', input, denied)
           return denied
@@ -764,7 +764,7 @@ export function createComputerToolSet(opts: ComputerToolOptions): { description:
           return {
             error: 'BLOCKED_KEY',
             message:
-              'Spotlight (cmd+space) is blocked while Computer Use has a target app. Use in-app search or computer_open_app for apps.',
+              'Spotlight (cmd+space) is blocked while computer use has a target app. Use in-app search or computer_open_app for apps.',
             targetApp: target,
             nextAction: target
               ? `Stay in “${target}”: click its search field from the screenshot, or computer_open_app if it is not frontmost.`

@@ -37,27 +37,27 @@ import {
 
 /** Built-in tool names available for tool access configuration. */
 const BUILT_IN_TOOLS = [
-  { value: 'web_search', label: 'Web Search' },
-  { value: 'parse_link', label: 'Parse Link' },
-  { value: 'generate_image', label: 'Generate Image' },
-  { value: 'file_read', label: 'File Read' },
-  { value: 'file_write', label: 'File Write' },
-  { value: 'query_knowledge_base', label: 'Knowledge Base Query' },
-  { value: 'upload_file', label: 'Upload File' },
-  { value: 'task_create', label: 'Task Create' },
-  { value: 'task_update', label: 'Task Update' },
-  { value: 'task_list', label: 'Task List' },
-  { value: 'task_get', label: 'Task Get' },
-  { value: 'task_delete', label: 'Task Delete' },
+  { value: 'web_search', label: 'Web search' },
+  { value: 'parse_link', label: 'Parse link' },
+  { value: 'generate_image', label: 'Generate image' },
+  { value: 'file_read', label: 'File read' },
+  { value: 'file_write', label: 'File write' },
+  { value: 'query_knowledge_base', label: 'Knowledge base query' },
+  { value: 'upload_file', label: 'Upload file' },
+  { value: 'task_create', label: 'Task create' },
+  { value: 'task_update', label: 'Task update' },
+  { value: 'task_list', label: 'Task list' },
+  { value: 'task_get', label: 'Task get' },
+  { value: 'task_delete', label: 'Task delete' },
 ]
 
 /** Available hook types for copilot configuration. */
 const HOOK_TYPES = [
-  { value: 'inject-context', label: 'Inject Context' },
-  { value: 'inject-datetime', label: 'Inject DateTime' },
-  { value: 'inject-system-info', label: 'Inject System Info' },
-  { value: 'web-fetch', label: 'Web Fetch' },
-  { value: 'validate-format', label: 'Validate Format' },
+  { value: 'inject-context', label: 'Inject context' },
+  { value: 'inject-datetime', label: 'Inject date and time' },
+  { value: 'inject-system-info', label: 'Inject system info' },
+  { value: 'web-fetch', label: 'Web fetch' },
+  { value: 'validate-format', label: 'Validate format' },
 ]
 
 const FORMAT_OPTIONS = [

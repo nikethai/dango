@@ -30,7 +30,7 @@ export function DevHeader({ title }: DevHeaderProps) {
         <Group gap="md">
           {/* Back button - show only if not on dev index */}
           {!isDevIndex && (
-            <Tooltip label="Back to Dev Tools">
+            <Tooltip label="Back to Dev tools">
               <ActionIcon variant="subtle" size="lg" onClick={() => navigate({ to: '/dev' })}>
                 <ScalableIcon icon={IconArrowLeft} size={20} />
               </ActionIcon>

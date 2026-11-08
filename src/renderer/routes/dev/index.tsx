@@ -16,7 +16,7 @@ const devPages = [
   },
   {
     path: '/dev/storage',
-    name: 'Storage Explorer',
+    name: 'Storage explorer',
     description: 'Inspect key-value and blob storage entries provided by the unified platform layer',
     tags: ['Tool', 'Storage'],
   },
@@ -28,13 +28,13 @@ const devPages = [
   },
   {
     path: '/dev/design-system',
-    name: 'Design System',
+    name: 'Design system',
     description: 'Dango colour swatches, type styles and Review items for the current theme',
     tags: ['UI', 'Design'],
   },
   {
     path: '/dev/context-generator',
-    name: 'Context Generator',
+    name: 'Context generator',
     description: 'Generate fake conversation context for testing context management and token estimation',
     tags: ['Tool', 'Testing'],
   },
@@ -47,7 +47,7 @@ function DevIndexPage() {
         {/* Header */}
         <div>
           <Group justify="space-between" align="center" mb="md">
-            <Title order={1}>Dev Tools</Title>
+            <Title order={1}>Dev tools</Title>
             <Badge size="lg" variant="light" color="blue">
               Development Mode
             </Badge>
@@ -63,7 +63,7 @@ function DevIndexPage() {
           <Title order={3} mb="md">
             <Group gap="xs">
               <ScalableIcon icon={IconEye} size={20} />
-              <span>Component Previews</span>
+              <span>Component previews</span>
             </Group>
           </Title>
 
