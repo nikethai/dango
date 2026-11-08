@@ -25,6 +25,8 @@ import { getConfigFromFormValues, getFormValuesFromConfig, type MCPServerConfigF
 
 interface ConnectionTestingResult {
   config: MCPServerConfig
+  /** Form values the test ran against; Save stays locked unless the form still holds exactly these. */
+  testedValues: string
   tools: { name: string; description?: string }[]
   error?: Error
 }
@@ -33,8 +35,8 @@ const TestingResult: FC<{ result: ConnectionTestingResult }> = ({ result }) => {
   const { t } = useTranslation()
   if (result.error) {
     return (
-      <Paper withBorder p="md" mt="md">
-        <Text size="sm" c="chatbox-error" className="whitespace-pre-line overflow-x-auto">
+      <Paper withBorder p="md" className="max-h-48 overflow-y-auto">
+        <Text size="sm" c="chatbox-error" className="whitespace-pre-line break-words [overflow-wrap:anywhere]">
           {result.error.message}
         </Text>
         {result.error.message.includes('ENOENT') && result.config.transport.type === 'stdio' && (
@@ -46,7 +48,7 @@ const TestingResult: FC<{ result: ConnectionTestingResult }> = ({ result }) => {
     )
   }
   return (
-    <Paper withBorder p="md" mt="md">
+    <Paper withBorder p="md" className="max-h-48 overflow-y-auto">
       <Text fw="bold" mb="sm">
         {t('Tools')}
       </Text>
@@ -70,6 +72,7 @@ const ConfigForm: FC<{
   const { t } = useTranslation()
   const formRef = useRef<HTMLFormElement>(null)
   const [testing, setTesting] = useState(false)
+  const testingRef = useRef(false)
   const [testingResult, setTestingResult] = useState<ConnectionTestingResult | null>()
   const testingAbortController = useRef<AbortController | null>(null)
   const [deletePopoverOpened, setDeletePopoverOpened] = useState(false)
@@ -77,14 +80,23 @@ const ConfigForm: FC<{
   const form = useForm<MCPServerConfigFormValues>({
     mode: 'controlled',
     initialValues: getFormValuesFromConfig(props.config),
+    // Any edit after a test invalidates its result, so Save locks again until the edited config is tested.
+    // Edits made while a test runs are caught by the testedValues comparison in the Save gate instead.
+    onValuesChange: () => {
+      if (!testingRef.current) {
+        setTestingResult(null)
+      }
+    },
   })
 
   const testConnection = async () => {
     if (formRef.current && !formRef.current.reportValidity()) {
       return
     }
+    const testedValues = JSON.stringify(form.getValues())
     const config = getConfigFromFormValues(form.getValues())
     console.debug('Testing connection with config', config)
+    testingRef.current = true
     setTesting(true)
     setTestingResult(null)
     trackEvent('test_mcp_server_connection', { type: config.transport.type })
@@ -101,6 +113,7 @@ const ConfigForm: FC<{
       const tools = await server.getAvailableTools()
       setTestingResult({
         config,
+        testedValues,
         tools: Object.keys(tools).map((name) => ({ name, description: tools[name].description })),
       })
       await server.stop()
@@ -108,11 +121,20 @@ const ConfigForm: FC<{
       if (testingAbortController.current?.signal.aborted) {
         return
       }
-      setTestingResult({ config, error: err instanceof Error ? err : new Error(String(err)), tools: [] })
+      setTestingResult({
+        config,
+        testedValues,
+        error: err instanceof Error ? err : new Error(String(err)),
+        tools: [],
+      })
     } finally {
+      testingRef.current = false
       setTesting(false)
     }
   }
+
+  const testPassed =
+    !!testingResult && !testingResult.error && testingResult.testedValues === JSON.stringify(form.getValues())
 
   const handleSubmit = (values: typeof form.values) => {
     console.debug('form onSubmit', values)
@@ -122,7 +144,9 @@ const ConfigForm: FC<{
 
   return (
     <form ref={formRef} onSubmit={form.onSubmit(handleSubmit)}>
-      <Stack gap="md">
+      {/* Fixed-height scroll region: the test result scrolls inside it, so the footer below never moves.
+          (A max-height alone would still let the footer drift until the content reached the cap.) */}
+      <Stack gap="md" data-testid="mcp-config-fields" style={{ height: 'min(60vh, 28rem)', overflowY: 'auto' }}>
         <TextInput label={t('Name')} data-autofocus required {...form.getInputProps('name')} />
         <Radio.Group
           required
@@ -166,6 +190,9 @@ const ConfigForm: FC<{
             />
           </>
         )}
+        {testingResult && <TestingResult result={testingResult} />}
+      </Stack>
+      <Stack gap="md" mt="md">
         <Group justify="space-between">
           {props.mode === 'edit' ? (
             <Popover opened={deletePopoverOpened} onChange={setDeletePopoverOpened} withArrow>
@@ -207,7 +234,7 @@ const ConfigForm: FC<{
             <Button variant="outline" onClick={testConnection} loading={testing} disabled={testing}>
               {t('Test')}
             </Button>
-            {props.mode === 'edit' || testingResult ? (
+            {props.mode === 'edit' || testPassed ? (
               <Button type="submit">{t('Save')}</Button>
             ) : (
               <Tooltip label={t('Please test before saving')} withArrow zIndex={3000}>
@@ -218,7 +245,6 @@ const ConfigForm: FC<{
             )}
           </Group>
         </Group>
-        {testingResult && <TestingResult result={testingResult} />}
       </Stack>
     </form>
   )
@@ -240,7 +266,6 @@ export const ConfigModal: FC<Props> = (props) => {
       opened={!!props.config}
       onClose={props.onClose}
       title={props.mode === 'edit' ? t('Edit MCP Server') : t('Add MCP Server')}
-      centered
       overlayProps={{ backgroundOpacity: 0.35, blur: 7 }}
     >
       {props.mode && props.config && (
