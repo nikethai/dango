@@ -72,7 +72,7 @@ export default class XAI extends OpenAICompatible {
       throw new ApiError(`xAI model "${modelId}" does not support image generation. Use grok-imagine-image.`)
     }
     if (!this.options.apiKey) {
-      throw new ApiError('xAI is not signed in. Open Settings → Provider → xAI and sign in with SuperGrok.')
+      throw new ApiError('xAI is not signed in. Open Settings → Providers → xAI and sign in with SuperGrok.')
     }
 
     const n = Math.min(Math.max(1, params.num || 1), 10)

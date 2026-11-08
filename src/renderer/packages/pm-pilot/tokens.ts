@@ -32,7 +32,7 @@ export async function getFreshToken(accountId: string): Promise<FreshToken> {
       ? fresh.secret.apiToken || fresh.secret.accessToken
       : fresh.secret.accessToken || fresh.secret.apiToken
   if (!token) {
-    const message = `No token for “${account.label}”. Reconnect in Integrations.`
+    const message = `No token for “${account.label}”. Reconnect in Settings → Accounts.`
     await store.markStatus(accountId, 'needs_reauth', message)
     return { ok: false, message }
   }

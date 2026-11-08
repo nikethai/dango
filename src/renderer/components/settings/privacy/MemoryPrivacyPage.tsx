@@ -50,7 +50,7 @@ export function MemoryPrivacyPage() {
   return (
     <SettingsPage>
       <SettingsPageHeader
-        title={t('Memory and privacy')}
+        title={t('Privacy')}
         description={t('What Dango keeps, what it may do before asking, and what it should stop suggesting.')}
       />
       {unreadable ? (

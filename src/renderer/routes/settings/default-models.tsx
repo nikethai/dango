@@ -27,7 +27,7 @@ export function RouteComponent() {
   return (
     <SettingsPage>
       <SettingsPageHeader
-        title={t('Default Models')}
+        title={t('Default models')}
         description={t('Models used when a session does not pick one explicitly.')}
       />
 

@@ -44,7 +44,7 @@ function RouteComponent() {
   return (
     <SettingsPage>
       <SettingsPageHeader
-        title={t('Browser Agent')}
+        title={t('Browser agent')}
         description={t('Isolated browser for multi-step web tasks. Not your personal Chrome.')}
       />
 

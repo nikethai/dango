@@ -140,7 +140,7 @@ export function RouteComponent() {
   return (
     <SettingsPage>
       <SettingsPageHeader
-        title={t('Web Search')}
+        title={t('Web search providers')}
         description={t('Choose how the assistant looks up live information on the web.')}
       />
 

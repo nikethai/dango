@@ -54,7 +54,7 @@ export function RouteComponent() {
   return (
     <SettingsPage wide>
       <SettingsPageHeader
-        title={t('MCP Settings')}
+        title={t('MCP')}
         description={t('Model Context Protocol servers extend what tools the assistant can use.')}
       />
       <SettingsSection title={t('Built-in')}>

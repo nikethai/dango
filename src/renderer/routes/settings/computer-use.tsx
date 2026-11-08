@@ -209,7 +209,7 @@ function RouteComponent() {
   return (
     <SettingsPage>
       <SettingsPageHeader
-        title={t('Computer Use')}
+        title={t('Computer use')}
         description={t('Observe the screen and optionally click or type. Desktop only.')}
       />
 

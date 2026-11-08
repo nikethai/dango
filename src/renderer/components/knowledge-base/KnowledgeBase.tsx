@@ -320,7 +320,7 @@ const KnowledgeBasePage: React.FC = () => {
   return (
     <SettingsPage wide>
       <SettingsPageHeader
-        title={t('Knowledge Base')}
+        title={t('Documents')}
         description={t('Attach documents so the assistant can retrieve context during chats.')}
         actions={
           !isUnsupportedPlatform ? (

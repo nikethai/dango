@@ -66,7 +66,7 @@ const PROPER = new Set([
   'Co',
 ])
 
-// labels that name a page (Review, Usage, Integrations, Settings), a trust level (Auto, Ask first), a legal
+// labels that name a page (Review, Usage, Accounts, Settings), a trust level (Auto, Ask first), a legal
 // document, or Cloudflare Access
 const ALLOWED = new Set([
   'Privacy Policy',
@@ -77,7 +77,7 @@ const ALLOWED = new Set([
   'Use Auto',
   'Use Ask first',
   'Open Review',
-  'Open Integrations',
+  'Open Accounts',
   'Open Usage',
   'Enable in Settings → Browser agent',
   'Enable in Settings → Computer use',

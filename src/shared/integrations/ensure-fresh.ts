@@ -58,7 +58,7 @@ async function doEnsureFresh(
     return {
       ok: false,
       code: 'missing_secret',
-      message: `No secret stored for “${account.label}”. Reconnect in Integrations.`,
+      message: `No secret stored for “${account.label}”. Reconnect in Settings → Accounts.`,
     }
   }
 
@@ -67,7 +67,7 @@ async function doEnsureFresh(
     return {
       ok: false,
       code: 'missing_secret',
-      message: `No token for “${account.label}”. Reconnect in Integrations.`,
+      message: `No token for “${account.label}”. Reconnect in Settings → Accounts.`,
     }
   }
 
@@ -75,7 +75,7 @@ async function doEnsureFresh(
     return {
       ok: false,
       code: 'needs_reauth',
-      message: `Account “${account.label}” is ${account.status}. Reconnect in Integrations.`,
+      message: `Account “${account.label}” is ${account.status}. Reconnect in Settings → Accounts.`,
     }
   }
 
@@ -92,7 +92,7 @@ async function doEnsureFresh(
       return {
         ok: false,
         code: 'needs_reauth',
-        message: `Reconnect “${account.label}” in Integrations.`,
+        message: `Reconnect “${account.label}” in Settings → Accounts.`,
       }
     }
     return { ok: true, secret, refreshed: false }
@@ -102,7 +102,7 @@ async function doEnsureFresh(
     return {
       ok: false,
       code: 'needs_reauth',
-      message: `Session expired for “${account.label}”. Reconnect in Integrations.`,
+      message: `Session expired for “${account.label}”. Reconnect in Settings → Accounts.`,
     }
   }
 
@@ -112,7 +112,7 @@ async function doEnsureFresh(
       return {
         ok: false,
         code: 'refresh_failed',
-        message: `Could not refresh “${account.label}”. Reconnect in Integrations.`,
+        message: `Could not refresh “${account.label}”. Reconnect in Settings → Accounts.`,
       }
     }
     return { ok: true, secret: next, refreshed: true }
@@ -123,7 +123,7 @@ async function doEnsureFresh(
       message:
         err instanceof Error
           ? err.message
-          : `Could not refresh “${account.label}”. Reconnect in Integrations.`,
+          : `Could not refresh “${account.label}”. Reconnect in Settings → Accounts.`,
     }
   }
 }

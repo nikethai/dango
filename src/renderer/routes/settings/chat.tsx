@@ -53,7 +53,7 @@ export function RouteComponent() {
   return (
     <SettingsPage>
       <SettingsPageHeader
-        title={t('Chat Settings')}
+        title={t('Chat settings')}
         description={t('Defaults for new chats, avatars, and conversation behavior.')}
       />
 

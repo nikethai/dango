@@ -78,7 +78,7 @@ export default class ComfyUI implements ModelInterface {
 
     if (!genParams.checkpoint) {
       throw new ApiError(
-        'No checkpoint configured. Please go to Settings → ComfyUI and select a checkpoint from your server.'
+        'No checkpoint configured. Please go to Settings → Providers → ComfyUI and select a checkpoint from your server.'
       )
     }
 

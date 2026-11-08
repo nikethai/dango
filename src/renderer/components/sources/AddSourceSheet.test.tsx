@@ -20,10 +20,10 @@ const h = vi.hoisted(() => {
     }
   }
   class OAuthClientIdError extends Error {
-    readonly actionLabel = 'Open Integrations'
+    readonly actionLabel = 'Open Accounts'
     readonly to = '/settings/integrations'
     constructor() {
-      super('Add an OAuth client ID in Integrations.')
+      super('Add an OAuth client ID in Settings → Accounts.')
       this.name = 'OAuthClientIdError'
     }
   }
@@ -430,12 +430,12 @@ describe('AddSourceSheet', () => {
     expect(vi.mocked(revokeSource).mock.invocationCallOrder[0]).toBeLessThan(discard.mock.invocationCallOrder[0])
   })
 
-  it('the client-ID error offers Open Integrations', async () => {
+  it('the client-ID error offers Open Accounts', async () => {
     pick.mockRejectedValueOnce(new h.OAuthClientIdError())
     const result = open()
     fireEvent.click(await screen.findByRole('button', { name: /^Gmail/ }))
-    expect(await screen.findByText('Add an OAuth client ID in Integrations.')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Open Integrations' }))
+    expect(await screen.findByText('Add an OAuth client ID in Settings → Accounts.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Accounts' }))
     await expect(result).resolves.toBeNull()
     await waitFor(() => expect(router.navigate).toHaveBeenCalledWith({ to: '/settings/integrations' }))
   })
