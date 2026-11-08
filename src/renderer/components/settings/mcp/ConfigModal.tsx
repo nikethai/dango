@@ -25,6 +25,8 @@ import { getConfigFromFormValues, getFormValuesFromConfig, type MCPServerConfigF
 
 interface ConnectionTestingResult {
   config: MCPServerConfig
+  /** Form values the test ran against; Save stays locked unless the form still holds exactly these. */
+  testedValues: string
   tools: { name: string; description?: string }[]
   error?: Error
 }
@@ -70,6 +72,7 @@ const ConfigForm: FC<{
   const { t } = useTranslation()
   const formRef = useRef<HTMLFormElement>(null)
   const [testing, setTesting] = useState(false)
+  const testingRef = useRef(false)
   const [testingResult, setTestingResult] = useState<ConnectionTestingResult | null>()
   const testingAbortController = useRef<AbortController | null>(null)
   const [deletePopoverOpened, setDeletePopoverOpened] = useState(false)
@@ -77,14 +80,23 @@ const ConfigForm: FC<{
   const form = useForm<MCPServerConfigFormValues>({
     mode: 'controlled',
     initialValues: getFormValuesFromConfig(props.config),
+    // Any edit after a test invalidates its result, so Save locks again until the edited config is tested.
+    // Edits made while a test runs are caught by the testedValues comparison in the Save gate instead.
+    onValuesChange: () => {
+      if (!testingRef.current) {
+        setTestingResult(null)
+      }
+    },
   })
 
   const testConnection = async () => {
     if (formRef.current && !formRef.current.reportValidity()) {
       return
     }
+    const testedValues = JSON.stringify(form.getValues())
     const config = getConfigFromFormValues(form.getValues())
     console.debug('Testing connection with config', config)
+    testingRef.current = true
     setTesting(true)
     setTestingResult(null)
     trackEvent('test_mcp_server_connection', { type: config.transport.type })
@@ -101,6 +113,7 @@ const ConfigForm: FC<{
       const tools = await server.getAvailableTools()
       setTestingResult({
         config,
+        testedValues,
         tools: Object.keys(tools).map((name) => ({ name, description: tools[name].description })),
       })
       await server.stop()
@@ -108,11 +121,20 @@ const ConfigForm: FC<{
       if (testingAbortController.current?.signal.aborted) {
         return
       }
-      setTestingResult({ config, error: err instanceof Error ? err : new Error(String(err)), tools: [] })
+      setTestingResult({
+        config,
+        testedValues,
+        error: err instanceof Error ? err : new Error(String(err)),
+        tools: [],
+      })
     } finally {
+      testingRef.current = false
       setTesting(false)
     }
   }
+
+  const testPassed =
+    !!testingResult && !testingResult.error && testingResult.testedValues === JSON.stringify(form.getValues())
 
   const handleSubmit = (values: typeof form.values) => {
     console.debug('form onSubmit', values)
@@ -212,7 +234,7 @@ const ConfigForm: FC<{
             <Button variant="outline" onClick={testConnection} loading={testing} disabled={testing}>
               {t('Test')}
             </Button>
-            {props.mode === 'edit' || (testingResult && !testingResult.error) ? (
+            {props.mode === 'edit' || testPassed ? (
               <Button type="submit">{t('Save')}</Button>
             ) : (
               <Tooltip label={t('Please test before saving')} withArrow zIndex={3000}>

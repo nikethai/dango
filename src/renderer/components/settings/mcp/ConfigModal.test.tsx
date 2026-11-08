@@ -91,6 +91,35 @@ describe('MCP ConfigModal Save gate', () => {
     await waitFor(() => expect(isLocked()).toBe(false))
   })
 
+  it('locks Save again when the URL is edited after a passing test', async () => {
+    renderModal()
+    await screen.findByRole('dialog')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test' }))
+    await screen.findByText('read_file')
+    await waitFor(() => expect(isLocked()).toBe(false))
+
+    fireEvent.change(screen.getByLabelText(/URL/), { target: { value: 'https://other.example.com/mcp' } })
+
+    await waitFor(() => expect(isLocked()).toBe(true))
+    expect(screen.queryByText('read_file')).toBeNull()
+  })
+
+  it('unlocks Save again once the edited config passes a new test', async () => {
+    renderModal()
+    await screen.findByRole('dialog')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test' }))
+    await screen.findByText('read_file')
+    fireEvent.change(screen.getByLabelText(/URL/), { target: { value: 'https://other.example.com/mcp' } })
+    await waitFor(() => expect(isLocked()).toBe(true))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test' }))
+
+    await screen.findByText('read_file')
+    await waitFor(() => expect(isLocked()).toBe(false))
+  })
+
   it('keeps the Test/Save footer outside the scrolling field region', async () => {
     serverState.fail = true
     renderModal()
