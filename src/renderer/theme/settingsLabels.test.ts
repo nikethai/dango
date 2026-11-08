@@ -156,6 +156,35 @@ describe('settings section titles, badges and row titles are sentence case in En
     expect(keys.has('Search Provider')).toBe(true)
   })
 
+  const offendersIn = (keys: Map<string, string>) =>
+    [...keys].filter(([key]) => !isSentenceCase(en[key] ?? key)).map(([key, file]) => `${en[key] ?? key} (${file})`)
+
+  // the settings sidebar (labels in settingsNavModel.ts) and each page's <SettingsPageHeader title>
+  const navAndPageKeys = () => {
+    const keys = new Map<string, string>()
+    const navModel = 'src/renderer/components/settings/settingsNavModel.ts'
+    for (const call of read(navModel).matchAll(/\blabel: '([^']+)'/g)) {
+      keys.set(call[1], navModel)
+    }
+    for (const file of tsxFiles) {
+      const source = readFileSync(file, 'utf8')
+      for (const tag of source.matchAll(/<SettingsPageHeader\b((?:=>|[^>])*)>/g)) {
+        for (const call of tag[1].matchAll(/\btitle=\{t\('([^']+)'\)\}/g)) {
+          keys.set(call[1], file.replace(`${process.cwd()}/`, ''))
+        }
+      }
+    }
+    return keys
+  }
+
+  test('settings nav items and page titles are sentence case', () => {
+    const keys = navAndPageKeys()
+    expect(keys.has('Models and keys')).toBe(true)
+    expect(keys.has('Keyboard shortcuts')).toBe(true)
+    expect(keys.size).toBeGreaterThan(20)
+    expect(offendersIn(keys)).toEqual([])
+  })
+
   test('every English value is sentence case', () => {
     const offenders: string[] = []
     for (const [key, file] of labelKeys()) {
