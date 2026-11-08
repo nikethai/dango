@@ -955,5 +955,7 @@
   "Computer Use": "コンピューター操作",
   "API Keys": "APIキー",
   "Enable in Settings → Browser Agent": "「設定 → ブラウザエージェント」で有効にする",
-  "Enable in Settings → Computer Use": "「設定 → コンピューター操作」で有効にする"
+  "Enable in Settings → Computer Use": "「設定 → コンピューター操作」で有効にする",
+  "Browser agent": "ブラウザエージェント",
+  "Computer use": "コンピューター操作"
 }

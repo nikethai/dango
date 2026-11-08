@@ -955,5 +955,7 @@
   "Computer Use": "電腦操控",
   "API Keys": "API 金鑰",
   "Enable in Settings → Browser Agent": "在「設定 → 瀏覽器智慧代理」中啟用",
-  "Enable in Settings → Computer Use": "在「設定 → 電腦操控」中啟用"
+  "Enable in Settings → Computer Use": "在「設定 → 電腦操控」中啟用",
+  "Browser agent": "瀏覽器智慧代理",
+  "Computer use": "電腦操控"
 }
